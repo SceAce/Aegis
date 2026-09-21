@@ -1,0 +1,18 @@
+# Local experiment state — never push
+.aegis/
+runs/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Pi runtime leftovers (keep settings + extensions)
+.pi/*
+!.pi/settings.json
+!.pi/extensions/
+!.pi/extensions/**
+
+# OS
+.DS_Store
