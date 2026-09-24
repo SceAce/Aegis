@@ -29,3 +29,117 @@
   → 能给什么保证 → Codex↔DSH 接线 → 领域落地（固件 + 车机）→ 开放问题
 
 **证据与实测数字只在 `框架.md` 维护一次**，`架构.md` 只引用不复制。
+
+
+
+# 进度
+
+26-9-22
+
+模型grok，暂时在测试基于pi的deepseekv4.1针对CTF pwn-heap题的记忆库的训练，仅仅是一个小demo，用于验证idea的可行性
+
+目前的demo具备的能力：简易的记忆能力，经验使用能力。
+
+26-9-23
+
+模型dsv4.1flash，依旧测试记忆和经验对模型的提升作用，优化了提取的部分，但是依旧存在一些问题，经验对模型的提升作用貌似并不大，原本800+秒出题，现几乎相差无几。但是似乎消耗在一些临时测试，比如测试calloc的时代性。莫非是数据量不够？或者我的算法不够强？需要注意的是貌似模型开始堆屎山，开始叠加。我应该规范模型写代码和文档的格式，不允许屎山堆叠。我似乎需要找到一个合适的格式用于存储知识库或者经验，技巧。
+
+
+
+
+
+## 触发机制重建（26-9-23）
+
+原来的触发方式是「相似度 → 点亮格子」，条件写成自然语言再用正则反解析。文献上这条路的
+问题已经被指出：
+
+- **同族风险**（[Right Family, Wrong Skill, arXiv:2606.10388](https://arxiv.org/abs/2606.10388)）：
+  高 recall 必然伴随约 1/3 的有害同族暴露（HSR@3 0.346–0.372）。光靠相似度分不出
+  「同一能力族里的有害兄弟」。
+- **介入必须是一等公民**（[Remember When It Matters, arXiv:2607.08716](https://arxiv.org/abs/2607.08716)）：
+  记忆是 *intervention policy*，空动作 `<no_intervention/>` 必须是显式决策；消融显示
+  选择性介入 > 被动暴露 > 总是注入 > 通用检索。
+- **瓶颈在装配不在存储**（[Don't Ask the LLM to Track Freshness, arXiv:2606.01435](https://ar5iv.labs.arxiv.org/html/2606.01435)）：
+  让 LLM 生成结构、再用正则在运行时把结构丢掉，是当前最大的浪费。
+- **ACT-R 是三阶的**：`A = B + S − P·M`。原来只用了前两项，缺的正是
+  「条件不完全匹配时该扣多少分」，于是只能全有或全无。
+
+现在的实现：
+
+| 机制 | 位置 |
+|---|---|
+| 结构化指纹（版本锚定解析，`ubuntu 18.04` → `glibc 2.27`） | `aegis/fingerprint.py` |
+| 谓词求值：`requires`（硬门槛）/ `forbids`（硬否决）/ `optional`（软扣分） | `aegis/predicate.py` |
+| 三项激活 + 证据分级（flag / local / wiki） | `aegis/activate.py` |
+| 三态介入（SILENT / REMIND / FORBID）+ 五个触发点 | `aegis/intervene.py` |
+| 确定性层之上的 LLM 介入层（只决定时机与措辞，不能新增条目） | `aegis/intervene.py:_llm_refine` |
+| CTF Wiki 作为**可查询知识库**（pull，不自动注入） | `aegis/wiki.py`, `aegis kb` |
+| 旧格子迁移（149 条，含 OFF 格的失败条件极性） | `aegis/migrate.py` |
+| role-flip 回归测试 | `tests/test_roleflip.py` |
+
+### 关于 21% 这个数字
+
+之前 README 写「速度提升 21%（865.8s → 683.1s）」。**这个结论不成立，已撤回。**
+
+那两次是**同一题（pwn_1）的第 1 次和第 2 次**，n=1 对 n=1，且第 2 次的 `stuck` 记录写着
+「I/O 语义修好之后一次就过」—— 模型记得自己上次的解法。全部 8 次运行：
+
+| 运行 | 题目 | 耗时 | 状态 | verified |
+|---|---|---|---|---|
+| T001918 | pwn_1 | 865.8s | solved | — |
+| T084949 | pwn_1 | 683.1s | solved | — |
+| T094144 | pwn_2 | 1890.4s | solved | — |
+| T095133 | pwn_2 | 523.7s | **failed** | — |
+| T100229 | pwn_2 | 315.5s | solved | — |
+| T114204 | pwn_1 | 1059.3s | solved | local |
+| T122052 | pwn_2 | 3632.0s | solved | local |
+| T215359 | pwn_1 | 970.9s | solved | local |
+
+换到跨题（pwn_1 → pwn_2 的经验迁移）：1890s → 3632s，**慢了 92%**。pwn_1 第 3 次
+（1059.3s）比第 1 次（865.8s）也慢。8 次里只有 2 次跑了远程，其余是 `verified=local`。
+
+**目前没有证据表明经验提升了效率。** 要测「经验促进」，需要 pwn_1/pwn_2 交替、记录
+atlas 快照与耗时、n≥3 的对照实验，且不能把「本题上次的 WP」算进经验。
+
+### 执行通道（26-9-23）
+
+主力改为**远程 x86 主机**（原生执行，工具最全），本地 docker 降为兜底：
+
+| 通道 | 说明 |
+|---|---|
+| `remote` **默认** | `hack@100.110.69.75`（与 `~/.local/bin/hack` 一致），Ubuntu 26.04 原生 x86_64 / glibc 2.43。pwntools 4.15 / one_gadget / ropper / radare2 |
+| `container` | 本地 docker，Colima QEMU 模拟，慢 5–10 倍且缺工具 |
+
+实测同一命令的耗时：
+
+| 命令 | 容器（QEMU） | 远程（原生） |
+|---|---|---|
+| `readelf -hW` | 0.73s | **0.56s** |
+| `ROPgadget` 全量 | ≈70s | **1.25s** |
+
+**关键设计：远程脚本走 stdin，不走 argv。** 原来的实现把命令拼成一个字符串，
+穿过 `ssh → zsh → bash -lc → venv → timeout` 五层引号，每层都可能吃掉一层转义
+（`command -v ctf` 曾因此返回 rc=1 且无输出）。现在用 `ssh <host> bash -s` 把整段脚本
+喂到 stdin，引号、管道、多行、heredoc 全部原样到达。
+
+其他改动：
+- `aegis start` 走通道抽象，推送后自动清掉远程多余文件（上一轮 exploit 不会残留）
+- 自动恢复 ELF 的可执行位（题目入库时没有 +x，否则每个 exp 都要自己 chmod）
+- 过滤 macOS 的 `._*` AppleDouble，否则远程永远"不同步"、每次全量重推
+
+### 现在能测的东西
+
+```bash
+uv run aegis migrate --dry-run     # 看旧格子怎么被结构化
+uv run aegis explain --top 12      # 每条格子为什么亮/不亮，含 hsr@k
+uv run aegis kb "tcache poisoning" # 查知识库（知识，不是经验）
+uv run aegis intervene --trigger observe --json
+uv run python tests/test_roleflip.py   # 19 项，含 role-flip 与冷启动回归
+```
+
+`hsr@k`（有害同族率）在**门控之前**测量：如果它恒为 0，说明相似度排序在替谓词干活、
+recall 正在被浪费。当前 pwn_2 上是 0.333。
+
+---
+
+经验利用太粗糙，

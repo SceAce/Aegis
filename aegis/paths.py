@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,10 +14,41 @@ EPISODES_PATH = AEGIS_DIR / "episodes.jsonl"
 ATLAS_PATH = AEGIS_DIR / "atlas.json"
 SEARCH_PATH = AEGIS_DIR / "search.json"
 ISSUES_PATH = AEGIS_DIR / "issues.jsonl"
-TMP_SYNC = Path.home() / "Tmp" / "aegis"
+LESSONS_PATH = AEGIS_DIR / "lessons.json"
+RAW_DIR = ROOT / "raw"
+WIKI_DIR = RAW_DIR / "ctf-wiki"
+WIKI_DONE_PATH = AEGIS_DIR / "wiki_done.json"
+
+# Legacy mirror for the local docker channel. Kept so the container path still
+# works, but the remote host is the primary channel (see REMOTE_* below).
+TMP_SYNC = Path(os.environ.get("AEGIS_SYNC_DIR") or (Path.home() / "Tmp" / "aegis"))
+CONTAINER = "pwn"
+SYNC_MOUNT = os.environ.get("AEGIS_SYNC_MOUNT", "/work/aegis")
+
+# ---- primary channel: the remote x86_64 host -------------------------------
+#
+# Runs native x86_64 (no QEMU emulation) and carries the fuller toolchain:
+# one_gadget, radare2, glibc-all-in-one, IDA, and pwntools 4.15 in ~/tools/CTF.
+# Reached with `hack.sh`, i.e. sshpass + a password.
+#
+# Two environment quirks that shape the code:
+#   * The login shell is zsh, which is NOT POSIX-compatible (`X=1`, `if`, `for`
+#     and heredocs all differ). Every call must go through `bash -lc`.
+#   * sshpass needs a pty, which some sandboxes deny. ssh_argv() therefore
+#     falls back to SSH_ASKPASS, which needs no pty.
+# Address must match ~/.local/bin/hack, which is the thing that actually reaches
+# the host. It used to be 172.168.10.152; that address now times out, so every
+# probe fell back to the container and silently changed the target's libc.
+REMOTE_HOST = os.environ.get("AEGIS_REMOTE", "100.110.69.75")
+REMOTE_USER = os.environ.get("AEGIS_REMOTE_USER", "hack")
+REMOTE_PASS = os.environ.get("AEGIS_REMOTE_PASS", "hack")
+REMOTE_WORKDIR = os.environ.get("AEGIS_REMOTE_WORKDIR", "~/Tmp/aegis/{challenge}")
+REMOTE_VENV = os.environ.get("AEGIS_REMOTE_VENV", "~/tools/CTF")
+REMOTE_PORT = int(os.environ.get("AEGIS_REMOTE_PORT", "22"))
+
+# Where the interactive pi session is launched from (legacy docker flow).
 PI_SCRIPT = Path.home() / "My_github" / "pi" / "pi-test.sh"
 PWN_START = Path.home() / "Tools" / "pwn" / "start.sh"
-CONTAINER = "pwn"
 
 FORBIDDEN_READ_NAMES = {
     "架构.md",
@@ -30,10 +62,22 @@ FORBIDDEN_PREFIXES = (
 )
 
 
+def run_state_path(challenge: str) -> Path:
+    return AEGIS_DIR / f"run-{challenge}.json"
+
+
 def ensure_dirs() -> None:
     AEGIS_DIR.mkdir(parents=True, exist_ok=True)
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    TMP_SYNC.mkdir(parents=True, exist_ok=True)
+    # TMP_SYNC is the *container* channel's mirror root. The remote (ssh) channel
+    # never reads or writes it, so failing to create it must not take down a
+    # remote run — that coupling made `aegis start` abort on a remote-only host
+    # whose home is not writable, with a traceback that named the wrong channel.
+    # The container path checks writability itself and reports its own reason.
+    try:
+        TMP_SYNC.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 
 def challenge_dir(name: str) -> Path:

@@ -1,34 +1,49 @@
-# Aegis RAM — 基础工具（当前热路径）
+# Aegis RAM — 执行环境清单
 
-容器名 `pwn`，工作目录在容器内是 `/work/aegis/<题名>/`（与宿主机 `test/<题名>/` 同步）。
-容器登录 shell 是 fish，**调用一律 bash**：
+> 这里是**有什么**。
+> **怎么用、按什么顺序用、哪里容易翻车** → 见 `manual/<题>/EXPERIENCE.md`。
 
-```bash
-docker exec pwn bash -lc '<命令>'
-docker exec -i pwn bash -s < script.sh
+## 执行通道
+
+**你不需要、也不允许自己连远端或进容器。** 命令原样交给 `aegis_pwn`：
+
+```
+aegis_pwn("checksec --file=./pwn")
 ```
 
-关颜色拿结构输出：`NO_COLOR=1`。每条运行类命令加 timeout。
+harness 自动完成：选通道 → 同步题目文件 → 加载登录环境（venv / PATH / pwntools）
+→ 套 timeout → 捕获输出。引号、管道、多行、`heredoc` 都能用，不用自己转义。
 
-## 允许（先用这些）
+- **工作目录就是题目目录**，`./pwn` 这种相对路径直接写
+- **禁止** `ssh` / `scp` / `docker exec` 到通道端点（工具层会 REFUSED）——
+  绕过去就没有文件同步、没有环境、没有超时。
+  **ssh 型的 CTF 题目本身不受影响**，`ssh user@challenge.host` 照常可用
+- 看当前通道与工具：`aegis env --probe`（启动时已经给过一次）
+- 强制换通道：`aegis_pwn(..., channel="container")`
 
-| 目的 | 命令 |
+| 通道 | 说明 |
 |---|---|
-| 文件类型 | `file ./chall` |
-| 串 | `strings -n 5 ./chall` |
-| 保护 | `checksec file ./chall --no-banner --color never -o json` |
-| 头/段 | `readelf -hW ./chall`；`objdump -d ./chall` 只看入口附近，禁止一上来全表 |
-| 跑 | `pwnx run ./chall`（自带超时）或 `timeout 10 ./chall` |
-| 信息 | `pwnx info ./chall` |
-| gadget | `pwnx gadgets ./chall --grep "..." --first` — 不要对整个 libc 扫 ROPgadget |
-| 调试 | `NO_COLOR=1 gdb -q -batch -ex "..." -ex quit ./chall` |
-| 脚本 | 写 `exp.py`，`timeout` 必填 |
+| `remote` **默认** | 原生 x86_64，工具最全 |
+| `container` | 本地 docker，QEMU 模拟，慢 5–10 倍且缺工具；远端不可达时才用 |
 
-优先用 `aegis_pwn`，它会先把当前题同步进容器再执行。
+## 远端已装好的工具
 
-## 禁止（demo）
+登录环境已自动加载，直接用：
 
-- IDA / Ghidra / Binary Ninja
-- `kb` 知识库（那是论文+WP 倾倒）
-- 无超时的交互（`p.interactive()`、裸 gdb）
-- 在宿主机上直接执行 x86 二进制
+| 用途 | 命令 |
+|---|---|
+| 保护 | `checksec --file=./pwn` |
+| 类型 / 串 | `file ./pwn`；`strings -n 5 ./pwn` |
+| 头 / 段 | `readelf -hW ./pwn`；`objdump -d --start-address=... --stop-address=... ./pwn` |
+| 符号 | `readelf -sW ./pwn`；libc 符号用 `readelf -sW /lib/x86_64-linux-gnu/libc.so.6 \| grep ' system$'` |
+| gadget | `ROPgadget --binary ./pwn \| grep "pop rdi"`；`ropper --file ./pwn --search "pop rdi"` |
+| one-gadget | `one_gadget /lib/x86_64-linux-gnu/libc.so.6` |
+| seccomp | `seccomp-tools dump ./pwn` |
+| libc / 依赖 | `pwninit`（取 libc、补依赖、生成模板）；`patchelf`（手工 patch） |
+| 调试器 | `gdb` 默认已加载 pwndbg（另有 gef / peda / plain） |
+| 反汇编 | `radare2` / `r2` |
+| 其它 | `pwntools`（已装）、`ctf`（venv）、`proxy_start` / `proxy_stop`（要访问 GitHub 时） |
+
+**libc 上禁止 `objdump` / `gdb` / `ROPgadget`** —— 用 `readelf -sW` 拿符号就够。
+
+**不要用 `command -v` / `which` 探测工具** —— 有什么已经告诉你了。

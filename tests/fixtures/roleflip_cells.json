@@ -1,0 +1,619 @@
+{
+ "note": "Frozen snapshot of the pwn_1/pwn_2 role-flip cells, plus a few real wiki reference cells. The live atlas is cleared between experiment rounds, so tests must not read it: this file is the test's data, the atlas is the user's accumulated memory.",
+ "frozen_at": "2026-09-24",
+ "provenance": "Own cells reconstructed verbatim from a full dump of .aegis/atlas.json taken 2026-09-24 before the memory store was cleared. The ASLR-off cell is included on purpose: it is a recorded false positive (a chain that only reproduced with ASLR disabled) and is kept as a negative sample.",
+ "cells": [
+  {
+   "technique": "adjacent tcache next XOR -> heap leak",
+   "state": "on",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.44",
+    "alloc": [
+     "tcache_key_random"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "tcache poison _IO_list_all -> fake FILE",
+   "state": "on",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.44",
+    "alloc": [
+     "calloc",
+     "tcache"
+    ]
+   },
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "House of Apple 2 wide_vtable __doallocate=system",
+   "state": "on",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.44",
+    "hooks": "dead",
+    "exit": "flush"
+   },
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "short-read size loop -> heap overflow",
+   "state": "on",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_2",
+   "requires": {
+    "glibc": "=2.27"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": [
+    "no_free"
+   ]
+  },
+  {
+   "technique": "thread arena exhaustion -> new heap below arena",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {
+    "glibc": "=2.27",
+    "arena": "thread"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "overflow into thread arena -> fastbin poison",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {
+    "glibc": "=2.27",
+    "arena": "thread"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "local exploit chain validated under ASLR-off -> addresses stable across runs",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "arbitrary-size fill -> heap overflow into adjacent chunk header",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": ">=2.34"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": [
+    "tcache"
+   ]
+  },
+  {
+   "technique": "forged size field -> consolidate/absorb neighbouring chunk for libc leak",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": ">=2.34"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": [
+    "unsorted_bin"
+   ]
+  },
+  {
+   "technique": "tcache poison -> arbitrary write without hooks",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": ">=2.34",
+    "hooks": "dead"
+   },
+   "forbids": [
+    "safe_linking"
+   ],
+   "forbids_version": {},
+   "optional": [
+    "tcache"
+   ]
+  },
+  {
+   "technique": "restore overwritten libc bytes then set __free_hook = system -> free('/bin/sh')",
+   "state": "on",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.27",
+    "hooks": "alive"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "__free_hook/__malloc_hook overwrite",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {
+    "glibc": ">=2.34"
+   },
+   "optional": []
+  },
+  {
+   "technique": "unsorted bin / FSOP via _IO_list_all",
+   "state": "off",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_2",
+   "requires": {},
+   "forbids": [
+    "exit_flush",
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "overflow top chunk -> House of Orange",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {
+    "exit": "group",
+    "arena": "thread"
+   },
+   "forbids": [
+    "exit_flush"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "House of Force to libc",
+   "state": "off",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_2",
+   "requires": {
+    "arena": "thread"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "unlink arbitrary write",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {
+    "glibc": "=2.27"
+   },
+   "optional": [
+    "unlink"
+   ]
+  },
+  {
+   "technique": "overlapping chunk over unsorted bin -> leak main_arena via fd",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "alloc": [
+     "unsorted_bin"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {
+    "glibc": "=2.44"
+   },
+   "optional": []
+  },
+  {
+   "technique": "safe-linked tcache next leak -> recover absolute heap base",
+   "state": "off",
+   "evidence": "local",
+   "n": 2,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": ">=2.34"
+   },
+   "forbids": [],
+   "forbids_version": {
+    "glibc": "=2.44"
+   },
+   "optional": [
+    "safe_linking",
+    "tcache_key_random"
+   ]
+  },
+  {
+   "technique": "tcache poison -> overwrite _IO_2_1_stderr_ FILE struct",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "hooks": "dead"
+   },
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {
+    "glibc": "=2.44"
+   },
+   "optional": []
+  },
+  {
+   "technique": "fake FILE placed in libc near _IO_list_all -> strtol crash on next menu read",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {},
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {
+    "glibc": "=2.44"
+   },
+   "optional": []
+  },
+  {
+   "technique": "short-read loop with full-size request -> heap overflow past chunk end",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {},
+   "optional": [
+    "no_free"
+   ]
+  },
+  {
+   "technique": "set av->top to BSS to redirect allocations",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_2",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {
+    "glibc": "=2.27"
+   },
+   "optional": []
+  },
+  {
+   "technique": "tcache safe-link poison -> arbitrary write",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "alloc": [
+     "safe_linking",
+     "tcache"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "_IO_list_all overwrite with fake FILE -> House of Apple 2 via _IO_wfile_jumps",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "hooks": "dead"
+   },
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "fake FILE._lock must point to writable zeroed memory",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "exit": "flush"
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "command string must leave _IO_NO_WRITES/_IO_UNBUFFERED flag bits clear",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {},
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "FSOP via _IO_list_all / stderr FILE struct",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": ">=2.34",
+    "hooks": "dead"
+   },
+   "forbids": [
+    "exit_group"
+   ],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "full RELRO + PIE + canary + NX binary -> no GOT overwrite, need leak then ROP",
+   "state": "off",
+   "evidence": "none",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {},
+   "forbids": [],
+   "forbids_version": {},
+   "optional": [
+    "tcache",
+    "unsorted_bin"
+   ]
+  },
+  {
+   "technique": "calloc consumes tcache bins to satisfy an allocation",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.27",
+    "alloc": [
+     "calloc",
+     "tcache"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "tcache poisoning -> allocate freed chunk from tcache",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.27",
+    "alloc": [
+     "tcache",
+     "calloc"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "poison __malloc_hook -> trigger on next allocation",
+   "state": "off",
+   "evidence": "local",
+   "n": 1,
+   "source": "pwn_1",
+   "requires": {
+    "glibc": "=2.27",
+    "hooks": "alive",
+    "alloc": [
+     "calloc"
+    ]
+   },
+   "forbids": [],
+   "forbids_version": {},
+   "optional": []
+  },
+  {
+   "technique": "sbrk/brk -> grow/shrink main heap contiguously",
+   "condition": "main arena allocation path",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-overview.md",
+   "updated": "2026-09-22T21:30:47+08:00",
+   "schema": 2,
+   "requires": {
+    "arena": "main"
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "main arena allocation path"
+  },
+  {
+   "technique": "merge physically adjacent free chunks -> coalesce via prev_size and size",
+   "condition": "both neighbors are free and not in fastbins",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-structure.md",
+   "updated": "2026-09-22T21:30:50+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "both neighbors are free and not in fastbins"
+  },
+  {
+   "technique": "treat fastbin chunk as allocated -> avoid immediate coalescing",
+   "condition": "chunk is in a fastbin",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-structure.md",
+   "updated": "2026-09-22T21:30:50+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "chunk is in a fastbin"
+  },
+  {
+   "technique": "leak heap/libc data from calloc-allocated chunk",
+   "condition": "allocation performed by calloc which zeroes memory",
+   "state": "off",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heapoverflow-basic.md",
+   "updated": "2026-09-22T21:30:53+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "calloc"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "allocation performed by calloc which zeroes memory"
+  },
+  {
+   "technique": "fastbin double free -> overlapping allocations",
+   "condition": "glibc fastbin free only checks head chunk for double free",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/fastbin-attack.md",
+   "updated": "2026-09-22T21:31:05+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "glibc fastbin free only checks head chunk for double free"
+  },
+  {
+   "technique": "fastbin double free -> arbitrary address allocation",
+   "condition": "attacker can control fd of a freed fastbin chunk",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/fastbin-attack.md",
+   "updated": "2026-09-22T21:31:05+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "attacker can control fd of a freed fastbin chunk"
+  },
+  {
+   "technique": "fastbin double free -> arbitrary address allocation",
+   "condition": "fake chunk size field matches fastbin size class",
+   "state": "on",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/fastbin-attack.md",
+   "updated": "2026-09-22T21:31:05+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "fake chunk size field matches fastbin size class"
+  },
+  {
+   "technique": "fastbin double free -> arbitrary address allocation",
+   "condition": "fake chunk size field does not match fastbin size class",
+   "state": "off",
+   "n": 1,
+   "source": "ctf-wiki:docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/fastbin-attack.md",
+   "updated": "2026-09-22T21:31:05+08:00",
+   "schema": 2,
+   "requires": {
+    "alloc": [
+     "fastbin"
+    ]
+   },
+   "forbids": [],
+   "optional": [],
+   "evidence": "wiki",
+   "legacy_condition": "fake chunk size field does not match fastbin size class"
+  }
+ ]
+}

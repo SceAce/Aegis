@@ -1,6 +1,7 @@
 # Local experiment state — never push
 .aegis/
 runs/
+raw/
 
 # Python
 .venv/
