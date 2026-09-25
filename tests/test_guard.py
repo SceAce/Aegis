@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aegis.guard import refuse_reason  # noqa: E402
+from aegis.policy.guard import refuse_reason  # noqa: E402
 
 # (command, should_be_refused, expected_key_or_None)
 CASES: list[tuple[str, bool, str | None]] = [
@@ -142,7 +142,7 @@ def test_other_challenge_covers_every_channel_path():
     was ALLOWED — so one run could read another run's exploit.
     """
     from aegis.paths import REMOTE_USER
-    from aegis.store import save_current
+    from aegis.storage.store import save_current
 
     save_current({"challenge": "pwn_1", "kind": "pwn"})
     foreign = [
@@ -164,7 +164,7 @@ def test_own_challenge_is_allowed_on_every_path():
     current challenge looked foreign and its own directory was refused.
     """
     from aegis.paths import REMOTE_USER
-    from aegis.store import save_current
+    from aegis.storage.store import save_current
 
     save_current({"challenge": "pwn_1", "kind": "pwn"})
     own = [

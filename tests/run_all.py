@@ -7,12 +7,16 @@ instead of reporting which one hung — which is itself the failure we care abou
 from __future__ import annotations
 
 import importlib.util
+import os
 import signal
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MODULES = [
+    "test_observer.py",
+    "test_blackboard.py",
     "test_integrity.py",
     "test_guard.py",
     "test_channel.py",
@@ -41,6 +45,16 @@ def _alarm(_sig, _frm):
 
 
 def main() -> int:
+    # Isolate state BEFORE any test module imports aegis.paths.
+    #
+    # Regression: test_guard / test_session call `save_current({"challenge":
+    # "pwn_1", ...})`, which used to write the operator's real `.aegis/`. A test
+    # run during an experiment round silently reset that round's current.json,
+    # discarding t0/hints/observations — so verifying the code destroyed the
+    # data. The suite now runs against a throwaway dir.
+    _state = tempfile.TemporaryDirectory(prefix="aegis-test-state-")
+    os.environ["AEGIS_STATE_DIR"] = _state.name
+
     total = failed = 0
     have_alarm = hasattr(signal, "SIGALRM")
     if have_alarm:

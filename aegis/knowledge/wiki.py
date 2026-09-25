@@ -31,9 +31,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from aegis.fingerprint import KNOWN_TAGS, Fingerprint
+from aegis.core.fingerprint import KNOWN_TAGS, Fingerprint
 from aegis.paths import AEGIS_DIR, WIKI_DIR, WIKI_DONE_PATH, ensure_dirs
-from aegis.store import ATOMIC_TAGS, append_issue, now_iso, save_lesson
+from aegis.storage.store import ATOMIC_TAGS, append_issue, now_iso, save_lesson
 
 WIKI_REPO = "https://github.com/ctf-wiki/ctf-wiki.git"
 WIKI_SPARSE = ["docs/zh/docs/pwn/linux/user-mode/heap"]
@@ -119,7 +119,7 @@ def _matches_world(item: dict[str, Any], fp: Fingerprint) -> bool:
     req = item.get("requires") or {}
     g = req.get("glibc")
     if g and fp.glibc is not None:
-        from aegis.predicate import _ver_ok  # single implementation
+        from aegis.core.predicate import _ver_ok  # single implementation
 
         specs = g if isinstance(g, (list, tuple)) else [g]
         if not any(_ver_ok(fp.glibc, str(s)) for s in specs):
@@ -132,7 +132,7 @@ def _matches_world(item: dict[str, Any], fp: Fingerprint) -> bool:
 
 def _wiki_items() -> list[dict[str, Any]]:
     """All wiki-sourced items from the atlas."""
-    from aegis.store import load_atlas
+    from aegis.storage.store import load_atlas
 
     out = []
     for c in load_atlas().get("cells") or []:
@@ -258,7 +258,7 @@ def compile_page(path: Path) -> dict[str, Any]:
         req = it.get("requires") if isinstance(it.get("requires"), dict) else {}
         req = {k: v for k, v in req.items() if v not in (None, "", [], {})}
         if "glibc" in req:
-            from aegis.predicate import normalize_ver_spec
+            from aegis.core.predicate import normalize_ver_spec
 
             spec = req["glibc"]
             spec = normalize_ver_spec(spec) if not isinstance(spec, (list, tuple)) else None
@@ -297,7 +297,7 @@ def compile_page(path: Path) -> dict[str, Any]:
 
 
 def _upsert_wiki(cells: list[dict[str, Any]], source: str) -> None:
-    from aegis.store import load_atlas, save_atlas
+    from aegis.storage.store import load_atlas, save_atlas
 
     atlas = load_atlas()
     existing = {(str(c.get("technique")), str(c.get("source"))) for c in atlas.get("cells") or []}

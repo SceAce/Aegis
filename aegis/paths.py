@@ -4,7 +4,16 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-AEGIS_DIR = ROOT / ".aegis"
+# State dir. `AEGIS_STATE_DIR` exists so the regression suite can point at a
+# throwaway directory. Without it, tests called `save_current()` against the
+# REAL `.aegis/`, overwriting `current.json` — and with it `t0`, `hints` and
+# `observations` — of whatever experiment round was running. Running the suite
+# mid-run destroyed that round's timing, which is the only measurement we have.
+AEGIS_DIR = (
+    Path(os.environ["AEGIS_STATE_DIR"])
+    if os.environ.get("AEGIS_STATE_DIR")
+    else (ROOT / ".aegis")
+)
 RUNS_DIR = ROOT / "runs"
 TEST_DIR = ROOT / "test"
 ROM_PATH = ROOT / "rom" / "ROM.md"

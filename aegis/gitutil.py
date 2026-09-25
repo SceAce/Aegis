@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 
 from aegis.paths import ROOT, challenge_dir
-from aegis.store import append_issue
+from aegis.storage.store import append_issue
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:

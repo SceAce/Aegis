@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from aegis.fingerprint import Fingerprint
+from aegis.core.fingerprint import Fingerprint
 
 _VER = re.compile(r"^(>=|<=|!=|>|<|=)?\s*(\d+)\.(\d+)$")
 

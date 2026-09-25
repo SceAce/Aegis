@@ -63,10 +63,13 @@ function isForbidden(abs: string): string | null {
 		return `blocked path: ${n}`;
 	}
 	const base = n.split("/").pop() ?? n;
-	if (
-		["架构.md", "框架.md", "README.md", "Deepseek_AGENTS.md", "DEMO.md", "HANDOFF.md"].includes(base)
-	) {
+	if (["架构.md", "框架.md", "README.md", "Deepseek_AGENTS.md"].includes(base)) {
 		return `blocked doc: ${base}`;
+	}
+	// Our pi fork. It is a vendored dependency with its own git; a run reading or
+	// editing it could read the observer that is recording it.
+	if (n === "vendor" || n.startsWith("vendor/")) {
+		return `blocked path: ${n}`;
 	}
 	const cur = currentChallenge();
 	if (n.startsWith("test/")) {
@@ -344,7 +347,10 @@ export default function (pi: ExtensionAPI) {
 		name: "aegis_finish",
 		label: "Aegis Finish",
 		description:
-			"End the current challenge. Pass an honest one-line chain and where time was spent. The harness automatically abstracts problems/solutions into RAM — do not write the experience library yourself.",
+			"End the current challenge. Pass an honest one-line chain and where time was spent. " +
+			"You do NOT write memory and you do NOT declare success: the Observer records what " +
+			"happened from the event stream, and the blackboard's requirement/stage task decides " +
+			"whether it counted. Read the board first (aegis_board action=read).",
 		parameters: Type.Object({
 			status: Type.String({ description: "solved | failed" }),
 			chain: Type.String({ description: "One-line method chain" }),
@@ -353,7 +359,9 @@ export default function (pi: ExtensionAPI) {
 			verified: Type.Optional(
 				Type.String({
 					description:
-						"'flag' only if you actually obtained the flag from the real/remote target; 'local' if it only ran locally; 'none' if it never worked. Cells from a non-flag run are stored OFF.",
+						"ADVISORY ONLY, recorded as a claim and not authoritative. 'flag' if you believe " +
+						"you obtained the real/remote outcome; 'local' if it only ran locally; 'none' if it " +
+						"never worked. Whether it counted is decided against the board, not by this field.",
 				}),
 			),
 		}),

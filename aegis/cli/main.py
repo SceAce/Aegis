@@ -9,13 +9,13 @@ import subprocess
 import sys
 import time
 
-from aegis.compile import compile_from_store, compile_run
-from aegis.dockerutil import discover
-from aegis.dockerutil import pick as pick_channel
-from aegis.dockerutil import probe_tools, push_to_remote, pwn_exec, sync_to_container
-from aegis.guard import refuse_reason
+from aegis.storage.compile import compile_from_store, compile_run
+from aegis.channel.dockerutil import discover
+from aegis.channel.dockerutil import pick as pick_channel
+from aegis.channel.dockerutil import probe_tools, push_to_remote, pwn_exec, sync_to_container
+from aegis.policy.guard import refuse_reason
 from aegis.gitutil import restore_challenge
-from aegis.intervene import Kind, decide, render
+from aegis.policy.intervene import Kind, decide, render
 from aegis.paths import (
     CONTAINER,
     PI_SCRIPT,
@@ -27,7 +27,7 @@ from aegis.paths import (
     infer_kind,
     list_challenges,
 )
-from aegis.store import (
+from aegis.storage.store import (
     _portable_technique,
     active_denies,
     add_observation,
@@ -41,7 +41,7 @@ from aegis.store import (
     ram_blob,
     save_current,
 )
-from aegis.writeup import list_writeups, write_writeup
+from aegis.storage.writeup import list_writeups, write_writeup
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,6 +126,36 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_obs.add_argument("--kind", default="observe")
 
+    p_observer = sub.add_parser(
+        "observer",
+        help="Observer: read worker logs -> events / memory / experience (never LLM-written)",
+    )
+    p_observer.add_argument(
+        "view",
+        choices=["events", "memory", "experience", "criterion"],
+        default="experience",
+        nargs="?",
+    )
+    p_observer.add_argument("--session", default="", help="single session .jsonl (default: all for this cwd)")
+    p_observer.add_argument("--root", default="", help="sessions root override (tests)")
+    p_observer.add_argument("--need", default="", help="criterion: user requirement marker")
+    p_observer.add_argument("--next", default="", help="criterion: next-stage goal marker")
+    p_observer.add_argument("--limit", type=int, default=40)
+    p_observer.add_argument("--json", action="store_true")
+
+    p_board = sub.add_parser(
+        "board",
+        help="Read the shared blackboard (the Observer is its only writer)",
+    )
+    p_board.add_argument("--json", action="store_true")
+
+    p_need = sub.add_parser(
+        "need",
+        help="Record a USER requirement on the blackboard (external standard, not the producer's)",
+    )
+    p_need.add_argument("text")
+    p_need.add_argument("--marker", default="", help="Literal a later step can check for")
+
     p_compile = sub.add_parser("compile", help="Re-run automatic experience compile for a challenge")
     p_compile.add_argument("challenge")
 
@@ -157,10 +187,6 @@ def main(argv: list[str] | None = None) -> int:
     p_expl = sub.add_parser("explain", help="Why did (or didn't) a cell activate? Reads status.json")
     p_expl.add_argument("--tau", type=float, default=None)
     p_expl.add_argument("--top", type=int, default=12)
-
-    p_mig = sub.add_parser("migrate", help="Convert schema-1 atlas cells to structured predicates")
-    p_mig.add_argument("--dry-run", action="store_true")
-    p_mig.add_argument("--no-llm", action="store_true", help="Skip the LLM residue pass")
 
     p_shell = sub.add_parser(
         "shell",
@@ -202,6 +228,11 @@ def main(argv: list[str] | None = None) -> int:
         "run": lambda: cmd_run(args.challenge, args.timeout, args.hint),
         "hint": lambda: cmd_hint(args.text),
         "observe": lambda: cmd_observe(args.text, args.tag, args.kind),
+        "observer": lambda: cmd_observer(
+            args.view, args.session, args.root, args.need, args.next, args.limit, args.json
+        ),
+        "board": lambda: cmd_board(args.json),
+        "need": lambda: cmd_need(args.text, args.marker),
         "finish": lambda: cmd_finish(
             args.status, args.chain, args.stuck, args.extra, args.elapsed, args.verified
         ),
@@ -317,7 +348,7 @@ def _detect_challenge_binary(challenge: str, ch) -> str:
     Names are not reliable (pwn_1's is a sha256), so it is detected: the first
     ELF at the top level that is not a shared library.
     """
-    from aegis.dockerutil import pwn_exec
+    from aegis.channel.dockerutil import pwn_exec
 
     probe = (
         "for f in *; do "
@@ -344,7 +375,7 @@ def _bootstrap_challenge(challenge: str, ch) -> str:
     """
     if infer_kind(challenge) != "pwn":
         return ""
-    from aegis.dockerutil import pwn_exec
+    from aegis.channel.dockerutil import pwn_exec
 
     binary = _detect_challenge_binary(challenge, ch)
     if not binary:
@@ -523,7 +554,7 @@ def cmd_observe(text: str, tags: list[str] | None, kind: str) -> int:
     bundle = build_bundle()
     iv = decide(trigger="observe", bundle=bundle, prev_activated=prev)
     bundle["_iv"] = iv.as_row()
-    from aegis.store import _write_json
+    from aegis.storage.store import _write_json
     from aegis.paths import AEGIS_DIR
 
     _write_json(AEGIS_DIR / "activation.json", bundle)
@@ -534,6 +565,137 @@ def cmd_observe(text: str, tags: list[str] | None, kind: str) -> int:
     else:
         print(f"\nintervention: {iv.kind.value.upper()} ({iv.reason})\n")
         print(render(iv))
+    return 0
+
+
+def cmd_board(as_json: bool = False) -> int:
+    """Read the shared blackboard. The Observer is its only writer; this only reads."""
+    import json as _json
+
+    from aegis.blackboard import store as board_store
+    from aegis.paths import AEGIS_DIR
+
+    board = board_store.load(AEGIS_DIR)
+    if as_json:
+        print(_json.dumps(board.to_row(), ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"# 黑板  run={board.run or '-'}  需求={len(board.requirements)}  任务={len(board.tasks)}")
+    for r in board.requirements:
+        mk = f"  marker={r.marker}" if r.marker else ""
+        print(f"  [需求] {r.id}  {r.text}{mk}")
+    for t in board.tasks:
+        parent = f" parent={t.parent}" if t.parent else ""
+        reason = str((t.verdict or {}).get("reason") or "")
+        print(f"  [{t.state}] {t.id}  {t.text}{parent}" + (f"  verdict={reason}" if reason else ""))
+    if not board.requirements and not board.tasks:
+        print("  (空 — 还没有需求/任务)")
+    return 0
+
+
+def cmd_need(text: str, marker: str = "") -> int:
+    """Record a USER requirement.
+
+    Deliberately a human/CLI action: the success standard must come from outside
+    the producer, otherwise the producer can write a standard it always meets —
+    which is exactly how the previous round's self-reported `verified` failed.
+    """
+    from aegis.blackboard import store as board_store
+    from aegis.paths import AEGIS_DIR
+    from aegis.util import now_iso
+
+    board = board_store.load(AEGIS_DIR)
+    requirement = board_store.Requirement(
+        id=f"need-{len(board.requirements) + 1:03d}",
+        text=text,
+        marker=marker,
+        by="user",
+        ts=now_iso(),
+    )
+    board.requirements.append(requirement)
+    board_store.save(AEGIS_DIR, board)
+    suffix = f"  marker={requirement.marker}" if requirement.marker else ""
+    print(f"requirement {requirement.id} recorded: {requirement.text}{suffix}")
+    return 0
+
+
+def cmd_observer(
+    view: str,
+    session: str = "",
+    root: str = "",
+    need: str = "",
+    next_: str = "",
+    limit: int = 40,
+    as_json: bool = False,
+) -> int:
+    """Observer 的唯一入口：读 worker 日志 -> 事件 / 记忆 / 经验。
+
+    这条路径**不调 LLM**：记忆是机械抽取的，经验是机械计数的。
+    所以这里出来的东西不会凭空多出一条。
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from aegis import observer as obs
+
+    cwd = _Path.cwd()
+    root_path = _Path(root) if root else obs.SESSIONS_ROOT
+
+    if session:
+        paths = [_Path(session)]
+    else:
+        paths = obs.discover_sessions(cwd, root_path)
+    if not paths:
+        print(f"no worker session logs found for {cwd}", file=sys.stderr)
+        return 1
+
+    events: list[obs.Event] = []
+    for p in paths:
+        try:
+            events.extend(obs.read_pi_session(p))
+        except RuntimeError as exc:
+            # 格式变了要大声失败，不能按旧格式猜着解析。
+            print(f"observer adapter error: {exc}", file=sys.stderr)
+            return 2
+
+    memory = obs.build_memory(events)
+
+    if view == "events":
+        rows = [e.__dict__ for e in events[:limit]]
+    elif view == "memory":
+        rows = [r.__dict__ for r in memory[:limit]]
+    elif view == "criterion":
+        crit = obs.Criterion(need=need, next=next_)
+        by_session: dict[str, list[obs.Event]] = {}
+        for e in events:
+            by_session.setdefault(e.session, []).append(e)
+        rows = [
+            {"session": s, "reached_at_seq": obs.find_criterion(evs, crit)}
+            for s, evs in sorted(by_session.items())
+        ]
+    else:
+        rows = [e.__dict__ for e in obs.distill(memory)[:limit]]
+
+    if as_json:
+        print(_json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"# Observer — {len(paths)} session(s), {len(events)} events, {len(memory)} memory records")
+    if view == "memory":
+        for r in memory[:limit]:
+            print(f"  [{r.tool}] ok={r.ok} chars={r.out_chars} :: {r.action[:100]}")
+    elif view == "events":
+        for e in events[:limit]:
+            print(f"  {e.seq:>4} {e.kind:<11} {e.tool or '-':<14} {str(e.data)[:80]}")
+    elif view == "criterion":
+        crit = obs.Criterion(need=need, next=next_)
+        print(f"  criterion: {crit.as_row()}")
+        for r in rows:
+            mark = "REACHED" if r["reached_at_seq"] is not None else "-"
+            print(f"  {mark:<8} seq={r['reached_at_seq']}  {r['session']}")
+    else:
+        for e in obs.distill(memory)[:limit]:
+            print(f"  {e.n_ok:>3} ok /{e.n_fail:>3} fail :: {e.action[:100]}")
     return 0
 
 
@@ -595,7 +757,7 @@ def cmd_recall(kind: str) -> int:
 
 
 def cmd_wiki(action: str, limit: int, force: bool) -> int:
-    from aegis.wiki import compile_all, fetch, list_pages
+    from aegis.knowledge.wiki import compile_all, fetch, list_pages
 
     if action == "fetch":
         path = fetch()
@@ -669,7 +831,7 @@ def _integrity_findings(challenge: str):
     False` one line inside the file would sail past it. Scanning the tree is
     what actually closes that gap.
     """
-    from aegis.integrity import scan_tree
+    from aegis.policy.integrity import scan_tree
 
     try:
         return scan_tree(challenge_dir(challenge))
@@ -698,8 +860,8 @@ def _remote_script_findings(challenge: str, ch, command: str):
     mitigation-disabling script run unexamined — the exact hole the integrity
     rules exist to close.
     """
-    from aegis.dockerutil import pwn_exec
-    from aegis.integrity import scan_text
+    from aegis.channel.dockerutil import pwn_exec
+    from aegis.policy.integrity import scan_text
 
     names = _script_names_in(command)
     if not names:
@@ -727,7 +889,7 @@ def _refuse_if_weakened(challenge: str, ch=None, command: str = "") -> bool:
     channel, because a script authored on the channel is invisible to a scan of
     the repo.
     """
-    from aegis.integrity import summarise
+    from aegis.policy.integrity import summarise
 
     found = _integrity_findings(challenge)
     if ch is not None and command:
@@ -748,7 +910,7 @@ def _refuse_if_weakened(challenge: str, ch=None, command: str = "") -> bool:
 
 
 def cmd_pwn(command: str, timeout: int, channel: str = "") -> int:
-    from aegis.dockerutil import pick
+    from aegis.channel.dockerutil import pick
 
     cur = load_current()
     if not cur:
@@ -796,7 +958,7 @@ def cmd_env(probe: bool, as_json: bool) -> int:
     """
     import json as _json
 
-    from aegis.dockerutil import discover, pick, probe_tools
+    from aegis.channel.dockerutil import discover, pick, probe_tools
 
     channels = discover()
     chosen = pick()
@@ -842,7 +1004,7 @@ def cmd_env(probe: bool, as_json: bool) -> int:
 
 
 def cmd_purge() -> int:
-    from aegis.store import load_atlas, save_atlas
+    from aegis.storage.store import load_atlas, save_atlas
 
     atlas = load_atlas()
     keep, drop = [], []
@@ -859,7 +1021,7 @@ def cmd_purge() -> int:
 
 def cmd_kb(query: str, k: int) -> int:
     """Consult the knowledge base. Pull-only, never auto-injected."""
-    from aegis.wiki import lookup, render_lookup
+    from aegis.knowledge.wiki import lookup, render_lookup
 
     fp = current_fingerprint()
     items = lookup(query, fp=fp if fp.observed else None, k=max(1, min(k, 20)))
@@ -888,10 +1050,10 @@ def cmd_intervene(trigger: str, trajectory: str, use_llm: bool, as_json: bool) -
 
 def cmd_explain(tau: float | None, top: int) -> int:
     """Show why each near-threshold cell did or did not activate."""
-    from aegis.activate import fan_counts, score, _tier
-    from aegis.predicate import is_applicable
+    from aegis.policy.activate import fan_counts, score, _tier
+    from aegis.core.predicate import is_applicable
     from aegis.paths import AEGIS_DIR
-    from aegis.store import _atlas_cells, current_fingerprint
+    from aegis.storage.store import _atlas_cells, current_fingerprint
 
     fp = current_fingerprint()
     cells = _atlas_cells()
@@ -934,27 +1096,20 @@ def cmd_explain(tau: float | None, top: int) -> int:
 
 
 def cmd_migrate(dry_run: bool, llm_residue: bool) -> int:
-    from aegis.migrate import migrate_atlas
+    """Removed: schema-1 cells are no longer migrated.
 
-    r = migrate_atlas(dry_run=dry_run, llm_residue=llm_residue)
-    if r.get("error"):
-        print(r["error"], file=sys.stderr)
-        return 1
-    print(f"{'[dry-run] ' if dry_run else ''}migrated {r['migrated']}  skipped {r['skipped']}")
-    print("field coverage: " + ", ".join(f"{k}={v}" for k, v in sorted(r["field_coverage"].items())))
-    print(f"residue (rules could not parse): {r['residue_count']}")
-    if r.get("llm"):
-        print(f"llm residue pass: {r['llm']}")
-    if not dry_run:
-        from aegis.paths import AEGIS_DIR
-
-        print(f"schema-1 backup: {AEGIS_DIR / 'atlas.schema1.json'}")
-    return 0
+    The migration existed to recover structured predicates from prose
+    `condition` strings. That is precisely the parse-prose-to-recover-structure
+    step the Observer design deleted, so keeping it would reintroduce the bug it
+    was a workaround for.
+    """
+    print("migrate was removed; the memory store is rebuilt from observer events", file=sys.stderr)
+    return 2
 
 
 def _needs_sync_for_shell(text: str) -> bool:
     """Only re-sync for commands that read or run local files."""
-    from aegis.dockerutil import _needs_sync
+    from aegis.channel.dockerutil import _needs_sync
 
     return _needs_sync(text) or any(
         k in text for k in ("pdb", "python3 ", "exp", "./", "bash ", "sh ")
@@ -971,7 +1126,7 @@ def cmd_shell(
     it per look. Here the program can be left waiting at a prompt and picked up
     by the next invocation.
     """
-    from aegis.session import get as get_session
+    from aegis.channel.session import get as get_session
 
     cur = load_current()
     if not cur:
@@ -987,7 +1142,7 @@ def cmd_shell(
         return 0
 
     if action == "status":
-        from aegis.session import Session
+        from aegis.channel.session import Session
 
         probe = Session(challenge=challenge, channel=ch)
         live = probe.alive()
@@ -1056,7 +1211,7 @@ def cmd_shell(
         return 2
     # The session must see what the agent just wrote. Without this, a freshly
     # created exp.py is invisible to `python3 -m pdb exp.py` inside the session.
-    from aegis.dockerutil import ensure_synced
+    from aegis.channel.dockerutil import ensure_synced
 
     if _needs_sync_for_shell(text):
         ensure_synced(challenge, ch, text)
@@ -1096,7 +1251,7 @@ def cmd_finish(
     # between the last run and now, so re-check before recording anything.
     findings = _integrity_findings(challenge)
     if findings:
-        from aegis.integrity import summarise
+        from aegis.policy.integrity import summarise
 
         append_issue(
             "weaken_protection",

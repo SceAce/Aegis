@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from aegis.fingerprint import KNOWN_TAGS
-from aegis.guard import DENY_KEYS
+from aegis.core.fingerprint import KNOWN_TAGS
+from aegis.policy.guard import DENY_KEYS
 from aegis.llm import chat_json
 from aegis.paths import infer_kind
-from aegis.store import (
+from aegis.storage.store import (
     ATOMIC_TAGS,
     _portable_technique,
     append_episode,
@@ -303,7 +303,7 @@ def _sanitize(data: dict[str, Any], *, kind: str, verified: str, status: str = "
         req = {k: v for k, v in req.items() if v not in (None, "", [], {})}
         # Same coercion the wiki path applies: models write `glibc==2.26` and
         # `=>=2.31`, and an unnormalised spec silently never matches.
-        from aegis.predicate import normalize_ver_spec
+        from aegis.core.predicate import normalize_ver_spec
 
         if isinstance(req.get("glibc"), str):
             norm = normalize_ver_spec(req["glibc"])

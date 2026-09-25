@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from aegis.paths import RUNS_DIR, ensure_dirs
-from aegis.store import load_issues, now_iso
+from aegis.storage.store import load_issues, now_iso
 
 
 def write_writeup(

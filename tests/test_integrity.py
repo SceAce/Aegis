@@ -25,8 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aegis.guard import refuse_reason  # noqa: E402
-from aegis.integrity import scan_command, scan_text, scan_tree  # noqa: E402
+from aegis.policy.guard import refuse_reason  # noqa: E402
+from aegis.policy.integrity import scan_command, scan_text, scan_tree  # noqa: E402
 
 # --------------------------------------------------------------- detection
 
@@ -162,7 +162,7 @@ def test_none_verification_forces_cell_off():
     _sanitize only demoted on status != solved, so the cell stayed ON and the
     library learned "disable ASLR" as a technique.
     """
-    from aegis.compile import _sanitize
+    from aegis.storage.compile import _sanitize
 
     for verified, status in (("none", "solved"), ("none", "failed")):
         data = _sanitize(
@@ -181,7 +181,7 @@ def test_local_success_still_stays_on():
 
     A genuinely local-only success is weaker evidence, not invalid evidence.
     """
-    from aegis.compile import _sanitize
+    from aegis.storage.compile import _sanitize
 
     data = _sanitize(
         {"cells": [{"technique": "t -> x", "state": "on", "requires": {}}]},
@@ -195,7 +195,7 @@ def test_local_success_still_stays_on():
 
 
 def test_wiki_never_an_instruction():
-    from aegis.compile import _sanitize
+    from aegis.storage.compile import _sanitize
 
     data = _sanitize(
         {"cells": [{"technique": "t -> x", "state": "on", "requires": {}}]},

@@ -47,7 +47,14 @@ ATOMIC_TAGS = frozenset(
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    """Kept re-exported here: many call sites import it from this module.
+
+    The implementation lives in `aegis.util` so layers without a storage
+    dependency (e.g. the blackboard) can timestamp without importing storage.
+    """
+    from aegis.util import now_iso as _now_iso
+
+    return _now_iso()
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -303,7 +310,7 @@ def upsert_search_rule(*, when: str, action: str, target: str, source: str, bump
 
 def _portable_technique(text: str) -> bool:
     """A cell must survive a target change: mechanism level, no raw address."""
-    from aegis.predicate import _parse_ver  # noqa: F401  (kept for API stability)
+    from aegis.core.predicate import _parse_ver  # noqa: F401  (kept for API stability)
     from aegis.util import nonportable
 
     t = text.strip()
@@ -365,7 +372,7 @@ def _cell_cues(cell: dict[str, Any]) -> list[str]:
         if k == "glibc":
             specs = v if isinstance(v, (list, tuple)) else [v]
             for s in specs:
-                from aegis.predicate import _parse_ver
+                from aegis.core.predicate import _parse_ver
 
                 p = _parse_ver(str(s))
                 if p:
@@ -375,10 +382,10 @@ def _cell_cues(cell: dict[str, Any]) -> list[str]:
             out |= {str(x) for x in vals}
         elif k in ("hooks", "exit", "arena"):
             out.add(f"hooks_{v}" if k == "hooks" else (f"exit_{v}" if k == "exit" else f"{v}_arena"))
-    if not out and cell.get("condition"):
-        from aegis.activate_legacy import extract_cues
-
-        out |= extract_cues(str(cell.get("condition")))
+    # No legacy fallback. Schema-1 cells that carry only a prose `condition` are
+    # no longer parsed into cues: recovering structure from prose is exactly the
+    # failure the Observer design removed, and guessing here would reintroduce it
+    # silently.
     return sorted(out)
 
 
@@ -445,7 +452,7 @@ def current_fingerprint():
     challenge's numbers, and this challenge's own past lessons (feeding those
     back is copying the answer key, not transfer).
     """
-    from aegis.fingerprint import parse
+    from aegis.core.fingerprint import parse
 
     cur = load_current() or {}
     texts = [str(h) for h in (cur.get("hints") or [])]
@@ -508,7 +515,7 @@ def active_denies() -> list[str]:
 
 def build_bundle() -> dict[str, Any]:
     """Compute and persist the activated column for the current challenge."""
-    from aegis.activate import activate
+    from aegis.policy.activate import activate
 
     cur = load_current() or {}
     ch = str(cur.get("challenge") or "")

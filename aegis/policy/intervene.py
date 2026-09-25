@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from aegis.fingerprint import Fingerprint
+from aegis.core.fingerprint import Fingerprint
 
 
 class Kind(str, Enum):

@@ -27,10 +27,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aegis.activate import activate, harmful_sibling_rate  # noqa: E402
-from aegis.fingerprint import parse as parse_fp  # noqa: E402
-from aegis.predicate import is_applicable  # noqa: E402
-from aegis.store import _normalise_cell  # noqa: E402
+from aegis.policy.activate import activate, harmful_sibling_rate  # noqa: E402
+from aegis.core.fingerprint import parse as parse_fp  # noqa: E402
+from aegis.core.predicate import is_applicable  # noqa: E402
+from aegis.storage.store import _normalise_cell  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "roleflip_cells.json"
 
@@ -163,7 +163,7 @@ def test_prohibition_reason_names_only_what_fired():
     glibc 2.27. The agent reads these reasons to decide what to avoid, so a
     condition that did not fire is misinformation.
     """
-    from aegis.activate import _fired_conditions
+    from aegis.policy.activate import _fired_conditions
 
     cell = _cell("fake FILE placed in libc near _IO_list_all")
     fv = cell.get("forbids_version") or {}
@@ -186,7 +186,7 @@ def test_condition_rendering_has_no_double_operator():
     Regression: `_cond_from` rendered `f"{k}={v}"`, so a correct stored
     `{"glibc": ">=2.34"}` appeared in every writeup as `glibc=>=2.34`.
     """
-    from aegis.compile import _cond_from
+    from aegis.storage.compile import _cond_from
 
     got = _cond_from({"glibc": ">=2.34", "hooks": "dead"}, ["exit_group"], {"glibc": "=2.44"})
     assert "glibc>=2.34" in got, got
@@ -202,7 +202,7 @@ def test_llm_version_specs_are_normalised():
     did not, so malformed specs could reach the atlas and never match a
     fingerprint.
     """
-    from aegis.predicate import normalize_ver_spec
+    from aegis.core.predicate import normalize_ver_spec
 
     assert normalize_ver_spec("glibc==2.26") == "=2.26"
     assert normalize_ver_spec("=>=2.31") == ">=2.31"
@@ -223,8 +223,8 @@ def test_unconditional_off_cell_is_not_a_prohibition():
     Real setup output was enough to trigger it: `aegis start` runs pwninit,
     whose checksec block is recorded as an observation.
     """
-    from aegis.activate import is_prohibition
-    from aegis.fingerprint import parse
+    from aegis.policy.activate import is_prohibition
+    from aegis.core.fingerprint import parse
 
     unconditional = {
         "technique": "some technique with no stated condition",
@@ -261,7 +261,7 @@ def test_cold_start_forbids_nothing():
 
 def test_cold_intervention_is_not_forbid():
     """The cold-start intervention must be opening measurements, not a veto."""
-    from aegis.intervene import Kind, decide
+    from aegis.policy.intervene import Kind, decide
 
     bundle = activate(
         cells=_cells(),
@@ -318,7 +318,7 @@ def test_prohibition_is_world_specific():
     while on 2.27 the hooks still exist and the cell's failure condition does
     not match — so it must not be forbidden there.
     """
-    from aegis.activate import is_prohibition
+    from aegis.policy.activate import is_prohibition
 
     hook = _cell("__free_hook/__malloc_hook overwrite")
     assert is_prohibition(hook, FP_PWN1)[0] is True, "should be forbidden on 2.44"
@@ -392,7 +392,7 @@ def test_wiki_is_never_a_prohibition():
     routes into the prohibition list. A wiki line about 32-bit MALLOC_ALIGNMENT
     thereby told a 64-bit run "do not do this".
     """
-    from aegis.activate import is_prohibition, score, _tier
+    from aegis.policy.activate import is_prohibition, score, _tier
 
     wiki = {
         "technique": "rely on 8-byte MALLOC_ALIGNMENT on 32-bit glibc",
@@ -417,7 +417,7 @@ def test_prohibition_reason_for_condition_match():
     `condition` — so a cell requiring glibc=2.27 read as "avoid this because it
     needs glibc 2.27", which is the opposite of the point.
     """
-    from aegis.store import _why_fired
+    from aegis.storage.store import _why_fired
 
     row = {"why": "matched:condition-match", "forbids": [], "forbids_version": {}, "requires": {"glibc": "=2.27"}}
     got = _why_fired(row)

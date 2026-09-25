@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aegis.dockerutil import (  # noqa: E402
+from aegis.channel.dockerutil import (  # noqa: E402
     Channel,
     _manual_mirror,
     _needs_sync,
@@ -125,7 +125,7 @@ def test_macos_junk_is_never_content():
     Counting them made the remote look permanently out of sync, so every
     command re-pushed the whole tree.
     """
-    from aegis.dockerutil import _is_macos_junk
+    from aegis.channel.dockerutil import _is_macos_junk
 
     assert _is_macos_junk("._pwn")
     assert _is_macos_junk(".DS_Store")
@@ -139,7 +139,7 @@ def test_tilde_is_preserved_when_quoting():
     The remote then looks for a literal `./~/x` and every command fails with
     rc=1 and empty output.
     """
-    from aegis.dockerutil import q
+    from aegis.channel.dockerutil import q
 
     assert q("~/Tmp/aegis/pwn_1") == "~/Tmp/aegis/pwn_1"
     assert q("~").strip() == "~"
@@ -154,7 +154,7 @@ def test_reset_prunes_everything_stale():
     channel-side work is preserved a remotely created file cannot be told apart
     from a remote leftover by inspection.
     """
-    from aegis.dockerutil import _remote_listing, pick, push_to_remote, ssh_argv, ssh_env
+    from aegis.channel.dockerutil import _remote_listing, pick, push_to_remote, ssh_argv, ssh_env
 
     ch = pick()
     if not ch.available or ch.kind != "ssh":
@@ -185,7 +185,7 @@ def test_mid_run_push_preserves_channel_work():
     running pwninit then touching a local file — the remote was left with the
     binary alone.
     """
-    from aegis.dockerutil import _remote_listing, ensure_synced, pick, ssh_argv, ssh_env
+    from aegis.channel.dockerutil import _remote_listing, ensure_synced, pick, ssh_argv, ssh_env
 
     ch = pick()
     if not ch.available or ch.kind != "ssh":
@@ -221,7 +221,7 @@ def test_mid_run_push_preserves_channel_work():
 
 def test_verify_sync_detects_leftovers():
     """A non-empty result is the signal that pruning failed."""
-    from aegis.dockerutil import verify_sync
+    from aegis.channel.dockerutil import verify_sync
 
     # No mirror => nothing to report (not an error).
     assert verify_sync("__nonexistent_challenge__") == []

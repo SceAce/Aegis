@@ -47,8 +47,8 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 
-from aegis.dockerutil import Channel, pick, ssh_argv, ssh_env
-from aegis.store import append_issue
+from aegis.channel.dockerutil import Channel, pick, ssh_argv, ssh_env
+from aegis.storage.store import append_issue
 
 def clean(text: str) -> str:
     """Strip terminal decoration. Keeps \n and \t only.
@@ -280,7 +280,7 @@ class Session:
         The marker matters: an unfinished command must not look like an empty
         result, or the model will conclude "no output" and move on.
         """
-        from aegis.guard import refuse_reason
+        from aegis.policy.guard import refuse_reason
 
         refused = refuse_reason(command, session=True)
         if refused:

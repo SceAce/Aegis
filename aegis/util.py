@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
+
+
+def now_iso() -> str:
+    """Local-time ISO-8601 to the second. Shared so every layer timestamps alike."""
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
 
 HEXISH = re.compile(r"0x[0-9a-fA-F]{2,}")
 ADDRISH = re.compile(r"(?:qword|dword|byte)_[0-9a-fA-F]{4,}")

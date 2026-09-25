@@ -30,8 +30,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from aegis.fingerprint import Fingerprint
-from aegis.predicate import check_forbids, check_requires, is_applicable
+from aegis.core.fingerprint import Fingerprint
+from aegis.core.predicate import check_forbids, check_requires, is_applicable
 
 TAU_DEFAULT = 0.9
 P_MISMATCH = 0.55
@@ -136,7 +136,7 @@ def _prohibition_row(cell: dict[str, Any], fp: Fingerprint, sim: float, why: str
     vfired = False
     for k, v in vforbid.items():
         if k == "glibc" and fp.glibc is not None:
-            from aegis.predicate import _ver_ok
+            from aegis.core.predicate import _ver_ok
 
             specs = v if isinstance(v, (list, tuple)) else [v]
             vfired = vfired or any(_ver_ok(fp.glibc, str(s)) for s in specs)
@@ -169,7 +169,7 @@ def _prohibition_row(cell: dict[str, Any], fp: Fingerprint, sim: float, why: str
 
 def _fired_conditions(cell: dict[str, Any], fp: Fingerprint) -> list[str]:
     """Which of the cell's failure conditions are true of this world?"""
-    from aegis.predicate import _ver_ok
+    from aegis.core.predicate import _ver_ok
 
     fired: list[str] = []
     for f in cell.get("forbids") or []:
@@ -214,7 +214,7 @@ def is_prohibition(cell: dict[str, Any], fp: Fingerprint) -> tuple[bool, str]:
         if k == "glibc":
             if fp.glibc is None:
                 continue
-            from aegis.predicate import _ver_ok
+            from aegis.core.predicate import _ver_ok
 
             specs = v if isinstance(v, (list, tuple)) else [v]
             if any(_ver_ok(fp.glibc, str(s)) for s in specs):

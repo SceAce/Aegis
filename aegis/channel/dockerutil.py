@@ -38,7 +38,7 @@ from aegis.paths import (
     TMP_SYNC,
     challenge_dir,
 )
-from aegis.store import append_issue
+from aegis.storage.store import append_issue
 
 # Commands that never modify the working tree, so re-syncing before them just
 # costs a round trip. Keep this list to genuinely read-only tools.

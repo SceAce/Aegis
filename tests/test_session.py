@@ -24,8 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aegis.guard import refuse_reason  # noqa: E402
-from aegis.session import clean  # noqa: E402
+from aegis.policy.guard import refuse_reason  # noqa: E402
+from aegis.channel.session import clean  # noqa: E402
 
 # ------------------------------------------------------------ output hygiene
 
@@ -84,7 +84,7 @@ def test_session_still_blocks_channel_bypass():
 
 
 def test_session_still_blocks_other_challenge():
-    from aegis.store import save_current
+    from aegis.storage.store import save_current
 
     save_current({"challenge": "pwn_1", "kind": "pwn"})
     assert refuse_reason("cat test/pwn_2/exp.py", session=True) is not None
@@ -100,8 +100,8 @@ def test_session_blocks_libc_disasm():
 def _live():
     """A usable channel and a started session, or None (test is skipped)."""
     try:
-        from aegis.dockerutil import pick
-        from aegis.session import get
+        from aegis.channel.dockerutil import pick
+        from aegis.channel.session import get
 
         ch = pick()
         if not ch.available:
@@ -139,8 +139,8 @@ def test_state_persists_across_processes():
     Every CLI invocation is a fresh process. Two separate `Session` objects —
     simulating two invocations — must see the same shell.
     """
-    from aegis.dockerutil import pick
-    from aegis.session import Session
+    from aegis.channel.dockerutil import pick
+    from aegis.channel.session import Session
 
     ch = pick()
     if not ch.available:
@@ -254,7 +254,7 @@ def test_sync_catches_edits_not_just_new_files():
     the change had landed. Silent and very confusing — the model would debug a
     script the remote never received.
     """
-    from aegis.dockerutil import ensure_synced, local_fingerprint, pick
+    from aegis.channel.dockerutil import ensure_synced, local_fingerprint, pick
 
     ch = pick()
     if not ch.available:
@@ -282,7 +282,7 @@ def test_unchanged_tree_costs_no_round_trip():
 
     Re-checking over ssh cost ~0.22s of a 0.6s call, on every command.
     """
-    from aegis.dockerutil import ensure_synced, pick
+    from aegis.channel.dockerutil import ensure_synced, pick
 
     ch = pick()
     if not ch.available:
