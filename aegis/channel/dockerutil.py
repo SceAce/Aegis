@@ -22,6 +22,7 @@ The channel is pluggable: a local container or a remote host over SSH. Both are
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shlex
@@ -203,6 +204,30 @@ def ssh_env() -> dict[str, str]:
     return env
 
 
+def _ssh_control_path(host: str) -> str | None:
+    """Socket path for ssh connection multiplexing, or None when disabled.
+
+    Every remote call would otherwise pay a full TCP + auth handshake, and a
+    single `aegis start` makes several: probe, hash, push, chmod, verify, prep.
+    Measured before multiplexing, that was ~24s of a ~39s command spent pushing a
+    10KB binary.
+
+    Kept short deliberately: macOS caps ControlPath at 104 characters and a
+    temporary directory can consume most of that.
+    """
+    if os.environ.get("AEGIS_SSH_NO_MULTIPLEX"):
+        return None
+    from aegis.paths import AEGIS_DIR, REMOTE_PORT, REMOTE_USER
+
+    key = hashlib.sha1(f"{REMOTE_USER}@{host}:{REMOTE_PORT}".encode()).hexdigest()[:10]
+    try:
+        d = AEGIS_DIR / "ssh"
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(d / f"mux-{key}")
+
+
 def ssh_argv(host: str, remote_command: str, *, timeout: int = 30) -> list[str]:
     """Build the ssh argv for one remote command.
 
@@ -213,10 +238,14 @@ def ssh_argv(host: str, remote_command: str, *, timeout: int = 30) -> list[str]:
 
     The remote login shell is zsh, so callers wrap the command in `bash -lc` to
     keep POSIX control flow working. Pair with ssh_env().
+
+    Connections are multiplexed, so a run pays the handshake once instead of per
+    command. `ControlMaster=auto` still opens a fresh connection when the master
+    is gone, so a stale socket degrades to the old behaviour rather than failing.
     """
     from aegis.paths import REMOTE_PASS, REMOTE_PORT, REMOTE_USER
 
-    common = [
+    opts = [
         "-T",  # never allocate a tty: output must be capturable
         "-o",
         "StrictHostKeyChecking=no",
@@ -226,49 +255,59 @@ def ssh_argv(host: str, remote_command: str, *, timeout: int = 30) -> list[str]:
         "NumberOfPasswordPrompts=1",
         "-o",
         "LogLevel=ERROR",
-        "-p",
-        str(REMOTE_PORT),
-        f"{REMOTE_USER}@{host}",
-        remote_command,
     ]
+    control = _ssh_control_path(host)
+    if control:
+        opts += [
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            f"ControlPath={control}",
+            "-o",
+            "ControlPersist=120s",
+        ]
+    target = f"{REMOTE_USER}@{host}"
 
     if not REMOTE_PASS:
-        return ["ssh", *common]
+        return ["ssh", *opts, "-p", str(REMOTE_PORT), target, remote_command]
 
     if shutil.which("sshpass") and _pty_available():
-        return ["sshpass", "-e", "ssh", *common]
+        return ["sshpass", "-e", "ssh", *opts, "-p", str(REMOTE_PORT), target, remote_command]
 
     # Without PreferredAuthentications=password, ssh tries a key, fails, and
     # gives up before it ever consults SSH_ASKPASS.
     return [
         "ssh",
-        "-T",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        f"ConnectTimeout={min(timeout, 30)}",
-        "-o",
-        "NumberOfPasswordPrompts=1",
+        *opts,
         "-o",
         "PreferredAuthentications=password",
         "-o",
         "PubkeyAuthentication=no",
-        "-o",
-        "LogLevel=ERROR",
         "-p",
         str(REMOTE_PORT),
-        f"{REMOTE_USER}@{host}",
+        target,
         remote_command,
     ]
 
 
+_PTY_AVAILABLE: bool | None = None
+
+
 def _pty_available() -> bool:
-    """Can this process allocate a pty? sshpass cannot work without one."""
+    """Can this process allocate a pty? sshpass cannot work without one.
+
+    Memoised: this forks a process to find out, and it used to run on every
+    single ssh invocation.
+    """
+    global _PTY_AVAILABLE
+    if _PTY_AVAILABLE is not None:
+        return _PTY_AVAILABLE
     try:
         import pty
 
         pid, fd = pty.fork()
     except (ImportError, OSError):
+        _PTY_AVAILABLE = False
         return False
     if pid == 0:  # child
         os._exit(0)
@@ -277,6 +316,7 @@ def _pty_available() -> bool:
         os.close(fd)
     except OSError:
         pass
+    _PTY_AVAILABLE = True
     return True
 
 
