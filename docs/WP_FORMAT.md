@@ -1,5 +1,18 @@
 # WP 规范 v2（机器可解析）
 
+> **状态（2026-09-26）：历史文档，部分已作废，待重写。**
+>
+> 本规范的两个前提已被之后的决定推翻：
+>
+> 1. 它假定 `compile` 仍会**用 LLM 从 WP 散文里抽结构**（所以要把结构写死来减少漂移）。
+>    现在的设计是**记忆不由 LLM 写入** —— 记忆由 Observer 从事件流机械抽取。
+>    因此 `aegis/storage/compile.py` 里的 LLM 抽取路径要重写，本规范随之失效。
+> 2. 它的 `verified` 四档是**模型自评**。现在成功与否由**公共黑板**上的
+>    用户需求/阶段任务判定（见 `aegis/core/criterion.py`），不接受生产者自述。
+>
+> 下面内容保留作参考（尤其是「数字只准进 notes」这条纪律仍然成立），
+> 但不要当作现行契约。
+
 ## 为什么改
 
 旧 WP 是自由文本，`.aegis/lessons.json` 里 45 次编译有 2 次直接报错
@@ -17,7 +30,7 @@
 1. 文件头必须是 YAML front matter（`---` 包裹），字段名固定，缺字段用 `null` / `[]`。
 2. `## chain` 正文**一行**，至多一个 `->`，机制层。禁地址、偏移、chunk size、flag 内容。
 3. `## cells` 里每条 cell 的 `requires` / `forbids` / `optional` 只能用
-   `.aegis` atlas 认识的标签（见 `aegis/fingerprint.py:KNOWN_TAGS`）。
+   `.aegis` atlas 认识的标签（见 `aegis/core/fingerprint.py:KNOWN_TAGS`）。
 4. 数字（地址、偏移、chunk size）**只准进 `## notes`**，永不进 front matter 或 cells。
 5. `verified` 四档，语义固定：
    - `flag`  真拿到 flag / 远程可检验 → 这条经验可以当"做法"
