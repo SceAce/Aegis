@@ -323,20 +323,59 @@ def pick(preferred: str | None = None, *, probe: bool = True) -> Channel:
 
     Preference order is remote first, then container: the remote runs native
     x86_64 with the fuller toolchain, so it is the default whenever reachable.
-    AEGIS_CHANNEL (or an explicit `preferred`) overrides, and a dead channel
-    never takes the run down — it degrades to the next one.
+
+    **An explicitly requested channel never degrades.** `AEGIS_CHANNEL=remote`
+    (or an explicit `preferred`) means "this is the world I am measuring in".
+    The container is QEMU-emulated, ships a different glibc and a thinner
+    toolchain, so substituting it silently changes the target underneath the
+    experiment. Memory keys experience on the observed world, so a quiet swap
+    would apply experience recorded in one world to another. Unavailable
+    therefore returns an unavailable channel and the caller fails loudly.
+
+    Only the *implicit* default order falls back, and it records that it did.
     """
     channels = discover(probe=probe)
     want = (preferred or os.environ.get("AEGIS_CHANNEL") or "").strip()
     if want:
         ch = channels.get(want)
-        if ch and ch.available:
+        if ch is None:
+            # A name that does not exist is a configuration error. Substituting
+            # the default would run the experiment in a world nobody asked for.
+            append_issue("channel", f"unknown channel requested: {want}")
+            return Channel(
+                name=want,
+                kind="unknown",
+                target="",
+                available=False,
+                detail=f"unknown channel {want!r}; known: {', '.join(sorted(channels))}",
+            )
+        if ch.available:
             return ch
-        if ch:
-            append_issue("channel", f"{want} unavailable: {ch.detail}")
-    for key in ("remote", "container"):
+        append_issue("channel", f"{want} requested but unavailable: {ch.detail}")
+        return Channel(
+            name=want,
+            kind=ch.kind,
+            target=ch.target,
+            workdir=ch.workdir,
+            available=False,
+            detail=ch.detail,
+            extra=dict(ch.extra),
+        )
+    order = ("remote", "container")
+    for index, key in enumerate(order):
         ch = channels.get(key)
         if ch and ch.available:
+            if index:
+                # Fell through the preference order. Record it: a run whose
+                # channel was not the intended one has to stay identifiable,
+                # otherwise its world conditions look like every other run's.
+                append_issue(
+                    "channel",
+                    f"fell back to {key} ({ch.label()}); {order[0]} unavailable: "
+                    + "; ".join(
+                        f"{k}: {v.detail[:80]}" for k, v in channels.items() if not v.available
+                    ),
+                )
             return ch
     detail = "; ".join(
         f"{k}: {v.detail[:60]}" for k, v in channels.items() if not v.available

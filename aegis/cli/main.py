@@ -458,14 +458,25 @@ def cmd_start(challenge: str, hints: list[str] | None = None) -> int:
     restore_challenge(challenge)
     # Push through the channel abstraction, not the legacy local mirror: the
     # primary channel is the remote host, and its workdir is not the docker
-    # path. Failures are reported rather than raised, so `start` still records
-    # the run and the agent can see why the files are missing.
+    # path.
+    #
+    # No channel means no world, and a run whose world is unknown cannot be
+    # measured or remembered: its observations would be recorded as if they
+    # described the same target as every other run. Refusing to start is the
+    # point — the previous behaviour warned and carried on, which produced runs
+    # that looked normal and meant nothing.
     ch = pick_channel()
-    pushed = True
     if not ch.available:
-        pushed = False
-        print(f"WARNING: no execution channel ({ch.detail})", file=sys.stderr)
-    elif ch.kind == "ssh":
+        print(f"REFUSING to start: no execution channel ({ch.detail})", file=sys.stderr)
+        print(
+            "The channel decides the glibc version and the toolchain, so it is part of\n"
+            "the world this run will be remembered under. Bring the channel up, or set\n"
+            "AEGIS_CHANNEL explicitly, and start again.",
+            file=sys.stderr,
+        )
+        return 3
+    pushed = True
+    if ch.kind == "ssh":
         # reset=True: a new run must not inherit anything the previous one left
         # on the channel. Mid-run syncs are merges and preserve channel work.
         pushed = push_to_remote(challenge, ch, reset=True)
@@ -493,6 +504,14 @@ def cmd_start(challenge: str, hints: list[str] | None = None) -> int:
             "kind": infer_kind(challenge),
             "started_at": now_iso(),
             "t0": time.time(),
+            # The channel IS part of the world: it decides the glibc version, the
+            # available toolchain and whether execution is emulated. Memory keys
+            # experience on the observed world, so a run has to carry the channel
+            # it actually used — otherwise two runs in different worlds look
+            # identical in the record and their experience gets mixed.
+            "channel": ch.name,
+            "channel_label": ch.label(),
+            "channel_available": ch.available,
             "hints": hints,
             "observations": [],
             "fingerprint": [],

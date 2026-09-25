@@ -238,14 +238,33 @@ def test_discover_always_offers_both_channels():
     assert ch["container"].kind == "docker"
 
 
-def test_pick_falls_back_when_preferred_unavailable():
-    """A dead channel must not take the run down with it."""
-    os.environ["AEGIS_CHANNEL"] = "definitely-not-a-channel"
-    try:
-        ch = pick()
-        assert ch.available, "pick() returned an unusable channel"
-    finally:
-        os.environ.pop("AEGIS_CHANNEL", None)
+def test_explicit_channel_never_degrades():
+    """An explicitly requested channel must not be silently substituted.
+
+    This test used to assert the opposite ("a dead channel must not take the run
+    down with it"). That expectation was the bug: the channel IS the world — it
+    decides the glibc version, the toolchain and whether execution is emulated —
+    so quietly running somewhere else produces a run whose observations and
+    accumulated experience describe a target nobody chose. Failing loudly is the
+    point.
+    """
+    for name in ("definitely-not-a-channel", "container"):
+        os.environ["AEGIS_CHANNEL"] = name
+        try:
+            ch = pick()
+            if name == "container" and ch.available:
+                continue  # a real container is up; nothing to assert
+            assert not ch.available, f"pick() silently substituted another channel for {name}"
+        finally:
+            os.environ.pop("AEGIS_CHANNEL", None)
+
+
+def test_implicit_default_never_returns_an_unusable_channel_when_one_works():
+    """With no explicit request, picking the best available channel is right."""
+    os.environ.pop("AEGIS_CHANNEL", None)
+    ch = pick()
+    if not ch.available:
+        assert ch.name == "none", ch
 
 
 def test_channel_dir_for():
