@@ -49,38 +49,62 @@ aegis/
     predicate.py        三态求值（requires / forbids / optional）
     criterion.py        成果标准（用户需求 + 阶段任务），取代独立裁判
   observer/           事件 → 记忆 → 经验（全部机械，不调 LLM）
-    extract.py          机械抽取与配对、记忆、蒸馏
+    extract.py          机械抽取与配对、条件归并、记忆、蒸馏
     native.py           读 pi 原生扩展写的事件流（Aegis 自己的 schema）
+    pipeline.py         事件流 → 记忆库 → 经验（去重、证据分级）
+  memory/             记忆：落盘 + 有证据的遗忘
+    store.py            records / aggregates / forgotten 三个 JSONL
+    forget.py           压实旧会话、按容量设界、条件被否证即丢弃（留痕）
   blackboard/         公共黑板：阶段/任务/需求的唯一真相源
     store.py            读 + 原子写；schema 不匹配即报错
   policy/             经验 → 行为规范
-    activate.py         稀疏激活（只有经验允许影响行为）
+    playbook.py         经验 → 指引 / 禁令（**唯一**允许影响 worker 的通道）
+    activate.py         旧的稀疏激活（历史，仅服务旧 atlas 列）
     intervene.py        三态介入（SILENT / REMIND / FORBID）
     guard.py            命令层拒绝
     integrity.py        关保护检测（压 f+）
   channel/            执行通道
     dockerutil.py  session.py
   knowledge/          外部知识（wiki，永不进策略列）
-  storage/            持久化（历史记忆库 / WP / compile，待重构）
+  storage/            持久化（事件/WP 落盘；compile 已改为机械编译）
   cli/                入口（`aegis.cli:main` 与 `python -m aegis.cli`）
 ```
 
-依赖方向：`cli → policy/observer/blackboard → core`。`core` 不依赖任何上层。
+依赖方向：`cli → policy → observer/memory → core`。`core` 不依赖任何上层。
 
-### 三件已议定的设计
+**数据流**（三个边界都要能一句话说清）：
+
+```
+worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数──> 经验(可迁移) ──playbook──> worker
+                  │                                        ▲
+                  └── 记忆本身永远到不了这里 ───────────────┘
+```
+
+### 三件已议定的设计（均已落地）
 
 1. **成果标准取代独立裁判** —— 标准 =（用户需求，下一阶段目标）两段**可逐字核对**的
    短标记，由**外部**给出（用户 / 下游），生产者不许写自己的标准。
    核对是机械字面匹配（`core/criterion.py:find_criterion`）。
-2. **记忆** —— Observer 从 worker 事件日志**机械抽取**，不由 LLM 写入；
-   具体、可遗忘、**不驱动行动**（有测试断言它进不了行为路径）。
-3. **经验** —— 由记忆机械计数提纯，是唯一允许影响行为的东西。
-   父 agent 判断子任务成功与否，依据是「黑板上的用户需求或阶段任务是否被满足」，
-   而不是"工具退出码是不是 0"。
+   父 agent 判断子任务成功与否，依据是「黑板上的需求/任务是否被满足」，
+   而不是"工具退出码是不是 0"（实测：931/958 次 `ok`，但只有 2/19 轮真拿到 root）。
+2. **记忆** —— Observer 从事件流**机械抽取**，不由 LLM 写入；具体、可遗忘、
+   **不驱动行动**。边界用 AST 断言：`policy/playbook.py` 只引用 `Experience`。
+3. **经验** —— 由记忆**计数**提纯，是唯一允许影响行为的东西。
+   指引要有成功记录；**禁令**要同时满足零成功、≥2 次失败、且条件非空并被当前世界满足。
+
+### 已完成（本轮）
+
+- `storage/compile.py` 已改为机械编译（不再调 LLM）。
+- 遗忘机制已实现（`memory/forget.py`）：压实旧会话、容量设界、按证据丢弃，全程留痕。
+- 经验驱动行为已落地（`policy/playbook.py`），并接进 `ram` 的提示词。
+- 观测条件归并：后量的世界覆盖矛盾的前一个（实测 551 条条件记录，0 条自相矛盾）。
 
 ### 未完成（下一轮）
 
-- `storage/compile.py` 仍用 LLM 从散文抽结构 —— 与「记忆不由 LLM 写入」冲突，要重写。
-- 经验驱动行为的具体形态（软提示 vs 硬拒绝）尚未落地。
-- 记忆的遗忘机制尚未实现。
-- 父/子 agent 的真实多 worker 调度尚未验证（协议已在黑板上就位）。
+- 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：
+  `need/declare/claim/report/verdict`，Observer 是黑板唯一写入者）。
+- `policy/activate.py` 与 `intervene.py` 仍服务旧的 atlas 列；atlas 已空，
+  这两块要么接到经验源上，要么退役。
+- `guard` 的**学来的拒绝**（LEARNED_KEYS）目前只有 `gdb_library_path` 一条硬编码；
+  经验产生的禁令现在只走软提示，还没接到工具层。
+
