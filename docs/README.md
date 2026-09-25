@@ -98,13 +98,20 @@ worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数─�
 - 遗忘机制已实现（`memory/forget.py`）：压实旧会话、容量设界、按证据丢弃，全程留痕。
 - 经验驱动行为已落地（`policy/playbook.py`），并接进 `ram` 的提示词。
 - 观测条件归并：后量的世界覆盖矛盾的前一个（实测 551 条条件记录，0 条自相矛盾）。
+- **经验 → 工具层硬拒绝**（`policy/veto.py`）：满足「零成功 + ≥3 次失败 + 条件非空且成立 +
+  能取出可安全匹配的命令词」才升级为拒绝；匹配只在**命令位置**，参数里提到不算。
+- `intervene` 已改读经验（原来读已空的 atlas，所以永远 SILENT ——
+  看起来「没什么可说」，其实是源头没了）。
+- **启动器 `scripts/aegis-pi.sh`**：跑 `vendor/pi`（带原生 Observer），
+  并断言 Observer 存在，防止静默回退到上游。
 
 ### 未完成（下一轮）
 
 - 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：
   `need/declare/claim/report/verdict`，Observer 是黑板唯一写入者）。
-- `policy/activate.py` 与 `intervene.py` 仍服务旧的 atlas 列；atlas 已空，
-  这两块要么接到经验源上，要么退役。
-- `guard` 的**学来的拒绝**（LEARNED_KEYS）目前只有 `gdb_library_path` 一条硬编码；
-  经验产生的禁令现在只走软提示，还没接到工具层。
+- `policy/activate.py` 仍服务旧的 atlas 列。atlas 已空，它现在只剩
+  `policy/intervene.py` 之外的测试覆盖价值（`test_roleflip.py` 用它验证三态谓词语义）。
+  要么把谓词语义接到经验上，要么把测试迁走后退役。
+- 黑板的 `verdict` 目前由父 agent 声明；**尚未**把「条件被否证」自动回灌到
+  `memory/forget.refute()`（接口有了，没有接线）。
 

@@ -108,6 +108,10 @@ def render(iv: Intervention) -> str:
     """The injected text. Short by construction: it lands at the context tail."""
     if iv.kind is Kind.SILENT:
         return ""
+    # A playbook-derived intervention carries its own rendering; the legacy
+    # cell/habit path below is kept for the old bundle shape.
+    if iv.message:
+        return iv.message.strip()
     L: list[str] = []
     if iv.kind is Kind.FORBID:
         L.append("## 禁止尝试（当前世界与这些失败条件匹配）")
@@ -127,6 +131,56 @@ def render(iv: Intervention) -> str:
 
 
 # ------------------------------------------------------------------ decision
+
+
+def decide_from_playbook(
+    trigger: str,
+    playbook: Any,
+    *,
+    prev_activated: set[str] | None = None,
+) -> Intervention:
+    """三态介入，输入是**经验**，不是已空的 atlas 列。
+
+    The previous input was the atlas column, which is empty since the memory store
+    was rebuilt — so this always returned SILENT. That looked like "memory has
+    nothing to say" rather than "the source is gone", which is the failure mode
+    this project keeps running into.
+
+    SILENT is still an explicit decision: with no applicable experience it is the
+    *correct* answer, not an accident of a gate.
+    """
+    if trigger not in TRIGGERS:
+        trigger = "observe"
+
+    vetoes = list(getattr(playbook, "vetoes", []) or [])
+    guidance = list(getattr(playbook, "guidance", []) or [])
+
+    # A veto outranks a reminder: a technique that never worked in this world is
+    # the thing worth saying, even if something else did work.
+    if vetoes:
+        return Intervention(
+            kind=Kind.FORBID,
+            trigger=trigger,
+            reason="experience recorded no success for these in this world",
+            forbid=[
+                {"technique": v.action, "condition": ",".join(v.condition), "n": v.n}
+                for v in vetoes
+            ],
+            message=playbook.render(),
+        )
+    if guidance:
+        return Intervention(
+            kind=Kind.REMIND,
+            trigger=trigger,
+            reason="experience has successes in this world",
+            cells=[
+                {"technique": g.action, "condition": ",".join(g.condition),
+                 "n_ok": g.n_ok, "n": g.n}
+                for g in guidance
+            ],
+            message=playbook.render(),
+        )
+    return Intervention(kind=Kind.SILENT, trigger=trigger, reason="no applicable experience")
 
 
 def decide(
@@ -199,6 +253,17 @@ Return one JSON object:
   pick: indices of the items worth surfacing (max 3)
   text: <= 300 chars, imperative, object-level. Empty if intervene is false.
 """
+
+
+def refine(iv: Intervention, trajectory: str) -> Intervention:
+    """Public entry to the LLM layer.
+
+    The layer may only suppress or trim what was already selected. It can never
+    add an item, and it is never consulted for a FORBID — a hallucinated
+    intervention may waste tokens, but it must never be able to switch off a
+    technique that works.
+    """
+    return _llm_refine(iv, trajectory)
 
 
 def _llm_refine(iv: Intervention, trajectory: str) -> Intervention:

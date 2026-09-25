@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 MODULES = [
     "test_observer.py",
     "test_memory.py",
+    "test_veto.py",
     "test_blackboard.py",
     "test_integrity.py",
     "test_guard.py",

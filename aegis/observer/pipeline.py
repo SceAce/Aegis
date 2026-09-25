@@ -91,14 +91,23 @@ def experience(state_dir: Path) -> list[Experience]:
 def world_tags(state_dir: Path) -> set[str]:
     """World tags observed most recently, for gating experience.
 
-    Latest observation wins rather than union: a tag that was true earlier and
-    has since been contradicted must not keep qualifying experience for a world
-    the run has already left.
+    Reads both shapes: a dedicated `observation` event, and an `aegis_observe`
+    *action* (the pi extension records observations as tool calls, not as a
+    separate event kind). Missing the second shape made the world look empty
+    while records were clearly conditional, which silently disabled guidance.
+
+    Later observations supersede contradictory earlier ones, and the latest one
+    wins rather than the union — a tag the run has already left must not keep
+    qualifying experience.
     """
+    from aegis.observer.extract import observed_tags, reconcile
+
     tags: set[str] = set()
     for e in read_native_events(state_dir):
         if e.kind == "observation":
             raw = (e.data or {}).get("tags")
             if isinstance(raw, (list, tuple)):
-                tags = {str(t).strip() for t in raw if str(t).strip()}
+                tags = reconcile(tags, {str(t).strip() for t in raw if str(t).strip()})
+        elif e.kind == "action":
+            tags = reconcile(tags, observed_tags(str(e.tool or ""), (e.data or {}).get("args")))
     return tags

@@ -371,6 +371,11 @@ def distill(records: list[MemoryRecord], condition: tuple[str, ...] = ()) -> lis
     """
     agg: dict[tuple[tuple[str, ...], str], list[int]] = {}
     for r in records:
+        # An observation is not a technique. Counting `observe: ... tags=...` as
+        # experience would pad the playbook with the act of measuring, which is
+        # not something to recommend doing again -- it is the precondition.
+        if r.tool in _OBSERVE_TOOLS:
+            continue
         key = (r.condition or condition, portable(r.action))
         slot = agg.setdefault(key, [0, 0])
         if r.ok is True:

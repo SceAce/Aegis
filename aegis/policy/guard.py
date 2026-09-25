@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 DENY_KEYS = (
     "libc_disasm",
@@ -523,7 +523,11 @@ _ONESHOT_ONLY = frozenset({"interactive"})
 
 
 def refuse_reason(
-    command: str, extra: Iterable[str] = (), *, session: bool = False
+    command: str,
+    extra: Iterable[str] = (),
+    *,
+    session: bool = False,
+    learned: Iterable[Any] = (),
 ) -> str | None:
     """Would this command be refused?
 
@@ -566,7 +570,37 @@ def refuse_reason(
             if key == "channel_bypass":
                 return _channel_bypass_message()
             return entry[1]
+
+    # Learned vetoes: command words that never succeeded in this world, derived
+    # from recorded experience by `policy.veto`. Matched at a **command position**
+    # only — start of the command, or after a separator. NOT after a plain space,
+    # because `grep ROPgadget notes.txt` merely mentions the word, and refusing a
+    # mention is exactly the false refusal that hides information from the run.
+    # (The `kb` rule needed the same narrowing after `[^a-z]` swallowed
+    # `HEAP_KB.md` and hid the run's own memory file from it.)
+    for pattern, reason in _learned_items(learned):
+        # `low` is already lower-cased, so the pattern must be too.
+        if re.search(r"(?:^|[;&|()])[ \t]*" + re.escape(pattern.lower()) + r"(?:[ \t]|$)", low):
+            return reason
     return None
+
+
+def _learned_items(learned: Iterable[Any]) -> Iterator[tuple[str, str]]:
+    """Normalise learned vetoes to (pattern, message).
+
+    Accepts plain strings and objects carrying `.pattern` / `.reason()` so this
+    module stays a pure predicate with no dependency on `policy.veto`.
+    """
+    for item in learned:
+        if isinstance(item, str):
+            if item:
+                yield item, f"REFUSED (learned_veto): '{item}' is a recorded failure in this world."
+            continue
+        pattern = str(getattr(item, "pattern", "") or "")
+        if not pattern:
+            continue
+        reason = getattr(item, "reason", None)
+        yield pattern, (reason() if callable(reason) else f"REFUSED (learned_veto): '{pattern}'")
 
 
 def skip_rule_from_command(command: str) -> str:

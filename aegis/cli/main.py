@@ -15,7 +15,7 @@ from aegis.channel.dockerutil import pick as pick_channel
 from aegis.channel.dockerutil import probe_tools, push_to_remote, pwn_exec, sync_to_container
 from aegis.policy.guard import refuse_reason
 from aegis.gitutil import restore_challenge
-from aegis.policy.intervene import Kind, decide, render
+from aegis.policy.intervene import Kind, decide, refine, render
 from aegis.paths import (
     CONTAINER,
     PI_SCRIPT,
@@ -907,12 +907,33 @@ def cmd_ram(kind: str, no_experience: bool = False) -> int:
 
 
 def cmd_deny(command: str) -> int:
-    refused = refuse_reason(command, active_denies())
+    # `active_denies()` supplies named rule keys; `learned_vetoes()` supplies
+    # command words this world has repeatedly failed on. Both are needed: the
+    # first is a fixed vocabulary, the second is what the system learned.
+    refused = refuse_reason(command, active_denies(), learned=learned_vetoes())
     if refused:
         print(refused)
         return 2
     print("ok")
     return 0
+
+
+def learned_vetoes() -> list:
+    """Hard refusals derived from experience for the current world.
+
+    Returns [] on a cold start, which is the normal case: a veto needs repeated
+    failure under an observed, non-empty world condition.
+    """
+    from aegis.paths import AEGIS_DIR
+    from aegis.policy import veto as veto_mod
+
+    try:
+        return veto_mod.from_state(AEGIS_DIR)
+    except Exception:
+        # A refusal path must never take the run down; failing open here means a
+        # broken veto costs a wasted attempt, whereas failing closed would block
+        # every command.
+        return []
 
 
 def _integrity_findings(challenge: str):
@@ -1121,9 +1142,19 @@ def cmd_kb(query: str, k: int) -> int:
 
 
 def cmd_intervene(trigger: str, trajectory: str, use_llm: bool, as_json: bool) -> int:
-    bundle = build_bundle()
-    prev = _activated_techniques() if trigger != "opening" else set()
-    iv = decide(trigger=trigger, bundle=bundle, prev_activated=prev, trajectory=trajectory, use_llm=use_llm)
+    # Experience is the source now. This used to read the atlas column, which has
+    # been empty since the memory store was rebuilt, so it always answered SILENT
+    # — "nothing to say" rather than "the source is gone".
+    from aegis.paths import AEGIS_DIR
+    from aegis.policy.intervene import decide_from_playbook
+    from aegis.storage.store import experience_playbook
+
+    iv = decide_from_playbook(trigger, experience_playbook())
+    if use_llm:
+        # The LLM layer may only re-word, never add or remove an item, and it is
+        # never consulted for a FORBID (a hallucinated intervention can waste
+        # tokens; it must never be able to switch off a working technique).
+        iv = refine(iv, trajectory) if iv.kind is not Kind.FORBID else iv
     append_episode(challenge=(load_current() or {}).get("challenge"), kind="intervention", **iv.as_row())
     if as_json:
         import json as _json
