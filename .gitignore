@@ -15,5 +15,10 @@ __pycache__/
 !.pi/extensions/
 !.pi/extensions/**
 
+# Vendored pi fork: has its own git and a 281M node_modules. See vendor/README.md
+# for what we changed and how to rebuild it. Not tracked here on purpose — the
+# changes are documented, not vendored as history.
+vendor/pi/
+
 # OS
 .DS_Store
