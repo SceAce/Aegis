@@ -15,6 +15,32 @@ git clone --depth 1 file://$HOME/My_github/pi vendor/pi
 cd vendor/pi && npm install --ignore-scripts
 ```
 
+## 构建（跑起来要用它）
+
+启动器 `scripts/aegis-pi.sh` **优先用构建产物**，没有才回落到 tsx 源码。原因是实测差距很大：
+
+| 路径 | 启动 (`--help`) |
+|---|---|
+| 构建产物 `dist/bundle/cli.js`（`node` 直接跑） | **0.33–0.73s** |
+| 源码（tsx 实时转译整个 monorepo） | **1.70–1.79s** |
+
+tsx 每次启动都要转译，TUI 的卡顿主要来自这里。构建一次：
+
+```bash
+cd vendor/pi
+npm run build:offline      # 约几分钟；用 offline 变体避开联网的模型数据生成
+```
+
+产出的入口是 `packages/coding-agent/dist/bundle/cli.js`（也就是 `package.json` 里的
+`bin.pi`）。**注意它是分块的**：`cli.js` 本身搜不到 `aegis-observer`，要连 `dist/bundle/chunks/`
+一起搜 —— 只搜 `cli.js` 会得到假阴性，然后误以为构建没带上 Observer。
+
+启动器因此带一个**陈旧构建守卫**：构建产物里找不到 observer 就拒绝启动，并提示要么重建、
+要么 `AEGIS_PI_SOURCE=1` 走源码。**宁可拒绝启动，也不要静默跑一个没有 Observer 的 pi** ——
+那会让整条记忆链收到 0 个事件，而结果看起来像「经验没用」。
+
+`dist/` 在 fork 里是 gitignore 的，所以构建产物不进版本库。
+
 ## 怎么验证改动
 
 pi 的 AGENTS.md 要求改完跑 `npm run check`。整仓 check 很慢，实测**够用的最小集**是：
@@ -28,7 +54,10 @@ node_modules/.bin/tsgo --noEmit -p packages/coding-agent/tsconfig.build.json
 
 两个都干净。省钱办法：把主仓的 `node_modules` 软链过来即可，不必真装 281M ——
 注意 `node_modules/` 这条 gitignore 规则**不匹配符号链接**，链完 `git status` 会看到
-`?? node_modules`，验证完记得删掉软链。
+`?? node_modules`。
+
+**但软链不要删**：启动器依赖它提供运行时依赖和构建工具（`tsgo` / `shx` / `biome`）。
+之前这里写着「验证完记得删掉」，构建之后就作废了。
 
 ## 为什么要 fork 而不是用外部扩展
 

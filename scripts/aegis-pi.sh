@@ -7,18 +7,26 @@
 # whole memory loop would silently receive zero events and the run would look
 # like "experience had no effect" for the wrong reason.
 #
+# It prefers the BUILT bundle over running from source. The source path goes
+# through tsx, which transpiles the monorepo on every start; that is the
+# difference between a responsive TUI and one that stutters. The built entry is
+# the shipped one (`bin.pi` = dist/bundle/cli.js) and starts as plain node.
+#
 # Usage:
 #   scripts/aegis-pi.sh --approve --provider deepseek --model deepseek-flash "读 manual/pwn_1/TASK.md 并照做"
 #
 # Environment:
 #   AEGIS_STATE_DIR   where the Observer writes (default: <repo>/.aegis)
 #   AEGIS_CHALLENGE   current challenge id (drives guard scoping)
+#   AEGIS_PI_SOURCE=1 force the tsx/source path (for the experimental CLI)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PI="$ROOT/vendor/pi"
+BUNDLE="$PI/packages/coding-agent/dist/bundle/cli.js"
+SRC_CLI="$PI/packages/coding-agent/src/experimental/cli.ts"
 
-if [ ! -f "$PI/packages/coding-agent/src/experimental/cli.ts" ]; then
+if [ ! -f "$SRC_CLI" ]; then
   echo "vendor/pi is missing its source. Rebuild it with:" >&2
   echo "  git clone --depth 1 file://\$HOME/My_github/pi vendor/pi" >&2
   exit 1
@@ -47,12 +55,28 @@ if [ ! -d "$DATA" ] && [ -d "$UPSTREAM_DATA" ]; then
   cp -R "$UPSTREAM_DATA" "$DATA"
 fi
 
-# Assert we are actually loading the fork's observer, so a silent fallback to
-# upstream cannot masquerade as a successful run.
+# Assert the observer is actually present on whichever path we take. A silent
+# fallback to an observer-less pi is the failure this whole script exists to
+# prevent, so both paths are checked rather than assumed.
+observer_in_bundle() {
+  # The bundle is chunked, so grepping cli.js alone reports a false negative.
+  grep -ql "aegis-observer" "$BUNDLE" 2>/dev/null && return 0
+  grep -rlq "aegis-observer" "$PI/packages/coding-agent/dist/bundle/chunks" 2>/dev/null
+}
+
+if [ "${AEGIS_PI_SOURCE:-0}" != "1" ] && [ -f "$BUNDLE" ]; then
+  if ! observer_in_bundle; then
+    echo "REFUSING to start: the built bundle has no observer." >&2
+    echo "It is stale. Rebuild:  (cd vendor/pi && npm run build:offline)" >&2
+    echo "Or run from source:    AEGIS_PI_SOURCE=1 $0 ..." >&2
+    exit 1
+  fi
+  exec node "$BUNDLE" "$@"
+fi
+
 if [ ! -f "$PI/packages/coding-agent/src/extensions/observer/index.ts" ]; then
   echo "the fork has no observer extension; refusing to start" >&2
   exit 1
 fi
 
-exec "$PI/node_modules/.bin/tsx" --tsconfig "$PI/tsconfig.json" \
-  "$PI/packages/coding-agent/src/experimental/cli.ts" "$@"
+exec "$PI/node_modules/.bin/tsx" --tsconfig "$PI/tsconfig.json" "$SRC_CLI" "$@"
