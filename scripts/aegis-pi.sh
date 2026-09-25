@@ -71,6 +71,15 @@ if [ "${AEGIS_PI_SOURCE:-0}" != "1" ] && [ -f "$BUNDLE" ]; then
     echo "Or run from source:    AEGIS_PI_SOURCE=1 $0 ..." >&2
     exit 1
   fi
+  # Presence is not enough: editing the observer and not rebuilding would run the
+  # OLD observer silently, which is the same class of failure as having none.
+  OBSERVER_SRC="$PI/packages/coding-agent/src/extensions/observer/index.ts"
+  if [ "$OBSERVER_SRC" -nt "$BUNDLE" ]; then
+    echo "REFUSING to start: the observer source is newer than the build." >&2
+    echo "Rebuild:  (cd vendor/pi && npm run build:offline)" >&2
+    echo "Or run from source:  AEGIS_PI_SOURCE=1 $0 ..." >&2
+    exit 1
+  fi
   exec node "$BUNDLE" "$@"
 fi
 
