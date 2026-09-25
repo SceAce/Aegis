@@ -30,6 +30,7 @@ from aegis.paths import (
 from aegis.storage.store import (
     _portable_technique,
     active_denies,
+    active_learned_vetoes,
     add_observation,
     append_episode,
     append_issue,
@@ -926,33 +927,17 @@ def cmd_ram(kind: str, no_experience: bool = False) -> int:
 
 
 def cmd_deny(command: str) -> int:
-    # `active_denies()` supplies named rule keys; `learned_vetoes()` supplies
-    # command words this world has repeatedly failed on. Both are needed: the
-    # first is a fixed vocabulary, the second is what the system learned.
-    refused = refuse_reason(command, active_denies(), learned=learned_vetoes())
+    # Both inputs come from the last built column (a small file read). This runs
+    # on EVERY bash tool call, so it must not rebuild: rebuilding re-reads the
+    # whole event stream and memory store, which made the run progressively
+    # slower and blocked the UI each time.
+    learned = active_learned_vetoes()
+    refused = refuse_reason(command, active_denies(), learned=learned)
     if refused:
         print(refused)
         return 2
     print("ok")
     return 0
-
-
-def learned_vetoes() -> list:
-    """Hard refusals derived from experience for the current world.
-
-    Returns [] on a cold start, which is the normal case: a veto needs repeated
-    failure under an observed, non-empty world condition.
-    """
-    from aegis.paths import AEGIS_DIR
-    from aegis.policy import veto as veto_mod
-
-    try:
-        return veto_mod.from_state(AEGIS_DIR)
-    except Exception:
-        # A refusal path must never take the run down; failing open here means a
-        # broken veto costs a wasted attempt, whereas failing closed would block
-        # every command.
-        return []
 
 
 def _integrity_findings(challenge: str):

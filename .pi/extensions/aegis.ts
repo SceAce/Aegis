@@ -2,7 +2,7 @@
  * Temporary Pi extension for the Aegis demo.
  * Injects ROM/RAM, blocks workspace pollution, wraps memory + docker tools.
  */
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,22 +11,73 @@ import { homedir } from "node:os";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+/** Budget for one Aegis CLI call. Matches the previous spawnSync timeout. */
+const TIMEOUT_S = 90;
+
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, "..", "..");
 const UV = process.env.UV || join(homedir(), ".local", "bin", "uv");
 
-function aegis(args: string[]): string {
+/**
+ * Surface a problem once per session.
+ *
+ * A guard that is silently not running is worse than one that refuses too much:
+ * the run looks protected and is not. One notification makes that visible
+ * without repeating on every command.
+ */
+const notified = new Set<string>();
+function notifyOnce(ctx: unknown, message: string): void {
+	if (notified.has(message)) return;
+	notified.add(message);
+	try {
+		(ctx as { ui?: { notify?: (m: string, t?: string) => void } }).ui?.notify?.(message, "warning");
+	} catch {
+		/* best-effort; never let a notification take the run down */
+	}
+}
+
+/**
+ * Run the Aegis CLI.
+ *
+ * Async on purpose. This used to be `spawnSync`, which blocks the event loop for
+ * the whole call — so while a guard check ran, the TUI could not render at all
+ * and then flushed everything at once. That is the "freezes, then all the output
+ * appears" behaviour. A spawn costs tens to hundreds of milliseconds and this
+ * runs on every bash tool call, so blocking on it was the main source of jank.
+ *
+ * Deliberately NOT memoised: the refusal set depends on the world observed so
+ * far, and a cached "allowed" for a command that has since become vetoed would
+ * keep a stale decision for the rest of the session.
+ */
+function aegis(args: string[]): Promise<string> {
 	const bin = existsSync(UV) ? UV : "uv";
-	const r = spawnSync(bin, ["run", "--project", ROOT, "aegis", ...args], {
-		cwd: ROOT,
-		encoding: "utf8",
-		timeout: 90_000,
-		maxBuffer: 8 * 1024 * 1024,
+	return new Promise<string>((resolve) => {
+		const child = spawn(bin, ["run", "--project", ROOT, "aegis", ...args], {
+			cwd: ROOT,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let out = "";
+		let err = "";
+		let settled = false;
+		const finish = (text: string) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(text.trimEnd());
+		};
+		const timer = setTimeout(() => {
+			child.kill("SIGKILL");
+			finish(`${out}\n[aegis timed out after ${TIMEOUT_S}s: ${args.join(" ")}]`);
+		}, TIMEOUT_S * 1000);
+		child.stdout?.on("data", (d) => {
+			out += String(d);
+		});
+		child.stderr?.on("data", (d) => {
+			err += String(d);
+		});
+		child.on("error", (e) => finish(`${out}\n${String(e)}`));
+		child.on("close", (code) => finish(out || (code ? err : "")));
 	});
-	const chunks = [r.stdout || "", r.stderr || ""];
-	if (r.error) chunks.push(String(r.error));
-	if (r.signal) chunks.push(`signal=${r.signal}`);
-	return chunks.join("").trimEnd();
 }
 
 function currentChallenge(): string | null {
@@ -99,8 +150,8 @@ export default function (pi: ExtensionAPI) {
 			// cheatsheet and every guard rule stay in place, so the two arms
 			// differ in exactly one variable.
 			ram = process.env.AEGIS_NO_MEMORY
-				? aegis(["ram", "--no-experience"]).trim()
-				: aegis(["ram"]).trim();
+				? (await aegis(["ram", "--no-experience"])).trim()
+				: (await aegis(["ram"])).trim();
 		} catch (err) {
 			ram = `(aegis ram failed: ${String(err)})`;
 		}
@@ -111,7 +162,7 @@ export default function (pi: ExtensionAPI) {
 		// second call and no hard-coded path here.
 		let env = "";
 		try {
-			env = aegis(["env"]).trim();
+			env = (await aegis(["env"])).trim();
 		} catch {
 			/* env output is a convenience, not a requirement */
 		}
@@ -125,7 +176,7 @@ export default function (pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("tool_call", async (event) => {
+	pi.on("tool_call", async (event, ctx) => {
 		const name = event.toolName;
 		const input = event.input as Record<string, unknown>;
 		if (name === "read" || name === "write" || name === "edit") {
@@ -137,14 +188,16 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (name === "bash") {
 			const cmd = String(input.command ?? "");
-			try {
-				const out = aegis(["deny", cmd]);
-				if (out.startsWith("REFUSED")) {
-					return { block: true, reason: out };
-				}
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err);
-				if (msg.includes("REFUSED")) return { block: true, reason: msg };
+			// Fail OPEN but loudly. A broken spawn must not silently disable the
+			// guard for the rest of the run: the previous code returned the error
+			// text, which does not start with "REFUSED", so every command was
+			// allowed and nothing said so.
+			const out = await aegis(["deny", cmd]);
+			if (out.startsWith("REFUSED")) {
+				return { block: true, reason: out };
+			}
+			if (!out || out.startsWith("[aegis timed out") || /Error:|ENOENT|command not found/i.test(out)) {
+				notifyOnce(ctx, `aegis deny did not answer — guard checks are NOT running:\n${out.slice(0, 200)}`);
 			}
 			for (const re of BASH_DENY) {
 				if (re.test(cmd)) {
@@ -264,7 +317,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_id, params) {
 			try {
-				const out = aegis(["kb", params.query, "-k", String(params.k ?? 6)]);
+				const out = await aegis(["kb", params.query, "-k", String(params.k ?? 6)]);
 				return { content: [{ type: "text", text: out || "(no match)" }], details: {} };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -386,7 +439,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Show Aegis current challenge and runs",
 		handler: async (_args, ctx) => {
 			try {
-				const out = aegis(["list"]);
+				const out = await aegis(["list"]);
 				ctx.ui.notify(out.slice(0, 500), "info");
 			} catch (err) {
 				ctx.ui.notify(String(err), "error");

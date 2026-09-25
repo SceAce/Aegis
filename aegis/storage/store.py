@@ -500,17 +500,42 @@ def add_observation(
 
 
 def refresh_activation() -> dict[str, Any]:
-    """Recompute the column for THIS challenge and persist denies for the guard."""
+    """Persist the column for THIS challenge and return it. Only call when a rebuild is wanted."""
     ram_blob()
     data = _read_json(AEGIS_DIR / "activation.json", {})
     return data if isinstance(data, dict) else {}
 
 
+def _activation_for_this_challenge() -> dict[str, Any]:
+    """Read the last built column. **Does not rebuild.**
+
+    This is on the per-command refusal path (`aegis deny` runs on every bash
+    tool call), and rebuilding re-reads the whole event stream and the whole
+    memory store. Doing that per command made the run progressively slower and
+    blocked the UI while it happened.
+    """
+    data = _read_json(AEGIS_DIR / "activation.json", {})
+    if not isinstance(data, dict):
+        return {}
+    owner = str(data.get("challenge") or "")
+    if owner not in {active_challenge() or "", str((load_current() or {}).get("challenge") or "")}:
+        return {}
+    return data
+
+
 def active_denies() -> list[str]:
-    data = refresh_activation()
-    if str(data.get("challenge") or "") not in {active_challenge() or "", str((load_current() or {}).get("challenge") or "")}:
-        return []
-    return [str(k) for k in (data.get("denies") or []) if str(k).strip()]
+    """Named rule keys from the last built column. Cheap: one small file read."""
+    return [str(k) for k in (_activation_for_this_challenge().get("denies") or []) if str(k).strip()]
+
+
+def active_learned_vetoes() -> list[dict[str, str]]:
+    """Learned vetoes from the last built column. Cheap, and never recomputed here.
+
+    Recomputing them would mean loading the memory store and distilling it on
+    every command, which is what made the guard path scale with run length.
+    """
+    rows = _activation_for_this_challenge().get("learned_vetoes") or []
+    return [r for r in rows if isinstance(r, dict) and r.get("pattern")]
 
 
 def build_bundle() -> dict[str, Any]:
@@ -532,6 +557,21 @@ def build_bundle() -> dict[str, Any]:
     learned |= {str(k) for k in (bundle.get("denies") or []) if str(k).strip()}
     bundle["denies"] = sorted(learned)
     bundle["challenge"] = ch
+
+    # Persist the hard refusals alongside the column, so the per-command refusal
+    # path reads a small file instead of re-distilling the memory store. Building
+    # is the expensive step; it belongs here, not on every bash tool call.
+    try:
+        from aegis.policy import veto as veto_mod
+
+        bundle["learned_vetoes"] = [
+            {"pattern": v.pattern, "reason": v.reason()} for v in veto_mod.from_state(AEGIS_DIR)
+        ]
+    except Exception:
+        # A refusal path must never take the run down, so failing open here costs
+        # at most a wasted attempt.
+        bundle["learned_vetoes"] = []
+
     _write_json(AEGIS_DIR / "activation.json", bundle)
 
     # The internal ledger is the memory agent's private status field: it is
