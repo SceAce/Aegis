@@ -45,18 +45,32 @@ def write_writeup(
     else:
         lines.append("- problems: (none recorded by harness)")
     if compiled:
+        # Compilation is mechanical now: events -> memory -> experience. There
+        # are no generated cells to render, so report the counts instead. A run
+        # that produced no events says so here rather than looking empty.
         if compiled.get("error"):
             lines.append(f"- compile_error: {compiled['error']}")
-        for item in compiled.get("problems") or []:
-            lines.append(f"- lesson_problem: {item.get('problem')}")
-            if item.get("solution"):
-                lines.append(f"  lesson_solution: {item.get('solution')}")
-        for cell in compiled.get("cells") or []:
+        mem = compiled.get("memory") or {}
+        exp = compiled.get("experience") or {}
+        if mem:
             lines.append(
-                f"- lesson_cell: [{cell.get('state')}] {cell.get('technique')} @ {cell.get('condition')}"
+                f"- memory: {mem.get('records_new', 0)} new / {mem.get('records_total', 0)} total"
+                f"  sessions={mem.get('sessions', 0)}  evidence={mem.get('evidence')}"
+                f"  trusted={mem.get('trusted')}"
             )
-        for habit in compiled.get("habits") or []:
-            lines.append(f"- lesson_habit: when {habit.get('when')}: {habit.get('observe')}")
+        if exp:
+            lines.append(
+                f"- experience: rows={exp.get('rows', 0)}"
+                f"  with_success={exp.get('with_success', 0)}"
+                f"  vetoable={exp.get('vetoable', 0)}"
+            )
+        forgotten = compiled.get("forgotten") or {}
+        if forgotten and forgotten.get("dropped"):
+            lines.append(
+                f"- forgotten: compacted={forgotten.get('compacted', 0)}"
+                f" refuted={forgotten.get('refuted', 0)}"
+                f" reasons={forgotten.get('reasons')}"
+            )
     lines.append("")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path

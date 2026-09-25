@@ -229,17 +229,92 @@ def read_pi_session(path: Path) -> Iterator[Event]:
 # ---------------------------------------------------------------------- memory
 
 
+#: Tools whose arguments carry a structured world observation.
+_OBSERVE_TOOLS = ("aegis_observe", "aegis_note")
+
+#: Tags that cannot both hold in one world.
+#:
+#: Observations accumulate per session, but a session that first probed a
+#: container (glibc 2.44) and then a remote host (2.27) would otherwise produce a
+#: condition of "hooks_alive AND hooks_dead" — a world that never existed, which
+#: matches nothing and silently qualifies experience for the wrong target. A
+#: later observation supersedes an earlier, contradictory one.
+_EXCLUSIVE: tuple[frozenset[str], ...] = (
+    frozenset({"hooks_alive", "hooks_dead"}),
+    frozenset({"main_arena", "thread_arena"}),
+    frozenset({"exit_group", "exit_flush"}),
+    frozenset({"safe_linking", "no_safe_linking"}),
+    frozenset({"pie", "non_pie"}),
+    frozenset({"full_relro", "partial_relro"}),
+    frozenset({"tcache", "no_tcache"}),
+)
+_GLIBC_TAG = re.compile(r"^glibc\d+\.\d+$")
+
+
+def reconcile(world: set[str], asserted: set[str]) -> set[str]:
+    """Fold new observations into a world, letting the newer one win a conflict.
+
+    Only contradicts what was *asserted now*; a conflict between two older tags
+    with nothing new said about it is left alone, because there is no basis to
+    choose between them.
+    """
+    out = set(world) | set(asserted)
+    for group in _EXCLUSIVE:
+        present = out & group
+        if len(present) > 1:
+            fresh = present & asserted
+            if fresh:
+                out -= present - fresh
+
+    versions = {t for t in out if _GLIBC_TAG.match(t)}
+    if len(versions) > 1:
+        fresh = versions & asserted
+        if fresh:
+            out -= versions - fresh
+    return out
+
+
+def observed_tags(tool: str, args: Any) -> set[str]:
+    """World tags a call asserts, from its **structured** arguments.
+
+    Only declared tags count. Nothing here parses prose: recovering a world model
+    from free text is what produced `no pthread` -> `arena=thread` before, and an
+    injected wrong world is worse than no world.
+    """
+    if tool not in _OBSERVE_TOOLS or not isinstance(args, dict):
+        return set()
+    raw = args.get("tags")
+    if not isinstance(raw, (list, tuple)):
+        return set()
+    return {str(t).strip() for t in raw if str(t).strip()}
+
+
 def build_memory(events: list[Event]) -> list[MemoryRecord]:
-    """机械配对 action 与 outcome。配不上的动作也留下（缺结果本身就是信息）。"""
+    """机械配对 action 与 outcome，并给每条动作附上**当时已观测到的世界**。
+
+    The condition is the set of tags observed *before* the action ran, so a later
+    observation cannot retroactively explain an earlier attempt. Records with an
+    empty condition are kept: "we tried this knowing nothing" is information.
+    """
     outcomes: dict[str, Event] = {}
     for e in events:
         if e.kind == "outcome" and e.call_id:
             outcomes[e.call_id] = e
 
     records: list[MemoryRecord] = []
+    world: set[str] = set()
     for e in events:
+        if e.kind == "observation":
+            raw = (e.data or {}).get("tags")
+            if isinstance(raw, (list, tuple)):
+                fresh = {str(t).strip() for t in raw if str(t).strip()}
+                world = reconcile(world, fresh)
+            continue
         if e.kind != "action":
             continue
+
+        tool = str(e.tool or "?")
+        args = (e.data or {}).get("args")
         out = outcomes.get(e.call_id or "")
         text = str((out.data or {}).get("text") or "") if out else ""
         records.append(
@@ -248,16 +323,19 @@ def build_memory(events: list[Event]) -> list[MemoryRecord]:
                 session=e.session,
                 seq=e.seq,
                 ts=e.ts,
-                tool=str(e.tool or "?"),
-                action=_action_of(str(e.tool or "?"), (e.data or {}).get("args")),
+                tool=tool,
+                action=_action_of(tool, args),
                 # `ok` is the tool-level signal carried on the outcome event. It
                 # records "the tool did not fail", NOT "the goal advanced" —
                 # whether a run advanced is decided by the criterion.
                 ok=None if out is None else out.ok,
                 out_chars=len(text),
                 out_digest=str((out.data or {}).get("digest") or "") if out else "",
+                condition=tuple(sorted(world)),
             )
         )
+        # An observation takes effect for the NEXT action, not this one.
+        world = reconcile(world, observed_tags(tool, args))
     return records
 
 

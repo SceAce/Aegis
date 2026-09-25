@@ -141,25 +141,122 @@ def test_criterion_is_mechanical() -> None:
     assert obs.find_criterion(events, obs.Criterion(need="", next="")) is None
 
 
-def test_memory_cannot_drive_action() -> None:
-    """STRUCTURAL invariant: the prompt-assembly path must not reach the Observer.
+def test_contradictory_observations_do_not_merge() -> None:
+    """A world must stay self-consistent.
 
-    `ram_blob` decides what the worker sees. If it ever mentions the observer,
-    memory has become a behaviour input, which the design forbids. Only
-    distilled experience may reach the worker.
-
-    Checked on the *rendering functions* rather than the whole module, because
-    store.py is also where memory will legitimately be persisted — writing
-    memory to disk is fine, rendering it into the prompt is not.
+    Regression found on real data: a session that probed a container (glibc 2.44)
+    and then a remote host (2.27) accumulated "hooks_alive AND hooks_dead" and two
+    glibc versions at once. That world never existed, matches nothing useful, and
+    would qualify experience for the wrong target.
     """
-    import inspect
+    from aegis.observer.extract import reconcile
 
-    from aegis.policy import intervene
-    from aegis.storage import store
+    world = reconcile(set(), {"glibc2.44", "hooks_dead", "thread_arena"})
+    world = reconcile(world, {"glibc2.27", "hooks_alive", "main_arena"})
+    assert world == {"glibc2.27", "hooks_alive", "main_arena"}, world
 
-    for fn in (store.ram_blob, intervene.render, intervene.decide):
-        src = inspect.getsource(fn)
-        assert "observer" not in src, f"{fn.__module__}.{fn.__name__} reached into memory"
+    # Nothing new asserted: no basis to choose, so leave the conflict alone.
+    assert reconcile({"hooks_alive", "hooks_dead"}, set()) == {"hooks_alive", "hooks_dead"}
+
+
+def test_conditions_come_only_from_structured_tags() -> None:
+    """The world is never recovered from prose.
+
+    Free text once produced `no pthread` -> `arena=thread`: an injected wrong
+    world is worse than no world, because the run has to spend time disproving
+    the premise it was handed.
+    """
+    from aegis.observer.extract import observed_tags
+
+    assert observed_tags("aegis_observe", {"text": "binary is single-threaded (no pthread)"}) == set()
+    assert observed_tags("aegis_observe", {"tags": ["main_arena"]}) == {"main_arena"}
+    assert observed_tags("bash", {"tags": ["main_arena"]}) == set()
+
+
+def test_playbook_never_sees_raw_memory() -> None:
+    """STRUCTURAL: the behaviour path consumes `Experience`, never `MemoryRecord`.
+
+    This is the boundary the whole design rests on — memory is a record, only
+    distilled counts may steer. Checked on the AST rather than on raw text so
+    that prose *describing* the rule (docstrings, comments) does not count as
+    violating it; only an actual reference does.
+    """
+    import ast
+
+    src = (Path(__file__).resolve().parent.parent / "aegis" / "policy" / "playbook.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(src)
+
+    used: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            used.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            used.add(node.attr)
+
+    offenders = used & {"MemoryRecord", "build_memory", "memory_store", "load"}
+    assert not offenders, f"playbook referenced raw memory via {sorted(offenders)}"
+
+
+def test_raw_memory_detail_cannot_reach_the_prompt() -> None:
+    """FUNCTIONAL: the behaviour path sees portable actions, not raw records.
+
+    Memory is allowed to be concrete (addresses, absolute paths, artifact
+    hashes). None of that may reach a worker, because it is meaningless on the
+    next target and would crowd out the portable part.
+    """
+    from aegis.policy.playbook import build
+
+    records = [
+        obs.MemoryRecord(
+            worker="pi",
+            session="s1",
+            seq=1,
+            ts="T",
+            tool="aegis_pwn",
+            action="pwn: run 0xdeadbeef from /Users/x/secret/exp.py",
+            ok=True,
+            out_chars=1,
+            out_digest="sha1:deadbeefcafe",
+            condition=(),
+        )
+    ]
+    text = build(obs.distill(records), set()).render()
+    assert "0xdeadbeef" not in text, text
+    assert "/Users/x/secret" not in text, text
+    assert "deadbeefcafe" not in text, text
+    assert "run" in text, "the portable part should survive"
+
+
+def test_experience_drives_behaviour() -> None:
+    """Experience *is* allowed to influence behaviour — that is its whole job.
+
+    Guidance needs a positive record; a veto needs failures with zero successes
+    under a condition that actually holds now.
+    """
+    from aegis.policy.playbook import build
+
+    world = {"glibc2.27", "tcache"}
+    good = obs.Experience(condition=("glibc2.27",), action="tcache poison -> write", n_ok=3, n_fail=1)
+    bad = obs.Experience(condition=("glibc2.27",), action="hooks overwrite", n_ok=0, n_fail=2)
+    elsewhere = obs.Experience(condition=("glibc2.44",), action="fsop", n_ok=5, n_fail=0)
+
+    pb = build([good, bad, elsewhere], world)
+    assert [e.action for e in pb.guidance] == ["tcache poison -> write"]
+    assert [e.action for e in pb.vetoes] == ["hooks overwrite"]
+    assert "fsop" not in pb.render(), "experience from another world was applied"
+
+
+def test_veto_needs_a_nonempty_condition() -> None:
+    """An unconditional failure proves nothing about any world, so it must not
+    become a 'do not try'. Losing a working technique to a vague record is the
+    expensive kind of mistake (`guard.py`'s own warning about false refusals)."""
+    from aegis.policy.playbook import build
+
+    vague = obs.Experience(condition=(), action="pwn: something", n_ok=0, n_fail=5)
+    pb = build([vague], {"glibc2.27"})
+    assert pb.vetoes == []
 
 
 def test_observer_view_never_returns_prompt_text() -> None:

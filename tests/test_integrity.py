@@ -153,57 +153,79 @@ def test_scan_tree_reports_location():
 
 
 # ------------------------------------------------ evidence-tier consequence
+#
+# The rule: a run that solved by weakening a mitigation is a false positive and
+# must not teach the next run a technique. It used to live in `compile._sanitize`
+# as an ON/OFF decision over generated cells. Compilation is now arithmetic over
+# Observer events, so the same rule lives in `pipeline.sync(evidence=...)`: an
+# untrusted run's records are still stored (auditable) but their outcomes are
+# neutralised so they cannot count as a success.
 
 
-def test_none_verification_forces_cell_off():
-    """`none` + solved must not stay ON.
+def _native_stream(state, session: str = "s1") -> None:
+    """A minimal native event stream: one tool call that succeeded."""
+    import json
 
-    Regression: cmd_finish downgrades a weakened run to verified='none', but
-    _sanitize only demoted on status != solved, so the cell stayed ON and the
-    library learned "disable ASLR" as a technique.
-    """
-    from aegis.storage.compile import _sanitize
-
-    for verified, status in (("none", "solved"), ("none", "failed")):
-        data = _sanitize(
-            {"cells": [{"technique": "t -> x", "state": "on", "requires": {}}]},
-            kind="pwn",
-            verified=verified,
-            status=status,
-        )
-        cell = data["cells"][0]
-        assert cell["state"] == "off", f"{verified}/{status} stayed ON"
-        assert cell["evidence"] == "none", cell["evidence"]
-
-
-def test_local_success_still_stays_on():
-    """The integrity rule must not undo the earlier fix.
-
-    A genuinely local-only success is weaker evidence, not invalid evidence.
-    """
-    from aegis.storage.compile import _sanitize
-
-    data = _sanitize(
-        {"cells": [{"technique": "t -> x", "state": "on", "requires": {}}]},
-        kind="pwn",
-        verified="local",
-        status="solved",
+    d = state / "observer"
+    d.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"v": 1, "seq": 1, "ts": "T", "worker": "pi", "session": session, "kind": "action",
+         "tool": "aegis_pwn", "callId": "c1", "data": {"args": {"command": "do the thing"}}},
+        {"v": 1, "seq": 2, "ts": "T", "worker": "pi", "session": session, "kind": "outcome",
+         "tool": "aegis_pwn", "callId": "c1", "ok": True, "data": {"text": "it worked"}},
+    ]
+    (d / f"events-{session}.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
     )
-    cell = data["cells"][0]
-    assert cell["state"] == "on"
-    assert cell["evidence"] == "local"
 
 
-def test_wiki_never_an_instruction():
-    from aegis.storage.compile import _sanitize
+def _experience_after(evidence: str):
+    import tempfile
+    from pathlib import Path as _P
 
-    data = _sanitize(
-        {"cells": [{"technique": "t -> x", "state": "on", "requires": {}}]},
-        kind="pwn",
-        verified="wiki",
-        status="solved",
-    )
-    assert data["cells"][0]["state"] == "off"
+    from aegis.memory import store as memory_store
+    from aegis.observer import pipeline
+
+    tmp = tempfile.TemporaryDirectory()
+    state = _P(tmp.name)
+    _native_stream(state)
+    pipeline.sync(state, evidence=evidence, reason="test")
+    return pipeline.experience(state), memory_store.load(state), tmp
+
+
+def test_untrusted_evidence_cannot_produce_positive_experience():
+    """`none` must not teach a technique.
+
+    Regression: cmd_finish downgrades a weakened run to verified='none', but the
+    row still looked solved, so it stayed a success and the library learned
+    "disable ASLR first".
+    """
+    exp, stored, tmp = _experience_after("none")
+    try:
+        assert stored, "an untrusted run should still be recorded (auditable)"
+        assert exp, "records should still distil into rows"
+        assert all(e.n_ok == 0 for e in exp), "an untrusted run taught a success"
+    finally:
+        tmp.cleanup()
+
+
+def test_local_success_still_counts():
+    """The integrity rule must not undo the other fix: a genuinely local-only
+    success is weaker evidence, not invalid evidence."""
+    exp, _stored, tmp = _experience_after("local")
+    try:
+        assert any(e.n_ok > 0 for e in exp), "a local success was dropped entirely"
+    finally:
+        tmp.cleanup()
+
+
+def test_wiki_evidence_cannot_produce_experience():
+    """An article saying "this works" is not this system having seen it work."""
+    exp, _stored, tmp = _experience_after("wiki")
+    try:
+        assert all(e.n_ok == 0 for e in exp), "wiki content became a recorded success"
+    finally:
+        tmp.cleanup()
 
 
 def _run_all() -> int:

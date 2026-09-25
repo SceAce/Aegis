@@ -156,6 +156,26 @@ def main(argv: list[str] | None = None) -> int:
     p_need.add_argument("text")
     p_need.add_argument("--marker", default="", help="Literal a later step can check for")
 
+    p_memory = sub.add_parser(
+        "memory",
+        help="Show what the Observer has recorded (memory is audit-only; it never drives behaviour)",
+    )
+    p_memory.add_argument("--json", action="store_true")
+
+    p_forget = sub.add_parser(
+        "forget",
+        help="Bound the memory store: compact old sessions, drop refuted conditions (with an audit trail)",
+    )
+    p_forget.add_argument("--keep-sessions", type=int, default=0, help="0 = default")
+    p_forget.add_argument("--max-records", type=int, default=0, help="0 = default")
+    p_forget.add_argument(
+        "--refute",
+        action="append",
+        default=[],
+        help="Mark a world condition refuted (repeatable), e.g. --refute glibc2.27",
+    )
+    p_forget.add_argument("--json", action="store_true")
+
     p_compile = sub.add_parser("compile", help="Re-run automatic experience compile for a challenge")
     p_compile.add_argument("challenge")
 
@@ -233,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "board": lambda: cmd_board(args.json),
         "need": lambda: cmd_need(args.text, args.marker),
+        "memory": lambda: cmd_memory(args.json),
+        "forget": lambda: cmd_forget(args.keep_sessions, args.max_records, args.refute, args.json),
         "finish": lambda: cmd_finish(
             args.status, args.chain, args.stuck, args.extra, args.elapsed, args.verified
         ),
@@ -565,6 +587,75 @@ def cmd_observe(text: str, tags: list[str] | None, kind: str) -> int:
     else:
         print(f"\nintervention: {iv.kind.value.upper()} ({iv.reason})\n")
         print(render(iv))
+    return 0
+
+
+def cmd_memory(as_json: bool = False) -> int:
+    """Show what the Observer has recorded.
+
+    Memory is audit material — it exists so a run can be inspected and so
+    experience can be counted. It is deliberately NOT what a worker sees; that is
+    `policy.playbook`'s job, and only from the counts.
+    """
+    import json as _json
+
+    from aegis.memory import store as memory_store
+    from aegis.observer import pipeline
+    from aegis.paths import AEGIS_DIR
+
+    stats = memory_store.stats(AEGIS_DIR)
+    records = memory_store.load(AEGIS_DIR)
+    experience = pipeline.experience(AEGIS_DIR)
+
+    if as_json:
+        print(_json.dumps({"stats": stats, "experience_rows": len(experience)}, ensure_ascii=False, indent=2))
+        return 0
+
+    print(
+        f"# 记忆  records={stats['records']}  sessions={stats['sessions']}"
+        f"  aggregates={stats['aggregates']}  forgotten={stats['forgotten']}"
+    )
+    print(f"# 经验（由记忆计数提纯，唯一能影响行为的东西） rows={len(experience)}")
+    for e in experience[:20]:
+        cond = ",".join(e.condition) or "无特别条件"
+        print(f"  {e.n_ok:>3} ok /{e.n_fail:>3} fail  @ {cond}  :: {e.action[:80]}")
+    if not records:
+        print("  (空 — 还没有记录到任何事件)")
+    return 0
+
+
+def cmd_forget(
+    keep_sessions: int = 0,
+    max_records: int = 0,
+    refute: list[str] | None = None,
+    as_json: bool = False,
+) -> int:
+    """Bound the memory store. Compaction preserves counts; every drop is logged."""
+    import json as _json
+
+    from aegis.memory import forget as memory_forget
+    from aegis.paths import AEGIS_DIR
+
+    for condition in refute or []:
+        memory_forget.refute(AEGIS_DIR, condition, "operator-declared")
+        print(f"refuted: {condition}")
+
+    kwargs: dict[str, int] = {}
+    if keep_sessions:
+        kwargs["keep_sessions"] = keep_sessions
+    if max_records:
+        kwargs["max_records"] = max_records
+    report = memory_forget.run(AEGIS_DIR, **kwargs)
+
+    if as_json:
+        print(_json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    print(
+        f"kept={report['kept']}  compacted={report['compacted']}  refuted={report['refuted']}"
+        f"  aggregates={report['aggregates']}"
+    )
+    if report["reasons"]:
+        print("reasons: " + ", ".join(f"{k}={v}" for k, v in sorted(report["reasons"].items())))
     return 0
 
 

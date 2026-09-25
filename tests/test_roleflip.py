@@ -183,16 +183,18 @@ def test_prohibition_reason_names_only_what_fired():
 def test_condition_rendering_has_no_double_operator():
     """A glibc spec carries its own operator; do not add another.
 
-    Regression: `_cond_from` rendered `f"{k}={v}"`, so a correct stored
-    `{"glibc": ">=2.34"}` appeared in every writeup as `glibc=>=2.34`.
+    Regression: the renderer used `f"{k}={v}"`, so a correct stored
+    `{"glibc": ">=2.34"}` appeared in every writeup and prompt line as
+    `glibc=>=2.34`. The fix now lives in `storage.store._fmt_req`, which renders
+    the requirement column the worker sees.
     """
-    from aegis.storage.compile import _cond_from
+    from aegis.storage.store import _fmt_req
 
-    got = _cond_from({"glibc": ">=2.34", "hooks": "dead"}, ["exit_group"], {"glibc": "=2.44"})
+    got = _fmt_req({"glibc": ">=2.34", "hooks": "dead"})
     assert "glibc>=2.34" in got, got
     assert "glibc=>=" not in got, got
-    assert "!glibc=2.44" in got, got
-    assert _cond_from({}, [], {}) == "always"
+    assert "hooks=dead" in got, got
+    assert _fmt_req({}) == "always"
 
 
 def test_llm_version_specs_are_normalised():

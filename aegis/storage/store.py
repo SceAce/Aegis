@@ -628,6 +628,13 @@ def ram_blob(kind: str | None = None) -> str:
             L.append(f"- {c.get('technique')}  @ {_fmt_req(c.get('requires'))}")
         L.append("")
 
+    # The experience column: the ONLY thing derived from memory that is allowed
+    # to reach a worker. Raw memory records never appear here — only counts over
+    # them (`policy.playbook`), which is why the boundary is asserted by test.
+    pb = experience_playbook(f.get("tags") or [])
+    if not pb.is_empty():
+        L.append(pb.render())
+
     if not any(
         [
             bundle["cells"],
@@ -636,9 +643,22 @@ def ram_blob(kind: str | None = None) -> str:
             bundle["forbid"],
             bundle.get("reference"),
         ]
-    ):
+    ) and pb.is_empty():
         L.append("（无适用经验 — 先用 aegis_observe 记下 libc / arena / 退出路径）")
     return "\n".join(L)
+
+
+def experience_playbook(fingerprint_tags: Any = ()) -> Any:
+    """Build the experience playbook for the current world.
+
+    Imported lazily so the prompt path does not pull the whole observer stack at
+    module load. Reads experience only (counts); never raw memory.
+    """
+    from aegis.observer import pipeline
+    from aegis.policy import playbook as playbook_mod
+
+    world = set(pipeline.world_tags(AEGIS_DIR)) or {str(t) for t in fingerprint_tags}
+    return playbook_mod.build(pipeline.experience(AEGIS_DIR), world)
 
 
 def _why_fired(c: dict[str, Any]) -> str:

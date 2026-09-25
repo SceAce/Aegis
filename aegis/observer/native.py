@@ -56,14 +56,23 @@ def read_native_events(state_dir: Path) -> Iterator[Event]:
                     "update this adapter instead of guessing at the shape."
                 )
 
+            kind = str(row.get("kind") or "note")
+            data = dict(row.get("data") or {})
+            # The extension records a tool call's arguments under `input`. Rename
+            # it to `args` so both adapters (native and session-log) hand
+            # downstream the same shape — a normalised event is the whole point of
+            # having adapters at all.
+            if kind == "action" and "args" not in data and "input" in data:
+                data["args"] = data.pop("input")
+
             yield Event(
                 worker=str(row.get("worker") or "pi"),
                 session=str(row.get("session") or path.stem),
                 seq=int(row.get("seq") or 0),
                 ts=str(row.get("ts") or ""),
-                kind=str(row.get("kind") or "note"),
+                kind=kind,
                 tool=(str(row["tool"]) if row.get("tool") else None),
                 call_id=(str(row["callId"]) if row.get("callId") else None),
                 ok=(bool(row["ok"]) if row.get("ok") is not None else None),
-                data=dict(row.get("data") or {}),
+                data=data,
             )
