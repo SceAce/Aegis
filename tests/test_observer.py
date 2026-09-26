@@ -293,3 +293,70 @@ def test_observer_view_never_returns_prompt_text() -> None:
             text = json.dumps(row.__dict__, ensure_ascii=False)
             assert "<system" not in text.lower()
             assert "aegis ram" not in text.lower()
+
+
+def test_a_tag_its_own_text_disproves_is_dropped() -> None:
+    """A world tag is a *key*. Every conditional experience row is keyed on the
+    exact version string, so one wrong digit silently disables all of them: a real
+    run declared `glibc2.44` while its own observation text said
+    `Ubuntu GLIBC 2.43-2ubuntu2.4`, and 0 of 205 experience rows applied. The run
+    then looks like "experience does not transfer" when the cause was a typo.
+
+    So a self-contradictory tag is dropped and reported. Dropping it is not
+    deriving the world from prose — every other tag is still taken only from
+    structured arguments, and a tag the text *agrees* with is kept."""
+    from aegis.observer.extract import contradictory_glibc, observed_tags
+
+    text = "checksec: /lib/x86_64-linux-gnu/libc.so.6 -> Ubuntu GLIBC 2.43-2ubuntu2.4"
+
+    conflict = contradictory_glibc({"glibc2.44"}, text)
+    assert conflict == ("glibc2.44", "glibc2.43"), conflict
+
+    dropped = observed_tags("aegis_observe", {"tags": ["glibc2.44", "tcache"], "text": text})
+    assert dropped == {"tcache"}, dropped
+
+    agreed = observed_tags("aegis_observe", {"tags": ["glibc2.43", "tcache"], "text": text})
+    assert agreed == {"glibc2.43", "tcache"}, agreed
+
+
+def test_contradiction_check_does_not_invent_a_world() -> None:
+    """The guard must stay narrow, or it becomes the prose-to-world parser the
+    design forbids. No version in the text -> the tag stands; several declared
+    versions -> the guard abstains rather than picking one."""
+    from aegis.observer.extract import contradictory_glibc, observed_tags
+
+    assert contradictory_glibc({"glibc2.44"}, "no version mentioned here") is None
+    assert contradictory_glibc({"glibc2.44", "glibc2.27"}, "GLIBC 2.43") is None
+    assert (
+        observed_tags("aegis_observe", {"tags": ["glibc2.44"], "text": "no version here"})
+        == {"glibc2.44"}
+    )
+
+
+def test_contradicted_tag_is_dropped_at_the_write_site() -> None:
+    """The drop has to hold on every path that can read the tag.
+
+    `observed_tags` covers the event stream, but `current_fingerprint` also reads
+    the `fingerprint` list written by `add_observation`, and `experience_playbook`
+    falls back to it when the stream has no tags. Dropping the tag only in
+    `observed_tags` left the wrong version alive on that fallback — and would have
+    made `aegis observe`'s own "the tag was dropped" warning a lie.
+    """
+    import os
+
+    from aegis.storage import store
+
+    # `AEGIS_DIR` is resolved once at import of `aegis.paths`, so the dir cannot
+    # be swapped here — this test depends on run_all's temp state dir, and must
+    # refuse to write the live one (same reason as tests/test_cli.py).
+    assert os.environ.get("AEGIS_STATE_DIR"), "run tests via tests/run_all.py"
+
+    store.save_current({"challenge": "pwn_x", "observations": [], "fingerprint": []})
+    row = store.add_observation(
+        "checksec: libc.so.6 -> Ubuntu GLIBC 2.43-2ubuntu2.4",
+        tags=["glibc2.44", "tcache"],
+    )
+    assert row["tags"] == ["tcache"], row["tags"]
+    fp = store.current_fingerprint().all
+    assert "glibc2.44" not in fp, fp
+    assert "glibc2.43" in fp, fp

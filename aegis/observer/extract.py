@@ -290,19 +290,56 @@ def reconcile(world: set[str], asserted: set[str]) -> set[str]:
     return out
 
 
+_GLIBC_TAG_RE = re.compile(r"^glibc(\d+)\.(\d+)$")
+#: A version stated in the observation's own text, e.g. "Ubuntu GLIBC 2.43-2ubuntu2.4".
+_GLIBC_TEXT_RE = re.compile(r"(?:glibc|libc)[\s\-_]*(?:so\.\d[\s()]*)?(\d+)\.(\d+)", re.I)
+
+
+def contradictory_glibc(tags: set[str], text: str) -> tuple[str, str] | None:
+    """A declared `glibcX.Y` tag that disagrees with the version in its own text.
+
+    Returns (declared, stated_in_text) or None.
+
+    This does **not** derive the world from prose — the design forbids that, and
+    the structured tag stays authoritative everywhere else. It only refuses a
+    *self-contradictory* observation, because the cost of a wrong version is
+    silent and total: a real run tagged `glibc2.44` while its own text said
+    "Ubuntu GLIBC 2.43", and because every conditional experience row is keyed on
+    the exact version, **0 of 205 rows applied**. The experiment would have read
+    as "experience does not transfer" when the cause was one mistyped digit.
+    """
+    declared = [m.groups() for t in tags if (m := _GLIBC_TAG_RE.match(str(t)))]
+    if len(declared) != 1:
+        return None
+    stated = _GLIBC_TEXT_RE.search(text or "")
+    if not stated:
+        return None
+    if stated.groups() != declared[0]:
+        major, minor = declared[0]
+        return (f"glibc{major}.{minor}", f"glibc{stated.group(1)}.{stated.group(2)}")
+    return None
+
+
 def observed_tags(tool: str, args: Any) -> set[str]:
     """World tags a call asserts, from its **structured** arguments.
 
-    Only declared tags count. Nothing here parses prose: recovering a world model
-    from free text is what produced `no pthread` -> `arena=thread` before, and an
-    injected wrong world is worse than no world.
+    Only declared tags count. Nothing here parses prose into a world: recovering a
+    world model from free text is what produced `no pthread` -> `arena=thread`
+    before, and an injected wrong world is worse than no world.
+
+    The one exception is a self-contradiction check (see `contradictory_glibc`):
+    a tag that its own text disproves is dropped rather than trusted, because a
+    wrong version tag disables every experience keyed on the right one.
     """
     if tool not in _OBSERVE_TOOLS or not isinstance(args, dict):
         return set()
     raw = args.get("tags")
     if not isinstance(raw, (list, tuple)):
         return set()
-    return {str(t).strip() for t in raw if str(t).strip()}
+    tags = {str(t).strip() for t in raw if str(t).strip()}
+    if contradictory_glibc(tags, str(args.get("text") or "")):
+        tags = {t for t in tags if not _GLIBC_TAG_RE.match(t)}
+    return tags
 
 
 def build_memory(events: list[Event]) -> list[MemoryRecord]:

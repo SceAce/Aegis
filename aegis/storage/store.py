@@ -489,15 +489,31 @@ def add_observation(
     kind: str = "observe",
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Record what THIS run has actually seen. Only this feeds the fingerprint."""
+    """Record what THIS run has actually seen. Only this feeds the fingerprint.
+
+    A `glibcX.Y` tag that this observation's own text contradicts is dropped here,
+    at the write site, because the fingerprint list is a **fallback world source**
+    (`experience_playbook` uses it when the event stream has no tags). Dropping it
+    only in `observed_tags` would leave the wrong version alive on that path and
+    the warning printed by `aegis observe` ("the tag was dropped") would be false.
+    One mistyped digit once disabled 0-of-205 experience rows; the drop has to
+    hold everywhere the tag can be read from.
+    """
+    from aegis.observer.extract import contradictory_glibc
+
     cur = load_current()
     if not cur:
         raise RuntimeError("no current challenge; run aegis start <id> first")
+    text = text.strip()
+    clean = [t.strip() for t in (tags or []) if t.strip()]
+    conflict = contradictory_glibc(set(clean), text)
+    if conflict:
+        clean = [t for t in clean if t != conflict[0]]
     row = {
         "ts": now_iso(),
         "kind": kind,
-        "text": text.strip(),
-        "tags": [t.strip() for t in (tags or []) if t.strip()],
+        "text": text,
+        "tags": clean,
     }
     obs = cur.setdefault("observations", [])
     obs.append(row)

@@ -282,7 +282,19 @@ def main(argv: list[str] | None = None) -> int:
         "shell": lambda: cmd_shell(args.action, args.text, args.timeout, args.channel, args.pane),
         "docker": lambda: cmd_docker(args.action, args.rebuild),
     }
-    return handlers[args.cmd]()
+    try:
+        return handlers[args.cmd]()
+    except BrokenPipeError:
+        # `aegis observer thoughts | head` closes the pipe early, which is normal
+        # use, not a failure. Without this the command dies with a traceback after
+        # printing everything the user wanted. Point stdout at devnull so the
+        # interpreter's final flush does not raise again on the way out.
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+        except Exception:
+            pass
+        return 0
 
 
 def _pwn_status() -> tuple[bool, str]:
@@ -596,6 +608,31 @@ def cmd_observe(text: str, tags: list[str] | None, kind: str) -> int:
     if row["tags"]:
         print("tags: " + ", ".join(row["tags"]))
     print("fingerprint: " + _fmt_fp(fp))
+
+    # A tag that its own text disproves is dropped (see `contradictory_glibc`), and
+    # the agent is told NOW so it can re-observe with the right one. Silently
+    # keeping the wrong tag is not an option — it disables every experience keyed
+    # on the real version — and silently dropping it leaves the world
+    # under-specified, which disables the same rows. One mistyped digit did exactly
+    # that on a real run: a `glibc2.44` tag over a "GLIBC 2.43" text, and 0 of 205
+    # experience rows applied.
+    from aegis.observer.extract import contradictory_glibc
+
+    # Checked against what was ASKED FOR, not against `row["tags"]`: the store
+    # drops the contradicted tag at the write site (see `add_observation`), so
+    # reading it back would always find nothing and this warning would never fire.
+    conflict = contradictory_glibc({str(t).strip() for t in (tags or [])}, text)
+    if conflict:
+        declared, stated = conflict
+        print()
+        print(f"WARNING (observe): 标签 {declared} 与本条正文里的 {stated} 矛盾，该标签已丢弃。")
+        print("  请用正确的版本重新 aegis_observe 一次 —— 世界标签错一位，")
+        print("  所有按真实版本存的经验都会匹配不上（实测 205 行全部失效）。")
+        append_issue(
+            "observe",
+            f"glibc tag {declared} contradicts its own text ({stated}); tag dropped",
+            challenge=(load_current() or {}).get("challenge"),
+        )
 
     # Observation changes the world, so what experience applies changes NOW — not
     # at the next session start. The old harness left the agent running on a
