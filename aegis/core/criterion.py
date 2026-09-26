@@ -36,14 +36,30 @@ class _HasOutcome(Protocol):
     kind: str
     seq: int
     data: dict[str, Any]
+    tool: str | None
+
+
+#: Tools whose output can constitute evidence. A tool that only *reads* something
+#: cannot produce proof of exploitation: the marker lives in the task file and on
+#: the blackboard, so `cat TASK.md` and `aegis_board(read)` both echo it. Matching
+#: those made the criterion fire at seq 3 of a real run — on the board's own JSON,
+#: before the agent had done anything.
+EXECUTION_TOOLS = ("aegis_pwn", "bash", "aegis_shell")
 
 
 @dataclass(frozen=True)
 class Criterion:
-    """成果标准 = 用户需求 + 下一阶段目标，各一个可逐字核对的标记。"""
+    """成果标准 = 用户需求 + 下一阶段目标，各一个可逐字核对的标记。
+
+    Both literals must appear in the **same execution outcome**. A marker alone is
+    not proof: for a local challenge the exploited shell runs as the same uid as
+    the agent, so nothing on disk can be a secret. What distinguishes a real
+    exploit is that the shell descends from the target process — which is why the
+    required proof reports its parent process name (see `manual/<ch>/TASK.md`).
+    """
 
     need: str  # 用户需求的可核对形式，如 "PWNED_MARKER"
-    next: str = ""  # 下一阶段目标的可核对形式，如 "uid=0(root)"
+    next: str = ""  # 下一阶段目标的可核对形式，如 "PARENT_PROC=pwn"
 
     def as_row(self) -> dict[str, str]:
         return {"need": self.need, "next": self.next}
@@ -52,10 +68,38 @@ class Criterion:
         return not self.need.strip() and not self.next.strip()
 
 
-def find_criterion(events: Iterable[_HasOutcome], criterion: Criterion) -> int | None:
-    """返回第一条同时满足 need 与 next 的 outcome 的 seq；没有则 None。
+def _printed(text: str, needle: str) -> bool:
+    """Does `needle` stand at the start of a line in this output?
 
-    纯字面匹配，没有判断、没有 LLM。标准本身是外部给的，这里只负责核对。
+    A proof is something the shell **prints**; a mention is not a proof. Both
+    kinds of false positive seen in a real run disappear under this rule:
+
+      * `cat manual/<ch>/TASK.md` contains `echo PWNED_MARKER; id; ...` — the
+        marker is preceded by `echo`, not at a line start.
+      * the blackboard JSON contains `"marker": "PWNED_MARKER"` — same reason
+        (and reading tools are excluded anyway).
+
+    While a real proof, produced by `echo PWNED_MARKER`, arrives on its own line.
+    """
+    for line in text.splitlines():
+        # Tolerate a shell prompt prefix and surrounding whitespace.
+        stripped = line.strip().lstrip("$#").strip()
+        if stripped == needle or stripped.startswith(needle + " "):
+            return True
+    return False
+
+
+def find_criterion(events: Iterable[_HasOutcome], criterion: Criterion) -> int | None:
+    """返回第一条同时满足 need 与 next 的**执行类** outcome 的 seq；没有则 None。
+
+    纯匹配，没有判断、没有 LLM。三处收紧都是刻意的，各自堵住一类实测到的假阳性：
+
+    1. **只认执行类工具**（`aegis_pwn` / `bash` / `aegis_shell`）。
+       读黑板、读文件、查 wiki 的输出一律不算 —— 那些地方本来就有 marker 原文。
+       实测：收紧前第一次命中在 seq 3，那是**读黑板 JSON**。
+    2. **必须是"打印出来"而不是"被提到"**（见 `_printed`）。
+       实测：`bash: cat manual/pwn_1/TASK.md` 里就有 `echo PWNED_MARKER`。
+    3. **两个标记必须在同一条输出里**，否则等于给"拼接出来的成功"开门。
     """
     pats = [p for p in (criterion.need, criterion.next) if p.strip()]
     if not pats:
@@ -63,7 +107,9 @@ def find_criterion(events: Iterable[_HasOutcome], criterion: Criterion) -> int |
     for e in events:
         if e.kind != "outcome":
             continue
+        if getattr(e, "tool", None) not in EXECUTION_TOOLS:
+            continue
         text = str((e.data or {}).get("text") or "")
-        if all(p in text for p in pats):
+        if all(_printed(text, p) for p in pats):
             return e.seq
     return None

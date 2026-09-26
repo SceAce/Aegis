@@ -123,9 +123,18 @@ def append_issue(kind: str, message: str, **extra: Any) -> dict[str, Any]:
 
 
 def load_issues(challenge: str | None = None) -> list[dict[str, Any]]:
+    """Issues for a challenge, with exact repeats collapsed into a count.
+
+    The file stays append-only (it is an audit log), but a reader must not see
+    one fact eighteen times: a real run's writeup had every entry of its problem
+    list identical — "preserved channel-side files" emitted on each sync — so the
+    actual harness problems were invisible. Collapsing here fixes every consumer
+    at once instead of teaching each renderer to dedupe.
+    """
     if not ISSUES_PATH.is_file():
         return []
     rows: list[dict[str, Any]] = []
+    index: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
     for line in ISSUES_PATH.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -138,6 +147,14 @@ def load_issues(challenge: str | None = None) -> list[dict[str, Any]]:
             continue
         if challenge and row.get("challenge") != challenge:
             continue
+        key = (row.get("kind"), row.get("message"), row.get("challenge"))
+        first = index.get(key)
+        if first is not None:
+            first["n"] = int(first.get("n") or 1) + 1
+            first["last_ts"] = row.get("ts")
+            continue
+        row = dict(row, n=1)
+        index[key] = row
         rows.append(row)
     return rows
 

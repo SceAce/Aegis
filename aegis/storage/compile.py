@@ -22,12 +22,13 @@ memory — auditable — but cannot count as a success.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from aegis.memory import forget as memory_forget
 from aegis.observer import pipeline
 from aegis.paths import AEGIS_DIR
-from aegis.storage.store import append_episode, load_episodes, now_iso
+from aegis.storage.store import append_episode, append_issue, load_episodes, now_iso
 
 VERIFY_LEVELS = ("flag", "local", "none", "wiki")
 
@@ -79,6 +80,21 @@ def compile_from_store(challenge: str, verified: str = "local") -> dict[str, Any
 
 
 def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
+    # Audit the scripts BEFORE folding them in. A conclusive finding means the
+    # run did not demonstrate what it claims, so its records must not be able to
+    # count as successes — and that has to be decided here, at the point where
+    # the evidence tier is chosen, not left to a later reader.
+    archive = archive_scripts(challenge)
+    audit_findings = _audit(challenge, archive)
+    if any(f.conclusive for f in audit_findings) and verified != "none":
+        append_issue(
+            "solve_audit",
+            f"verified downgraded from {verified!r} to 'none': "
+            + "; ".join(f.line() for f in audit_findings if f.conclusive),
+            challenge=challenge,
+        )
+        verified = "none"
+
     report = pipeline.sync(AEGIS_DIR, evidence=verified, reason=f"{challenge}/{status}")
     forgotten = memory_forget.run(AEGIS_DIR)
     experience = pipeline.experience(AEGIS_DIR)
@@ -90,6 +106,10 @@ def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
         "compiled_at": now_iso(),
         "memory": report,
         "forgotten": forgotten,
+        "audit": [
+            {"rule": f.rule, "detail": f.detail, "where": f.where, "conclusive": f.conclusive}
+            for f in audit_findings
+        ],
         "experience": {
             "rows": len(experience),
             "with_success": sum(1 for e in experience if e.n_ok > 0),
@@ -99,3 +119,82 @@ def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
         # prose, so there is nothing to sanitise.
         "sources": ["observer-event-stream"],
     }
+
+
+def _audit(challenge: str, directory: Path) -> list:
+    """Static audit of the scripts this run left behind. Never fatal.
+
+    Audits the archived copy: `cmd_finish` wipes `test/<ch>` right after this, so
+    the archive is what survives and what a later `aegis audit` will read.
+    """
+    from aegis.paths import challenge_dir
+    from aegis.policy import audit
+
+    try:
+        target = audit.detect_target(challenge_dir(challenge))
+        findings = audit.audit_challenge(directory, marker=_marker_for(challenge), target=target)
+    except Exception:
+        # An audit that breaks must not take the run down; it degrades to "no
+        # audit", which is the same state as before it existed.
+        return []
+    for finding in findings:
+        append_issue("solve_audit", finding.line(), challenge=challenge)
+    return findings
+
+
+def archive_scripts(challenge: str, *, stamp: str | None = None) -> Path:
+    """Copy the run's scripts out of `test/<ch>` before restore wipes them.
+
+    `cmd_finish` ends with `restore_challenge`, which runs `git clean -fd` so the
+    NEXT run cannot read the previous solution. That is right, but it also
+    destroys the only evidence of what this run actually executed — and with it
+    any chance to audit or re-read the exploit.
+
+    The copy lands under `.aegis/artifacts/`, which is blocked from the agent
+    exactly like the rest of `.aegis`: the evidence is preserved without leaking.
+    """
+    import shutil
+
+    from aegis.paths import AEGIS_DIR, challenge_dir
+
+    source = challenge_dir(challenge)
+    stamp = stamp or now_iso().replace(":", "").replace("-", "").replace("+", "p")[:15]
+    dest = AEGIS_DIR / "artifacts" / f"{stamp}_{challenge}"
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    if source.is_dir():
+        for path in sorted(source.iterdir()):
+            if not path.is_file():
+                continue
+            # Skip the challenge binary itself: it is already in git, and copying
+            # it would bloat the archive for no gain.
+            try:
+                with path.open("rb") as handle:
+                    if handle.read(4) == b"\x7fELF":
+                        continue
+            except OSError:
+                continue
+            try:
+                shutil.copy2(path, dest / path.name)
+                copied += 1
+            except OSError:
+                continue
+    (dest / "MANIFEST.txt").write_text(
+        f"challenge: {challenge}\narchived: {now_iso()}\nfiles: {copied}\n",
+        encoding="utf-8",
+    )
+    return dest
+
+
+def _marker_for(challenge: str) -> str:
+    """The proof marker declared on the blackboard, if any."""
+    from aegis.blackboard import store as board_store
+
+    try:
+        board = board_store.load(AEGIS_DIR)
+    except Exception:
+        return ""
+    for requirement in board.requirements:
+        if requirement.marker:
+            return requirement.marker
+    return ""

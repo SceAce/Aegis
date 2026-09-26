@@ -150,6 +150,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_board.add_argument("--json", action="store_true")
 
+    p_audit = sub.add_parser(
+        "audit",
+        help="Static audit of the scripts a run left behind: was the proof exploited or printed?",
+    )
+    p_audit.add_argument("challenge", nargs="?", default="", help="challenge id (default: current)")
+
     p_need = sub.add_parser(
         "need",
         help="Record a USER requirement on the blackboard (external standard, not the producer's)",
@@ -252,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             args.view, args.session, args.root, args.need, args.next, args.limit, args.json
         ),
         "board": lambda: cmd_board(args.json),
+        "audit": lambda: cmd_audit(args.challenge),
         "need": lambda: cmd_need(args.text, args.marker),
         "memory": lambda: cmd_memory(args.json),
         "forget": lambda: cmd_forget(args.keep_sessions, args.max_records, args.refute, args.json),
@@ -681,6 +688,55 @@ def cmd_forget(
     if report["reasons"]:
         print("reasons: " + ", ".join(f"{k}={v}" for k, v in sorted(report["reasons"].items())))
     return 0
+
+
+def cmd_audit(challenge: str = "") -> int:
+    """Static audit of a run's scripts.
+
+    Answers the question the harness could not answer before: was the recorded
+    proof produced by exploiting the target, or printed by the script itself?
+    It can only refute — see `policy/audit`.
+    """
+    from aegis.blackboard import store as board_store
+    from aegis.paths import AEGIS_DIR, challenge_dir
+    from aegis.policy import audit as audit_mod
+
+    if not challenge:
+        challenge = str((load_current() or {}).get("challenge") or "")
+    if not challenge:
+        print("no challenge given and no current challenge", file=sys.stderr)
+        return 2
+
+    # `cmd_finish` wipes test/<ch> (so the next run cannot read this solution), so
+    # the archived copy is usually the only thing left to audit.
+    root = AEGIS_DIR / "artifacts"
+    archived = sorted(
+        d for d in root.iterdir() if d.is_dir() and d.name.endswith(f"_{challenge}")
+    ) if root.is_dir() else []
+    directory = archived[-1] if archived else challenge_dir(challenge)
+    target = audit_mod.detect_target(challenge_dir(challenge))
+    marker = ""
+    try:
+        for requirement in board_store.load(AEGIS_DIR).requirements:
+            if requirement.marker:
+                marker = requirement.marker
+                break
+    except Exception:
+        pass
+
+    findings = audit_mod.audit_challenge(directory, marker=marker, target=target)
+    print(f"# 审查 {challenge}  目标二进制={target or '?'}  证明标记={marker or '?'}")
+    print(f"  目录: {directory}")
+    if not findings:
+        print("  无疑点。（这一层只能证伪，不能证实 —— 没有发现不等于确证。）")
+        return 0
+    for finding in findings:
+        print(f"  {finding.line()}")
+    conclusive = [f for f in findings if f.conclusive]
+    print()
+    print(f"  共 {len(findings)} 条；其中确凿 {len(conclusive)} 条"
+          + ("（会让判决降级为 none）" if conclusive else "（只记录，不否定）"))
+    return 1 if conclusive else 0
 
 
 def cmd_board(as_json: bool = False) -> int:

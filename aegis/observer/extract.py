@@ -232,6 +232,22 @@ def read_pi_session(path: Path) -> Iterator[Event]:
 #: Tools whose arguments carry a structured world observation.
 _OBSERVE_TOOLS = ("aegis_observe", "aegis_note")
 
+#: Calls that are not techniques and must never become experience.
+#:
+#: Measuring is a precondition, not a move; reading the board, looking something
+#: up, or ending the run is bookkeeping. Counting them filled a real run's
+#: playbook with "aegis_board: read" as its single applicable row — advice about
+#: the harness dressed up as advice about the target.
+NON_TECHNIQUE_TOOLS = (
+    "aegis_observe",
+    "aegis_note",
+    "aegis_board",
+    "aegis_kb",
+    "aegis_recall",
+    "aegis_intervene",
+    "aegis_finish",
+)
+
 #: Tags that cannot both hold in one world.
 #:
 #: Observations accumulate per session, but a session that first probed a
@@ -371,10 +387,10 @@ def distill(records: list[MemoryRecord], condition: tuple[str, ...] = ()) -> lis
     """
     agg: dict[tuple[tuple[str, ...], str], list[int]] = {}
     for r in records:
-        # An observation is not a technique. Counting `observe: ... tags=...` as
-        # experience would pad the playbook with the act of measuring, which is
-        # not something to recommend doing again -- it is the precondition.
-        if r.tool in _OBSERVE_TOOLS:
+        # Bookkeeping is not a technique. Counting `observe: ... tags=...` or
+        # `aegis_board: read` as experience pads the playbook with the act of
+        # measuring or asking, which is not something to recommend doing again.
+        if r.tool in NON_TECHNIQUE_TOOLS:
             continue
         key = (r.condition or condition, portable(r.action))
         slot = agg.setdefault(key, [0, 0])

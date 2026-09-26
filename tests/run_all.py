@@ -16,6 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MODULES = [
     "test_extension.py",
+    "test_verdict.py",
     "test_observer.py",
     "test_memory.py",
     "test_veto.py",

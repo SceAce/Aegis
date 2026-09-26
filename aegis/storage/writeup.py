@@ -41,7 +41,11 @@ def write_writeup(
             msg = " ".join(str(row.get("message") or "").split())
             if len(msg) > 180:
                 msg = msg[:177] + "..."
-            lines.append(f"  - [{row.get('kind')}] {msg}")
+            # `load_issues` already collapsed exact repeats, so show the count
+            # rather than repeating the line.
+            count = int(row.get("n") or 1)
+            times = f" (x{count})" if count > 1 else ""
+            lines.append(f"  - [{row.get('kind')}] {msg}{times}")
     else:
         lines.append("- problems: (none recorded by harness)")
     if compiled:

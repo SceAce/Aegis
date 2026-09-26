@@ -119,6 +119,25 @@ worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数─�
 - 删掉死代码：`intervene.decide`（72 行，无人调用）、`_activated_techniques`、
   `explain --tau`（经验路径没有这个旋钮，留着等于假装有）。
 
+### 已完成（真实 run 之后）
+
+第一次真实 pwn_1 跑完（620 事件 / 210 记忆 / 114 经验 / solved），从数据里抓出并修掉四个洞：
+
+- **成果标准不健全（f+ > 0）**。实测第一次命中在 `seq=3` —— 那是**读黑板 JSON**，
+  因为 marker 就写在黑板上。三处收紧：只认执行类工具、必须是"打印出来"而不是"被提到"、
+  两个标记必须在同一条输出里。
+- **证明必须能区分"利用出来的 shell"和"自己起的 shell"**。本地题目两者同 uid，
+  磁盘上放不了秘密；唯一能区分的是**进程血缘**。`manual/*/TASK.md` 现在要求输出
+  `PARENT_PROC=$(cat /proc/$(awk '{print $4}' /proc/$$/stat)/comm)`，
+  真利用得到的是题目二进制名，自己起的是 `python3`/`bash`。
+- **审脚本**（`policy/audit.py`）：`direct_flag_read` 确凿 → 判决降级为 `none`、记忆不记成功；
+  `self_printed_marker` 存疑 → 只记 issue，不擅自否定（误报比漏报贵）。
+- **证据归档**（`storage/compile.archive_scripts`）：`finish` 会 `git clean -fd` 删掉
+  `test/<ch>` 里的脚本（防下一轮偷看），但那样也毁掉了唯一证据。现在先复制到
+  `.aegis/artifacts/<时间戳>_<题>/`（同样对 agent 不可读），审计可复查。
+- 非手法工具（`aegis_board` / `aegis_kb` / `aegis_finish` …）不再计进经验（114 → 105 行）。
+- 重复 issue 折成计数（29 行 → 6 条），WP 的 problems 段不再被同一条 sync 刷屏。
+
 ### 未完成（下一轮）
 
 - 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：
