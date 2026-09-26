@@ -213,6 +213,44 @@ tcache dup → `strdup` 别名 → 任意地址写 0x1f 字节 → 栈/PIE 泄�
    agent 实际收到的提示词不一致。
 
 
+### 已完成（pwn_3 第二次 run：solved / verified=flag）
+
+修完上述四项后重跑 pwn_3，**通了**，而且是用**强判据**通的：
+
+- `elapsed_s=906.5`（上一轮 2585.4s，且上一轮 failed），`status=solved`、`verified=flag`，
+  memory 75 new / 419 total，experience 248 行。
+- 判据按机械核对为 `strong`：`aegis_pwn` seq 252/260 的**同一条执行输出**里
+  `PWNED_MARKER` 与 `PARENT_PROC=pwn` 都在行首。
+- 链：dangling `user` 指针 UAF → delete 后 `send` 的 `strdup` 回收同一 0x20 chunk
+  使 `*(user)` 可控 → `edit` 的 `read(0,*(user),0x1f)` 变成 31 字节任意写 →
+  把 `"exec /bin/sh"` 写进 .bss，再把 `edit` 的保存返回地址改成
+  `ret; pop rdi; ret; cmd; system`。`system` fork 出的 `sh` 再 `exec /bin/sh`，
+  **父进程仍是 `pwn`** —— 这正是强判据要的形状。
+- 它自己也承认：提示的 tcache dup 在 2.43 世界走不通（hooks 已死 + safe-linking + key 检查），
+  确认无常规 double-free 路径后转向 UAF 任意写。
+
+**这一轮同时验证了本轮的四项修复：**
+
+1. **归档真的生效了**：`files: 3`、`local_copies: 1`、`exec_host: ssh:100.110.69.75`，
+   拉回了 `solve.py`（5091 字节）+ `exp.py` + `.gdb_history`。上一轮是 `files: 0`。
+2. **审计不再空转**：`_corroborated` 为 True，`audit_script` 对归档里三个文件各返回 0 finding；
+   正向对照——把 `open("/flag")` 塞进一个脚本，`direct_flag_read` 立刻给出 conclusive finding。
+   即：这一轮没查出问题，是**因为真的没问题**，不是因为审计看不见。
+3. **glibc 标签这次自洽**：观测写 `tags=['glibc2.43',...]`，正文 `GLIBC 2.43-2ubuntu2.4`，
+   没有再触发 `contradictory_glibc` 的丢弃。
+4. **经验列不再空转**：这个世界下 `strong guidance 6`（上一轮是 0），
+   另有 4 条弱经验。指引里是这次学到的"起 python3 heredoc 打靶 / gdb 里
+   `set pagination off` / `set disable-randomization on` / 断在 `b *<addr>`"。
+
+### 另外发现并修掉的一个洞（本轮 run 之后）
+
+- **`branch == ""` 且自称 solved 时，声明从不被核对**。`_fold` 原来只在**弱判据命中**
+  且无佐证时降级；反过来那个更强的不信任理由——执行输出**根本没满足判据**——
+  却完全不处理。于是"什么都没打印"加一句 `verified=flag` 能原样通过。
+  这正是本项目要堵的"模型自己给自己发 verified"。现已收紧：有声明无命中 → 降 `none` 并记 issue
+  （只降**正向**声明；`none` 什么都没声明；只在判当前 run 时生效，
+  重编译历史 verdict 不会重新审判）。
+
 ### 待定（需要人来定，不自作决定）
 
 - **世界标签丢了版本号后，两个世界来源不一致**。`observed_tags` 丢掉自相矛盾的
