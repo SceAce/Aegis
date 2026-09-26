@@ -23,6 +23,7 @@ MODULES = [
     "test_blackboard.py",
     "test_integrity.py",
     "test_guard.py",
+    "test_cli.py",
     "test_channel.py",
     "test_session.py",
     "test_roleflip.py",
