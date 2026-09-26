@@ -148,6 +148,71 @@ worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数─�
 - **`aegis observer` 改读原生事件流**（原来读 pi 的 session 日志 —— 那是另一条更差的源，
   所以 `thoughts` 明明有数据却报 0 段）。
 
+### 已完成（pwn_3 真实 run 之后）
+
+第二次真实运行：`pwn_3`（堆题，glibc 2.43），2585.4s，`status=failed`、`verified=local`。
+利用链**走通了**（`delete` 不置空 + `edit` 改 tcache key 绕 2.43 double-free 检测 →
+tcache dup → `strdup` 别名 → 任意地址写 0x1f 字节 → 栈/PIE 泄漏 → ROP → `system("/bin/sh")`，
+成功打印 `PWNED_MARKER` 与 `uid=1000(hack)`），但标准要的第三段没有拿到：
+`PARENT_PROC=sh`（走 `system`）或 `PARENT_PROC=python3`（in-place one_gadget `execve`），
+从不是 `pwn`。真正卡住它的是**单区域 0x1f 字节写入上限** ——
+4-qword 对齐 ROP 所需的 RET gadget 与 `"exec /bin/sh"` 字符串塞不进 31 字节。
+**标准拒绝给它盖章，这是对的**。
+
+这一轮从数据里抓出并修掉两个洞：
+
+- **世界标签错一位 → 205 行经验全部失效**。它把版本标成 `glibc2.44`，而自己的观测正文写着
+  `Ubuntu GLIBC 2.43-2ubuntu2.4`。经验行按版本精确匹配，所以 `aegis explain` 报
+  **「共 205 行；这个世界适用 0 行」**（`status.counts.cells=0`），而 run 报告里
+  `experience.rows=205 / with_success=201` —— 经验学到了，只是被挂在一个不存在的世界上。
+  这会被读成"经验不迁移"，实际原因是打错一位数字。修法见
+  `observer/extract.contradictory_glibc`：只否证**自相矛盾**的观测，绝不从散文里反推世界
+  （正文没有版本号、或声明了多个版本时一律弃权）；两个读路径都丢
+  （`observed_tags` 走事件流，`add_observation` 走 `fingerprint` —— 后者是
+  `experience_playbook` 的 fallback），并在 `aegis observe` 当场告诉 agent 重观测一次。
+- **`aegis observer thoughts | head -80` 会打 `BrokenPipeError` traceback**。管道早关是
+  正常用法，而这个项目的工具输出**就是**审计材料 —— 审计末尾一段 traceback 和真崩了
+  没法区分。现在只吞 `BrokenPipeError`（其余异常照旧抛出），退出码 0。
+  `tests/test_cli.py` 故意造 >64K 事件：小于管道缓冲时失败发生在解释器退出 flush，
+  已经在 `main()` 之外，那样测试对着未修的代码也会过（已验证未修时 exit 120 + traceback）。
+
+### 待定（需要人来定，不自作决定）
+
+- **经验为什么"0 行适用"有两个原因，不是一个**。修完 glibc 错标之后，
+  `aegis explain` 仍只从 0/205 变成 1/204。第二个原因更根本：
+
+  1. **记忆条件跨 run 串味（已修）**。`build_memory` 的世界累加器不按 session 重置，
+     于是上一轮的世界变成下一轮的条件 —— 实测 pwn_3 的 120 条记录里 **114 条**挂在
+     pwn_1 的 `glibc2.27/fastbin/hooks_alive` 加上一次中断尝试留下的 `pwn` 标签上。
+     `world_tags` 早就按 session 限定了，所以那个世界永远不可能被满足。
+     现已按 session 重置（`test_one_run_world_never_becomes_the_next_run_condition`）。
+  2. **条件是"派生值"，改了规则也不会回填到已存的记录**。`sync` 按 `(session, seq)` 去重，
+     永不覆盖，所以修好提取规则后旧库存仍按旧规则作答 —— 看起来和"没修"一模一样。
+     新增 `aegis relearn`（`pipeline.relearn`）：只重算 `condition`，
+     **不动 `ok`**（每轮的证据等级没有按记录存，重算会把 `none`/`wiki` 的降级悄悄升回成功）。
+     已对现有库存执行：344 条中 134 条条件被纠正。
+
+- **`applies()` 会否掉"无条件经验"，而这恰好是真实 run 的大多数**。
+  `playbook.applies` 里 `if not experience.condition: return not world`
+  —— 一旦世界非空，无条件经验就不适用。而条件只在观测之后才变具体，
+  agent 总是先动手后观测：pwn_3 的 114/120 条记录条件是**空**的（它把观测都放在 seq 423+），
+  于是它们全部被这条规则否掉。就是说"经验驱动行为"在当前写法下**很难触发**，
+  不是数据问题而是判据问题。可考虑：空条件按"弱经验"降权展示，而不是直接否掉。
+- **世界标签丢了版本号后，两个世界来源不一致**。`observed_tags` 丢掉自相矛盾的
+  `glibc2.44` 后，`world_tags` 里就**没有版本**了（实测 pwn_3 = 5 个标签，无 glibc）；
+  而 `current_fingerprint` 走 `core.fingerprint.parse`，它会从正文里**读**出版本 2.43。
+  `experience_playbook` 在 `world_tags` 非空时优先用它，于是按版本存的经验全部落空。
+  即：指纹路径允许"从散文取版本"，观测路径禁止 —— 两条路径对同一件事给了不同答案。
+  要么让丢弃时用正文里的版本回填，要么把指纹路径也收紧，**不能两套并存**。
+- **`PARENT_PROC=pwn` 有假阴性**。真利用也可能拿不到这个值：in-place one_gadget 的
+  `execve("/bin/sh")` 让 shell **变成**题目进程本身，父进程是起它的脚本（`python3`）；
+  经 `system` 的 shell 父进程是 `sh`。两者都是真利用，却和"自己起一个 shell"撞在同一条
+  判据上。可选的收紧/放宽：① 认 `system("exec /bin/sh")` 语义（父进程仍是 `pwn`，
+  但要求 agent 把这串塞进写窗口）；② 接受"题目进程 execve 成了 shell"这条血缘
+  （判据从"父进程名"改成"祖先里有题目二进制 **且** 该进程已不存在"）；
+  ③ 另加一条可机检证据（例如 exploit 必须让题目进程自己打印 marker）。
+  在定下来之前**不改** `manual/*/TASK.md` 的标准。
+
 ### 未完成（下一轮）
 
 - 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：

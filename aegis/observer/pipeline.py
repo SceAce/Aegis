@@ -10,6 +10,7 @@ receives `Experience` only; it never sees a `MemoryRecord`.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from aegis.memory import store as memory_store
@@ -86,6 +87,48 @@ def sync(state_dir: Path, *, evidence: str = "local", reason: str = "") -> dict:
 def experience(state_dir: Path) -> list[Experience]:
     """All experience derivable from stored memory. Counting only — no LLM."""
     return distill(memory_store.load(state_dir))
+
+
+def relearn(state_dir: Path, *, dry_run: bool = False) -> dict[str, int]:
+    """Re-apply the current extraction rules to records that are already stored.
+
+    `condition` is **derived, not observed** — it means "the world known when this
+    action ran" — so a parser fix cannot reach records already written: `sync`
+    de-duplicates on `(session, seq)` and will never overwrite them. Without this,
+    a fixed condition rule only affects future runs while the store keeps
+    answering from the old one, which is indistinguishable from "the fix did
+    nothing".
+
+    Only `condition` is replaced. `ok` is deliberately **not** recomputed: the
+    evidence tier of a past run is not stored per record, so re-deriving it here
+    could silently upgrade a neutralised (`none`/`wiki`) run into a successful one
+    — the exact corruption `sync`'s neutralisation exists to prevent.
+
+    Returns `{records, changed, unmatched}`; `unmatched` counts stored records the
+    event stream no longer produces (kept as-is, never guessed at).
+    """
+    _, fresh = collect(state_dir)
+    by_key = {(r.session, r.seq): r.condition for r in fresh}
+
+    stored = memory_store.load(state_dir)
+    changed = unmatched = 0
+    updated: list[MemoryRecord] = []
+    for r in stored:
+        key = (r.session, r.seq)
+        if key not in by_key:
+            unmatched += 1
+            updated.append(r)
+            continue
+        condition = by_key[key]
+        if condition != r.condition:
+            changed += 1
+            updated.append(replace(r, condition=condition))
+        else:
+            updated.append(r)
+
+    if changed and not dry_run:
+        memory_store.rewrite_records(state_dir, updated)
+    return {"records": len(stored), "changed": changed, "unmatched": unmatched}
 
 
 def current_session(state_dir: Path) -> str | None:

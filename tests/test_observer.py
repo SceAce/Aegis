@@ -360,3 +360,96 @@ def test_contradicted_tag_is_dropped_at_the_write_site() -> None:
     fp = store.current_fingerprint().all
     assert "glibc2.44" not in fp, fp
     assert "glibc2.43" in fp, fp
+
+
+def test_one_run_world_never_becomes_the_next_run_condition() -> None:
+    """The world accumulator must reset when the session changes.
+
+    Regression, from real data: a pwn_3 run had **114 of its 120 records** keyed on
+    pwn_1's `glibc2.27 / fastbin / hooks_alive` world plus a `pwn` tag left over
+    from an aborted attempt. `world_tags` is scoped per run, so the world can never
+    contain those tags — no conditional experience could match, and the run read as
+    "experience does not transfer" when the cause was contaminated conditions.
+
+    A session *is* a run, so the reset boundary is the session id.
+    """
+    from aegis.core.events import Event
+    from aegis.observer.extract import build_memory
+
+    def obs(session: str, seq: int, tags: list[str]) -> Event:
+        return Event("pi", session, seq, "T", "observation", data={"tags": tags})
+
+    def act(session: str, seq: int) -> Event:
+        return Event("pi", session, seq, "T", "action", tool="aegis_pwn", call_id=f"c{seq}",
+                     data={"args": {"command": "ls"}})
+
+    def out(session: str, seq: int, call: str) -> Event:
+        return Event("pi", session, seq, "T", "outcome", tool="aegis_pwn", call_id=call, ok=True,
+                     data={"text": "ok"})
+
+    events = [
+        obs("run-a", 1, ["glibc2.27", "fastbin"]),
+        act("run-a", 2),
+        out("run-a", 3, "c2"),
+        act("run-b", 4),
+        out("run-b", 5, "c4"),
+    ]
+    by_seq = {r.seq: r for r in build_memory(events)}
+    assert by_seq[2].condition == ("fastbin", "glibc2.27"), by_seq[2].condition
+    assert by_seq[4].condition == (), (
+        f"run-b inherited run-a's world: {by_seq[4].condition}"
+    )
+
+
+def test_relearn_repairs_stored_conditions_and_keeps_verdicts() -> None:
+    """`sync` de-duplicates on (session, seq), so a fixed condition rule cannot
+    reach records already stored — the store would keep answering from the old
+    rule and the fix would look like it did nothing. `relearn` re-derives only
+    `condition`.
+
+    `ok` must survive untouched: the evidence tier of a past run is not stored per
+    record, so re-deriving it could silently upgrade a neutralised run into a
+    successful one.
+    """
+    import os
+
+    from aegis.core.events import Event
+    from aegis.observer import pipeline
+    from aegis.paths import AEGIS_DIR
+
+    assert os.environ.get("AEGIS_STATE_DIR"), "run tests via tests/run_all.py"
+
+    stored_rows = [
+        obs_rec("s1", 2, condition=("stale",), ok=True),
+        obs_rec("s1", 4, condition=("stale",), ok=None),
+        obs_rec("gone", 9, condition=("stale",), ok=False),
+    ]
+    from aegis.memory import store as memory_store
+
+    memory_store.rewrite_records(AEGIS_DIR, stored_rows)
+    fresh = [
+        obs_rec("s1", 2, condition=("fresh",), ok=True),
+        obs_rec("s1", 4, condition=("fresh",), ok=True),  # ok differs on purpose
+    ]
+    original = pipeline.collect
+    pipeline.collect = lambda _d: ([], fresh)  # type: ignore[assignment]
+    try:
+        report = pipeline.relearn(AEGIS_DIR)
+        after = {r.seq: r for r in memory_store.load(AEGIS_DIR)}
+    finally:
+        pipeline.collect = original  # type: ignore[assignment]
+
+    assert report == {"records": 3, "changed": 2, "unmatched": 1}, report
+    assert after[2].condition == ("fresh",)
+    assert after[4].condition == ("fresh",)
+    assert after[4].ok is None, "relearn overwrote the stored verdict"
+    assert after[9].condition == ("stale",), "unmatched record was guessed at"
+
+
+def obs_rec(session: str, seq: int, *, condition: tuple[str, ...], ok: bool | None):
+    from aegis.observer.extract import MemoryRecord
+
+    return MemoryRecord(
+        worker="pi", session=session, seq=seq, ts="T", tool="aegis_pwn",
+        action="pwn: ls", ok=ok, out_chars=1, out_digest="d", condition=condition,
+    )

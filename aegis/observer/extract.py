@@ -348,6 +348,14 @@ def build_memory(events: list[Event]) -> list[MemoryRecord]:
     The condition is the set of tags observed *before* the action ran, so a later
     observation cannot retroactively explain an earlier attempt. Records with an
     empty condition are kept: "we tried this knowing nothing" is information.
+
+    The world accumulator is reset whenever the session changes, because a
+    session is a run. One accumulator for the whole event stream made a run's
+    records carry the **previous run's** world: a real pwn_3 run had 114 of its
+    120 records keyed on pwn_1's `glibc2.27 / fastbin / hooks_alive` plus a `pwn`
+    tag left over from an aborted attempt. The world never contains those tags
+    (`world_tags` is already scoped per session), so no conditional experience
+    could ever match and the run read as "experience does not transfer".
     """
     outcomes: dict[str, Event] = {}
     for e in events:
@@ -356,7 +364,11 @@ def build_memory(events: list[Event]) -> list[MemoryRecord]:
 
     records: list[MemoryRecord] = []
     world: set[str] = set()
+    session: str | None = None
     for e in events:
+        if e.session != session:
+            world = set()
+            session = e.session
         if e.kind == "observation":
             raw = (e.data or {}).get("tags")
             if isinstance(raw, (list, tuple)):

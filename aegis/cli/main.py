@@ -235,6 +235,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("purge", help="Drop non-portable cells (raw addresses / chunk sizes) from the atlas")
 
+    p_relearn = sub.add_parser(
+        "relearn",
+        help="Re-derive stored memory conditions from the event stream (after a parser fix)",
+    )
+    p_relearn.add_argument("--dry-run", action="store_true", help="Report without rewriting")
+
     p_docker = sub.add_parser(
         "docker", help="Ensure the fallback docker container is up (idempotent)"
     )
@@ -267,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             args.status, args.chain, args.stuck, args.extra, args.elapsed, args.verified
         ),
         "purge": cmd_purge,
+        "relearn": lambda: cmd_relearn(args.dry_run),
         "note": lambda: cmd_note(args.kind, args.text, args.technique, args.condition),
         "recall": lambda: cmd_recall(args.kind),
         "pwn": lambda: cmd_pwn(args.command, args.timeout, args.channel),
@@ -1227,6 +1234,31 @@ def cmd_env(probe: bool, as_json: bool) -> int:
     if len(channels) < 2:
         print()
         print("提示: 只发现一条通道。要加远程，设 AEGIS_REMOTE=<ssh 别名>（~/.ssh/config 里已有的）。")
+    return 0
+
+
+def cmd_relearn(dry_run: bool = False) -> int:
+    """Re-derive stored memory conditions from the event stream.
+
+    `condition` is derived, not observed, so a fix to how the world is extracted
+    cannot reach records that are already stored — `sync` de-duplicates on
+    `(session, seq)` and never overwrites them. Without this command the store
+    keeps answering from the old rule, and a fixed rule looks like it did nothing.
+    """
+    from aegis.observer import pipeline
+    from aegis.paths import AEGIS_DIR
+
+    report = pipeline.relearn(AEGIS_DIR, dry_run=dry_run)
+    print(
+        f"records={report['records']}  changed={report['changed']}  "
+        f"unmatched={report['unmatched']}"
+        + ("  (dry-run: nothing written)" if dry_run else "")
+    )
+    if report["unmatched"]:
+        print(
+            "  未匹配的记录保持原样（事件流里已经没有对应事件）—— 不猜、不改写。",
+            file=sys.stderr,
+        )
     return 0
 
 
