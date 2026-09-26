@@ -346,3 +346,74 @@ def test_corroboration_is_not_satisfied_by_the_pwninit_scaffold() -> None:
         (d / "notes.txt").write_text("no exploit here at all, just a note\n", encoding="utf-8")
         (d / "MANIFEST.txt").write_text("files: 0\n", encoding="utf-8")
         assert _corroborated("pwn_1", d) is False
+
+
+def test_the_weak_branch_is_not_certified_without_a_corroborating_script() -> None:
+    """Pins the rule the standard now rests on, end to end through `_fold`.
+
+    `TARGET_GONE=yes` is satisfied by any run in which no `pwn` process is alive —
+    including one that never ran the target. So the tier is only kept when the
+    archived scripts show an exploit reaching it. Asserted here at the point where
+    the tier is actually chosen, because `_corroborated` passing on its own does
+    not prove `_fold` consults it, or consults it in the right direction.
+    """
+    from aegis.storage import compile as compile_mod
+
+    def fold_with(branch: str, corroborated: bool, verified: str = "local"):
+        issues: list[str] = []
+        original = (
+            compile_mod.archive_scripts,
+            compile_mod._audit,
+            compile_mod._execution_branch,
+            compile_mod._corroborated,
+            compile_mod.append_issue,
+            compile_mod.pipeline.sync,
+            compile_mod.memory_forget.run,
+            compile_mod.pipeline.experience,
+        )
+        compile_mod.archive_scripts = lambda ch, **k: {"path": "/nonexistent", "files": 0}
+        compile_mod._audit = lambda ch, d: []
+        compile_mod._execution_branch = lambda ch, s: branch
+        compile_mod._corroborated = lambda ch, d: corroborated
+        compile_mod.append_issue = lambda kind, message, **k: issues.append(str(message))
+        compile_mod.pipeline.sync = lambda *a, **k: {"records": 0}
+        compile_mod.memory_forget.run = lambda *a, **k: {}
+        compile_mod.pipeline.experience = lambda *a, **k: []
+        try:
+            return (
+                compile_mod._fold(
+                    challenge="pwn_1", status="solved", verified=verified, run_session="s1"
+                ),
+                issues,
+            )
+        finally:
+            (
+                compile_mod.archive_scripts,
+                compile_mod._audit,
+                compile_mod._execution_branch,
+                compile_mod._corroborated,
+                compile_mod.append_issue,
+                compile_mod.pipeline.sync,
+                compile_mod.memory_forget.run,
+                compile_mod.pipeline.experience,
+            ) = original
+
+    weak_bare, issues = fold_with("weak", corroborated=False)
+    assert weak_bare["verified"] == "none", weak_bare
+    assert weak_bare["criterion_branch"] == "weak"
+    assert any("weak" in m for m in issues), issues
+
+    weak_ok, issues = fold_with("weak", corroborated=True)
+    assert weak_ok["verified"] == "local", weak_ok
+    assert issues == [], issues
+
+    # The strong branch is proof by itself; a missing script must not downgrade it.
+    strong, issues = fold_with("strong", corroborated=False)
+    assert strong["verified"] == "local", strong
+    assert issues == []
+
+    # Nothing matched, and the run already claimed nothing: no new issue.
+    none_branch, issues = fold_with("", corroborated=False, verified="none")
+    assert none_branch["verified"] == "none"
+    assert none_branch["criterion_branch"] == ""
+    assert issues == [], issues
