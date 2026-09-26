@@ -55,8 +55,16 @@ REMOTE_WORKDIR = os.environ.get("AEGIS_REMOTE_WORKDIR", "~/Tmp/aegis/{challenge}
 REMOTE_VENV = os.environ.get("AEGIS_REMOTE_VENV", "~/tools/CTF")
 REMOTE_PORT = int(os.environ.get("AEGIS_REMOTE_PORT", "22"))
 
-# Where the interactive pi session is launched from (legacy docker flow).
-PI_SCRIPT = Path.home() / "My_github" / "pi" / "pi-test.sh"
+# The launcher for the agent session.
+#
+# It MUST be ours. Upstream's `pi-test.sh` runs the upstream source, whose native
+# Observer does not exist — so a run started through it feeds the memory loop
+# zero events and looks like "experience had no effect" for entirely the wrong
+# reason. `scripts/aegis-pi.sh` runs the fork and refuses to start if the
+# Observer is missing or its build is stale.
+#
+# AEGIS_PI overrides it, for pointing at a differently built pi.
+PI_SCRIPT = Path(os.environ.get("AEGIS_PI") or (ROOT / "scripts" / "aegis-pi.sh"))
 PWN_START = Path.home() / "Tools" / "pwn" / "start.sh"
 
 FORBIDDEN_READ_NAMES = {

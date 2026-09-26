@@ -15,7 +15,7 @@ from aegis.channel.dockerutil import pick as pick_channel
 from aegis.channel.dockerutil import probe_tools, push_to_remote, pwn_exec, sync_to_container
 from aegis.policy.guard import refuse_reason
 from aegis.gitutil import restore_challenge
-from aegis.policy.intervene import Kind, decide, refine, render
+from aegis.policy.intervene import Kind, refine, render
 from aegis.paths import (
     CONTAINER,
     PI_SCRIPT,
@@ -206,7 +206,6 @@ def main(argv: list[str] | None = None) -> int:
     p_iv.add_argument("--json", action="store_true", help="Emit the decision record as JSON")
 
     p_expl = sub.add_parser("explain", help="Why did (or didn't) a cell activate? Reads status.json")
-    p_expl.add_argument("--tau", type=float, default=None)
     p_expl.add_argument("--top", type=int, default=12)
 
     p_shell = sub.add_parser(
@@ -270,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         "wiki": lambda: cmd_wiki(args.action, args.limit, args.force),
         "kb": lambda: cmd_kb(args.query, args.k),
         "intervene": lambda: cmd_intervene(args.trigger, args.trajectory, args.llm, args.json),
-        "explain": lambda: cmd_explain(args.tau, args.top),
+        "explain": lambda: cmd_explain(args.top),
         "migrate": lambda: cmd_migrate(args.dry_run, not args.no_llm),
         "shell": lambda: cmd_shell(args.action, args.text, args.timeout, args.channel, args.pane),
         "docker": lambda: cmd_docker(args.action, args.rebuild),
@@ -322,7 +321,7 @@ def cmd_doctor() -> int:
 
     check("git repo", (ROOT / ".git").is_dir(), str(ROOT))
     check("uv", shutil.which("uv") is not None)
-    check("pi-test.sh", PI_SCRIPT.is_file(), str(PI_SCRIPT))
+    check("agent launcher", PI_SCRIPT.is_file(), str(PI_SCRIPT))
     check("ROM", ROM_PATH.is_file())
     check("RAM tools", RAM_TOOLS_PATH.is_file())
     chals = list_challenges()
@@ -542,11 +541,12 @@ def cmd_start(challenge: str, hints: list[str] | None = None) -> int:
         print("hints:")
         for text in hints:
             print(f"  - {text}")
-    # Print the entry point that actually exists. There is no `pi` binary here:
-    # the agent is a source checkout driven through pi-test.sh, so a hint saying
-    # `pi --approve ...` failed with "command not found".
+    # Print the entry point that actually exists AND actually runs this fork.
+    # There is no `pi` binary here, and upstream's pi-test.sh would start an
+    # observer-less pi: the run would look normal while the memory loop received
+    # nothing. PI_SCRIPT points at our launcher for exactly that reason.
     print("下一步（二选一）:")
-    print(f"  # A. 交互式，能实时看它在干什么")
+    print("  # A. 交互式，能实时看它在干什么")
     print(
         f"  AEGIS_CHALLENGE={challenge} {PI_SCRIPT} --approve "
         f"--provider deepseek --model deepseek-flash \\"
@@ -589,17 +589,22 @@ def cmd_observe(text: str, tags: list[str] | None, kind: str) -> int:
         print("tags: " + ", ".join(row["tags"]))
     print("fingerprint: " + _fmt_fp(fp))
 
-    # Observation changes the world, so the activated column changes NOW — not
+    # Observation changes the world, so what experience applies changes NOW — not
     # at the next session start. The old harness left the agent running on a
     # stale column for the rest of the run.
-    prev = _activated_techniques()
-    bundle = build_bundle()
-    iv = decide(trigger="observe", bundle=bundle, prev_activated=prev)
-    bundle["_iv"] = iv.as_row()
-    from aegis.storage.store import _write_json
-    from aegis.paths import AEGIS_DIR
+    #
+    # Rebuild the persisted column (which is what the per-command refusal path
+    # reads), then decide from the experience playbook. The decision used to come
+    # from the atlas bundle, which has been empty since the store was rebuilt, so
+    # it always answered SILENT.
+    from aegis.paths import AEGIS_DIR as _AEGIS_DIR
+    from aegis.policy.intervene import decide_from_playbook
+    from aegis.storage.store import _write_json, experience_playbook
 
-    _write_json(AEGIS_DIR / "activation.json", bundle)
+    bundle = build_bundle()
+    iv = decide_from_playbook("observe", experience_playbook())
+    bundle["_iv"] = iv.as_row()
+    _write_json(_AEGIS_DIR / "activation.json", bundle)
     append_episode(challenge=(load_current() or {}).get("challenge"), kind="intervention", **iv.as_row())
 
     if iv.kind is Kind.SILENT:
@@ -653,7 +658,6 @@ def cmd_forget(
     """Bound the memory store. Compaction preserves counts; every drop is logged."""
     import json as _json
 
-    from aegis.memory import forget as memory_forget
     from aegis.paths import AEGIS_DIR
 
     for condition in refute or []:
@@ -826,24 +830,6 @@ def _fmt_fp(fp) -> str:
     if known:
         bits.append("tags=" + ",".join(known))
     return "  ".join(bits) or "(none — cold start)"
-
-
-def _activated_techniques() -> set[str]:
-    """Techniques in the column as of the last evaluation, for delta detection."""
-    import json as _json
-
-    from aegis.paths import AEGIS_DIR
-
-    p = AEGIS_DIR / "activation.json"
-    if not p.is_file():
-        return set()
-    try:
-        data = _json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return set()
-    out = {str(c.get("technique") or "") for c in (data.get("cells") or [])}
-    out |= {str(c.get("technique") or "") for c in (data.get("forbid") or [])}
-    return out
 
 
 def cmd_note(kind: str, text: str, technique: str, condition: str) -> int:
@@ -1174,50 +1160,75 @@ def cmd_intervene(trigger: str, trajectory: str, use_llm: bool, as_json: bool) -
     return 0
 
 
-def cmd_explain(tau: float | None, top: int) -> int:
-    """Show why each near-threshold cell did or did not activate."""
-    from aegis.policy.activate import fan_counts, score, _tier
-    from aegis.core.predicate import is_applicable
+def cmd_explain(top: int) -> int:
+    """Explain what experience does for the current world, and why.
+
+    This used to score the atlas cell table. That table has been empty since the
+    memory store was rebuilt, so it printed an empty ranking and explained
+    nothing — while the thing that actually drives behaviour, the experience
+    playbook, went undisplayed.
+    """
+    from aegis.memory import forget as memory_forget
+    from aegis.observer import pipeline
     from aegis.paths import AEGIS_DIR
-    from aegis.storage.store import _atlas_cells, current_fingerprint
+    from aegis.policy import playbook as playbook_mod
+    from aegis.policy import veto as veto_mod
+    from aegis.storage.store import current_fingerprint
 
     fp = current_fingerprint()
-    cells = _atlas_cells()
-    fan = fan_counts(cells)
-    tau_v = tau if tau is not None else 0.9
+    world = pipeline.world_tags(AEGIS_DIR)
+    experience = pipeline.experience(AEGIS_DIR)
+    pb = playbook_mod.build(experience, world)
+    vetos = veto_mod.build(experience, world)
 
-    print("# 指纹")
+    print("# 世界")
     print("  " + _fmt_fp(fp))
-    print(f"  expanded: {', '.join(sorted(fp.expanded)) or '(none)'}")
+    print(f"  观测到的标签: {', '.join(sorted(world)) or '(none — 还没量过)'}")
+    print(f"  指纹扩展:     {', '.join(sorted(fp.expanded)) or '(none)'}")
     print()
 
-    rows = []
-    for c in cells:
-        a, why = score(c, fp, fan)
-        rows.append((a, why, c))
-    rows.sort(key=lambda r: r[0], reverse=True)
+    print(f"# 经验（共 {len(experience)} 行；这个世界适用 {len(pb.guidance) + len(pb.vetoes)} 行）")
+    if pb.guidance:
+        for e in pb.guidance:
+            print(f"  [指引] {e.n_ok}/{e.n}  @ {','.join(e.condition)}  :: {e.action[:60]}")
+    if pb.vetoes:
+        for e in pb.vetoes:
+            print(f"  [禁令] 0/{e.n}  @ {','.join(e.condition)}  :: {e.action[:60]}")
+    if pb.is_empty():
+        print("  (无适用经验 — 这是冷启动的正确状态，不是故障)")
 
-    print(f"# 激活分（tau={tau_v}；只显示前 {top}）")
-    for a, why, c in rows[:top]:
-        mark = "ON " if a >= tau_v else "off"
-        tier = _tier(c)
-        print(f"  {mark} A={a:6.2f}  [{c['state']}/{tier}] {c['technique'][:58]}")
-        print(f"        why={why}  req={c.get('requires')} forbids={c.get('forbids') or []}")
-
-    st = AEGIS_DIR / "status.json"
-    if st.is_file():
-        import json as _json
-
-        data = _json.loads(st.read_text(encoding="utf-8"))
+    # Why the rest did not apply. Without this the empty case is indistinguishable
+    # from a broken pipeline, which is the failure mode this project keeps hitting.
+    blocked = [e for e in experience if e not in pb.guidance and e not in pb.vetoes]
+    if blocked and top:
         print()
-        print("# 上次装配（status.json，不注入模型）")
-        print(f"  hsr@k = {data.get('hsr_at_k')}")
-        for k, v in sorted((data.get("dropped") or {}).items()):
-            print(f"  dropped {k} = {v}")
+        print(f"# 未适用（前 {min(top, len(blocked))} 条）")
+        for e in blocked[:top]:
+            if not set(e.condition) <= world and e.condition:
+                why = f"条件不满足: 需要 {','.join(e.condition)}"
+            elif e.n_ok == 0 and e.n_fail < veto_mod.VETO_MIN_FAILS:
+                why = f"失败次数不足（{e.n_fail} < {veto_mod.VETO_MIN_FAILS}）"
+            elif e.n_ok == 0:
+                why = "无成功记录，且不构成硬禁令"
+            else:
+                why = "未进 top-k"
+            print(f"  - {e.action[:52]:<52} {why}")
+    print()
 
-    ok, why = (False, "")
-    if cells:
-        ok, why = is_applicable(cells[0], fp)
+    if vetos:
+        print(f"# 工具层硬拒绝（{len(vetos)} 条，命中即 REFUSED）")
+        for v in vetos:
+            print(f"  - {v.pattern}  @ {','.join(v.condition)}  (0/{v.n_fail})")
+        print()
+
+    from aegis.memory import store as memory_store
+
+    print("# 记忆（审计用，永不进提示词）")
+    print(
+        f"  记录 {len(memory_store.load(AEGIS_DIR))} 条"
+        f"；已压实 {len(memory_store.load_aggregates(AEGIS_DIR))} 行"
+        f"；遗忘审计 {len(memory_store.load_forgotten(AEGIS_DIR))} 条"
+    )
     return 0
 
 
@@ -1424,7 +1435,7 @@ def cmd_run(challenge: str, timeout: int, hints: list[str] | None = None) -> int
         return 2
     if not PI_SCRIPT.is_file():
         append_issue("pi", f"missing {PI_SCRIPT}")
-        print("pi-test.sh not found", file=sys.stderr)
+        print(f"agent launcher not found: {PI_SCRIPT}", file=sys.stderr)
         return 1
     prompt = (
         f"Solve the CTF challenge in test/{challenge} only. "

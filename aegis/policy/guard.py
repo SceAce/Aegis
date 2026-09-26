@@ -588,13 +588,25 @@ def refuse_reason(
 def _learned_items(learned: Iterable[Any]) -> Iterator[tuple[str, str]]:
     """Normalise learned vetoes to (pattern, message).
 
-    Accepts plain strings and objects carrying `.pattern` / `.reason()` so this
-    module stays a pure predicate with no dependency on `policy.veto`.
+    Accepts plain strings, mappings (what `activation.json` stores, since the
+    vetoes are persisted as JSON) and objects carrying `.pattern` / `.reason()`.
+    This module stays a pure predicate with no dependency on `policy.veto`.
+
+    The mapping case is not theoretical: `active_learned_vetoes()` reads dicts,
+    and an earlier version of this function only understood strings and
+    attribute-objects, so every persisted veto was silently skipped and the
+    refusal never fired.
     """
     for item in learned:
         if isinstance(item, str):
             if item:
                 yield item, f"REFUSED (learned_veto): '{item}' is a recorded failure in this world."
+            continue
+        if isinstance(item, dict):
+            pattern = str(item.get("pattern") or "").strip()
+            if pattern:
+                reason = str(item.get("reason") or "").strip()
+                yield pattern, (reason or f"REFUSED (learned_veto): '{pattern}'")
             continue
         pattern = str(getattr(item, "pattern", "") or "")
         if not pattern:

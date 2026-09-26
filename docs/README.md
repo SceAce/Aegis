@@ -105,13 +105,27 @@ worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数─�
 - **启动器 `scripts/aegis-pi.sh`**：跑 `vendor/pi`（带原生 Observer），
   并断言 Observer 存在，防止静默回退到上游。
 
+### 已完成（本轮续）
+
+- **启动入口统一**：`paths.PI_SCRIPT` 指向 `scripts/aegis-pi.sh`（我们的 fork），
+  不再是上游 `pi-test.sh`。`aegis start` 打印的下一步、`aegis run`、`aegis doctor`
+  全部跟着改 —— 原来它们指向上游 pi，而那个 pi 没有 Observer，
+  跟过去跑等于记忆链收 0 个事件，结果看起来像「经验没用」。
+- **经验 → 工具层硬拒绝已接通**：学来的禁令在构建列时算一次、写进 `activation.json`，
+  命令路径只读小文件（原来每条命令重算，是主要的卡顿来源）。
+- `aegis explain` 改为解释**经验**（世界标签、适用指引/禁令、未适用原因、硬拒绝），
+  不再给已空的 atlas 打分。
+- `aegis observe` 改用经验决策（原来读 atlas bundle，永远 SILENT）。
+- 删掉死代码：`intervene.decide`（72 行，无人调用）、`_activated_techniques`、
+  `explain --tau`（经验路径没有这个旋钮，留着等于假装有）。
+
 ### 未完成（下一轮）
 
 - 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：
   `need/declare/claim/report/verdict`，Observer 是黑板唯一写入者）。
-- `policy/activate.py` 仍服务旧的 atlas 列。atlas 已空，它现在只剩
-  `policy/intervene.py` 之外的测试覆盖价值（`test_roleflip.py` 用它验证三态谓词语义）。
-  要么把谓词语义接到经验上，要么把测试迁走后退役。
+- `policy/activate.py` 仍服务旧的 atlas 列（现已空）。它现在只剩测试覆盖价值
+  （`test_roleflip.py` 用它验证三态谓词语义）。要么把谓词语义接到经验上，
+  要么把测试迁走后退役。
 - 黑板的 `verdict` 目前由父 agent 声明；**尚未**把「条件被否证」自动回灌到
   `memory/forget.refute()`（接口有了，没有接线）。
 

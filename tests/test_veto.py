@@ -65,6 +65,21 @@ def test_no_learned_vetoes_on_a_cold_start() -> None:
         assert veto.from_state(Path(td)) == []
 
 
+def test_persisted_vetoes_are_understood_as_dicts() -> None:
+    """The persisted form is JSON, so the guard receives dicts.
+
+    Regression: `_learned_items` only understood strings and attribute-objects.
+    Every veto read back from activation.json was therefore skipped, so the
+    refusal never fired — a guard that looked wired and silently did nothing.
+    """
+    persisted = [
+        {"pattern": "ROPgadget", "reason": "REFUSED (learned_veto): 'ROPgadget' never succeeded"}
+    ]
+    assert refuse_reason("ROPgadget --binary ./pwn", learned=persisted) is not None
+    assert refuse_reason("ls && ROPgadget ./pwn", learned=persisted) is not None
+    assert refuse_reason("grep ROPgadget notes.txt", learned=persisted) is None
+
+
 def test_veto_message_is_explainable() -> None:
     """A refusal the run cannot understand is worse than no refusal: the agent
     cannot tell what to do instead."""

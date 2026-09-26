@@ -262,17 +262,27 @@ def test_cold_start_forbids_nothing():
 
 
 def test_cold_intervention_is_not_forbid():
-    """The cold-start intervention must be opening measurements, not a veto."""
-    from aegis.policy.intervene import Kind, decide
+    """A cold start must not veto anything.
 
-    bundle = activate(
-        cells=_cells(),
-        problems=[],
-        habits=[{"when": "start of a heap pwn", "observe": "libc version in container"}],
-        fp=FP_COLD,
-    )
-    iv = decide(trigger="opening", bundle=bundle)
-    assert iv.kind is not Kind.FORBID, iv.forbid
+    Rewired from the atlas bundle to the experience playbook: the bundle path has
+    been empty since the memory store was rebuilt, so it answered SILENT for the
+    wrong reason. With no experience there is nothing to forbid, which is the
+    invariant this test exists to protect.
+    """
+    from aegis.policy.intervene import Kind, decide_from_playbook
+    from aegis.policy.playbook import Playbook
+
+    iv = decide_from_playbook("opening", Playbook())
+    assert iv.kind is Kind.SILENT, iv.kind
+    assert iv.forbid == []
+
+    # Experience that only ever succeeded must guide, never forbid.
+    from aegis.observer.extract import Experience
+    from aegis.policy.playbook import build
+
+    pb = build([Experience(condition=("glibc2.27",), action="tcache poison", n_ok=3, n_fail=0)], {"glibc2.27"})
+    iv2 = decide_from_playbook("opening", pb)
+    assert iv2.kind is Kind.REMIND and iv2.forbid == []
 
 
 # ------------------------------------------------------------ tier behaviour
