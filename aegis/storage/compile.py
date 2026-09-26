@@ -122,7 +122,30 @@ def _fold(
             )
             verified = "none"
 
+    # A positive claim that the criterion never matched is not evidence either.
+    # The verdict string is what the agent reports about itself, and "the model
+    # awards itself verified" is the exact failure this project was built to close;
+    # checking only the weak branch left the claim unreconciled whenever *no*
+    # branch matched — the strongest possible reason to disbelieve it. Only a
+    # positive claim is downgraded here: `verified="none"` is a claim of nothing,
+    # and the archive/audit paths above may already have produced a finding.
+    if (
+        branch == ""
+        and verified != "none"
+        and _markers_for(challenge)[0]
+        and run_session
+    ):
+        append_issue(
+            "solve_audit",
+            f"verified downgraded from {verified!r} to 'none': the run claimed a "
+            f"solve, but its execution output never satisfied the criterion "
+            f"({_markers_for(challenge)[0]!r} + {_markers_for(challenge)[1]!r})",
+            challenge=challenge,
+        )
+        verified = "none"
+
     report = pipeline.sync(AEGIS_DIR, evidence=verified, reason=f"{challenge}/{status}")
+
     forgotten = memory_forget.run(AEGIS_DIR)
     experience = pipeline.experience(AEGIS_DIR)
 

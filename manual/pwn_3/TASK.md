@@ -22,9 +22,6 @@
 拿到一个 shell，并在**那个 shell 里**执行：
 
 ```sh
-拿到一个 shell，并在**那个 shell 里**执行：
-
-```sh
 echo PWNED_MARKER; id; echo PARENT_PROC=$(cat /proc/$(awk '{print $4}' /proc/$$/stat)/comm); echo TARGET_GONE=$(pgrep -x pwn >/dev/null 2>&1 && echo no || echo yes); echo ORIGIN=$(p=$$; while [ "$p" -gt 1 ]; do p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null) || break; if [ "$p" -gt 1 ]; then printf '%s>' "$(cat /proc/$p/comm)"; fi; done)
 ```
 

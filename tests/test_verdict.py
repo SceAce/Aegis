@@ -348,7 +348,7 @@ def test_corroboration_is_not_satisfied_by_the_pwninit_scaffold() -> None:
         assert _corroborated("pwn_1", d) is False
 
 
-def test_the_weak_branch_is_not_certified_without_a_corroborating_script() -> None:
+def test_a_claim_is_never_certified_without_the_criterion_matching() -> None:
     """Pins the rule the standard now rests on, end to end through `_fold`.
 
     `TARGET_GONE=yes` is satisfied by any run in which no `pwn` process is alive —
@@ -367,11 +367,13 @@ def test_the_weak_branch_is_not_certified_without_a_corroborating_script() -> No
             compile_mod._execution_branch,
             compile_mod._corroborated,
             compile_mod.append_issue,
+            compile_mod._markers_for,
             compile_mod.pipeline.sync,
             compile_mod.memory_forget.run,
             compile_mod.pipeline.experience,
         )
         compile_mod.archive_scripts = lambda ch, **k: {"path": "/nonexistent", "files": 0}
+        compile_mod._markers_for = lambda ch: ("PWNED_MARKER", "PARENT_PROC=pwn")
         compile_mod._audit = lambda ch, d: []
         compile_mod._execution_branch = lambda ch, s: branch
         compile_mod._corroborated = lambda ch, d: corroborated
@@ -393,6 +395,7 @@ def test_the_weak_branch_is_not_certified_without_a_corroborating_script() -> No
                 compile_mod._execution_branch,
                 compile_mod._corroborated,
                 compile_mod.append_issue,
+                compile_mod._markers_for,
                 compile_mod.pipeline.sync,
                 compile_mod.memory_forget.run,
                 compile_mod.pipeline.experience,
@@ -417,3 +420,11 @@ def test_the_weak_branch_is_not_certified_without_a_corroborating_script() -> No
     assert none_branch["verified"] == "none"
     assert none_branch["criterion_branch"] == ""
     assert issues == [], issues
+
+    # A *positive* claim the criterion never matched must not survive. Checking
+    # only the weak branch left this unreconciled — and it is the strongest
+    # reason to disbelieve a claim, not the weakest: "the model awards itself
+    # verified" is the failure this project exists to close.
+    claimed, issues = fold_with("", corroborated=True, verified="flag")
+    assert claimed["verified"] == "none", claimed
+    assert any("never satisfied the criterion" in m for m in issues), issues
