@@ -245,9 +245,17 @@ def test_archive_distinguishes_empty_from_unreadable() -> None:
     The report must separate "the host has no scripts" (evidence) from "we could
     not look" (the absence of evidence), because `_fold` treats them differently.
     """
+    import os
+
     from aegis import paths
     from aegis.channel import dockerutil
     from aegis.storage import compile as compile_mod
+
+    # `archive_scripts` resolves AEGIS_DIR at import time, so this test depends on
+    # run_all's temp state dir and must refuse to write the live one — otherwise
+    # running it standalone plants fake `evidence_archive` issues in the real
+    # audit trail (which happened once).
+    assert os.environ.get("AEGIS_STATE_DIR"), "run tests via tests/run_all.py"
 
     class _Down:
         available = False
@@ -291,3 +299,50 @@ def test_archive_distinguishes_empty_from_unreadable() -> None:
         import shutil
 
         shutil.rmtree(Path(paths.AEGIS_DIR) / "artifacts" / "TEST_ARCHIVE_pwn_1", ignore_errors=True)
+
+
+def test_corroboration_is_not_satisfied_by_the_pwninit_scaffold() -> None:
+    """The weak criterion branch is safe only because this gate is not vacuous.
+
+    `aegis start` runs pwninit, which writes an `exp.py` that already contains
+    `binary = "pwn"` and `process(binary)` — so "the script mentions the target" is
+    true of a file nobody touched. Measured: the scaffold alone made the gate
+    return True, i.e. a run could have been certified on a template.
+    """
+    from aegis.storage.compile import _corroborated
+
+    scaffold = (
+        "#!/usr/bin/env python3\n"
+        "from pwn import *\n"
+        'context(os="linux", arch="amd64", log_level="debug")\n'
+        'binary = "pwn"\n'
+        "elf = ELF(binary)\n"
+        "libc = elf.libc\n"
+        "io = process(binary)\n"
+        "s  = lambda data : io.send(data)\n"
+        "ru = lambda delims, drop=False : io.recvuntil(delims, drop)\n"
+        "def exp():\n"
+        "  pass\n"
+        "exp()\n"
+        "itr()\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        # Real exploit: writes a payload and drives the target.
+        (d / "solve.py").write_text(
+            "from pwn import *\nio = process('./pwn')\n"
+            "io.sendline(flat({0x40: p64(0x4011a3)}))\n",
+            encoding="utf-8",
+        )
+        assert _corroborated("pwn_1", d) is True
+
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "exp.py").write_text(scaffold, encoding="utf-8")
+        assert _corroborated("pwn_1", d) is False, "the untouched template corroborated"
+
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / "notes.txt").write_text("no exploit here at all, just a note\n", encoding="utf-8")
+        (d / "MANIFEST.txt").write_text("files: 0\n", encoding="utf-8")
+        assert _corroborated("pwn_1", d) is False

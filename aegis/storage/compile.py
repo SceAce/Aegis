@@ -164,14 +164,41 @@ def _execution_branch(challenge: str, session: str | None) -> str:
     return str(found["branch"]) if found else ""
 
 
-def _corroborated(challenge: str, directory: Path) -> bool:
-    """Do the archived scripts actually show an exploit reaching the target?
+#: Tokens a **worked** exploit has and the pwninit scaffold does not. The scaffold
+#: is not empty — it already writes `binary = "pwn"`, `ELF(binary)`, `process(binary)`
+#: and a pile of send/recv lambdas — so "the script mentions the target" is true of
+#: a file the agent never touched. That is a false positive in the one gate that
+#: makes the weak criterion safe, so the gate also requires a token that only
+#: appears once someone actually builds a payload.
+_EXPLOIT_TOKENS = (
+    "p64(",
+    "flat(",
+    "ROP(",
+    "one_gadget",
+    "system(",
+    "execve",
+    "tcache",
+    "__free_hook",
+    "__malloc_hook",
+)
 
-    Mechanical and deliberately generous: it reads for the target's name appearing
-    in a non-trivial script, which is what an exploit must do before it can drive
-    the binary. It does **not** try to judge whether the exploit is *good* — that
-    is what the audit rules are for; this only separates "there is a script that
-    drives the target" from "there is nothing to corroborate with".
+
+def _corroborated(challenge: str, directory: Path) -> bool:
+    """Do the archived scripts show an exploit that **reaches** the target?
+
+    Mechanical and deliberately conservative, because this is what makes the weak
+    criterion branch (`TARGET_GONE=yes`) safe: the weak branch is satisfied by a
+    run that never touched the target, so something has to show the target was
+    actually driven.
+
+    Two requirements, and the second is the one that matters:
+
+      1. the target's name appears, and
+      2. the file carries a token the untouched scaffold does not.
+
+    It does **not** judge whether the exploit is correct — that is what the audit
+    rules are for. It separates "there is a script that drives the target" from
+    "there is a file, possibly the template `aegis start` left behind".
     """
     from aegis.paths import challenge_dir
 
@@ -188,13 +215,21 @@ def _corroborated(challenge: str, directory: Path) -> bool:
     for path in sorted(directory.glob("**/*")):
         if not path.is_file():
             continue
+        if path.name == "MANIFEST.txt":
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
         if len(text.strip()) < 40:
             continue
-        if f"./{name}" in text or f"/{name}" in text or f"'{name}'" in text or f'"{name}"' in text:
+        names_target = (
+            f"./{name}" in text
+            or f"/{name}" in text
+            or f"'{name}'" in text
+            or f'"{name}"' in text
+        )
+        if names_target and any(token in text for token in _EXPLOIT_TOKENS):
             return True
     return False
 
