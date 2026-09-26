@@ -190,6 +190,11 @@ tcache dup → `strdup` 别名 → 任意地址写 0x1f 字节 → 栈/PIE 泄�
    在进程表里。所以走弱路时 `_fold` 会去查归档里有没有真正驱动题目的利用代码
    （`_corroborated`），查不到就把 `verified` 降为 `none` 并记 issue。
    这一条只有在归档真的能拿到脚本时才有意义，所以第 3 条是它的前提。
+   加固过一次：`_corroborated` 最初只查"脚本里出现题目名"，而 `aegis start` 生成的
+   pwninit 模板里本来就有 `binary = "pwn"` / `process(binary)` —— 于是**没动过的模板
+   就能佐证**。实测返回 True。现在额外要求一个模板里没有的利用特征
+   （`p64(` / `flat(` / `ROP(` / `one_gadget` / `system(` / `execve` / `tcache` /
+   `__*_hook`），并用真实模板形状钉了测试。
 3. **证据归档改成面向执行主机**（`channel/dockerutil.fetch_artifacts`）。
    原来 `archive_scripts` 只读本地 `test/<ch>`，而 pwn_3 那次 **0 次本地写**、
    82 次 `aegis_pwn` 全在远端起 heredoc，于是 `files: 0`、审计审了个空目录 ——
