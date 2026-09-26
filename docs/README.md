@@ -138,6 +138,16 @@ worker 事件 ──Observer──> 记忆(具体、可遗忘) ──计数─�
 - 非手法工具（`aegis_board` / `aegis_kb` / `aegis_finish` …）不再计进经验（114 → 105 行）。
 - 重复 issue 折成计数（29 行 → 6 条），WP 的 problems 段不再被同一条 sync 刷屏。
 
+### 已完成（中文思考规则 + 可审计）
+
+- **硬性规则：一律用中文思考和交流**（写进 `rom/ROM.md` 与 `AGENTS.md`，含 thinking）。
+- **思考过程可被审计**：Observer 现在把 assistant 的 `thinking`/text 记成 `thought` 事件
+  （`vendor/pi` 的 `message_end`），`aegis observer thoughts` 全文读回。
+  `thought` **按构造进不了记忆** —— 记忆只配对 `action` 与 `outcome`，
+  解释不是观测。实测一次真实运行：`{boundary:2, thought:4, action:2, outcome:2, note:3}`。
+- **`aegis observer` 改读原生事件流**（原来读 pi 的 session 日志 —— 那是另一条更差的源，
+  所以 `thoughts` 明明有数据却报 0 段）。
+
 ### 未完成（下一轮）
 
 - 父/子 agent 的**真实多 worker 调度**尚未跑过（协议已在黑板上就位：

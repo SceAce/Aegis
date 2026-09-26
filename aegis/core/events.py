@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 #: Allowed event kinds. Kept closed so downstream can switch exhaustively.
-KINDS = ("action", "outcome", "observation", "goal", "note", "boundary")
+KINDS = ("action", "outcome", "observation", "goal", "note", "boundary", "thought")
 
 
 @dataclass(frozen=True)

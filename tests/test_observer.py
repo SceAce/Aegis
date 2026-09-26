@@ -173,6 +173,29 @@ def test_conditions_come_only_from_structured_tags() -> None:
     assert observed_tags("bash", {"tags": ["main_arena"]}) == set()
 
 
+def test_reasoning_is_recorded_but_never_becomes_memory() -> None:
+    """`thought` exists so a human can audit the model's reasoning.
+
+    It must never reach memory or experience: an explanation is not an
+    observation, and prose in the criteria table is exactly what this design
+    removed. Recording it is safe *because* the memory pipeline only pairs
+    `action` with `outcome`.
+    """
+    events = [
+        obs.Event("pi", "s", 1, "", "thought", data={"part": "thinking", "text": "先量 libc 版本"}),
+        obs.Event("pi", "s", 2, "", "action", tool="aegis_pwn", call_id="c1",
+                  data={"args": {"command": "readelf -sW ./pwn"}}),
+        obs.Event("pi", "s", 3, "", "outcome", tool="aegis_pwn", call_id="c1", ok=True,
+                  data={"text": "symbols"}),
+    ]
+    memory = obs.build_memory(events)
+    assert [m.tool for m in memory] == ["aegis_pwn"], memory
+
+    experience = obs.distill(memory)
+    assert experience, "the action should still distil"
+    assert all("先量" not in e.action for e in experience), experience
+
+
 def test_playbook_never_sees_raw_memory() -> None:
     """STRUCTURAL: the behaviour path consumes `Experience`, never `MemoryRecord`.
 

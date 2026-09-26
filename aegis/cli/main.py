@@ -17,6 +17,7 @@ from aegis.policy.guard import refuse_reason
 from aegis.gitutil import restore_challenge
 from aegis.policy.intervene import Kind, refine, render
 from aegis.paths import (
+    AEGIS_DIR,
     CONTAINER,
     PI_SCRIPT,
     PWN_START,
@@ -133,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_observer.add_argument(
         "view",
-        choices=["events", "memory", "experience", "criterion"],
+        choices=["events", "memory", "experience", "thoughts", "criterion"],
         default="experience",
         nargs="?",
     )
@@ -812,24 +813,55 @@ def cmd_observer(
     cwd = _Path.cwd()
     root_path = _Path(root) if root else obs.SESSIONS_ROOT
 
-    if session:
-        paths = [_Path(session)]
-    else:
-        paths = obs.discover_sessions(cwd, root_path)
-    if not paths:
-        print(f"no worker session logs found for {cwd}", file=sys.stderr)
-        return 1
-
     events: list[obs.Event] = []
-    for p in paths:
+    native = obs.event_files(AEGIS_DIR) if not (session or root) else []
+
+    if native:
+        # Prefer the native event stream. It is what the fork writes, what the
+        # memory pipeline actually consumes, and the ONLY source carrying
+        # `thought` events. Reading pi's own session logs instead was a different,
+        # lossier source: `observer thoughts` reported 0 segments while the
+        # reasoning sat in the native stream the whole time.
         try:
-            events.extend(obs.read_pi_session(p))
+            events = list(obs.read_native_events(AEGIS_DIR))
         except RuntimeError as exc:
-            # 格式变了要大声失败，不能按旧格式猜着解析。
             print(f"observer adapter error: {exc}", file=sys.stderr)
             return 2
+        paths = native
+    else:
+        paths = [_Path(session)] if session else obs.discover_sessions(cwd, root_path)
+        if not paths:
+            print(f"no worker logs found for {cwd}", file=sys.stderr)
+            return 1
+        for p in paths:
+            try:
+                events.extend(obs.read_pi_session(p))
+            except RuntimeError as exc:
+                # 格式变了要大声失败，不能按旧格式猜着解析。
+                print(f"observer adapter error: {exc}", file=sys.stderr)
+                return 2
 
     memory = obs.build_memory(events)
+
+    if view == "thoughts":
+        # The model's own reasoning, recorded for human audit. It is never an
+        # input to memory or experience — an explanation is not an observation —
+        # so this is the only place it is read back, and it is read back whole:
+        # a truncated thought is an unauditable one.
+        thoughts = [e for e in events if e.kind == "thought"]
+        if as_json:
+            print(_json.dumps(
+                [{"seq": e.seq, "part": (e.data or {}).get("part"), "text": (e.data or {}).get("text")}
+                 for e in thoughts],
+                ensure_ascii=False, indent=2))
+            return 0
+        print(f"# 思考过程 —— {len(paths)} session(s)，{len(thoughts)} 段")
+        for e in thoughts:
+            part = str((e.data or {}).get("part") or "thinking")
+            label = "思考" if part == "thinking" else "发言"
+            print(f"\n--- [{label}] seq={e.seq} ---")
+            print(str((e.data or {}).get("text") or ""))
+        return 0
 
     if view == "events":
         rows = [e.__dict__ for e in events[:limit]]
