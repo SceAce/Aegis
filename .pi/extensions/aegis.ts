@@ -234,7 +234,7 @@ export default function (pi: ExtensionAPI) {
 			const args = ["pwn", params.command, "--timeout", timeout];
 			if (params.channel) args.push("--channel", params.channel);
 			try {
-				const out = aegis(args);
+				const out = await aegis(args);
 				return { content: [{ type: "text", text: out || "(no output)" }], details: {} };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -275,7 +275,7 @@ export default function (pi: ExtensionAPI) {
 			if (params.timeout) args.push("--timeout", String(params.timeout));
 			if (params.pane) args.push("--pane", params.pane);
 			try {
-				const out = aegis(args);
+				const out = await aegis(args);
 				return { content: [{ type: "text", text: out || "(no output)" }], details: {} };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -299,7 +299,7 @@ export default function (pi: ExtensionAPI) {
 			const args = ["note", "--kind", params.kind, "--text", params.text];
 			if (params.technique) args.push("--technique", params.technique);
 			if (params.condition) args.push("--condition", params.condition);
-			const out = aegis(args);
+			const out = await aegis(args);
 			return { content: [{ type: "text", text: out.trim() }], details: {} };
 		},
 	});
@@ -350,7 +350,7 @@ export default function (pi: ExtensionAPI) {
 			if (params.trajectory) args.push("--trajectory", params.trajectory);
 			if (params.llm) args.push("--llm");
 			try {
-				const out = aegis(args);
+				const out = await aegis(args);
 				return { content: [{ type: "text", text: out || "SILENT" }], details: {} };
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -376,7 +376,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params) {
 			const args = ["observe", params.text];
 			for (const t of params.tags ?? []) args.push("--tag", t);
-			const out = aegis(args);
+			const out = await aegis(args);
 			return { content: [{ type: "text", text: out.trim() }], details: {} };
 		},
 	});
@@ -391,7 +391,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params) {
 			const args = ["recall"];
 			if (params.kind) args.push("--kind", params.kind);
-			const out = aegis(args);
+			const out = await aegis(args);
 			return { content: [{ type: "text", text: out }], details: {} };
 		},
 	});
@@ -430,7 +430,7 @@ export default function (pi: ExtensionAPI) {
 			];
 			if (params.extra) args.push("--extra", params.extra);
 			if (params.verified) args.push("--verified", params.verified);
-			const out = aegis(args);
+			const out = await aegis(args);
 			return { content: [{ type: "text", text: out }], details: {} };
 		},
 	});
