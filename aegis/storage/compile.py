@@ -25,6 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from aegis.core.criterion import STRONG_EXEC_MARKER
 from aegis.memory import forget as memory_forget
 from aegis.observer import pipeline
 from aegis.paths import AEGIS_DIR
@@ -62,7 +63,14 @@ def compile_run(
         condition=f"verified={verified}",
     )
 
-    return _fold(challenge=challenge, status=status, verified=verified)
+    # The criterion is evaluated against the run that just ended, so the weak
+    # branch can be corroborated before the tier is fixed.
+    return _fold(
+        challenge=challenge,
+        status=status,
+        verified=verified,
+        run_session=pipeline.current_session(AEGIS_DIR),
+    )
 
 
 def compile_from_store(challenge: str, verified: str = "local") -> dict[str, Any]:
@@ -79,13 +87,15 @@ def compile_from_store(challenge: str, verified: str = "local") -> dict[str, Any
     )
 
 
-def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
+def _fold(
+    *, challenge: str, status: str, verified: str, run_session: str | None = None
+) -> dict[str, Any]:
     # Audit the scripts BEFORE folding them in. A conclusive finding means the
     # run did not demonstrate what it claims, so its records must not be able to
     # count as successes — and that has to be decided here, at the point where
     # the evidence tier is chosen, not left to a later reader.
     archive = archive_scripts(challenge)
-    audit_findings = _audit(challenge, archive)
+    audit_findings = _audit(challenge, Path(archive["path"]))
     if any(f.conclusive for f in audit_findings) and verified != "none":
         append_issue(
             "solve_audit",
@@ -94,6 +104,23 @@ def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
             challenge=challenge,
         )
         verified = "none"
+
+    # The weak criterion branch ("the target process is gone") is not proof on its
+    # own: an agent that never ran the target also has no target process alive. It
+    # is only credible when the archived scripts actually contain an exploit — so
+    # the audit gate below is what makes relaxing the standard safe. Kept here, at
+    # the point the evidence tier is chosen, for the same reason as the audit.
+    branch = _execution_branch(challenge, run_session)
+    if branch == "weak" and verified != "none":
+        if not _corroborated(challenge, Path(archive["path"])):
+            append_issue(
+                "solve_audit",
+                "verified downgraded to 'none': the run satisfied only the weak "
+                "criterion branch (target process gone), and the archived scripts "
+                "do not show an exploit reaching the target",
+                challenge=challenge,
+            )
+            verified = "none"
 
     report = pipeline.sync(AEGIS_DIR, evidence=verified, reason=f"{challenge}/{status}")
     forgotten = memory_forget.run(AEGIS_DIR)
@@ -106,6 +133,8 @@ def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
         "compiled_at": now_iso(),
         "memory": report,
         "forgotten": forgotten,
+        "criterion_branch": branch,
+        "archive": {k: v for k, v in archive.items() if k != "path"},
         "audit": [
             {"rule": f.rule, "detail": f.detail, "where": f.where, "conclusive": f.conclusive}
             for f in audit_findings
@@ -119,6 +148,55 @@ def _fold(*, challenge: str, status: str, verified: str) -> dict[str, Any]:
         # prose, so there is nothing to sanitise.
         "sources": ["observer-event-stream"],
     }
+
+
+def _execution_branch(challenge: str, session: str | None) -> str:
+    """Which criterion branch this run reached, from its own event stream."""
+    if not session:
+        return ""
+    from aegis.core.criterion import Criterion, execution_branch
+    from aegis.observer.native import read_native_events
+
+    need, next_marker = _markers_for(challenge)
+    criterion = Criterion(need=need, next=next_marker)
+    events = [e for e in read_native_events(AEGIS_DIR) if e.session == session]
+    found = execution_branch(events, criterion)
+    return str(found["branch"]) if found else ""
+
+
+def _corroborated(challenge: str, directory: Path) -> bool:
+    """Do the archived scripts actually show an exploit reaching the target?
+
+    Mechanical and deliberately generous: it reads for the target's name appearing
+    in a non-trivial script, which is what an exploit must do before it can drive
+    the binary. It does **not** try to judge whether the exploit is *good* — that
+    is what the audit rules are for; this only separates "there is a script that
+    drives the target" from "there is nothing to corroborate with".
+    """
+    from aegis.paths import challenge_dir
+
+    target = ""
+    try:
+        from aegis.policy.audit import detect_target
+
+        target = detect_target(challenge_dir(challenge)) or ""
+    except Exception:
+        target = ""
+    name = Path(target).name or challenge.rsplit("_", 1)[0]
+    if not name:
+        return False
+    for path in sorted(directory.glob("**/*")):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if len(text.strip()) < 40:
+            continue
+        if f"./{name}" in text or f"/{name}" in text or f"'{name}'" in text or f'"{name}"' in text:
+            return True
+    return False
 
 
 def _audit(challenge: str, directory: Path) -> list:
@@ -142,26 +220,34 @@ def _audit(challenge: str, directory: Path) -> list:
     return findings
 
 
-def archive_scripts(challenge: str, *, stamp: str | None = None) -> Path:
-    """Copy the run's scripts out of `test/<ch>` before restore wipes them.
+def archive_scripts(challenge: str, *, stamp: str | None = None) -> dict[str, Any]:
+    """Copy the run's scripts out of the **execution host** before restore wipes them.
 
     `cmd_finish` ends with `restore_challenge`, which runs `git clean -fd` so the
     NEXT run cannot read the previous solution. That is right, but it also
     destroys the only evidence of what this run actually executed — and with it
     any chance to audit or re-read the exploit.
 
-    The copy lands under `.aegis/artifacts/`, which is blocked from the agent
-    exactly like the rest of `.aegis`: the evidence is preserved without leaking.
+    Copying only `test/<ch>` was not enough, and that was not visible until a run
+    that never wrote locally: a pwn_3 run made 82 `aegis_pwn` + 27 `aegis_shell`
+    calls and **zero** local writes, so the archive came out `files: 0` and the
+    audit inspected nothing. An empty archive and an unreadable host must not look
+    the same — the first is evidence, the second is the absence of it — so the
+    report carries `readable` separately.
+
+    Returns a report; `path` is the directory (`_audit` reads it).
     """
     import shutil
 
+    from aegis.channel import dockerutil
     from aegis.paths import AEGIS_DIR, challenge_dir
 
     source = challenge_dir(challenge)
     stamp = stamp or now_iso().replace(":", "").replace("-", "").replace("+", "p")[:15]
     dest = AEGIS_DIR / "artifacts" / f"{stamp}_{challenge}"
     dest.mkdir(parents=True, exist_ok=True)
-    copied = 0
+
+    local = 0
     if source.is_dir():
         for path in sorted(source.iterdir()):
             if not path.is_file():
@@ -176,25 +262,80 @@ def archive_scripts(challenge: str, *, stamp: str | None = None) -> Path:
                 continue
             try:
                 shutil.copy2(path, dest / path.name)
-                copied += 1
+                local += 1
             except OSError:
                 continue
+
+    try:
+        remote = dockerutil.fetch_artifacts(challenge, dest)
+    except Exception as exc:  # a broken pull must not take the run down
+        remote = {"readable": False, "copied": 0, "source": "?", "detail": f"{type(exc).__name__}: {exc}"}
+
+    files = sorted(p.name for p in dest.iterdir() if p.is_file() and p.name != "MANIFEST.txt")
+    report = {
+        "path": str(dest),
+        "files": len(files),
+        "local": local,
+        "readable": bool(remote.get("readable")),
+        "source": str(remote.get("source") or ""),
+        "detail": str(remote.get("detail") or ""),
+        "truncated": list(remote.get("truncated") or []),
+    }
     (dest / "MANIFEST.txt").write_text(
-        f"challenge: {challenge}\narchived: {now_iso()}\nfiles: {copied}\n",
+        f"challenge: {challenge}\n"
+        f"archived: {now_iso()}\n"
+        f"files: {len(files)}\n"
+        f"local_copies: {local}\n"
+        f"exec_host: {report['source']}\n"
+        f"host_readable: {report['readable']}\n"
+        f"detail: {report['detail']}\n"
+        f"names: {', '.join(files) or '(none)'}\n",
         encoding="utf-8",
     )
-    return dest
+    if not report["readable"]:
+        append_issue(
+            "evidence_archive",
+            f"could not read the execution host ({report['source']}: {report['detail']}); "
+            f"the script audit has {len(files)} local file(s) only",
+            challenge=challenge,
+        )
+    for name in report["truncated"]:
+        append_issue(
+            "evidence_archive",
+            f"{name} exceeded the pull cap and was archived truncated; "
+            "an audit of a truncated script is not conclusive",
+            challenge=challenge,
+        )
+    return report
 
 
 def _marker_for(challenge: str) -> str:
     """The proof marker declared on the blackboard, if any."""
+    return _markers_for(challenge)[0]
+
+
+def _markers_for(challenge: str) -> tuple[str, str]:
+    """(user requirement marker, next-stage marker) as declared on the blackboard.
+
+    The standard is authored **outside** the producer, so both come from the board
+    when present. The `next` marker falls back to the protocol constant the manual
+    prints, because nothing declares a stage task for the single-worker demo runs
+    and an empty marker would silently accept any `PWNED_MARKER` line.
+    """
     from aegis.blackboard import store as board_store
 
+    need = ""
+    next_marker = STRONG_EXEC_MARKER
     try:
         board = board_store.load(AEGIS_DIR)
     except Exception:
-        return ""
+        return need, next_marker
     for requirement in board.requirements:
         if requirement.marker:
-            return requirement.marker
-    return ""
+            need = requirement.marker
+            break
+    for task in board.tasks:
+        if task.marker:
+            next_marker = task.marker
+            break
+    return need, next_marker

@@ -453,3 +453,37 @@ def obs_rec(session: str, seq: int, *, condition: tuple[str, ...], ok: bool | No
         worker="pi", session=session, seq=seq, ts="T", tool="aegis_pwn",
         action="pwn: ls", ok=ok, out_chars=1, out_digest="d", condition=condition,
     )
+
+
+def test_unconditional_experience_is_demoted_not_dropped() -> None:
+    """World-independent rows go to a separate weak tier.
+
+    Real data forced this: an agent acts before it observes, so most records carry
+    an empty condition — a pwn_3 run had 114 of its 120 that way, because every
+    observation landed at seq 423+. Excluding them meant "experience drives
+    behaviour" almost never fired, which is a property of the rule, not the data.
+
+    Demoted, not promoted: rendered after the world-matched guidance, never
+    world-matched, and never eligible to become a veto — a "do not try" with no
+    condition is exactly the false prohibition `guard.py` warns about.
+    """
+    from aegis.policy.playbook import build
+
+    world = {"glibc2.27", "tcache"}
+    matched = obs.Experience(condition=("glibc2.27",), action="poison tcache fd", n_ok=3, n_fail=0)
+    vague = obs.Experience(condition=(), action="try a one_gadget", n_ok=9, n_fail=0)
+    vague_bad = obs.Experience(condition=(), action="disable ASLR", n_ok=0, n_fail=9)
+
+    pb = build([matched, vague, vague_bad], world)
+    assert [e.action for e in pb.guidance] == ["poison tcache fd"]
+    assert [e.action for e in pb.weak] == ["try a one_gadget"]
+    assert pb.vetoes == [], "an unconditional failure became a prohibition"
+
+    rendered = pb.render()
+    assert rendered.index("poison tcache fd") < rendered.index("try a one_gadget")
+    assert "弱证据" in rendered, "the weak tier is not labelled as weak"
+
+    # Cold start: nothing observed, so there is no world-matched guidance at all,
+    # but the weak rows are still shown — under the weak heading.
+    cold = build([vague], set())
+    assert cold.guidance == [] and [e.action for e in cold.weak] == ["try a one_gadget"]

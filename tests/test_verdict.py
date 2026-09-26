@@ -155,7 +155,20 @@ def test_archive_keeps_scripts_and_skips_the_binary() -> None:
     """`cmd_finish` runs `git clean -fd` on the challenge dir, so the archived
     copy is the only evidence of what the run actually executed."""
     import aegis.paths as paths
+    from aegis.channel import dockerutil
     from aegis.storage import compile as compile_mod
+
+    # This test is about the *local* copy path. The channel pull is exercised by
+    # `test_archive_distinguishes_empty_from_unreadable`; here it is stubbed so the
+    # suite never reaches the network.
+    original_pull = dockerutil.fetch_artifacts
+    dockerutil.fetch_artifacts = lambda *a, **k: {
+        "readable": True,
+        "copied": 0,
+        "source": "stub",
+        "detail": "stub",
+        "truncated": [],
+    }
 
     with tempfile.TemporaryDirectory() as td:
         state = Path(td) / "state"
@@ -170,12 +183,111 @@ def test_archive_keeps_scripts_and_skips_the_binary() -> None:
         paths.AEGIS_DIR = state
         paths.challenge_dir = lambda name: challenge
         try:
-            dest = compile_mod.archive_scripts("pwn_1")
+            report = compile_mod.archive_scripts("pwn_1")
         finally:
             paths.AEGIS_DIR, paths.challenge_dir = old_state, old_dir
+            dockerutil.fetch_artifacts = original_pull
 
+        dest = Path(report["path"])
         names = sorted(p.name for p in dest.iterdir())
         assert "solve.py" in names
         assert "pwn" not in names, "the binary is already in git; do not copy it"
         assert "MANIFEST.txt" in names
         assert "process(" in (dest / "solve.py").read_text(encoding="utf-8")
+
+
+def test_weak_branch_accepts_an_in_place_execve_proof() -> None:
+    """A real exploit can be invisible to the strong marker.
+
+    An in-place one_gadget `execve("/bin/sh")` makes the shell **be** the former
+    target process: its parent is the exploit script and `pwn` is gone from
+    `/proc` entirely. A real pwn_3 run was refused for exactly this, so the
+    ancestry branch exists — reported separately from `strong`, because it is only
+    credible once the script audit corroborates it (`storage.compile._fold`).
+    """
+    from aegis.core.criterion import execution_branch
+
+    criterion = Criterion(need="PWNED_MARKER", next="PARENT_PROC=pwn")
+    strong = _out(1, "aegis_pwn", PROOF)
+    weak = _out(
+        2,
+        "aegis_pwn",
+        "PWNED_MARKER\nuid=1000(hack)\nPARENT_PROC=python3\n"
+        "TARGET_GONE=yes\nORIGIN=python3>bash>sshd>",
+    )
+    self_started = _out(3, "aegis_pwn", "PWNED_MARKER\nuid=1000(hack)\nPARENT_PROC=python3\nTARGET_GONE=no")
+
+    assert execution_branch([strong], criterion)["branch"] == "strong"
+    assert execution_branch([weak], criterion)["branch"] == "weak"
+    # Never ran the target, or started a shell by hand: not a proof either way.
+    assert execution_branch([self_started], criterion) is None
+    assert execution_branch([_out(4, "read", weak.data["text"])], criterion) is None
+
+
+def test_weak_branch_still_needs_the_marker_in_the_same_outcome() -> None:
+    """`TARGET_GONE=yes` alone must not certify: an agent that never touched the
+    target also has no target process alive."""
+    from aegis.core.criterion import execution_branch
+
+    criterion = Criterion(need="PWNED_MARKER", next="PARENT_PROC=pwn")
+    assert execution_branch([_out(1, "aegis_pwn", "TARGET_GONE=yes\nuid=1000")], criterion) is None
+    assert execution_branch([_out(2, "aegis_pwn", "PWNED_MARKER\nTARGET_GONE=yes")], criterion)
+
+
+# ------------------------------------------------------- evidence archive
+
+
+def test_archive_distinguishes_empty_from_unreadable() -> None:
+    """An archive built only from `test/<ch>` is empty for a remote run, and an
+    empty archive makes the script audit silently vacuous — a pwn_3 run made 82
+    `aegis_pwn` calls, wrote nothing locally, and left `files: 0`.
+
+    The report must separate "the host has no scripts" (evidence) from "we could
+    not look" (the absence of evidence), because `_fold` treats them differently.
+    """
+    from aegis import paths
+    from aegis.channel import dockerutil
+    from aegis.storage import compile as compile_mod
+
+    class _Down:
+        available = False
+        kind = "ssh"
+        target = ""
+        detail = "host unreachable"
+        name = "remote"
+
+        def label(self) -> str:
+            return "ssh (unavailable)"
+
+        def dir_for(self, challenge: str) -> str:
+            return f"/w/{challenge}"
+
+    with tempfile.TemporaryDirectory() as td:
+        dest = Path(td)
+        report = dockerutil.fetch_artifacts("pwn_1", dest, channel=_Down())
+        assert report["readable"] is False, report
+        assert report["copied"] == 0
+        assert "host unreachable" in str(report["detail"])
+
+    # And the report the archive returns carries that flag through.
+    original = dockerutil.fetch_artifacts
+    dockerutil.fetch_artifacts = lambda *a, **k: {
+        "readable": False,
+        "copied": 0,
+        "source": "ssh (unavailable)",
+        "detail": "host unreachable",
+        "truncated": [],
+    }
+    try:
+        report = compile_mod.archive_scripts("pwn_1", stamp="TEST_ARCHIVE")
+    finally:
+        dockerutil.fetch_artifacts = original
+    try:
+        assert report["readable"] is False
+        manifest = (Path(report["path"]) / "MANIFEST.txt").read_text()
+        assert "host_readable: False" in manifest, manifest
+        assert "exec_host:" in manifest
+    finally:
+        import shutil
+
+        shutil.rmtree(Path(paths.AEGIS_DIR) / "artifacts" / "TEST_ARCHIVE_pwn_1", ignore_errors=True)

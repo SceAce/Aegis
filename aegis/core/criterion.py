@@ -47,6 +47,23 @@ class _HasOutcome(Protocol):
 EXECUTION_TOOLS = ("aegis_pwn", "bash", "aegis_shell")
 
 
+#: Weaker execution proof: the challenge process is no longer in the process
+#: table. This is what "the binary execve'd *into* the shell" looks like from
+#: inside the shell — an in-place one_gadget (`execve("/bin/sh")`) makes the shell
+#: BE the former target process, so its parent is the exploit script and the
+#: target name is gone from `/proc` entirely. A real pwn_3 run was refused for
+#: exactly this reason.
+#:
+#: It is NOT proof on its own: an agent that never ran the target at all also has
+#: no `pwn` process alive. It is only credible corroborated by the script audit
+#: (`storage.compile`), which is why it is kept separate from `next` rather than
+#: folded into it.
+WEAK_EXEC_MARKER = "TARGET_GONE=yes"
+
+#: Strong execution proof: the shell descends directly from the target.
+STRONG_EXEC_MARKER = "PARENT_PROC=pwn"
+
+
 @dataclass(frozen=True)
 class Criterion:
     """成果标准 = 用户需求 + 下一阶段目标，各一个可逐字核对的标记。
@@ -66,6 +83,33 @@ class Criterion:
 
     def is_empty(self) -> bool:
         return not self.need.strip() and not self.next.strip()
+
+
+def execution_branch(events: Iterable[_HasOutcome], criterion: Criterion) -> dict[str, Any] | None:
+    """Which execution outproof matched: `strong`, `weak`, or nothing.
+
+    `strong` is `need` + `next` (the shell's parent is the target). `weak` is
+    `need` + `WEAK_EXEC_MARKER` (the target process is gone because it *became*
+    the shell). The weak branch must be corroborated by the script audit before
+    the run can be certified — see `aegis.storage.compile._fold`.
+    """
+    if criterion.is_empty():
+        return None
+    for e in events:
+        if e.kind != "outcome" or getattr(e, "tool", None) not in EXECUTION_TOOLS:
+            continue
+        text = str((e.data or {}).get("text") or "")
+        if criterion.need and not _printed(text, criterion.need):
+            continue
+        if not criterion.next:
+            # A criterion carrying only the user requirement: the requirement is
+            # the whole standard, so its marker alone is the strong branch.
+            return {"seq": e.seq, "branch": "strong"}
+        if _printed(text, criterion.next):
+            return {"seq": e.seq, "branch": "strong"}
+        if _printed(text, WEAK_EXEC_MARKER):
+            return {"seq": e.seq, "branch": "weak"}
+    return None
 
 
 def _printed(text: str, needle: str) -> bool:
@@ -101,15 +145,5 @@ def find_criterion(events: Iterable[_HasOutcome], criterion: Criterion) -> int |
        实测：`bash: cat manual/pwn_1/TASK.md` 里就有 `echo PWNED_MARKER`。
     3. **两个标记必须在同一条输出里**，否则等于给"拼接出来的成功"开门。
     """
-    pats = [p for p in (criterion.need, criterion.next) if p.strip()]
-    if not pats:
-        return None
-    for e in events:
-        if e.kind != "outcome":
-            continue
-        if getattr(e, "tool", None) not in EXECUTION_TOOLS:
-            continue
-        text = str((e.data or {}).get("text") or "")
-        if all(_printed(text, p) for p in pats):
-            return e.seq
-    return None
+    found = execution_branch(events, criterion)
+    return None if found is None else int(found["seq"])

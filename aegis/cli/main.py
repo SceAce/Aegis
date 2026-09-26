@@ -917,7 +917,14 @@ def cmd_observer(
         for e in events:
             by_session.setdefault(e.session, []).append(e)
         rows = [
-            {"session": s, "reached_at_seq": obs.find_criterion(evs, crit)}
+            {
+                "session": s,
+                "reached_at_seq": obs.find_criterion(evs, crit),
+                # Which branch matched. `weak` is not proof on its own — it is
+                # only certified when the script audit corroborates it — so the
+                # view must not render it the same as `strong`.
+                "branch": (obs.execution_branch(evs, crit) or {}).get("branch", ""),
+            }
             for s, evs in sorted(by_session.items())
         ]
     else:
@@ -938,8 +945,9 @@ def cmd_observer(
         crit = obs.Criterion(need=need, next=next_)
         print(f"  criterion: {crit.as_row()}")
         for r in rows:
-            mark = "REACHED" if r["reached_at_seq"] is not None else "-"
-            print(f"  {mark:<8} seq={r['reached_at_seq']}  {r['session']}")
+            mark = {"strong": "REACHED", "weak": "WEAK"}.get(str(r.get("branch")), "-")
+            extra = "  (需脚本审计佐证)" if mark == "WEAK" else ""
+            print(f"  {mark:<8} seq={r['reached_at_seq']}  {r['session']}{extra}")
     else:
         for e in obs.distill(memory)[:limit]:
             print(f"  {e.n_ok:>3} ok /{e.n_fail:>3} fail :: {e.action[:100]}")
@@ -1344,19 +1352,32 @@ def cmd_explain(top: int) -> int:
     print(f"  指纹扩展:     {', '.join(sorted(fp.expanded)) or '(none)'}")
     print()
 
-    print(f"# 经验（共 {len(experience)} 行；这个世界适用 {len(pb.guidance) + len(pb.vetoes)} 行）")
+    strong = len(pb.guidance) + len(pb.vetoes)
+    print(
+        f"# 经验（共 {len(experience)} 行；这个世界适用 {strong} 行"
+        f"，另有 {len(pb.weak)} 行无世界条件的弱经验）"
+    )
     if pb.guidance:
         for e in pb.guidance:
             print(f"  [指引] {e.n_ok}/{e.n}  @ {','.join(e.condition)}  :: {e.action[:60]}")
     if pb.vetoes:
         for e in pb.vetoes:
             print(f"  [禁令] 0/{e.n}  @ {','.join(e.condition)}  :: {e.action[:60]}")
+    # Shown separately and labelled: these carry no world information, so counting
+    # them as "applicable" would read as if this world had been measured. They are
+    # still in the injected column (weak tier), so hiding them here would make the
+    # audit disagree with what the agent actually received.
+    if pb.weak:
+        for e in pb.weak:
+            print(f"  [弱]   {e.n_ok}/{e.n}  @ (无世界条件)  :: {e.action[:60]}")
     if pb.is_empty():
         print("  (无适用经验 — 这是冷启动的正确状态，不是故障)")
 
     # Why the rest did not apply. Without this the empty case is indistinguishable
     # from a broken pipeline, which is the failure mode this project keeps hitting.
-    blocked = [e for e in experience if e not in pb.guidance and e not in pb.vetoes]
+    blocked = [
+        e for e in experience if e not in pb.guidance and e not in pb.vetoes and e not in pb.weak
+    ]
     if blocked and top:
         print()
         print(f"# 未适用（前 {min(top, len(blocked))} 条）")

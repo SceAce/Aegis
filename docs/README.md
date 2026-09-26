@@ -176,42 +176,52 @@ tcache dup → `strdup` 别名 → 任意地址写 0x1f 字节 → 栈/PIE 泄�
   `tests/test_cli.py` 故意造 >64K 事件：小于管道缓冲时失败发生在解释器退出 flush，
   已经在 `main()` 之外，那样测试对着未修的代码也会过（已验证未修时 exit 120 + traceback）。
 
+### 已完成（pwn_3 之后定下的三件事）
+
+跑完 pwn_3、把洞摆出来之后，由人定了三个决定，都已落地：
+
+1. **成果标准放宽到两条路任一条**（`manual/*/TASK.md` + `core/criterion.py`）。
+   强：`PARENT_PROC=pwn`（题目 fork/exec 出 shell）。弱：`TARGET_GONE=yes`
+   （题目**就地** `execve` 成了 shell —— in-place one_gadget 型，`pwn` 已不在 `/proc`）。
+   实测这就是 pwn_3 被挡的原因。`execution_branch()` 会报出命中哪一条。
+   证明模板加了两行：`TARGET_GONE=` 和 `ORIGIN=`（祖先链，供人复核，不进判据）。
+2. **弱判据必须被脚本审计佐证，否则不予认证**（`storage/compile._fold`）。
+   `TARGET_GONE=yes` 单独**不是证明** —— 一个从头到尾没跑过题目的 agent 同样没有 `pwn`
+   在进程表里。所以走弱路时 `_fold` 会去查归档里有没有真正驱动题目的利用代码
+   （`_corroborated`），查不到就把 `verified` 降为 `none` 并记 issue。
+   这一条只有在归档真的能拿到脚本时才有意义，所以第 3 条是它的前提。
+3. **证据归档改成面向执行主机**（`channel/dockerutil.fetch_artifacts`）。
+   原来 `archive_scripts` 只读本地 `test/<ch>`，而 pwn_3 那次 **0 次本地写**、
+   82 次 `aegis_pwn` 全在远端起 heredoc，于是 `files: 0`、审计审了个空目录 ——
+   `direct_flag_read` 这类确凿规则**永远不可能触发**。现在按通道把工作目录里的
+   非 ELF 文件拉回来（单文件 512KB 上限，超限记 `truncated` 并记 issue），
+   MANIFEST 里写明 `exec_host` / `host_readable` / `names`。
+   **"主机上没有脚本"和"读不到主机"必须不是同一个值**，所以报告里 `readable` 单列。
+   实测：把已完成那次 pwn_3 的归档补了回来，拿到了真正的 `exp.py`（2396 字节，
+   tcache dup → 任意写 → ROP → `system` 的完整利用脚本）——它以前对审计完全不可见。
+4. **无世界条件的经验改成降权展示**（`policy/playbook.py` 的 `weak` 层）。
+   `applies()` 原本在 `world` 非空时直接否掉空条件经验，而真实 run 里大多数记录都是空的
+   （agent 先动手后观测：pwn_3 的 114/120 条如此）。这是判据问题，不是数据问题。
+   现在空条件经验进 `weak` 层：单独一段、标着"弱证据"、排在世界匹配的指引之后、
+   永远不能变成禁令（`vetoes` 要求条件非空）。效果：pwn_3 这个世界从
+   1 条指引变成 1 条指引 + 4 条弱经验。`aegis explain` 也分开显示，避免审计与
+   agent 实际收到的提示词不一致。
+
+
 ### 待定（需要人来定，不自作决定）
 
-- **经验为什么"0 行适用"有两个原因，不是一个**。修完 glibc 错标之后，
-  `aegis explain` 仍只从 0/205 变成 1/204。第二个原因更根本：
-
-  1. **记忆条件跨 run 串味（已修）**。`build_memory` 的世界累加器不按 session 重置，
-     于是上一轮的世界变成下一轮的条件 —— 实测 pwn_3 的 120 条记录里 **114 条**挂在
-     pwn_1 的 `glibc2.27/fastbin/hooks_alive` 加上一次中断尝试留下的 `pwn` 标签上。
-     `world_tags` 早就按 session 限定了，所以那个世界永远不可能被满足。
-     现已按 session 重置（`test_one_run_world_never_becomes_the_next_run_condition`）。
-  2. **条件是"派生值"，改了规则也不会回填到已存的记录**。`sync` 按 `(session, seq)` 去重，
-     永不覆盖，所以修好提取规则后旧库存仍按旧规则作答 —— 看起来和"没修"一模一样。
-     新增 `aegis relearn`（`pipeline.relearn`）：只重算 `condition`，
-     **不动 `ok`**（每轮的证据等级没有按记录存，重算会把 `none`/`wiki` 的降级悄悄升回成功）。
-     已对现有库存执行：344 条中 134 条条件被纠正。
-
-- **`applies()` 会否掉"无条件经验"，而这恰好是真实 run 的大多数**。
-  `playbook.applies` 里 `if not experience.condition: return not world`
-  —— 一旦世界非空，无条件经验就不适用。而条件只在观测之后才变具体，
-  agent 总是先动手后观测：pwn_3 的 114/120 条记录条件是**空**的（它把观测都放在 seq 423+），
-  于是它们全部被这条规则否掉。就是说"经验驱动行为"在当前写法下**很难触发**，
-  不是数据问题而是判据问题。可考虑：空条件按"弱经验"降权展示，而不是直接否掉。
 - **世界标签丢了版本号后，两个世界来源不一致**。`observed_tags` 丢掉自相矛盾的
   `glibc2.44` 后，`world_tags` 里就**没有版本**了（实测 pwn_3 = 5 个标签，无 glibc）；
   而 `current_fingerprint` 走 `core.fingerprint.parse`，它会从正文里**读**出版本 2.43。
   `experience_playbook` 在 `world_tags` 非空时优先用它，于是按版本存的经验全部落空。
   即：指纹路径允许"从散文取版本"，观测路径禁止 —— 两条路径对同一件事给了不同答案。
   要么让丢弃时用正文里的版本回填，要么把指纹路径也收紧，**不能两套并存**。
-- **`PARENT_PROC=pwn` 有假阴性**。真利用也可能拿不到这个值：in-place one_gadget 的
-  `execve("/bin/sh")` 让 shell **变成**题目进程本身，父进程是起它的脚本（`python3`）；
-  经 `system` 的 shell 父进程是 `sh`。两者都是真利用，却和"自己起一个 shell"撞在同一条
-  判据上。可选的收紧/放宽：① 认 `system("exec /bin/sh")` 语义（父进程仍是 `pwn`，
-  但要求 agent 把这串塞进写窗口）；② 接受"题目进程 execve 成了 shell"这条血缘
-  （判据从"父进程名"改成"祖先里有题目二进制 **且** 该进程已不存在"）；
-  ③ 另加一条可机检证据（例如 exploit 必须让题目进程自己打印 marker）。
-  在定下来之前**不改** `manual/*/TASK.md` 的标准。
+  目前**两条都没动**：改成任一条都会改变"观测驱动"的语义，等下一次 run 的数据
+  （看 agent 是否按 `aegis observe` 的警告重观测）再定。
+- **弱判据的残余可伪造性靠审计兜，而审计本身还没有别的证据源**。理论上
+  "`TARGET_GONE=yes` + 脚本审计"仍可被一个写了假利用脚本的 agent 绕过；目前唯一的
+  加固是 `_corroborated`（脚本里必须出现驱动题目的代码）。真要加强得让题目进程自己
+  产出不可预置的输出（例如要求在题目进程里打印一段本次运行才生成的随机数）。
 
 ### 未完成（下一轮）
 

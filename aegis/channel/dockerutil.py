@@ -693,6 +693,101 @@ def _remote_is_current(name: str, channel: Channel) -> bool:
     return have is not None and have == want
 
 
+#: Per-file cap when pulling a run's scripts back for audit. An audit of a
+#: truncated script is unsound, so an over-cap file is reported rather than
+#: silently half-copied.
+ARTIFACT_MAX_BYTES = 512 * 1024
+
+
+def fetch_artifacts(
+    name: str,
+    dest,
+    *,
+    channel: Channel | None = None,
+    max_bytes: int = ARTIFACT_MAX_BYTES,
+) -> dict[str, object]:
+    """Copy the run's non-ELF files **from the execution host** into `dest`.
+
+    Why this exists: the exploit scripts are written where the commands run. On
+    the remote channel an agent that works through `aegis_pwn`/`aegis_shell`
+    heredocs never writes anything locally, so an archive built from
+    `test/<ch>` alone is empty — and an empty archive makes the script audit
+    silently vacuous, i.e. `direct_flag_read` can never fire. Measured: a whole
+    pwn_3 run left `files: 0` in its MANIFEST while 82 `aegis_pwn` calls had run.
+
+    `readable` distinguishes "the host has no scripts" from "we could not look".
+    Those must never be the same value: the first is evidence, the second is the
+    absence of it.
+    """
+    from aegis.paths import challenge_dir
+
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    report: dict[str, object] = {
+        "source": "",
+        "readable": False,
+        "copied": 0,
+        "skipped_elf": 0,
+        "truncated": [],
+        "detail": "",
+    }
+
+    ch = channel or pick()
+    report["source"] = ch.label()
+    if not ch.available:
+        report["detail"] = f"no channel: {ch.detail}"
+        return report
+
+    if ch.kind != "ssh":
+        # docker/local mounts the challenge dir where this process can read it,
+        # so the local copy *is* the run's copy. Nothing to pull.
+        report["readable"] = True
+        report["detail"] = "local channel: test/<ch> is the run's own dir"
+        return report
+
+    workdir = ch.dir_for(name)
+    listing = subprocess.run(
+        ssh_argv(ch.target, f"find {q(workdir)} -maxdepth 1 -type f -printf '%s\\t%f\\n' 2>/dev/null | sort"),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env=ssh_env(),
+    )
+    if listing.returncode != 0:
+        report["detail"] = f"listing failed (rc={listing.returncode})"
+        return report
+    report["readable"] = True
+
+    copied: list[str] = []
+    for line in listing.stdout.splitlines():
+        size_text, _, filename = line.partition("\t")
+        filename = filename.strip()
+        if not filename or _is_macos_junk(filename) or not size_text.strip().isdigit():
+            continue
+        size = int(size_text)
+        pull = subprocess.run(
+            ssh_argv(ch.target, f"head -c {int(max_bytes)} -- {q(workdir + '/' + filename)}"),
+            capture_output=True,
+            timeout=60,
+            check=False,
+            env=ssh_env(),
+        )
+        if pull.returncode != 0 or not pull.stdout:
+            continue
+        if pull.stdout[:4] == b"\x7fELF":
+            report["skipped_elf"] = int(report["skipped_elf"]) + 1
+            continue
+        if size > max_bytes:
+            report["truncated"].append(filename)
+        (dest / filename).write_bytes(pull.stdout)
+        copied.append(filename)
+
+    report["copied"] = len(copied)
+    report["detail"] = f"pulled {len(copied)} file(s) from {workdir}"
+    return report
+
+
 def _sha1(path) -> str:
     import hashlib
 

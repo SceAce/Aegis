@@ -35,6 +35,8 @@ VETO_MIN_FAILS = 2
 K_GUIDANCE = 6
 #: Max veto lines rendered.
 K_VETO = 4
+#: Max world-independent lines rendered in the weak tier.
+K_WEAK = 4
 
 
 @dataclass
@@ -43,9 +45,11 @@ class Playbook:
 
     guidance: list[Experience] = field(default_factory=list)
     vetoes: list[Experience] = field(default_factory=list)
+    #: World-independent counts, kept separate and rendered last. See `_weak`.
+    weak: list[Experience] = field(default_factory=list)
 
     def is_empty(self) -> bool:
-        return not self.guidance and not self.vetoes
+        return not self.guidance and not self.vetoes and not self.weak
 
     @staticmethod
     def _ratio(e: Experience) -> float:
@@ -65,6 +69,15 @@ class Playbook:
                 cond = ",".join(e.condition)
                 L.append(f"- {e.action}  @ {cond}  （0/{e.n}）")
             L.append("")
+        if self.weak:
+            # Labelled as weak on purpose. These rows were recorded before the run
+            # had observed anything, so they say nothing about this world — a
+            # reader (and the agent) must be able to tell them from world-matched
+            # experience, or "no condition" silently becomes "always true".
+            L.append("## 经验（无世界条件，弱证据 —— 仅供参考）")
+            for e in self.weak:
+                L.append(f"- [{e.n_ok}/{e.n}] {e.action}")
+            L.append("")
         return "\n".join(L)
 
 
@@ -72,12 +85,30 @@ def applies(experience: Experience, world: set[str]) -> bool:
     """Does this experience's stated world hold now?
 
     An unconditional experience (empty condition) is not "applicable" in the
-    strong sense — it carries no world information — so it is only admitted when
-    we have observed nothing, where it still beats an empty column.
+    strong sense — it carries no world information — so it is not admitted here.
+    It goes to `_weak` instead of being dropped.
     """
     if not experience.condition:
-        return not world
+        return False
     return set(experience.condition) <= world
+
+
+def _weak(experience: Experience, world: set[str]) -> bool:
+    """World-independent experience: no condition, so no world can be required.
+
+    Dropping these outright was wrong, and the real data says so: an agent acts
+    before it observes, so most records are recorded with an empty condition — a
+    pwn_3 run had 114 of its 120 records that way (its observations all landed at
+    seq 423+). Excluding them meant "experience drives behaviour" almost never
+    fired, and that is a property of the rule, not of the data.
+
+    Demoted rather than promoted: rendered last and labelled, never world-matched,
+    and never able to become a veto (`vetoes` requires a non-empty condition).
+    They are also shown on a cold start, where they are all there is — but under
+    the weak heading, not as if this world had been measured.
+    """
+    del world  # deliberately not part of the test
+    return not experience.condition
 
 
 def build(
@@ -86,6 +117,7 @@ def build(
     *,
     k_guidance: int = K_GUIDANCE,
     k_veto: int = K_VETO,
+    k_weak: int = K_WEAK,
     veto_min_fails: int = VETO_MIN_FAILS,
 ) -> Playbook:
     """Select guidance and vetoes for one world. Pure: no IO, no LLM."""
@@ -101,4 +133,11 @@ def build(
     ]
     vetoes.sort(key=lambda e: e.n_fail, reverse=True)
 
-    return Playbook(guidance=guidance[:k_guidance], vetoes=vetoes[:k_veto])
+    weak = [e for e in experiences if _weak(e, world) and e.n_ok > 0]
+    weak.sort(key=lambda e: e.n_ok, reverse=True)
+
+    return Playbook(
+        guidance=guidance[:k_guidance],
+        vetoes=vetoes[:k_veto],
+        weak=weak[:k_weak],
+    )

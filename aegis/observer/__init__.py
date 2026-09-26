@@ -14,7 +14,7 @@ worker should do, and it does not write the blackboard — the native observer i
 the pi fork is the single writer, so the observed cannot edit the board.
 """
 
-from aegis.core.criterion import Criterion, find_criterion
+from aegis.core.criterion import Criterion, execution_branch, find_criterion
 from aegis.observer.extract import (
     SESSIONS_ROOT,
     SUPPORTED_SESSION_VERSION,
@@ -42,6 +42,7 @@ __all__ = [
     "discover_sessions",
     "distill",
     "event_files",
+    "execution_branch",
     "find_criterion",
     "observe",
     "portable",
