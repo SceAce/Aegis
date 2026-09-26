@@ -14,7 +14,7 @@ from pathlib import Path
 
 from aegis.memory import store as memory_store
 from aegis.observer.extract import Event, Experience, MemoryRecord, build_memory, distill
-from aegis.observer.native import read_native_events
+from aegis.observer.native import event_files, read_native_events
 
 
 def collect(state_dir: Path) -> tuple[list[Event], list[MemoryRecord]]:
@@ -88,22 +88,45 @@ def experience(state_dir: Path) -> list[Experience]:
     return distill(memory_store.load(state_dir))
 
 
-def world_tags(state_dir: Path) -> set[str]:
-    """World tags observed most recently, for gating experience.
+def current_session(state_dir: Path) -> str | None:
+    """The newest session stream — i.e. the run in progress, or the last one.
+
+    By file mtime: a session's file is written as it runs, so the newest one is
+    the live run.
+    """
+    files = event_files(state_dir)
+    if not files:
+        return None
+    newest = max(files, key=lambda path: path.stat().st_mtime)
+    stem = newest.stem
+    return stem[len("events-") :] if stem.startswith("events-") else stem
+
+
+def world_tags(state_dir: Path, session: str | None = None) -> set[str]:
+    """World tags observed **in the current run**, for gating experience.
+
+    Scoped to one session on purpose. Reading every stream ever written would let
+    the previous challenge's final world qualify experience for the next one
+    before it had measured anything — the run would start already believing it
+    was in a world nobody had observed. "Only observed things drive action" has
+    to mean *this* run's observations.
 
     Reads both shapes: a dedicated `observation` event, and an `aegis_observe`
     *action* (the pi extension records observations as tool calls, not as a
     separate event kind). Missing the second shape made the world look empty
     while records were clearly conditional, which silently disabled guidance.
 
-    Later observations supersede contradictory earlier ones, and the latest one
-    wins rather than the union — a tag the run has already left must not keep
-    qualifying experience.
+    Within the run, a later observation supersedes a contradictory earlier one
+    rather than unioning: a tag the run has already left must not keep qualifying
+    experience.
     """
     from aegis.observer.extract import observed_tags, reconcile
 
+    scope = session if session is not None else current_session(state_dir)
     tags: set[str] = set()
     for e in read_native_events(state_dir):
+        if scope is not None and e.session != scope:
+            continue
         if e.kind == "observation":
             raw = (e.data or {}).get("tags")
             if isinstance(raw, (list, tuple)):

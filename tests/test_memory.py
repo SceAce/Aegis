@@ -25,6 +25,44 @@ def _rec(session: str, seq: int, *, action: str = "pwn: do x", ok: bool | None =
     )
 
 
+def test_world_tags_are_scoped_to_the_current_run() -> None:
+    """Experience is gated on THIS run's observations, not on history.
+
+    Without scoping, the previous challenge's final world would qualify
+    experience for the next one before it had measured anything — the new run
+    would start out believing it was in a world nobody had observed for it.
+    """
+    import time
+
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        obs_dir = d / "observer"
+        obs_dir.mkdir(parents=True)
+
+        def write(session: str, rows: list[dict]) -> None:
+            (obs_dir / f"events-{session}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+            )
+
+        def event(session: str, seq: int, kind: str, tool: str, call_id: str, data: dict, ok=None) -> dict:
+            return {"v": 1, "seq": seq, "ts": "T", "worker": "pi", "session": session,
+                    "kind": kind, "tool": tool, "callId": call_id, "ok": ok, "data": data}
+
+        write("old", [
+            event("old", 1, "action", "aegis_observe", "o1", {"args": {"tags": ["glibc2.27", "hooks_alive"]}}),
+            event("old", 2, "outcome", "aegis_observe", "o1", {"text": "ok"}, ok=True),
+        ])
+        time.sleep(0.05)
+        write("new", [
+            event("new", 3, "action", "aegis_board", "b1", {"args": {"action": "read"}}),
+            event("new", 4, "outcome", "aegis_board", "b1", {"text": "{}"}, ok=True),
+        ])
+
+        assert pipeline.current_session(d) == "new"
+        assert pipeline.world_tags(d) == set(), "an earlier session's world leaked in"
+        assert pipeline.world_tags(d, session="old") == {"glibc2.27", "hooks_alive"}
+
+
 def test_store_roundtrip() -> None:
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
