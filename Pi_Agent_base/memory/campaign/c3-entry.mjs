@@ -19,10 +19,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { digest } from "../fixture/contracts.mjs";
+import { digest, resolveInside } from "../fixture/contracts.mjs";
 import { ActionRegistry, createActionBroker } from "../runtime/action-contract.mjs";
 import { createAuthorization } from "../runtime/authorization.mjs";
 import { EventLog } from "../runtime/events.mjs";
+import { createScriptRegistry, scriptContracts } from "../runtime/script-registry.mjs";
 import { createBrokerWorker } from "./broker-worker.mjs";
 import { createCampaignActionGate } from "./campaign-mode.mjs";
 import { createFixtureAdapterContract, FIXTURE_ADAPTER_ACTION_REF } from "./fixture-adapter.mjs";
@@ -170,6 +171,7 @@ export function buildC3FixtureManifest({ workspaceRoot, campaignId = "campaign-c
 export function artifactIndexFromEvents(events = []) {
 	const index = new Map();
 	for (const event of events) {
+		if (!["runtime", "oracle", "human"].includes(event?.source?.kind)) continue;
 		const payload = event?.payload ?? {};
 		if (event?.event_type === "action.completed") {
 			const refId = payload.evidence_ref;
@@ -179,6 +181,7 @@ export function artifactIndexFromEvents(events = []) {
 		}
 		// Oracle-committed evidence refs (e.g. from a reconcile that read the real
 		// artifact) are indexed too.
+		if (!["oracle", "human"].includes(event?.source?.kind)) continue;
 		const outcome = payload.outcome;
 		for (const ref of Array.isArray(outcome?.evidence_refs) ? outcome.evidence_refs : []) {
 			if (ref?.ref_id && typeof ref.digest === "string")
@@ -210,10 +213,17 @@ export async function assembleCampaignHost(
 		oracleOverrides = null,
 		sinkImpl = null,
 		planFactory = null,
+		scriptRegistrationConfig = null,
 		delayedFirstByTask = {},
 		wrapWorker = null,
 	} = /** @type {any} */ ({}),
 ) {
+	const checked = validateManifest(manifest);
+	if (!checked.ok) throw new Error(`manifest invalid: ${checked.reasons.join("; ")}`);
+	manifest = checked.manifest;
+	if (resolve(workspaceRoot) !== resolve(manifest.authorization.workspace_root)) {
+		throw new Error("workspaceRoot differs from Manifest authorization");
+	}
 	mkdirSync(workspaceRoot, { recursive: true });
 	mkdirSync(workDir, { recursive: true });
 	const sink = sinkImpl ?? createProductSink({ eventLogPath });
@@ -222,7 +232,8 @@ export async function assembleCampaignHost(
 		if (opened && opened.ok !== true) throw new Error(`event log open failed: ${opened.error}`);
 	}
 
-	const registry = new ActionRegistry([createFixtureAdapterContract({ workspaceRoot })]);
+	const scripts = createScriptRegistry(scriptRegistrationConfig ?? {});
+	const registry = new ActionRegistry([createFixtureAdapterContract({ workspaceRoot }), ...scriptContracts(scripts)]);
 	const broker = createActionBroker({ registry });
 	const authorization = createAuthorization({
 		mode,
@@ -267,9 +278,12 @@ export async function assembleCampaignHost(
 		workspaceRoot,
 		artifactIndex,
 		actionGate: gate,
-		probePath: (/** @type {any} */ step) => join(workspaceRoot, step.arguments?.target ?? "door.json"),
-		targetPathFor: (/** @type {any} */ step) => join(workspaceRoot, step.arguments?.target ?? "door.json"),
+		probePath: (/** @type {any} */ step) =>
+			resolve(workspaceRoot, step.arguments?.target ?? step.arguments?.state_file ?? "door.json"),
+		targetPathFor: (/** @type {any} */ step) =>
+			resolve(workspaceRoot, step.arguments?.target ?? step.arguments?.state_file ?? "door.json"),
 	});
+	workerRaw.bindCampaign(manifest);
 	// A preparation seam: wrap the worker to count real effects or inject a
 	// process fault AFTER the effect. It never changes Broker semantics.
 	const worker = typeof wrapWorker === "function" ? wrapWorker(workerRaw) : workerRaw;
@@ -281,11 +295,38 @@ export async function assembleCampaignHost(
 				? oracleOverrides.judgeTask
 				: ({ task, attempt, onEvidence }) => {
 						const target = task.target_ref ?? "door.json";
-						const path = join(workspaceRoot, target);
+						const path = resolveInside(workspaceRoot, target, { mustExist: false });
 						if (!exists(path)) return { status: "unknown", failure_mode: "effect_absent" };
 						const state = JSON.parse(readFileSync(path, "utf8"));
-						const unlock = task.task_type === "verify" || task.task_id.endsWith("002");
-						const expected = !unlock;
+						// Only the registered local boolean criterion is executable here;
+						// task labels/types never decide whether its postcondition passed.
+						const stageOverrides = Object.fromEntries(
+							(task.stages ?? []).map((stage) => {
+								const criteria = stage.criteria ?? [];
+								const matches = criteria.map((criterion) => /^(?:door|state)\.locked == (true|false)$/.exec(criterion));
+								if (matches.length === 0 || matches.some((match) => !match)) {
+									return [stage.stage_id, { status: "unknown", failure_mode: "unregistered_criterion" }];
+								}
+								const expectedValues = matches.map((match) => match[1] === "true");
+								return [
+									stage.stage_id,
+									{
+										status: expectedValues.every((value) => state.locked === value) ? "success" : "failure",
+										expected: expectedValues[0],
+										observed: { locked: state.locked },
+									},
+								];
+							}),
+						);
+						const required = (task.stages ?? [])
+							.filter((stage) => stage.required !== false)
+							.map((stage) => stageOverrides[stage.stage_id]);
+						const judgedStatus = required.some((stage) => stage.status === "unknown")
+							? "unknown"
+							: required.every((stage) => stage.status === "success")
+								? "success"
+								: "failure";
+						const expected = required[0]?.expected ?? null;
 						const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: stateDigest(path), path }];
 						// The default judge READ the real file, so its digest may be indexed.
 						if (typeof onEvidence === "function") onEvidence(evidence);
@@ -293,10 +334,18 @@ export async function assembleCampaignHost(
 						if (delayedFirstByTask[task.task_id] && attempt === 1) {
 							return { status: "unknown", delayed: true, failure_mode: "delayed_verification", evidence };
 						}
-						if (state.locked === expected)
-							return { status: "success", observed: { locked: state.locked }, expected, evidence };
+						for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
+						if (judgedStatus === "success")
+							return {
+								status: "success",
+								observed: { locked: state.locked },
+								expected,
+								evidence,
+								stage_overrides: stageOverrides,
+							};
 						return {
-							status: "failure",
+							status: judgedStatus,
+							stage_overrides: stageOverrides,
 							observed: { locked: state.locked },
 							expected,
 							failure_mode: "criterion_not_met",
@@ -407,11 +456,17 @@ export async function runCampaignHost(
 	const { host, sink } = assembled;
 
 	let result;
-	if (scenario === "pause") {
-		await host.pause("cli_pause");
+	if (scenario === "resume") {
+		const resumed = await host.resume("cli_resume");
+		if (!resumed.ok) throw new Error(resumed.error || "resume was not durable");
+		result = await host.run();
+	} else if (scenario === "pause") {
+		const paused = await host.pause("cli_pause");
+		if (!paused.ok) throw new Error(paused.error || "pause was not durable");
 		result = await host.run();
 	} else if (scenario === "cancel") {
-		await host.cancel("cli_cancel");
+		const cancelled = await host.cancel("cli_cancel");
+		if (!cancelled.ok) throw new Error(cancelled.error || "cancel was not durable");
 		result = await host.run();
 	} else {
 		result = await host.run();
@@ -454,6 +509,10 @@ function readKey(workspaceRoot) {
 /** CLI: node c3-entry.mjs <workDir> <scenario> [workspaceRoot] */
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
 	const [workDirArg, scenarioArg = "start", workspaceArg] = process.argv.slice(2);
+	if (!workDirArg || !["start", "pause", "resume", "cancel"].includes(scenarioArg)) {
+		process.stderr.write("Usage: node c3-entry.mjs <workDir> start|pause|resume|cancel [workspaceRoot]\n");
+		process.exit(2);
+	}
 	const workDir = resolve(workDirArg);
 	const workspaceRoot = resolve(workspaceArg ?? join(workDir, "workspace"));
 	const outcome = await runCampaignHost({ workDir, workspaceRoot, scenario: scenarioArg, mode: "auto" });

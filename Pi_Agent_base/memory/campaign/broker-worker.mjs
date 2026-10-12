@@ -18,6 +18,7 @@
 // the criterion.
 
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { digest } from "../fixture/contracts.mjs";
 
@@ -58,6 +59,50 @@ export function createBrokerWorker(
 ) {
 	if (!broker || typeof broker.invoke !== "function") throw new Error("createBrokerWorker requires a broker.invoke");
 	if (!sink || typeof sink.append !== "function") throw new Error("createBrokerWorker requires a sink with append()");
+	let campaignManifest = null;
+
+	function grantCheck(task, step) {
+		if (!campaignManifest) return { ok: false, reason: "no trusted Campaign grant bound to Worker" };
+		const contract = broker.registry?.get(step.action_ref);
+		if (!contract) return { ok: false, reason: `unknown action: ${String(step.action_ref)}` };
+		const auth = campaignManifest.authorization;
+		if (resolve(auth.workspace_root) !== resolve(workspaceRoot))
+			return { ok: false, reason: "workspace differs from Manifest grant" };
+		const target =
+			typeof targetPathFor === "function"
+				? targetPathFor(step, task)
+				: (step.arguments?.target ?? step.arguments?.path);
+		const absolute = typeof target === "string" ? resolve(workspaceRoot, target) : null;
+		if (
+			!absolute ||
+			absolute !== resolve(workspaceRoot, task.target_ref) ||
+			!auth.allowed_targets.some((t) => absolute === resolve(workspaceRoot, t))
+		) {
+			return { ok: false, reason: "action target is outside Campaign/Task grant" };
+		}
+		// Check actual data path parameters too: a trusted target resolver must not
+		// mask an ungranted resource path supplied in the final arguments.
+		for (const [name, spec] of Object.entries(contract.parameters ?? {})) {
+			if (
+				spec.direction &&
+				typeof step.arguments?.[name] === "string" &&
+				resolve(workspaceRoot, step.arguments[name]) !== absolute
+			) {
+				return { ok: false, reason: `resource parameter ${name} escapes the allowed Task target` };
+			}
+		}
+		const capabilities = contract.scope?.permissions ?? [];
+		if (
+			capabilities.length === 0 ||
+			capabilities.some((c) => !auth.allowed_capabilities.includes(c)) ||
+			(task.required_capabilities ?? []).some((c) => !auth.allowed_capabilities.includes(c))
+		) {
+			return { ok: false, reason: "action capability is outside Campaign/Task grant" };
+		}
+		if (contract.network === true && auth.network === "disabled")
+			return { ok: false, reason: "network is outside Campaign grant" };
+		return { ok: true };
+	}
 
 	/** Uniform durable append boundary. Never treats a Promise as durability. */
 	async function commit(event) {
@@ -108,6 +153,8 @@ export function createBrokerWorker(
 	async function runStep({ task, step }) {
 		const episodeId = `ep-${task.task_id}`;
 		const actionEventKey = `act-${task.task_id}-${step.step_id}`;
+		const contract = broker.registry?.get(step.action_ref);
+		let grant = grantCheck(task, step);
 		const requested = await commit({
 			event_type: "action.requested",
 			episode_id: episodeId,
@@ -115,6 +162,8 @@ export function createBrokerWorker(
 			payload: {
 				action_id: actionEventKey,
 				action_ref: step.action_ref,
+				version: contract?.version ?? null,
+				implementation_digest: contract?.implementation_digest ?? null,
 				episode_id: episodeId,
 				task_id: task.task_id,
 				step_id: step.step_id,
@@ -137,22 +186,27 @@ export function createBrokerWorker(
 		// The Broker is the ONLY execution path.
 		let result;
 		try {
-			result = await broker.invoke({
-				action_ref: step.action_ref,
-				arguments: step.arguments ?? {},
-				context: {
-					workspaceRoot,
-					episode_id: episodeId,
-					step_id: step.step_id,
-					action_event_id: requested.event?.event_id ?? actionEventKey,
-					action_id: actionEventKey,
-					target_path: derivedTargetPath,
-					task_id: task.task_id,
-					criterion_id: step.criterion_id ?? null,
-				},
-				authorization,
-				state: {},
-			});
+			// The intent append is awaited; re-check final parameters/grants at the
+			// actual execution boundary as well.
+			grant = grant.ok ? grantCheck(task, step) : grant;
+			result = grant.ok
+				? await broker.invoke({
+						action_ref: step.action_ref,
+						arguments: step.arguments ?? {},
+						context: {
+							workspaceRoot,
+							episode_id: episodeId,
+							step_id: step.step_id,
+							action_event_id: requested.event?.event_id ?? actionEventKey,
+							action_id: actionEventKey,
+							target_path: derivedTargetPath,
+							task_id: task.task_id,
+							criterion_id: step.criterion_id ?? null,
+						},
+						authorization,
+						state: {},
+					})
+				: { ok: false, status: "rejected", reason: grant.reason };
 		} catch (error) {
 			result = { ok: false, status: "unknown", reason: `broker threw: ${String(error)}`, failure_mode: "tool_error" };
 		}
@@ -162,7 +216,7 @@ export function createBrokerWorker(
 		// can independently re-read it.
 		const refId = step.evidence_ref ?? null;
 		const path = typeof probePath === "function" ? probePath(step, task) : null;
-		const contentDigest = refId ? recordEffectArtifact(refId, path) : null;
+		const contentDigest = refId && grant.ok && result?.status !== "rejected" ? recordEffectArtifact(refId, path) : null;
 
 		const completed = await commit({
 			event_type: "action.completed",
@@ -184,7 +238,7 @@ export function createBrokerWorker(
 				evidence_ref: refId,
 				rejection_reason:
 					result?.ok === true ? null : (result?.reason ?? result?.detail ?? result?.failure_mode ?? "unknown"),
-				detail: result?.detail ?? null,
+				detail: result?.detail ?? result?.reason ?? null,
 			},
 		});
 		if (onAction) {
@@ -206,6 +260,9 @@ export function createBrokerWorker(
 				transport,
 			};
 		}
+		if (result?.status === "rejected") {
+			return { ok: false, phase: "rejected", error: result.reason, effect_probe: false };
+		}
 		return {
 			ok: true,
 			phase: "done",
@@ -217,6 +274,10 @@ export function createBrokerWorker(
 	}
 
 	return {
+		/** Bind the trusted grant before dispatch; models never supply it. */
+		bindCampaign(manifest) {
+			campaignManifest = manifest;
+		},
 		/**
 		 * Run one task's trusted action plan. Returns the TRANSPORT/effect fact; the
 		 * Oracle decides success. A failure is `{ok:false, failure_mode}` for the
@@ -245,7 +306,13 @@ export function createBrokerWorker(
 				if (!stepResult.ok) {
 					return {
 						ok: false,
-						failure_mode: stepResult.phase === "intent" ? "intent_not_durable" : "result_not_durable",
+						failure_mode:
+							stepResult.phase === "rejected"
+								? "action_rejected"
+								: stepResult.phase === "intent"
+									? "intent_not_durable"
+									: "result_not_durable",
+						audit_degraded: stepResult.phase === "intent" || stepResult.phase === "result",
 						detail: stepResult.error,
 						effects,
 						effect_probe: stepResult.effect_probe === true,

@@ -111,6 +111,7 @@ export function createCampaignHost({
 	if (!oracle || typeof oracle.judge !== "function")
 		throw new Error("createCampaignHost requires an oracle with judge()");
 
+	worker.bindCampaign?.(manifest);
 	const costCheck = parseBudgetStrict(budgetAccount);
 	const syntheticCost = costCheck.ok ? { ...costCheck.value } : { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
 	const actionCounters = { requested: 0, completed: 0, rejected: 0, denied: 0 };

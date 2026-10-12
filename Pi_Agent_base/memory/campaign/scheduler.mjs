@@ -633,6 +633,17 @@ export function createCampaignScheduler({
 				{ kind: "runtime", actor_id: ownerId },
 			);
 			if (!unknown.ok) return { ok: false, reason: `could not record unknown task: ${unknown.error}` };
+			if (run?.audit_degraded === true) {
+				const stopped = await commit(
+					"campaign.campaign.stopped",
+					{ reason: "audit_degraded" },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				return {
+					ok: false,
+					reason: `action audit failed; new dispatch stopped: ${run.detail ?? run.failure_mode}${stopped.ok ? "" : `; stop append failed: ${stopped.error}`}`,
+				};
+			}
 			return { ok: true };
 		}
 

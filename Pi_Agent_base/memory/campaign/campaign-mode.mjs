@@ -44,7 +44,7 @@ export const DIRECT_TOOLS_DENIED = Object.freeze([
  * @returns {{active: boolean, activate: () => void, deactivate: () => void,
  *   guardToolCall: (input: {tool_name?: string, action_ref?: string| null}) =>
  *   {allowed: boolean, reason: string, mode: "campaign"|"standard", action_ref: string|null},
- *   isActive: () => boolean}}
+ *   isActive: () => boolean, extensionFactory: (pi: any) => void}}
  */
 export function createCampaignActionGate(
 	{
@@ -102,7 +102,16 @@ export function createCampaignActionGate(
 		};
 	}
 
+	/** Load this factory into the Host's Pi resource loader before dispatch. */
+	function extensionFactory(pi) {
+		pi.on("tool_call", (event) => {
+			const decision = guardToolCall({ tool_name: event.toolName, action_ref: event.input?.action_ref });
+			return decision.allowed ? undefined : { block: true, reason: decision.reason };
+		});
+	}
+
 	return {
+		extensionFactory,
 		get active() {
 			return active;
 		},
