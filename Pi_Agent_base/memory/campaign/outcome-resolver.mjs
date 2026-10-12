@@ -149,7 +149,7 @@ export function resolveStageOutcome({
 
 	// F2: outer event source agrees with the inner provenance source.
 	if (eventSource !== null) {
-		const innerSource = result.provenance?.source ?? result.oracle?.source ?? null;
+		const innerSource = result.provenance?.source ?? null;
 		if (innerSource === null)
 			return { ok: false, status: "unknown", reasons: ["stage outcome has no inner provenance source"], outcome: null };
 		if (!["oracle", "human"].includes(eventSource)) {
@@ -204,9 +204,29 @@ export function resolveStageOutcome({
 		};
 	}
 
-	// Independent provenance is mandatory.
-	if (result.provenance && result.provenance.independent !== true) {
+	// F14: independent provenance must be explicitly PRESENT and true. A missing or
+	// null provenance block is not "unchecked": it is unknown authority, and an
+	// inner `oracle.source` alone does not supply independent-judgment rights.
+	const provenance = result.provenance;
+	if (!provenance || typeof provenance !== "object") {
+		return { ok: false, status: "unknown", reasons: ["stage outcome has no independent provenance"], outcome: null };
+	}
+	if (provenance.independent !== true) {
 		return { ok: false, status: "invalid", reasons: ["stage outcome provenance is not independent"], outcome: null };
+	}
+
+	// F14: the Outcome's OWN stage binding, when present, must match the declared
+	// stage. Canonicalization must never relabel a foreign Stage Outcome as the
+	// current Stage success.
+	const declaredStageId = stage.stage_id ?? stage.stageId ?? null;
+	const innerStageId = result.step_id ?? result.stage_id ?? null;
+	if (innerStageId !== null && declaredStageId !== null && innerStageId !== declaredStageId) {
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: [`stage outcome is bound to ${innerStageId}, not the declared stage ${declaredStageId}`],
+			outcome: null,
+		};
 	}
 
 	// Scope binding (F10/F11): a missing current scope never disables the check.
