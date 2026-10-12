@@ -8,6 +8,8 @@ Read these before Campaign development:
 - `../docs/AGENT_DEVELOPMENT_STANDARD.md`
 - `../docs/AGENT_TESTING_STANDARD.md`
 - `../docs/GIT_STANDARD.md`
+- `../docs/C1_BOUNDARY_EXTERNAL_REVIEW.md`
+- `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md`
 - `../docs/C1_FINAL_EXTERNAL_AUDIT_3.md`
 - `../docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md`
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
@@ -53,8 +55,9 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. The latest external
-review reproduced F10-F13 after F7-F9. Follow
-`../docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md`; preserve the failing acceptance tests
-and verify the actual scheduler/checkpoint paths. C1 is changes_required and C2
-remains blocked until external review of the fixes. Do not implement C2-C4a.
+Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. F10-F13's original
+21 acceptance tests now pass, but external follow-up reproduced F14-F16.
+Follow `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md`; preserve the new failing tests
+and verify actual Stage binding and scheduler/checkpoint paths. C1 remains
+changes_required and C2 stays blocked pending external review. Do not implement
+C2-C4a.

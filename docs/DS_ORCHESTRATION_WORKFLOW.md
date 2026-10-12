@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认采用一次总委派、主 DS自行拆小任务的方法。当前任务是 `C1_EXTERNAL_BOUNDARY_FIX_TASK.md` 的 F10-F13 修复；最新复核为 `C1_FINAL_EXTERNAL_AUDIT_3.md`。C0/C1旧任务图保留作背景，C2仍不启动。Git 管理遵守 `GIT_STANDARD.md`。
+状态：用户确认采用一次总委派、主 DS自行拆小任务的方法。当前任务是 `C1_BOUNDARY_FOLLOWUP_TASK.md` 的 F14-F16 残余收尾；最新复核为 `C1_BOUNDARY_EXTERNAL_REVIEW.md`。F10-F13 原 21 用例已通过，C0/C1旧任务图保留作背景，C2仍不启动。Git 管理遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 

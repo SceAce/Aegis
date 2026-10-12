@@ -2,9 +2,9 @@
 
 状态：**blocked / 未授权启动实施**。
 
-本文件替换本会话过早写出的 approved 草稿。最新外部审计
-`C1_FINAL_EXTERNAL_AUDIT_3.md` 已复现 F10-F13，当前只执行
-`C1_EXTERNAL_BOUNDARY_FIX_TASK.md`；修复后还须外部验收。
+本文件替换本会话过早写出的 approved 草稿。F10-F13 原 21 用例已通过，但最新
+`C1_BOUNDARY_EXTERNAL_REVIEW.md` 又复现 F14-F16，当前只执行
+`C1_BOUNDARY_FOLLOWUP_TASK.md`；修复后还须外部验收。
 不得因旧草稿或第一批测试全绿启动 C2。
 
 C2 的已确认目标仍以 `CAMPAIGN_ARCHITECTURE.md` 的 Phase C2 / §Session Supervisor
@@ -19,4 +19,4 @@ Observer 负责收集，Runtime 负责状态。
 仅记录随机 Session ID 变化不足以验收，必须验证对象/context 真实替换及错误恢复。
 
 本次不写 C2 实现提示词；交给 DS 的当前提示词是
-`C1_EXTERNAL_BOUNDARY_DS_PROMPT.md`。
+`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`。

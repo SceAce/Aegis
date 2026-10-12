@@ -10,7 +10,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，可直接交给 DS 的完整提示词是 [`C1_EXTERNAL_BOUNDARY_DS_PROMPT.md`](C1_EXTERNAL_BOUNDARY_DS_PROMPT.md)。最新任务是 [`C1_EXTERNAL_BOUNDARY_FIX_TASK.md`](C1_EXTERNAL_BOUNDARY_FIX_TASK.md)，依据 [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：F7-F9 后仍复现 F10-F13，新增 21 个外部用例为 2 pass / 19 fail，当前 **C1 changes_required / C2 blocked**。主 DS先冻结共享契约和测试，分任务实现、自审、Git 提交后交回外部验收，不进入 C2。
+当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，可直接交给 DS 的完整提示词是 [`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)。最新任务是 [`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)，依据 [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 原 21 用例已通过，但复核新增 12 用例为 2 pass / 10 fail，仍有 F14-F16 残余问题。当前 **C1 changes_required / C2 blocked**。主 DS分任务修复、自审、Git 提交后交回外部验收，不进入 C2。
 
 开发依据：
 
@@ -25,7 +25,8 @@
 - [`C1_INTEGRATION_CLOSURE_TASK.md`](C1_INTEGRATION_CLOSURE_TASK.md)：当前共享契约、主DS分任务、接线门和停止条件。
 - [`C1_INTEGRATION_TEST_SPEC.md`](C1_INTEGRATION_TEST_SPEC.md)：本轮多维case与Scheduler+真实EventLog端到端测试要求。
 - [`C1_FINAL_EXTERNAL_AUDIT.md`](C1_FINAL_EXTERNAL_AUDIT.md)：F1-F6完成报告之后的历史独立复核，指出F7-F9。
-- [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：最新外部复核，包含 F10-F13、可执行 red 证据及真实 Scheduler/EventLog 对照。
+- [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：F10-F13 历史外部 red 基线及真实 Scheduler/EventLog 对照。
+- [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 交付后的最新复核，包含 F14-F16、12 个新增用例与报告一致性检查。
 - [`../Pi_Agent_base/AGENTS.md`](../Pi_Agent_base/AGENTS.md)：Aegis-owned代码的Agent自动发现入口，不恢复已删除根目录AGENTS。
 
 Campaign 层的统一设计与实现任务书分别见：
