@@ -1,6 +1,6 @@
 # C1 F10–F13 交付外部复核
 
-状态：**C1 changes_required / C2 blocked**。
+当前执行决定（用户确认，覆盖下文历史阻塞定位）：**C1 只收尾 F14；F15 非阻塞、F16 后置；F14 修复及限定验证通过后进入 C2**。F16 原 P1 阻塞定位撤销，prefix 读取次数是缓存优化诊断而非当前正确性门槛。原始复现、测试结果仍保留，不表示后置问题已修复。通用规则见开发规范 §3.1。
 审计基线：`7656e99`，分支 `audit/c1-external-boundaries`，开始时工作树干净。
 本轮只增加外部测试和更新委派/审计文档，不改产品实现，不改 DS 历史交付报告。
 
@@ -103,7 +103,4 @@ persist/status 使用同一恢复投影和新 committed tail。不能仅设置�
 
 ## 7. 下一步
 
-只执行 `C1_BOUNDARY_FOLLOWUP_TASK.md` 的 F14-F16 及报告更正。
-可复制提示词为 `C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`。
-已修 F10-F13 与全部原有测试须保留，不重写整个框架、不增加真实调用。
-DS 内部通过后仍交回外部复核；当前不启动 C2。
+执行更新后的 `C1_BOUNDARY_FOLLOWUP_TASK.md`：只做 F14 最小修复与相关回归；F15 非阻塞可顺手处理，F16 后置，不要求本文件混合套件全绿。可复制提示词为 `C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`。保留原反例与真实结果，用 required/deferred 清单区分，不删除断言或伪称已修。复用现有交付报告，限定外部 F14 验证通过后进入已获用户同意的 C2，不再因 F15/F16 重开 C1。

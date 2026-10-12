@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认采用一次总委派、主 DS自行拆小任务的方法。当前任务是 `C1_BOUNDARY_FOLLOWUP_TASK.md` 的 F14-F16 残余收尾；最新复核为 `C1_BOUNDARY_EXTERNAL_REVIEW.md`。F10-F13 原 21 用例已通过，C0/C1旧任务图保留作背景，C2仍不启动。Git 管理遵守 `GIT_STANDARD.md`。
+状态：用户确认一次总委派、主 DS自行拆小任务，以及开发规范 §3.1 的阶段范围冻结规则。当前只收尾 `C1_BOUNDARY_FOLLOWUP_TASK.md` 的 F14；F15 非阻塞、F16 后置；F14 限定外部复核通过后进入已获用户同意的 C2。历史证据为 `C1_BOUNDARY_EXTERNAL_REVIEW.md`，不以其旧阻塞定位覆盖当前决定。Git 管理遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 
@@ -36,6 +36,8 @@ docs/CAMPAIGN_REVIEW_REPORT.md   # 主DS审查与外部待验收结论
 当前文档维护可以使用Markdown，未生成则不要声称已经有矩阵。原始stdout/stderr、调度记录、子会话材料落 ignored runtime/dev/<run-id>/，不把密钥写docs。
 
 任务状态：planned -> tests_ready -> implementing -> reviewing -> integrated -> internally_verified。外部验收前标awaiting_external_review，不写 externally_accepted。
+
+阶段开始冻结核心目标与 required 清单。发现标 current_blocker / non_blocking / deferred，写影响、责任阶段和重新评估条件；实现者和审计者都不能因新增优化项反复重开阶段。小修复复用现有计划/报告，只更新变化与证据，不机械新建全套文档。
 
 ## 4. 小任务模板
 
@@ -118,7 +120,7 @@ stop conditions
 
 以下停止受影响任务并记录：必须改变数据模型/晋升门/授权范围、修改Pi核心、需要新依赖/真实模型调用、无法实现单writer/durable语义而准备降低声明。其余不受影响任务继续，不把“等用户”当全部停工理由。
 
-本轮保留C0回归，集中完成C1产品接线，不重复大规模C0重构。C1内部通过后停止，提交外部审查；C2–C4a等待验收和下一次实施授权。
+本轮保留相关回归，只收尾 F14；F15 可顺手小修，F16 后置。限定外部复核检查 F14 与受影响路径，不要求后置测试全绿。通过后推进用户已同意的 C2，不因旧任务书重复索取阶段授权；C3-C4a 不在当前范围。新阻塞须有当前可达核心损害证据，不能把外部审计变成无限范围扫描。
 
 ## 9. 最终交付
 
@@ -129,7 +131,7 @@ stop conditions
 - `requirement -> case -> script -> result`矩阵；
 - exact commands、exit codes、phase runner结果与blocked环境原因；
 - 旧代码red、新代码green与mutation结果；
-- 主DS审查发现、所有P0/P1闭环、P2余项；
+- 主DS审查发现、冻结范围内的当前阻塞闭环、非阻塞/后置项及责任阶段；
 - 权威输入到projection/report的rebuild证据；
 - synthetic/faux/真实本地子进程各自验证范围；
 - 未实现的C2/Pi真实Session、C3/Broker与Oracle、C4a/UI等范围；

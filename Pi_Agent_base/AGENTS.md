@@ -27,6 +27,12 @@ one whole assignment, then divide it into bounded implementation/test/review
 subtasks. Delegate only using capabilities actually available; otherwise work
 serially and report that honestly.
 
+Freeze each phase's core goals and required checks before implementation.
+Follow `../docs/AGENT_DEVELOPMENT_STANDARD.md` section 3.1: distinguish current
+blockers from non-blocking/deferred work. Findings need a reachable violation of
+current correctness/authorization to reopen the gate; performance preferences
+or later-phase features alone do not block. Keep deferred evidence, ownership
+phase and reassessment conditions visible. Reuse reports for small repairs.
 Generate and review the shared contract/test matrix before implementation.
 Preserve existing meaningful assertions. Use disjoint file ownership; the
 master owns shared contracts, configuration, exports, integration and final
@@ -55,9 +61,10 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. F10-F13's original
-21 acceptance tests now pass, but external follow-up reproduced F14-F16.
-Follow `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md`; preserve the new failing tests
-and verify actual Stage binding and scheduler/checkpoint paths. C1 remains
-changes_required and C2 stays blocked pending external review. Do not implement
-C2-C4a.
+Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. User-approved scope:
+only F14 remains a C1 blocker; F15 is non-blocking, F16 is deferred cache work.
+Follow `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md` for a minimal Stage binding fix,
+focused verification and existing regressions. Preserve deferred assertions and
+report failures separately from required checks. After limited external F14
+review passes, proceed to the already-authorized C2; do not reopen C1 for F15/F16
+or claim external acceptance yourself. C3-C4a remain outside this assignment.

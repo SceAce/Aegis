@@ -10,11 +10,11 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，可直接交给 DS 的完整提示词是 [`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)。最新任务是 [`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)，依据 [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 原 21 用例已通过，但复核新增 12 用例为 2 pass / 10 fail，仍有 F14-F16 残余问题。当前 **C1 changes_required / C2 blocked**。主 DS分任务修复、自审、Git 提交后交回外部验收，不进入 C2。
+当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，完整提示词为 [`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)，范围见 [`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)。用户已确认：**C1 只收尾 F14，F15 非阻塞、F16 后置；F14 限定验证通过后进入 C2**。遵守开发规范 §3.1 的阶段范围冻结规则，不再逐轮扩大验收门槛。原反例与真实结果保留在 [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)，混合套件后置失败不自动阻止推进。
 
 开发依据：
 
-- [`AGENT_DEVELOPMENT_STANDARD.md`](AGENT_DEVELOPMENT_STANDARD.md)：仓库规范、输入/证据/副作用边界、类型/格式检查和完成标准。
+- [`AGENT_DEVELOPMENT_STANDARD.md`](AGENT_DEVELOPMENT_STANDARD.md)：仓库规范、输入/证据/副作用边界、检查和完成标准；§3.1 为用户确认的阶段范围冻结、阻塞/后置分类与推进规则，适用于后续所有阶段。
 - [`AGENT_TESTING_STANDARD.md`](AGENT_TESTING_STANDARD.md)：测试先行、正负例/边界/归属/恢复矩阵、可执行脚本要求、有限 mutation 和结果报告。
 - [`GIT_STANDARD.md`](GIT_STANDARD.md)：任务分支、逐路径暂存、本地提交、历史保护和主仓库纳管边界；已替代历史“不做 Git 提交”限制。
 - [`DS_ORCHESTRATION_WORKFLOW.md`](DS_ORCHESTRATION_WORKFLOW.md)：主 DS/子 DS分工、文件所有权、任务图、审查和自主推进边界。

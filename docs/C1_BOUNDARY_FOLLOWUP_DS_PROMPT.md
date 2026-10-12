@@ -1,44 +1,30 @@
-# 主 DS 提示词：C1 F14–F16 残余收尾
+# 主 DS 提示词：最小修复 F14，然后推进 C2
 
-你是 Aegis 主 DS，继续当前 Git 管理的 C1 修复，不进入 C2。
-先完整阅读并执行：
+用户已确认阶段推进规则：冻结验收范围，不把所有边界/优化都当阻塞。先阅读
+`Pi_Agent_base/AGENTS.md`、开发规范 §3.1、测试规范、Git 规范，以及
+`docs/C1_BOUNDARY_FOLLOWUP_TASK.md`，按更新后的范围执行；旧任务书扩大要求不再适用。
 
-```text
-Pi_Agent_base/AGENTS.md
-docs/AGENT_DEVELOPMENT_STANDARD.md
-docs/AGENT_TESTING_STANDARD.md
-docs/GIT_STANDARD.md
-docs/CAMPAIGN_CONTRACT_BASELINE.md
-docs/C1_BOUNDARY_EXTERNAL_REVIEW.md
-docs/C1_BOUNDARY_FOLLOWUP_TASK.md
-docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md
+当前只修 F14：
+
+1. Stage 缺整个 provenance/null 或独立性证明时不能因为 oracle.source 存在而完成任务。
+2. 内部 foreign Stage ID 不能被外层 routing ID/canonicalization 改写成当前 Stage 成功。
+
+复用共同 resolver/projection，做最小修复，验证两条完成路径和真实 EventLog 产品对照。
+先保存 red，修复后运行：
+
+```bash
+node --test --test-name-pattern='^(CONTROL|F14)' Pi_Agent_base/tests/aegis-campaign-c1-boundary-review.mjs
 ```
 
-最新外部复核基线为 7656e99：原 F10-F13 的 21 测试已通过，但新增复核 12 用例为
-2 pass / 10 fail。先真实运行 red，记录分支/HEAD/status/命令/exit/log，然后更新工作计划
-与共同测试矩阵。保留全部外部断言，不 skip、不 expected-failure、不仅断言布尔值。
+保留原有已通过的 17 个 Campaign 回归，按实际 diff 运行相关格式、类型及 offline/faux 检查。
+F15 非阻塞，可顺手小修；不为它单独延迟交付。F16 缓存优化后置，不重构调度器，不要求
+prefix 读取次数测试通过。混合套件可保留失败，准确报告 required/deferred，不能删除断言
+或伪称全量绿。后置项记录责任阶段、运行限制和重新评估条件，不假定会自动修好。
 
-只完成以下已授权残余要求：
+复用现有报告，只更新 F14 证据、F15/F16 处理、测试结果和 Git commits；不重建整套长文档，
+不扩大审计、固定 mutation 数量或反复重跑无关回归。新问题只有复现当前假成功、越权、重复
+副作用、错误账本等核心损害才可成为新增阻塞，须说明为何不能后置。
 
-1. F14：Stage 整个 provenance 缺失/null 仍被当可信；内部 foreign step_id 被外层 routing
-   id 覆盖后假完成。完整校验独立 provenance 与内外归属冲突，两条完成门一致；真实
-   EventLog+Scheduler 的合法对照/两个反例均须通过且 worker 不重跑。
-2. F15：恢复仅 clone Outcomes，reservation 仍共享，tail 会修改调用方 checkpoint。
-   隔离可变恢复状态；同一 priorState 重复恢复结果相同且输入不变、与 full replay 一致。
-3. F16：startup 接受 cache+tail 后，reconcile/loop/status/checkpoint 又从头 full project。
-   恢复投影必须驱动后续流程，坏 cache fallback 保留。used_checkpoint 不能只是布尔表演。
-
-全文审查 resolver/projection/scheduler 与关联调用者；共享文件按依赖串行，不再造平行
-框架。有子 Agent 则限定文件分工，无则串行切换角色并如实报告。新增真实缓存文件恢复、
-改变状态 tail、动态/去重/控制/stranded 场景；测试比较完整状态，补有限隔离 mutation。
-
-纠正旧报告：red 是 21=2 pass+19 fail；不要推断 crypto stub/hash 过滤/Git placeholder，
-当前标准向量和 HEAD 对象检查正常。tsc 当前 exit 1（10 个旧依赖诊断）必须如实报告。
-
-完整运行新复核、全部 Campaign、Biome、tsc、8 offline+4 SDK/faux 回归（正确 resolver）。
-原始日志 ignored，报告只含有界引用。逐任务明确路径暂存、审查并本地 commit，不 push、
-不改写历史，不改 Pi/凭据/模型/lockfiles、不跑真实模型或目标网络。
-
-更新五份 C1_BOUNDARY 交付文件，报告 F14-F16 闭环、red/green、实际缓存接线、mutation、
-分支/commits/status 和未验证范围。内部通过后只写
-internally_verified / awaiting_external_review，停止交回当前会话外部验收；C2 不启动。
+按 Git 规范分任务本地提交，不 push、不重写历史、不改 Pi/凭据/模型/lockfile、不跑真实网络。
+内部验证后交回一次限定的 F14 外部复核，不自行宣称外部通过；通过即进入用户已同意的 C2，
+不因 F15/F16 重开 C1。已有外部确认后不重复请示同一阶段授权。

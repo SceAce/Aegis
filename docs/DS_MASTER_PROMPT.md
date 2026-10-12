@@ -1,20 +1,19 @@
 # Aegis 主 DS 当前委派入口
 
-状态：**C1 changes_required / C2 blocked**。
+当前决定：**C1 只收尾 F14；F15 非阻塞、F16 后置；F14 验证通过后进入 C2**。
+这是用户确认的范围收敛，覆盖旧任务书“所有 F14-F16 全绿才放行”的要求。
 
-当前完整提示词：[`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)。
+完整提示词：[`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)。
 任务书：[`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)。
-最新外部复核：[`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)。
+历史复现证据：[`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)，
+其早先严重度/阻塞结论按当前任务书重新分类，原测试结果仍保留。
 
-先完整阅读这些文件、`Pi_Agent_base/AGENTS.md`、开发/测试/Git 规范，再开始。
-此前 F10-F13 原 21 用例独立复跑通过，但新增 12 个用例为 2 pass / 10 fail：
-Stage 缺 provenance/foreign 内部 Stage ID 仍假完成，恢复改写调用方 reservation，
-有效 cache+tail 仍未驱动后续 Scheduler 流程。只收尾 F14-F16，不重做已修部分。
+完整阅读 `Pi_Agent_base/AGENTS.md`、开发规范 §3.1、测试规范和 Git 规范。
+实现者与审计者都必须冻结阶段目标：只把当前可达路径的核心正确性/授权损害作为阻塞；
+缓存性能、后续能力与已有限制的非阻塞项记录责任阶段后继续主线，不要求系统完美。
+不删失败证据或降低成功判定，只收敛当前必须完成的范围。
 
-主 DS先冻结计划/契约/测试矩阵，再按依赖拆任务、实现、审查和集成。有子 Agent 工具则
-限定文件委派，无则串行并如实报告。遵守 GIT_STANDARD，逐路径暂存、审查、本地分任务
-commit，不 push、不改写历史。提交失败外部测试基线允许，删除/弱化它们不允许。
-
-完成后只写 internally_verified / awaiting_external_review，更新任务书指定交付物，
-交回本会话外部验收。不进入 C2/C3/C4a、不修改 Pi/凭据/模型设置/lockfile、不调用真实
-模型/目标网络、不自动调用验收模型。
+F14 做最小准入修复并跑聚焦组、原有相关回归；复用现有报告，不重复整套文档/广泛审计。
+明确路径暂存和本地 commit，不 push、不改写历史。内部自审不是外部通过；
+一次限定外部复核通过后进入已获用户同意的 C2，不因后置项重开 C1，也不重复索取同一授权。
+C2 契约见 `C2_SESSION_ROTATION_TASK.md`；不提前实现 C3-C4a 或引入真实模型/目标网络。

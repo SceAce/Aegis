@@ -1,22 +1,34 @@
-# C2 Pi Session 轮换：暂缓计划
+# C2 Pi Session 轮换：F14 通过后进入
 
-状态：**blocked / 未授权启动实施**。
+状态：**用户已同意按阶段主线推进；前置条件为 C1 F14 修复及限定验证通过**。
+F14 尚未被确认通过，不在本次文档更新中声称 C2 已启动。
 
-本文件替换本会话过早写出的 approved 草稿。F10-F13 原 21 用例已通过，但最新
-`C1_BOUNDARY_EXTERNAL_REVIEW.md` 又复现 F14-F16，当前只执行
-`C1_BOUNDARY_FOLLOWUP_TASK.md`；修复后还须外部验收。
-不得因旧草稿或第一批测试全绿启动 C2。
+按开发规范 §3.1 冻结阶段目标，不能要求所有历史问题清零。F15 非阻塞、F16 后置，
+不再作为进入 C2 的门槛；早先“F14-F16 全修、额外实施授权”的限制已被当前用户决定替代。
+完成前置条件后可进入 C2，不重复请求已给出的同一授权，不自行冒充外部验收。
 
-C2 的已确认目标仍以 `CAMPAIGN_ARCHITECTURE.md` 的 Phase C2 / §Session Supervisor
-及 `CAMPAIGN_CONTRACT_BASELINE.md` 为准：Host 所有权、安全 idle/settled 边界、
-真实 Pi SDK 创建新 Session、Episode 与预算连续、失败/取消无假完成、handoff 幂等。
-Observer 负责收集，Runtime 负责状态。
+## C2 核心目标
 
-前一版草稿自行提出默认每 Task 两个 Session、要求无未决 Oracle 才能轮换、
-`campaign.session.rotated` 新事件等，未经完整 SDK/既定 handoff 契约核对，均不作为
-冻结要求。C2 正式启动前须读取完整 Pi SDK 文档及实际 API、现有
-`memory/runtime/handoff*.mjs`、冻结 Host 状态与事件契约并形成测试矩阵。
-仅记录随机 Session ID 变化不足以验收，必须验证对象/context 真实替换及错误恢复。
+依据 `CAMPAIGN_ARCHITECTURE.md` Phase C2 与 `CAMPAIGN_CONTRACT_BASELINE.md`：
 
-本次不写 C2 实现提示词；交给 DS 的当前提示词是
-`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`。
+- Host 管理真实 Pi SDK Session，在安全 idle/settled 边界轮换；
+- 新 Session 对象/context 真实替换，Episode 与累计预算保持连续；
+- 失败/取消不产生假完成，handoff 幂等；Observer 收集、Runtime 拥有状态。
+
+正式实现前完整读实际 SDK 文档/API 与现有 `memory/runtime/handoff*.mjs`，
+形成 C2 自身输入/输出/失败语义、required 测试清单与不实现范围。
+不使用未经核对的默认两 Session 限额、强制无 pending Oracle 或新事件名作为冻结要求。
+不在当前文档更新中编造 API 接线或宣称这些能力已经实现。
+
+## 接收的已知限制
+
+| 项目 | 责任与重新评估条件 |
+| --- | --- |
+| F15 缓存对象别名 | C2 恢复集成时检查是否重复复用 priorState；未修前每次新读/复制。若正常路径出现账本/副作用损害则重新判断阻塞性 |
+| F16 缓存加速与后续接线 | 保留全量 EventLog 重放正确性，不夸大 used_checkpoint。C2 如依赖增量恢复再处理必要接线；其余效率优化留后续，不以 prefix 读取次数卡阶段 |
+
+保留既有反例与真实结果，记录 deferred，不假定后续会自动解决。C2 不自动承担全部历史清理，
+只处理与 Session 核心目标直接相关的部分。C3 Broker/Oracle adapters、C4 UI 等不提前纳入。
+真实模型/目标/网络、Pi 核心和新增依赖仍受原有授权边界约束，进入 C2 不扩大这些权限。
+
+当前 F14 实施提示词：`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`。

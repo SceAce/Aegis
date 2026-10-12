@@ -21,6 +21,16 @@
 
 不要为低影响的文档/显示措辞写镜像测试。本规范重点用于授权、证据、状态、恢复和副作用边界。
 
+### 2.1 阶段必需测试与后置测试
+
+遵守开发规范 §3.1 的范围冻结规则。每项发现和测试标记 `current_blocker | non_blocking | deferred`，记录责任阶段、影响、限制和重新评估条件。严重度不是自动阻塞开关；不把性能/实现方式测试或后续阶段能力混入当前正确性门槛。
+
+当前阶段 runner 使用显式 required 清单；后置用例保留原断言，另行运行并报告实际 fail/not_run，不删除、不 skip 伪绿、不称全量通过。全目录 wildcard 运行仍可作为诊断，但其包含后置失败时不能仅凭总 exit 阻塞当前阶段，也不能把总 exit 改写为 0。
+
+修复后验证该缺陷的正负例与受影响回归，必要时做少量针对性 mutation；不为小修复强制补全所有边界组合或固定 mutation 配额。新发现只有证明破坏当前核心承诺才新增硬门槛；非阻塞/后置项进入记录后继续推进。
+
+C1 当前必需范围：F14 + 原有已通过回归。`aegis-campaign-c1-boundary-review.mjs` 混合了 F14/F15/F16，可用 Node 的 test-name-pattern 分别运行 F14/CONTROL 与 F15/F16，完整运行结果照实保留。F15 非阻塞，F16 后置，不要求这份混合脚本全绿才进入 C2。
+
 ## 3. 矩阵字段
 
 每个case记录：
@@ -164,7 +174,7 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 
 ## 8. 有限mutation检验
 
-只针对本轮critical guards做少量临时变异，不安装重型平台、不污染主工作树。主 DS选取5–8个高价值点，在隔离副本中删除一个guard/改变一个状态，运行对应测试。测试必须因行为断言而失败，不能仅syntax/import错误。
+只针对本轮critical guards做少量临时变异，不安装重型平台、不污染主工作树。主 DS按变更风险选取高价值点，在隔离副本中删除一个guard/改变一个状态，运行对应测试；小修复不设固定数量配额。测试必须因行为断言而失败，不能仅syntax/import错误。
 
 例子：删除scope存在性检查；把依赖queued变ready；让foreign taskOracle通过；忽略required criterion；重复applyAdmission；跳过durable-before-worker；bundle不覆盖report digest。
 
@@ -186,6 +196,6 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 - 不能以函数返回ok或报告写accepted为唯一断言；验证其对应数据和效果。
 - 删除派生文件后由Manifest+committed source重建，不能重新读旧report或用同一聚合器生成预期。
 - fixture only、真实SDK+faux、真实本地进程、真实网络各标验证层级。
-- 记录pending/blocked和未测能力。所有P0/P1发现闭环前不发布phase accepted。
-- 本地提交遵守 `GIT_STANDARD.md`。外部反例以正常失败测试进入 Git，并记录旧实现 red 结果；不能 skip、标 expected-failure 或把缺陷当前输出冻结为正确预期。
+- 记录pending/blocked和未测能力。冻结范围内的当前阻塞项闭环后才发布phase accepted；非阻塞/后置问题按开发规范 §3.1 处理，不因旧严重度标签自动阻止推进。
+- 本地提交遵守 `GIT_STANDARD.md`。外部反例以正常失败测试进入 Git，并记录旧实现 red 结果；后置项通过显式 required/deferred 清单区分，不能 skip、标 expected-failure 伪称已修，或把缺陷当前输出冻结为正确预期。
 - 日志逐命令捕获实际退出码，区别脚本数、`node:test` 用例数与自定义 ok 块数；不得靠管道尾部成功掩盖检查失败。
