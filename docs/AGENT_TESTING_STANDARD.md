@@ -187,3 +187,5 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 - 删除派生文件后由Manifest+committed source重建，不能重新读旧report或用同一聚合器生成预期。
 - fixture only、真实SDK+faux、真实本地进程、真实网络各标验证层级。
 - 记录pending/blocked和未测能力。所有P0/P1发现闭环前不发布phase accepted。
+- 本地提交遵守 `GIT_STANDARD.md`。外部反例以正常失败测试进入 Git，并记录旧实现 red 结果；不能 skip、标 expected-failure 或把缺陷当前输出冻结为正确预期。
+- 日志逐命令捕获实际退出码，区别脚本数、`node:test` 用例数与自定义 ok 块数；不得靠管道尾部成功掩盖检查失败。
