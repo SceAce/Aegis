@@ -1,5 +1,8 @@
 # 给主 DS：开始 C2 Session 轮换
 
+历史初始实施提示词。当前实现 `702c63c` 已交付，限定外部复核只要求收尾 E1/E2，
+请执行 `C2_SESSION_ROTATION_FIX_PROMPT.md`，不重复从头实施或扩大范围。
+
 C1 已在冻结范围内通过外部验收，记录为 docs/C1_F14_EXTERNAL_ACCEPTANCE.md。
 用户已同意 C2，直接开始，不重复请求阶段授权，不再因后置 F16 重开 C1。
 

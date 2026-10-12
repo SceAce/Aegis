@@ -10,7 +10,8 @@ Read these before Campaign development:
 - `../docs/GIT_STANDARD.md`
 - `../docs/C1_F14_EXTERNAL_ACCEPTANCE.md`
 - `../docs/C2_SESSION_ROTATION_TASK.md`
-- `../docs/C2_SESSION_ROTATION_DS_PROMPT.md`
+- `../docs/C2_SESSION_ROTATION_FIX_PROMPT.md`
+- `../docs/C2_EXTERNAL_REVIEW.md`
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -60,10 +61,10 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. C1 passed limited
-external acceptance at product baseline `53accb2`; C2 is approved to start.
-Follow `../docs/C2_SESSION_ROTATION_TASK.md` and the C2 DS prompt. Verify actual
-Pi SDK Session/Runtime/context replacement and continuity through the Host.
-F15 has a local fix; F16 cache optimization is deferred and does not reopen C1.
-Keep required/deferred checks separate. C2 self-review is not external
+Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. C1 remains accepted.
+C2 implementation at `702c63c` needs only E1/E2 fixes from
+`../docs/C2_EXTERNAL_REVIEW.md`: committed cumulative budget gating and
+completion after successful Host bind. Follow the C2 fix prompt, reuse existing
+reports and run focused SDK/affected regressions. F16 stays deferred; do not
+reopen C1 or add cache/performance gates. C2 self-review is not external
 acceptance; C3-C4a remain outside this assignment.

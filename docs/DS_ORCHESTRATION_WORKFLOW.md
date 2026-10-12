@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认一次总委派、主 DS自行拆小任务，以及开发规范 §3.1 的阶段范围冻结规则。C1 已通过限定外部验收，见 `C1_F14_EXTERNAL_ACCEPTANCE.md`；当前任务为 `C2_SESSION_ROTATION_TASK.md`，提示词 `C2_SESSION_ROTATION_DS_PROMPT.md`。F15 已局部修复、F16 后置，不重开 C1。Git 管理遵守 `GIT_STANDARD.md`。
+状态：用户确认一次总委派、主 DS自行拆小任务，以及开发规范 §3.1 的阶段范围冻结规则。C1 保持已验收；C2 限定复核复现两项当前核心问题 E1/E2，执行 `C2_SESSION_ROTATION_FIX_PROMPT.md`，依据 `C2_EXTERNAL_REVIEW.md`，复用现有 C2 报告做最小修复，不增加阶段门槛。F16 后置，不重开 C1。Git 管理遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 
