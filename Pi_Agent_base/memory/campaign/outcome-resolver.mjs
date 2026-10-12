@@ -70,19 +70,26 @@ export function resolveTaskOutcome({
 		return { ok: false, status: binding.status, reasons: binding.reasons, outcome: null };
 	}
 
-	// 2. Scope binding: when the caller supplies the current scope, the outcome's
-	//    scope must match canonically. A missing scope on either side is not a
-	//    match (fail-closed).
-	if (scope !== null) {
-		const outcomeScope = result.scope ?? result.provenance?.scope ?? null;
-		if (outcomeScope === null || canonicalKey(outcomeScope) !== canonicalKey(scope)) {
-			return {
-				ok: false,
-				status: "invalid",
-				reasons: ["oracle scope does not match the current scope"],
-				outcome: null,
-			};
-		}
+	// 2. Scope binding (F10): the CURRENT scope is trusted authority. A missing
+	//    current scope is `unknown` authority, NOT a wildcard, so scope validation
+	//    is NEVER skipped. A missing Outcome scope is likewise fail-closed. Only a
+	//    canonical match of two PRESENT scopes may succeed.
+	const outcomeScope = result.scope ?? result.provenance?.scope ?? null;
+	if (scope === null || scope === undefined) {
+		return {
+			ok: false,
+			status: "unknown",
+			reasons: ["no trusted current scope; scope validation cannot be skipped"],
+			outcome: null,
+		};
+	}
+	if (outcomeScope === null || outcomeScope === undefined || canonicalKey(outcomeScope) !== canonicalKey(scope)) {
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: ["oracle scope does not match the current scope"],
+			outcome: null,
+		};
 	}
 
 	// 3. Evidence: a `success`/`failure` judgment must reference resolvable
@@ -114,6 +121,141 @@ export function resolveTaskOutcome({
 }
 
 /**
+ * Resolve a STAGE-level Outcome against the current task, stage, episode, scope
+ * and artifact index (F11). Mirrors `resolveTaskOutcome` but binds to a declared
+ * stage/criterion instead of the task goal. Missing episode/scope, non-independent
+ * provenance, empty/unresolvable evidence, and a missing `observed` on success
+ * are all fail-closed.
+ *
+ * @param {{[key: string]: any}} args
+ * @returns {{ok, status, reasons, outcome}}
+ */
+export function resolveStageOutcome({
+	result,
+	task,
+	stage,
+	episodeId = null,
+	scope = null,
+	artifacts = {},
+	eventSource = null,
+} = {}) {
+	if (!result || typeof result !== "object")
+		return { ok: false, status: "unknown", reasons: ["no stage outcome"], outcome: null };
+	if (!["success", "failure", "unknown", "invalid"].includes(result.status)) {
+		return { ok: false, status: "invalid", reasons: [`illegal oracle status ${String(result.status)}`], outcome: null };
+	}
+	if (!stage || typeof stage !== "object")
+		return { ok: false, status: "invalid", reasons: ["no declared stage"], outcome: null };
+
+	// F2: outer event source agrees with the inner provenance source.
+	if (eventSource !== null) {
+		const innerSource = result.provenance?.source ?? result.oracle?.source ?? null;
+		if (innerSource === null)
+			return { ok: false, status: "unknown", reasons: ["stage outcome has no inner provenance source"], outcome: null };
+		if (!["oracle", "human"].includes(eventSource)) {
+			return {
+				ok: false,
+				status: "invalid",
+				reasons: [`event source "${eventSource}" may not judge a stage`],
+				outcome: null,
+			};
+		}
+		if (innerSource !== eventSource) {
+			return {
+				ok: false,
+				status: "invalid",
+				reasons: [`stage outcome provenance source "${innerSource}" does not match the event source "${eventSource}"`],
+				outcome: null,
+			};
+		}
+	}
+
+	// Task binding.
+	const outcomeTaskId = result.task_id ?? result.provenance?.task_id ?? null;
+	if (outcomeTaskId === null)
+		return { ok: false, status: "unknown", reasons: ["stage outcome is missing its task_id binding"], outcome: null };
+	if (outcomeTaskId !== task?.task_id)
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: [`stage outcome belongs to ${outcomeTaskId}, not ${task?.task_id}`],
+			outcome: null,
+		};
+
+	// Episode binding: REQUIRED, and must match the current task episode.
+	const outcomeEpisode = result.episode_id ?? null;
+	if (outcomeEpisode === null || episodeId === null || outcomeEpisode !== episodeId) {
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: ["stage outcome episode does not match the current task episode"],
+			outcome: null,
+		};
+	}
+
+	// Criterion binding.
+	const criterionId = result.criterion?.criterion_id ?? result.criterion_id ?? null;
+	if (criterionId === null || !(stage.criteria ?? []).includes(criterionId)) {
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: [`stage outcome criterion ${String(criterionId)} is not declared by stage ${stage.stage_id}`],
+			outcome: null,
+		};
+	}
+
+	// Independent provenance is mandatory.
+	if (result.provenance && result.provenance.independent !== true) {
+		return { ok: false, status: "invalid", reasons: ["stage outcome provenance is not independent"], outcome: null };
+	}
+
+	// Scope binding (F10/F11): a missing current scope never disables the check.
+	const outcomeScope = result.scope ?? result.provenance?.scope ?? null;
+	if (scope === null || scope === undefined) {
+		return { ok: false, status: "unknown", reasons: ["no trusted current scope for the stage"], outcome: null };
+	}
+	if (outcomeScope === null || outcomeScope === undefined || canonicalKey(outcomeScope) !== canonicalKey(scope)) {
+		return {
+			ok: false,
+			status: "invalid",
+			reasons: ["stage outcome scope does not match the current scope"],
+			outcome: null,
+		};
+	}
+
+	// Evidence: a success/failure judgment needs non-empty, resolvable evidence.
+	if (result.status === "success" || result.status === "failure") {
+		const refs = Array.isArray(result.evidence_refs) ? result.evidence_refs : [];
+		if (refs.length === 0)
+			return {
+				ok: false,
+				status: "unknown",
+				reasons: ["a trusted stage judgment requires evidence_refs"],
+				outcome: null,
+			};
+		const unresolved = refs.filter((ref) => !isResolvableRef(ref, artifacts));
+		if (unresolved.length > 0) {
+			return {
+				ok: false,
+				status: "unknown",
+				reasons: [`unresolvable stage evidence ref(s): ${unresolved.map((r) => r?.ref_id ?? String(r)).join(", ")}`],
+				outcome: null,
+			};
+		}
+	}
+	// A success requires an observed value.
+	if (result.status === "success" && (result.observed === undefined || result.observed === null)) {
+		return {
+			ok: false,
+			status: "unknown",
+			reasons: ["a success stage judgment requires an observed value"],
+			outcome: null,
+		};
+	}
+	return { ok: true, status: result.status, reasons: [], outcome: normalizeResolvedOutcome(result, task) };
+}
+
+/**
  * Resolve a whole task from its stage Outcomes plus the task-level Outcome,
  * reusing C0 aggregation. `task.stages` defines the required stages/criteria.
  *
@@ -129,8 +271,35 @@ export function resolveTaskFromOutcomes({
 	eventSource = null,
 } = {}) {
 	const stageAggregates = [];
+	const stageRejections = [];
 	for (const stage of task?.stages ?? []) {
-		const stageOutcomes = stageResults.filter((o) => o?.step_id === stage.stage_id || o?.stage_id === stage.stage_id);
+		const declared = {
+			stage_id: stage.stage_id,
+			criteria: stage.criteria ?? [],
+		};
+		const candidates = stageResults.filter((o) => o?.step_id === stage.stage_id || o?.stage_id === stage.stage_id);
+		// F11: each candidate must pass the full stage binding before it can enter
+		// the aggregation. A rejected (foreign/missing-scope/missing-episode/etc.)
+		// stage Outcome contributes NOTHING.
+		const validStageOutcomes = [];
+		for (const candidate of candidates) {
+			const verdict = resolveStageOutcome({
+				result: candidate,
+				task,
+				stage: declared,
+				episodeId,
+				scope,
+				artifacts,
+				eventSource,
+			});
+			if (verdict.ok) validStageOutcomes.push(candidate);
+			else
+				stageRejections.push({
+					stage_id: stage.stage_id,
+					outcome_id: candidate?.outcome_id ?? null,
+					reason: verdict.reasons.join("; "),
+				});
+		}
 		const agg = aggregateStage({
 			stage: {
 				stage_id: stage.stage_id,
@@ -138,7 +307,7 @@ export function resolveTaskFromOutcomes({
 				required: stage.required !== false,
 				criterion_ids: stage.criteria ?? [],
 			},
-			outcomes: stageOutcomes,
+			outcomes: validStageOutcomes,
 		});
 		stageAggregates.push(agg);
 	}
@@ -146,12 +315,17 @@ export function resolveTaskFromOutcomes({
 	if (taskResult) {
 		const verdict = resolveTaskOutcome({ result: taskResult, task, episodeId, scope, artifacts, eventSource });
 		if (!verdict.ok) {
-			return { status: verdict.status, reasons: verdict.reasons, stage_aggregates: stageAggregates };
+			return {
+				status: verdict.status,
+				reasons: verdict.reasons,
+				stage_aggregates: stageAggregates,
+				stage_rejections: stageRejections,
+			};
 		}
 		taskOracle = verdict.outcome;
 	}
 	const aggregate = aggregateTask({ task, stages: stageAggregates, taskOracle, episodeId });
-	return { ...aggregate, stage_aggregates: stageAggregates };
+	return { ...aggregate, stage_aggregates: stageAggregates, stage_rejections: stageRejections };
 }
 
 function normalizeResolvedOutcome(result, task) {

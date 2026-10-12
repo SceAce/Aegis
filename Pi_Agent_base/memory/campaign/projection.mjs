@@ -16,7 +16,7 @@
 import { digest } from "../fixture/contracts.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
 import { campaignEventEnvelope, validateCampaignEvent } from "./event-contract.mjs";
-import { isResolvableRef, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
+import { resolveStageOutcome, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 import { isLegalTransition, makeQueueItem } from "./queue.mjs";
 
 const BUDGET_KEYS = Object.freeze(["wall_time_ms", "model_requests", "tool_calls"]);
@@ -95,7 +95,8 @@ export function projectQueueFromEvents({
 	const byId = new Map();
 	if (priorState?.queue) {
 		// INT-CHECKPOINT: resume from a verified checkpoint snapshot. Only events
-		// AFTER `priorState.tail_offset` are reduced on top of this state.
+		// AFTER `priorState.tail_offset` are reduced on top of this state. The state
+		// is deep-cloned so the caller's checkpoint object is never mutated.
 		for (const row of priorState.queue) {
 			const item = makeQueueItem({
 				campaign_id,
@@ -110,13 +111,21 @@ export function projectQueueFromEvents({
 			item.is_dynamic = row.is_dynamic === true;
 			item.reservation = row.reservation ?? zeroBudget();
 			item.budget_consumed = row.budget_consumed ?? zeroBudget();
+			// F12: preserve the CURRENT episode and the bindings that participate in
+			// judgment. Dropping episode_id would admit a foreign-episode result.
+			item.episode_id = row.episode_id ?? null;
+			item.session_id = row.session_id ?? null;
+			item.attempt_id = row.attempt_id ?? null;
 			item.task_outcome_status = row.task_outcome_status ?? null;
 			item.task_outcome_ref = row.task_outcome_ref ?? null;
-			item.task_outcomes = row.task_outcomes ?? [];
-			item.stage_outcomes = row.stage_outcomes ?? [];
+			item.task_outcomes = structuredClone(row.task_outcomes ?? []);
+			item.stage_outcomes = structuredClone(row.stage_outcomes ?? []);
 			item.stop_reason = row.stop_reason ?? null;
 			item.reconciliation_state = row.reconciliation_state ?? "none";
-			item.applied_command_ids = [];
+			item.reconciliation_ref = row.reconciliation_ref ?? null;
+			item.reconciliation_reason = row.reconciliation_reason ?? null;
+			item.applied_command_ids = [...(row.applied_command_ids ?? [])];
+			item.applied_command_keys = [...(row.applied_command_keys ?? [])];
 			byId.set(item.task_id, item);
 		}
 	} else {
@@ -141,8 +150,19 @@ export function projectQueueFromEvents({
 	const budget = priorState?.budget ? structuredClone(priorState.budget) : emptyLedger();
 	const limitParse = parseBudgetStrict(budgetLimit ?? manifest?.budget ?? null);
 	const limit = limitParse.ok ? limitParse.value : zeroBudget();
-	const appliedCommands = new Set();
-	const appliedOutcomes = new Set();
+	// F12: the dedup sets survive the checkpoint boundary. `applied_commands` and
+	// `applied_outcomes` (priorState) seed them so a repeated command/outcome in
+	// the tail is not applied twice. These are RETAINED in the projection output.
+	const appliedCommands = new Set(priorState?.applied_commands ?? []);
+	const appliedOutcomes = new Set(priorState?.applied_outcomes ?? []);
+	if (priorState?.queue) {
+		for (const row of priorState.queue) {
+			for (const outcome of [...(row.task_outcomes ?? []), ...(row.stage_outcomes ?? [])]) {
+				if (outcome?.outcome_id) appliedOutcomes.add(outcome.outcome_id);
+			}
+			for (const key of row.applied_command_keys ?? []) appliedCommands.add(key);
+		}
+	}
 	const proposals = new Map(
 		(priorState?.proposals ?? []).map((p) => [p.id, { digest: p.digest, offset: p.offset, proposal: p.proposal }]),
 	);
@@ -213,7 +233,16 @@ export function projectQueueFromEvents({
 			health.events_rejected += 1;
 			continue;
 		}
-		if (dedupKey) appliedCommands.add(dedupKey);
+		if (dedupKey) {
+			appliedCommands.add(dedupKey);
+			// F12: record the dedup key on the task row so a checkpoint restore can
+			// seed deduplication from the queue alone (not only a process-level set).
+			const target = envelope.task_id ? byId.get(envelope.task_id) : null;
+			if (target) {
+				if (!target.applied_command_keys) target.applied_command_keys = [];
+				if (!target.applied_command_keys.includes(dedupKey)) target.applied_command_keys.push(dedupKey);
+			}
+		}
 		promoteReadyTasks(byId);
 		health.events_applied += 1;
 		lastAppliedEventId = raw.event_id ?? null;
@@ -245,6 +274,10 @@ export function projectQueueFromEvents({
 		budget,
 		proposals,
 		outcomes: outcomeIndex,
+		// F12: expose the dedup sets so the scheduler can persist them and a
+		// restored projection can seed them.
+		applied_commands: [...appliedCommands],
+		applied_outcomes: [...appliedOutcomes],
 		control,
 		health,
 		rejected,
@@ -377,9 +410,8 @@ function applyEvent({
 			const stepId = envelope.step_id ?? envelope.outcome?.step_id ?? null;
 			const isTaskOracle = envelope.task_oracle === true;
 
-			// F2: the committed event source must match the Outcome provenance for any
-			// trusted judgment (task OR stage level). `runtime` never judges.
-			const innerSource = envelope.outcome?.provenance?.source ?? envelope.outcome?.oracle?.source ?? null;
+			// F2 (provenance binding) is enforced inside the resolver, which receives
+			// the committed event source; nothing to compute here.
 
 			if (isTaskOracle) {
 				const resolved = resolveTaskOutcome({
@@ -416,39 +448,22 @@ function applyEvent({
 				return { ok: true };
 			}
 
-			// A STAGE-level Outcome: bind it to the declared stage/criterion and evidence.
+			// A STAGE-level Outcome: run the FULL trusted stage binding (F11) — task,
+			// episode, declared criterion, independent provenance, current scope, and
+			// non-empty resolvable evidence — before it may enter the projection.
 			const stage = (definition.stages ?? []).find((s) => s.stage_id === stepId);
 			if (!stage) return { ok: false, reason: `stage outcome references unknown stage ${String(stepId)}` };
-			if (envelope.source_kind !== "oracle" && envelope.source_kind !== "human") {
-				return { ok: false, reason: `event source "${envelope.source_kind}" may not judge a stage` };
-			}
-			if (innerSource === null || innerSource !== envelope.source_kind) {
-				return {
-					ok: false,
-					reason: `stage outcome provenance "${innerSource}" does not match the event source "${envelope.source_kind}"`,
-				};
-			}
 			const outcome = envelope.outcome ?? {};
-			if (outcome.task_id != null && outcome.task_id !== item.task_id) {
-				return { ok: false, reason: `stage outcome is bound to a foreign task ${outcome.task_id}` };
-			}
-			const stageEpisode = outcome.episode_id ?? null;
-			if (stageEpisode !== null && item.episode_id !== null && stageEpisode !== item.episode_id) {
-				return { ok: false, reason: `stage outcome episode ${stageEpisode} does not match ${item.episode_id}` };
-			}
-			const criterionId = outcome.criterion?.criterion_id ?? null;
-			if (criterionId === null || !(stage.criteria ?? []).includes(criterionId)) {
-				return {
-					ok: false,
-					reason: `stage outcome criterion ${String(criterionId)} is not declared by stage ${stepId}`,
-				};
-			}
-			if (
-				outcome.status === "success" &&
-				(outcome.evidence_refs ?? []).some((ref) => !isResolvableRef(ref, artifacts))
-			) {
-				return { ok: false, reason: "stage outcome carries an unresolvable evidence ref" };
-			}
+			const stageVerdict = resolveStageOutcome({
+				result: outcome,
+				task: definition,
+				stage,
+				episodeId: item.episode_id ?? null,
+				scope: currentTaskScope(definition),
+				artifacts,
+				eventSource: envelope.source_kind,
+			});
+			if (!stageVerdict.ok) return { ok: false, reason: `stage outcome rejected: ${stageVerdict.reasons.join("; ")}` };
 			appliedOutcomes.add(envelope.outcome_id);
 			// F8: store the COMPLETE canonical Stage Outcome so the snapshot, the
 			// projection digest, the checkpoint and prefix+tail/full replay all see it.
@@ -671,6 +686,7 @@ function completeTaskIfVerified({ item, outcomeId, artifacts, reasonPrefix, soft
 		stageResults: item.stage_outcomes ?? [],
 		taskResult: null,
 		episodeId: item.episode_id ?? null,
+		scope: currentTaskScope(item.definition),
 		artifacts,
 		eventSource: null,
 	});

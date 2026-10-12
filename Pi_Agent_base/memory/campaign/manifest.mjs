@@ -292,6 +292,10 @@ function normalizeTask(task, reasons, labels, authorization = {}) {
 		task_type: taskType,
 		required_capabilities: requiredCapabilities,
 		oracle_ref: task.oracle_ref ?? null,
+		// A task may declare a trusted execution scope/environment. It is preserved
+		// (not invented) so the Outcome resolver can require a match. Absent -> null
+		// (fail-closed at judgment time, never a wildcard).
+		scope: task.scope ?? null,
 		task_budget: {
 			wall_time_ms: taskBudget.wall_time_ms ?? 0,
 			model_requests: taskBudget.model_requests ?? 0,

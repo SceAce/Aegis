@@ -19,6 +19,13 @@ import {
 
 export const FIXTURE_CREATED_AT = "2026-01-01T00:00:00Z";
 
+/**
+ * The deterministic fixture environment scope. Tasks and their Outcomes share
+ * this declared scope so a trusted judgment can match it (F10). It is a
+ * synthetic fixture environment, NOT a real target.
+ */
+export const FIXTURE_SCOPE = Object.freeze({ environment_fingerprint: "fixture-env", domain: "fixture" });
+
 /** Deterministic id factory: prefix + zero-padded counter. */
 export function deterministicIdFactory(seed = 0) {
 	let counter = seed;
@@ -98,6 +105,7 @@ export function buildFixtureCampaign({
 				depends_on: [],
 				target_ref: "fixture/door.json",
 				task_type: "verify",
+				scope: { ...FIXTURE_SCOPE },
 				goal: {
 					goal_id: "unlock_fixture",
 					description: "Observe then unlock the fixture door.",
@@ -116,6 +124,7 @@ export function buildFixtureCampaign({
 				depends_on: [task1],
 				target_ref: "fixture/door.json",
 				task_type: "reproduce",
+				scope: { ...FIXTURE_SCOPE },
 				goal: {
 					goal_id: "verify_fixture",
 					description: "Reproduce the observed door state.",
@@ -252,6 +261,7 @@ function makeOutcome({
 		status,
 		criterion: { criterion_id, description: criterion, expected: criterion },
 		observed: observed ?? null,
+		scope: { ...FIXTURE_SCOPE },
 		oracle: {
 			oracle_id: "fixture.oracle.v1",
 			method: "deterministic_state_check",

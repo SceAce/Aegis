@@ -49,6 +49,7 @@ export {
 	buildFixtureCampaign,
 	deterministicIdFactory,
 	FIXTURE_CREATED_AT,
+	FIXTURE_SCOPE,
 	fixtureOutcomes,
 	persistFixtureCampaign,
 } from "./fixture.mjs";
