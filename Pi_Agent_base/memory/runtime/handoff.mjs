@@ -9,7 +9,7 @@ import { summarizeBoard } from "./board.mjs";
 import { pendingActionsFor, stateDigest } from "./state.mjs";
 
 /**
- * @returns {{allowed: boolean, reason: string, handoff?: object}}
+ * @returns {{allowed: boolean, reason: string, handoff?: object, pending_actions?: any[]}}
  */
 export function evaluateHandoff({ state, board, ram, episodeId, reason, requestId }) {
 	if (!episodeId || !state.episodes[episodeId]) {
