@@ -27,6 +27,15 @@ export {
 	TASK_STATUSES,
 	validateTaskOracleBinding,
 } from "./aggregate.mjs";
+export { createBrokerWorker } from "./broker-worker.mjs";
+export {
+	assembleCampaignHost,
+	buildC3FixtureManifest,
+	createProductSink,
+	ENTRY_VERSION,
+	runCampaignHost,
+	summarize,
+} from "./c3-entry.mjs";
 export {
 	BROKERED_TOOLS,
 	createCampaignActionGate,
@@ -58,7 +67,13 @@ export {
 	fixtureOutcomes,
 	persistFixtureCampaign,
 } from "./fixture.mjs";
+export {
+	createFixtureAdapterContract,
+	FIXTURE_ADAPTER_ACTION_REF,
+	readFixtureState,
+} from "./fixture-adapter.mjs";
 export { buildBudgetLedger, createCampaignHost, ensureWorkspace, HOST_VERSION } from "./host.mjs";
+export { createHostOracle } from "./host-oracle.mjs";
 export * from "./identifiers.mjs";
 export {
 	CAMPAIGN_SCHEMA_VERSION,

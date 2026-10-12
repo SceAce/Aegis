@@ -15,7 +15,7 @@
 
 import { digest } from "../fixture/contracts.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
-import { campaignEventEnvelope, validateCampaignEvent } from "./event-contract.mjs";
+import { campaignEventEnvelope, isCampaignEventKind, validateCampaignEvent } from "./event-contract.mjs";
 import { resolveStageOutcome, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 import { isLegalTransition, makeQueueItem } from "./queue.mjs";
 
@@ -201,6 +201,14 @@ export function projectQueueFromEvents({
 
 	for (let offset = reduceFrom; offset < events.length; offset += 1) {
 		const raw = events[offset];
+		// C3: the Campaign reuses the shared runtime EventLog, which also carries
+		// unrelated rows (action.requested/completed, observation.captured, ...).
+		// A row that is NOT a campaign event at all is IGNORED, never counted as a
+		// rejected campaign event. Only a genuine `campaign.*` envelope that is
+		// malformed/unauthorized is rejected. This keeps `events_rejected` an honest
+		// count of campaign-contract violations in a mixed log.
+		const isCampaignRow = raw?.event_type === "runtime.note" && isCampaignEventKind(raw?.payload?.kind);
+		if (!isCampaignRow) continue;
 		const validation = validateCampaignEvent(raw);
 		if (!validation.ok) {
 			rejected.push({ offset, event_id: raw?.event_id ?? null, reason: validation.reasons.join("; ") });
