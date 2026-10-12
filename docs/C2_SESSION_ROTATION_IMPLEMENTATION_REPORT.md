@@ -193,6 +193,11 @@ replay and interrupted recovery; C1/affected-path regressions.
 ## 8. Git
 
 Task branch `feat/c2-session-rotation`, explicit-path staging, local commits, no
-push, no history rewrite. See the commit list appended at delivery.
+push, no history rewrite.
+
+- `3993e00` — feat: real Host-level Pi Session rotation supervisor (C2)
+  (6 files, +1310/-1). Baseline before C2: `3fe5f90`.
+- Working tree clean after the commit; the 49-assertion C2 suite re-run from the
+  committed tree is exit 0.
 
 C2 self-review is not external acceptance. C3-C4a are outside this assignment.
