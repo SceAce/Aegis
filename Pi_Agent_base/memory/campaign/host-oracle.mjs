@@ -30,12 +30,13 @@ import { digest } from "../fixture/contracts.mjs";
  *   oracleId?: string,
  *   independenceGroup?: string,
  *   workspaceRoot: string,
- *   judgeTask: (args: {task: any, outcome_ref: string|null, attempt: number}) =>
+ *   judgeTask: (args: {task: any, outcome_ref: string|null, attempt: number, onEvidence?: Function}) =>
  *     {status: string, observed?: any, failure_mode?: string|null, delayed?: boolean,
  *      evidence?: Array<{ref_id: string, digest: string, path?: string}>,
  *      stage_overrides?: Record<string, object>} | Promise<any>,
  *   attemptTracker?: Map<string, number>,
- *   reconcileImpl?: (args: {task: any, intent: any, effect_probe: any}) => any,
+ *   reconcileImpl?: (args: {task: any, intent: any, effect_probe: any, onEvidence?: Function}) => any,
+ *   onEvidence?: (refs: Array<{ref_id: string, digest: string, path?: string}>) => void,
  * }} args
  */
 export function createHostOracle(
@@ -46,8 +47,13 @@ export function createHostOracle(
 		judgeTask,
 		attemptTracker = new Map(),
 		reconcileImpl = null,
+		onEvidence = null,
 	} = /** @type {any} */ ({}),
 ) {
+	/** Register evidence digests so a later projection can resolve the refs. */
+	function indexEvidence(refs) {
+		if (typeof onEvidence === "function" && Array.isArray(refs)) onEvidence(refs);
+	}
 	if (typeof judgeTask !== "function") throw new Error("createHostOracle requires a judgeTask function");
 	if (typeof workspaceRoot !== "string" || !workspaceRoot) throw new Error("createHostOracle requires a workspaceRoot");
 
@@ -116,7 +122,7 @@ export function createHostOracle(
 		const episodeId = `ep-${task.task_id}`;
 		const attempt = (attemptTracker.get(task.task_id) ?? 0) + 1;
 		attemptTracker.set(task.task_id, attempt);
-		const raw = await judgeTask({ task, outcome_ref, attempt });
+		const raw = await judgeTask({ task, outcome_ref, attempt, onEvidence: indexEvidence });
 		const status = ["success", "failure", "unknown", "invalid"].includes(raw?.status) ? raw.status : "unknown";
 		const verdict = {
 			status,
@@ -155,7 +161,7 @@ export function createHostOracle(
 
 	async function reconcile({ task, intent, effect_probe = null }) {
 		if (typeof reconcileImpl === "function") {
-			const raw = await reconcileImpl({ task, intent, effect_probe });
+			const raw = await reconcileImpl({ task, intent, effect_probe, onEvidence: indexEvidence });
 			return normalizeReconcile({ raw, task, effect_probe });
 		}
 		// Default deterministic reconcile: read the real effect artifact named by
@@ -169,6 +175,7 @@ export function createHostOracle(
 		const content = readFileSync(path, "utf8");
 		const evidence = [{ ref_id: refId, digest: digest(content), path }];
 		const judged = await judge({ task, outcome_ref: refId });
+		indexEvidence(evidence);
 		return { ...judged, effect_exists: true, content_digest: evidence[0].digest };
 	}
 

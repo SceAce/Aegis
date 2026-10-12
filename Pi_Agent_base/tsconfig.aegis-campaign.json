@@ -42,7 +42,8 @@
 		"memory/campaign/queue.mjs",
 		"memory/campaign/registries.mjs",
 		"memory/campaign/report.mjs",
-		"memory/campaign/scheduler.mjs"
+		"memory/campaign/scheduler.mjs",
+		"memory/campaign/script-workspace-adapter.mjs"
 	],
 	"exclude": ["pi/**", "node_modules/**", "tests/**"]
 }

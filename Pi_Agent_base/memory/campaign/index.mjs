@@ -139,4 +139,9 @@ export {
 	withoutReportDigest,
 } from "./report.mjs";
 export { createCampaignScheduler, SCHEDULER_VERSION } from "./scheduler.mjs";
+export {
+	createWorkspaceScriptRegistration,
+	WORKSPACE_ADAPTER_SCRIPT_ID,
+	workspaceStateFile,
+} from "./script-workspace-adapter.mjs";
 export { buildCommittedStream } from "./stream.mjs";

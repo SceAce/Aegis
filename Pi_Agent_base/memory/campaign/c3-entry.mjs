@@ -43,17 +43,19 @@ export function createProductSink({ eventLogPath }) {
 			return log.open();
 		},
 		async append(event) {
-			return log.append(/** @type {any} */ ({
-				event_type: event.event_type,
-				episode_id: event.episode_id ?? null,
-				payload: event.payload ?? {},
-				source: event.source ?? {
-					kind: "runtime",
-					actor_id: "campaign-host",
-					adapter: "c3-entry",
-					version: ENTRY_VERSION,
-				},
-			}));
+			return log.append(
+				/** @type {any} */ ({
+					event_type: event.event_type,
+					episode_id: event.episode_id ?? null,
+					payload: event.payload ?? {},
+					source: event.source ?? {
+						kind: "runtime",
+						actor_id: "campaign-host",
+						adapter: "c3-entry",
+						version: ENTRY_VERSION,
+					},
+				}),
+			);
 		},
 		replay: () => log.replay(),
 		close: () => log.close(),
@@ -162,18 +164,21 @@ export function buildC3FixtureManifest({ workspaceRoot, campaignId = "campaign-c
  *
  * @param {{[key: string]: any}} args
  */
-export async function assembleCampaignHost({
-	manifest,
-	workspaceRoot,
-	workDir,
-	eventLogPath,
-	mode = "normal",
-	sessionController = null,
-	oracleOverrides = null,
-	sinkImpl = null,
-	planFactory = null,
-	delayedFirstByTask = {},
-} = {}) {
+export async function assembleCampaignHost(
+	{
+		manifest,
+		workspaceRoot,
+		workDir,
+		eventLogPath,
+		mode = "normal",
+		sessionController = null,
+		oracleOverrides = null,
+		sinkImpl = null,
+		planFactory = null,
+		delayedFirstByTask = {},
+		wrapWorker = null,
+	} = /** @type {any} */ ({}),
+) {
 	mkdirSync(workspaceRoot, { recursive: true });
 	mkdirSync(workDir, { recursive: true });
 	const sink = sinkImpl ?? createProductSink({ eventLogPath });
@@ -213,7 +218,7 @@ export async function assembleCampaignHost({
 	}
 	const plan = planFactory ?? defaultPlan;
 
-	const worker = createBrokerWorker({
+	const workerRaw = createBrokerWorker({
 		broker,
 		authorization,
 		plan,
@@ -224,21 +229,25 @@ export async function assembleCampaignHost({
 		probePath: (/** @type {any} */ step) => join(workspaceRoot, step.arguments?.target ?? "door.json"),
 		targetPathFor: (/** @type {any} */ step) => join(workspaceRoot, step.arguments?.target ?? "door.json"),
 	});
+	// A preparation seam: wrap the worker to count real effects or inject a
+	// process fault AFTER the effect. It never changes Broker semantics.
+	const worker = typeof wrapWorker === "function" ? wrapWorker(workerRaw) : workerRaw;
 
 	const oracle = createHostOracle({
 		workspaceRoot,
 		judgeTask:
 			typeof oracleOverrides?.judgeTask === "function"
 				? oracleOverrides.judgeTask
-				: ({ task, attempt }) => {
+				: ({ task, attempt, onEvidence }) => {
 						const target = task.target_ref ?? "door.json";
 						const path = join(workspaceRoot, target);
 						if (!exists(path)) return { status: "unknown", failure_mode: "effect_absent" };
 						const state = JSON.parse(readFileSync(path, "utf8"));
 						const unlock = task.task_type === "verify" || task.task_id.endsWith("002");
 						const expected = !unlock;
-						const digest = oracleOverrides?.digestOf?.(path) ?? undefined;
-						const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: digest ?? stateDigest(path), path }];
+						const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: stateDigest(path), path }];
+						// The default judge READ the real file, so its digest may be indexed.
+						if (typeof onEvidence === "function") onEvidence(evidence);
 						// A delayed-verification task returns unknown on its first judgment.
 						if (delayedFirstByTask[task.task_id] && attempt === 1) {
 							return { status: "unknown", delayed: true, failure_mode: "delayed_verification", evidence };
@@ -254,6 +263,13 @@ export async function assembleCampaignHost({
 						};
 					},
 		reconcileImpl: oracleOverrides?.reconcileImpl ?? null,
+		// Independent Oracle evidence must be resolvable by the projection even
+		// when the Worker is NOT re-run (recovery). Index the real digests here.
+		onEvidence: (refs) => {
+			for (const ref of refs) {
+				if (ref && typeof ref.ref_id === "string" && typeof ref.digest === "string") artifactIndex.set(ref.ref_id, ref);
+			}
+		},
 	});
 
 	const host = createCampaignHost({
@@ -316,14 +332,16 @@ function stateDigest(path) {
  * @param {{manifestPath?: string, workDir: string, workspaceRoot: string,
  *   scenario?: string, mode?: string, delayedFirst?: string[]}} args
  */
-export async function runCampaignHost({
-	manifestPath = null,
-	workDir,
-	workspaceRoot,
-	scenario = "start",
-	mode = "auto",
-	delayedFirst = [],
-} = /** @type {any} */ ({})) {
+export async function runCampaignHost(
+	{
+		manifestPath = null,
+		workDir,
+		workspaceRoot,
+		scenario = "start",
+		mode = "auto",
+		delayedFirst = [],
+	} = /** @type {any} */ ({}),
+) {
 	mkdirSync(workDir, { recursive: true });
 	let manifest;
 	if (manifestPath) {

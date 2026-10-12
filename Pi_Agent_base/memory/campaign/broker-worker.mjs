@@ -180,7 +180,9 @@ export function createBrokerWorker(
 				final_arguments: result?.final_arguments ?? step.arguments ?? {},
 				observed: result?.result ?? null,
 				content_digest: contentDigest,
-				rejection_reason: result?.ok === true ? null : (result?.reason ?? result?.failure_mode ?? "unknown"),
+				rejection_reason:
+					result?.ok === true ? null : (result?.reason ?? result?.detail ?? result?.failure_mode ?? "unknown"),
+				detail: result?.detail ?? null,
 			},
 		});
 		if (onAction) {
