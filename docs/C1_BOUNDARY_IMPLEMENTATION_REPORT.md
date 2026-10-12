@@ -7,6 +7,30 @@ Review: `docs/C1_BOUNDARY_REVIEW_REPORT.md`.
 Status: **internally_verified / awaiting_external_review**. C2 is NOT
 implemented.
 
+## 0. F14 follow-up (this round)
+
+Focus per `C1_BOUNDARY_FOLLOWUP_TASK.md`: only F14 blocks; F15 optional small fix;
+F16 deferred.
+
+| item | status | evidence |
+| --- | --- | --- |
+| F14 (missing/null provenance, foreign inner Stage id) | **fixed** | focused `^(CONTROL\|F14)` group: red 2/8 → green **10/10**; both completion paths; real EventLog product control |
+| F15 (hydration mutates caller reservation) | fixed opportunistically | hydration now copies reservation/budget/definition; F15 case passes |
+| F16 (accepted cache still full-replays) | **deferred** | correctness preserved by full replay; re-evaluate at C2 recovery integration; not a C1 gate |
+
+Focused command:
+
+```bash
+node --test --test-name-pattern='^(CONTROL|F14)' Pi_Agent_base/tests/aegis-campaign-c1-boundary-review.mjs
+# red  : exit 1, 10 tests, 2 pass / 8 fail  (runtime/dev/c1f14/red-focused.log)
+# green: exit 0, 10 tests, 10 pass / 0 fail (runtime/dev/c1f14/green-focused.log)
+```
+
+Required regression: all 17 campaign scripts exit 0 (external-boundaries 21/21,
+final-audit3-adversarial 1/1, 15 plain scripts). Mixed boundary-review (diagnostic)
+is 11 pass / 1 fail (only the deferred F16). Biome exit 0; campaign tsc 0 errors,
+10 pre-existing import errors (exit 1). 8 offline + 4 Pi/faux regressions exit 0.
+
 ## 1. Orchestration
 
 No sub-agent tool exists in this harness; the master DS ran the task graph

@@ -13,7 +13,8 @@
       "532ea85",
       "6fa367c",
       "9bb8da4",
-      "3d4b09d"
+      "3d4b09d",
+      "pending-f14-commit"
     ]
   },
   "orchestration": {
@@ -208,5 +209,26 @@
     "unknown_is_not_failure": true,
     "external_side_effect_exactly_once_claimed": false,
     "external_acceptance_pending": true
+  },
+  "f_followup": {
+    "F14": {
+      "status": "fixed",
+      "detail": "stage provenance must be present+independent; inner step_id/stage_id must match the declared stage",
+      "focused_red": "2 pass / 8 fail",
+      "focused_green": "10 pass / 0 fail"
+    },
+    "F15": {
+      "status": "fixed_opportunistically",
+      "detail": "hydration copies reservation/budget/definition instead of sharing"
+    },
+    "F16": {
+      "status": "deferred",
+      "detail": "accepted cache still drives via full replay; correctness preserved; re-evaluate at C2 recovery integration"
+    },
+    "commits": [
+      "1458635 (F14 resolver)",
+      "c354f61 (F15 hydration)",
+      "pending-docs"
+    ]
   }
 }

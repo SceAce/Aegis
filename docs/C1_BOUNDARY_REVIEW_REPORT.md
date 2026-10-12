@@ -1,9 +1,55 @@
-# Aegis C1 External Boundary (F10–F13) — Master DS Review Report
+# Aegis C1 External Boundary (F10–F13 + F14 follow-up) — Master DS Review Report
 
 Status: **internally_verified / awaiting_external_review**. C2 is NOT
 implemented. External acceptance remains pending.
 
-## 1. Baseline and Git
+## 0. F14 follow-up (this round, scope frozen by `C1_BOUNDARY_FOLLOWUP_TASK.md`)
+
+- branch `audit/c1-external-boundaries`; start HEAD `cbe3f97`; working tree clean.
+- Red (focused): `node --test --test-name-pattern='^(CONTROL|F14)'
+  Pi_Agent_base/tests/aegis-campaign-c1-boundary-review.mjs` → **exit 1, 10 tests,
+  2 pass / 8 fail** (`runtime/dev/c1f14/red-focused.log`).
+- Green (focused): **exit 0, 10 tests, 10 pass / 0 fail**
+  (`runtime/dev/c1f14/green-focused.log`).
+- **F14 fix** (`outcome-resolver.mjs::resolveStageOutcome`):
+  1. the stage Outcome must carry an object `provenance` with
+     `independent === true`; a missing/null provenance is `unknown` and an inner
+     `oracle.source` alone no longer confers independent-judgment rights (the
+     inner source is read from `provenance.source`, not `oracle.source`);
+  2. when the Outcome carries its own `step_id`/`stage_id`, it must equal the
+     declared stage; a foreign inner Stage id is `invalid` and cannot be relabeled
+     by the outer envelope during canonicalization.
+  Both completion paths (normal `campaign.task.completed` and
+  `campaign.reconciliation.resolved`) use the single gate; the valid control and
+  worker-not-rerun behaviour are preserved.
+- Required regression: all **17 campaign scripts** (including
+  `external-boundaries` 21/21 and `final-audit3-adversarial`) exit 0.
+- Mutation (proportionate): reverting both F14 guards to the pre-fix shape is
+  killed by **7 failures** in the focused group; removing only the inner-stage
+  binding check is killed by 7. Removing only the provenance-presence check is
+  masked by the F2 inner-source check (redundant defence-in-depth, reported
+  honestly).
+- Mixed `aegis-campaign-c1-boundary-review.mjs` (diagnostic): **11 pass / 1 fail**;
+  the only failure is F16 (deferred).
+
+### F15 (non-blocking, fixed opportunistically)
+
+The projection hydration now copies `reservation`/`budget_consumed` (and
+`definition`/`stage_ids`) instead of sharing the caller's checkpoint objects, so
+applying a tail no longer mutates the caller's cached reservation. The F15 case
+passes.
+
+### F16 (deferred — cache optimization)
+
+The scheduler validates and reduces the checkpoint prefix, then still drives the
+loop/status/checkpoint via `project()` (full replay). This is a correctness-
+preserving cache-acceleration gap, not a false-success or authorization issue;
+the current code is correct via full replay. It remains deferred: the primary
+cache path is not rewired in this focused F14 round. Re-evaluate when C2 wires
+recovery; the prefix read-count assertion is a cache-implementation diagnostic,
+not a C1 correctness gate. Responsibility: the C2 recovery-integration phase.
+
+## 1. Baseline and Git (F10–F13)
 
 - branch: `audit/c1-external-boundaries`
 - `git rev-parse HEAD` → `00000000000000000000000000000000` (ref-file placeholder;
