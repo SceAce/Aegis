@@ -159,6 +159,41 @@ export function buildC3FixtureManifest({ workspaceRoot, campaignId = "campaign-c
 }
 
 /**
+ * Reconstruct the artifact index from the COMMITTED stream. Each successful
+ * `action.completed` (or oracle result) records the real content digest for its
+ * evidence ref, so a restarted process can resolve prior evidence WITHOUT
+ * re-running the worker. This is what makes recovery/restart correct.
+ *
+ * @param {Array<any>} events committed rows
+ * @returns {Map<string, {ref_id: string, digest: string}>}
+ */
+export function artifactIndexFromEvents(events = []) {
+	const index = new Map();
+	for (const event of events) {
+		const payload = event?.payload ?? {};
+		if (event?.event_type === "action.completed") {
+			const refId = payload.evidence_ref;
+			if (typeof refId === "string" && typeof payload.content_digest === "string") {
+				index.set(refId, { ref_id: refId, digest: payload.content_digest });
+			}
+		}
+		// Oracle-committed evidence refs (e.g. from a reconcile that read the real
+		// artifact) are indexed too.
+		const outcome = payload.outcome;
+		for (const ref of Array.isArray(outcome?.evidence_refs) ? outcome.evidence_refs : []) {
+			if (ref?.ref_id && typeof ref.digest === "string")
+				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
+		}
+		// Stage-level results carry their own evidence refs in the outer payload.
+		for (const ref of Array.isArray(payload.evidence_refs) ? payload.evidence_refs : []) {
+			if (ref?.ref_id && typeof ref.digest === "string")
+				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
+		}
+	}
+	return index;
+}
+
+/**
  * Assemble a Host for a validated manifest. The Worker plan is TRUSTED Host
  * config (never model text): each task maps to registered fixture-adapter steps.
  *
@@ -198,6 +233,12 @@ export async function assembleCampaignHost(
 	});
 	const gate = createCampaignActionGate({ allowDirectTools: [] });
 	const artifactIndex = new Map();
+	// Recovery correctness: rebuild prior evidence digests from the COMMITTED
+	// stream so a restarted Host resolves the same evidence without re-running the
+	// worker. (The worker/oracle continue to add live digests as they run.)
+	if (typeof sink.replay === "function") {
+		for (const [refId, entry] of artifactIndexFromEvents(sink.replay())) artifactIndex.set(refId, entry);
+	}
 
 	// TRUSTED per-task plan: each task writes/reads the fixture state through the
 	// registered adapter. The model can never supply this.

@@ -283,13 +283,14 @@ await test("C3-ORACLE-3: a delayed judgment blocks the dependent task, then a la
 		eventLogPath: join(dir, "events.jsonl"),
 		mode: "auto",
 		oracleOverrides: {
-			judgeTask: ({ task }) => {
+			judgeTask: ({ task, onEvidence }) => {
 				const path = join(workspaceRoot, task.target_ref ?? "door.json");
 				if (!existsSync(path)) return { status: "unknown", failure_mode: "effect_absent" };
 				const state = JSON.parse(readFileSync(path, "utf8"));
 				const unlock = task.task_type === "verify";
 				const expected = !unlock;
 				const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: digest(readFileSync(path, "utf8")), path }];
+				if (typeof onEvidence === "function") onEvidence(evidence);
 				if (task.task_id === "task-002" && !existsSync(marker)) {
 					return { status: "unknown", delayed: true, failure_mode: "delayed_verification", evidence };
 				}
@@ -343,6 +344,14 @@ await test("C3-PRODUCT: the CLI product entry runs the real loop", async () => {
 	assert.equal(summary.task_states["task-001"], "completed");
 	assert.equal(summary.task_states["task-002"], "completed");
 	assert.equal(summary.action_events.requested, 2);
+	// A SECOND process over the same log must reconstruct prior evidence from the
+	// committed stream and NOT re-dispatch or duplicate effects.
+	const rerun = spawnSync(process.execPath, [entry, dir, "start"], { encoding: "utf8" });
+	assert.equal(rerun.status, 0, `CLI rerun failed: ${rerun.stderr}`);
+	const rerunSummary = JSON.parse(rerun.stdout);
+	assert.equal(rerunSummary.task_states["task-001"], "completed", "restart sees the committed completion");
+	assert.equal(rerunSummary.action_events.requested, 2, "restart does not duplicate actions");
+	assert.equal(rerunSummary.action_events.completed, 2, "restart does not duplicate completions");
 	// The real EventLog chain verifies.
 	const log = new EventLog(join(dir, "events.jsonl"));
 	const opened = await log.open();
