@@ -178,9 +178,9 @@ export function createCampaignHost({
 	}
 
 	/**
-	 * The scheduler's `snapshot()` already returns the full projection as
-	 * `result.status`. `status()` re-projects through a no-op run of the gate and
-	 * reads controls WITHOUT dispatching (scheduler.state reads the projection).
+	 * A read-only status view. `campaign_state` comes from the scheduler's live
+	 * projection; `projection` is the last full snapshot returned by `run()` (null
+	 * before the first run). It never dispatches or mutates state.
 	 */
 	function status() {
 		return {

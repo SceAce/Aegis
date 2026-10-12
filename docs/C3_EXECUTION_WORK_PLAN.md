@@ -1,6 +1,6 @@
 # C3 Execution — Work Plan and Frozen Contract
 
-Status: **frozen before implementation**. Scope follows `C3_EXECUTION_TASK.md`
+Status: **frozen before implementation; C3-A..D completed, internally verified, awaiting one C3 external review**. Scope follows `C3_EXECUTION_TASK.md`
 and `CAMPAIGN_NEXT_PHASES.md` §C3. This plan does not reopen C1/C2 and does not
 implement C4/C4a or any real target/network/model capability.
 

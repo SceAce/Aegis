@@ -95,8 +95,9 @@ export function createBrokerWorker(
 	function recordEffectArtifact(refId, path) {
 		if (!path || !existsSync(path)) return null;
 		try {
-			const content = readFileSync(path);
-			const contentDigest = digest(content.toString("binary"));
+			// Read as UTF-8 text so the digest agrees with the Oracle's own read of
+			// the same artifact (the registered verify()/judge read text too).
+			const contentDigest = digest(readFileSync(path, "utf8"));
 			indexEntry(refId, { ref_id: refId, digest: contentDigest, path });
 			return contentDigest;
 		} catch {
