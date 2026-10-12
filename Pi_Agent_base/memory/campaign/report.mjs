@@ -46,9 +46,11 @@ export function visibleCredentialPolicy(value) {
 // authorization HEADER/TOKEN/BEARER value is a secret.
 const SECRET_KEY_PATTERN =
 	/(?:secret|token|password|passwd|credential|api[_-]?key|private[_-]?key|authorization[_-]?(?:header|token)|bearer[_-]?token|cookie|flag)/i;
-// Value patterns: uppercase and lowercase flag markers, bearer tokens, and
-// private-key blocks. Case-insensitive so `flag{...}` / `ctf{...}` are caught.
-const SECRET_VALUE_PATTERN = /(?:flag\{|ctf\{|\bbearer\s+[A-Za-z0-9._-]{8,}|-----BEGIN [A-Z ]+PRIVATE KEY-----)/i;
+// Value patterns: uppercase and lowercase flag markers, bearer tokens, private-key
+// blocks and explicit secret ASSIGNMENTS (`api_key=...`, `password: ...`, ...).
+// Case-insensitive so `flag{...}` / `ctf{...}` are caught.
+const SECRET_VALUE_PATTERN =
+	/(?:flag\{|ctf\{|\bbearer\s+[A-Za-z0-9._-]{8,}|-----BEGIN [A-Z ]+PRIVATE KEY-----|(?:api[_-]?key|password|passwd|secret|access[_-]?token|auth[_-]?token)\s*[:=]\s*["']?[A-Za-z0-9._+/=-]{6,})/i;
 
 /**
  * Redact any secret-looking key or value before it enters a report. This is a
