@@ -36,6 +36,18 @@ Supporting: `normalizeTask` preserves an optional `task.scope`; the fixture
 declares `FIXTURE_SCOPE`, and the older campaign tests/helpers were updated to
 declare a trusted scope (their real assertions preserved).
 
+## 3b. Commits (branch `audit/c1-external-boundaries`)
+
+```text
+532ea85 fix: fail-closed task scope and complete Stage binding (F10, F11)
+6fa367c test: declare trusted task scope in the C1 fixtures (F10)
+9bb8da4 fix: complete persisted projection and real checkpoint wiring (F12, F13)
+3d4b09d docs: C1 external boundary (F10-F13) plan, matrix and reports
+```
+
+The red baseline is the pre-existing commit `369e1f4`; its 19 external failures
+are preserved as the regression origin (not skipped or weakened).
+
 ## 4. Commands and exit codes
 
 ```text

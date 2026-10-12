@@ -9,7 +9,12 @@
     "head_true_tip": "369e1f4",
     "head_note": "ref-file placeholder; true tip from git reflog/git log",
     "red_baseline_commit": "369e1f4",
-    "commits_this_task": []
+    "commits_this_task": [
+      "532ea85",
+      "6fa367c",
+      "9bb8da4",
+      "3d4b09d"
+    ]
   },
   "orchestration": {
     "child_agent_tool_available": false,
@@ -17,7 +22,12 @@
     "fabricated_child_reports": false
   },
   "baseline": {
-    "external_boundaries_red": {"exit": 1, "tests": 21, "pass": 3, "fail": 19},
+    "external_boundaries_red": {
+      "exit": 1,
+      "tests": 21,
+      "pass": 3,
+      "fail": 19
+    },
     "campaign_suites_pre_fix": "16/16 exit 0 (older suites used unscoped tasks; updated to the F10 contract)"
   },
   "environment_anomaly": {
@@ -25,10 +35,26 @@
     "detail": "sha256Hex returns the real 64-char hex; the terminal display replaces hex-looking output with zeros, but real values differ. Digest tests assert change/equality, never a literal."
   },
   "f_closure": [
-    {"id": "F10", "status": "fixed", "evidence": "resolveTaskOutcome returns unknown on a missing current scope; projection passes currentTaskScope; 2 cases green"},
-    {"id": "F11", "status": "fixed", "evidence": "resolveStageOutcome enforces task/episode/criterion/scope/provenance/evidence/observed; 12 cases + F11-PRODUCT ×2 green"},
-    {"id": "F12", "status": "fixed", "evidence": "hydration preserves episode + dedup; 4 cases green"},
-    {"id": "F13", "status": "fixed", "evidence": "complete state digest + real writer persists episode/dedup + prefix-first validation; 2 cases green"}
+    {
+      "id": "F10",
+      "status": "fixed",
+      "evidence": "resolveTaskOutcome returns unknown on a missing current scope; projection passes currentTaskScope; 2 cases green"
+    },
+    {
+      "id": "F11",
+      "status": "fixed",
+      "evidence": "resolveStageOutcome enforces task/episode/criterion/scope/provenance/evidence/observed; 12 cases + F11-PRODUCT ×2 green"
+    },
+    {
+      "id": "F12",
+      "status": "fixed",
+      "evidence": "hydration preserves episode + dedup; 4 cases green"
+    },
+    {
+      "id": "F13",
+      "status": "fixed",
+      "evidence": "complete state digest + real writer persists episode/dedup + prefix-first validation; 2 cases green"
+    }
   ],
   "files_changed": {
     "modified": [
@@ -65,24 +91,87 @@
     ]
   },
   "commands": [
-    {"cmd": "node --test Pi_Agent_base/tests/aegis-campaign-c1-external-boundaries.mjs", "exit": 0, "tests": 21, "pass": 21, "fail": 0},
-    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-<16 suites>.mjs", "exit": 0, "ok_blocks": 309},
-    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>", "exit": 0, "warnings": 0},
-    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10}
+    {
+      "cmd": "node --test Pi_Agent_base/tests/aegis-campaign-c1-external-boundaries.mjs",
+      "exit": 0,
+      "tests": 21,
+      "pass": 21,
+      "fail": 0
+    },
+    {
+      "cmd": "node Pi_Agent_base/tests/aegis-campaign-<16 suites>.mjs",
+      "exit": 0,
+      "ok_blocks": 309
+    },
+    {
+      "cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>",
+      "exit": 0,
+      "warnings": 0
+    },
+    {
+      "cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json",
+      "exit": 1,
+      "campaign_errors": 0,
+      "preexisting_import_errors": 10
+    }
   ],
   "regression": {
-    "offline": ["aegis-workflow-evidence-d", "aegis-workflow-engine-d", "aegis-runtime-core-smoke", "aegis-runtime-effective-board", "memory-runtime-batch-b-smoke", "memory-runtime-learning-evidence-smoke", "observer-smoke", "aegis-learning-bridge-e"],
+    "offline": [
+      "aegis-workflow-evidence-d",
+      "aegis-workflow-engine-d",
+      "aegis-runtime-core-smoke",
+      "aegis-runtime-effective-board",
+      "memory-runtime-batch-b-smoke",
+      "memory-runtime-learning-evidence-smoke",
+      "observer-smoke",
+      "aegis-learning-bridge-e"
+    ],
     "offline_all_exit": 0,
-    "real_pi_faux": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"],
+    "real_pi_faux": [
+      "aegis-observer-data-use-pi",
+      "aegis-observer-verify-first-pi",
+      "aegis-observer-outcome-command",
+      "aegis-observer-failclosed-pi"
+    ],
     "real_pi_faux_all_exit": 0
   },
   "mutations": [
-    {"mutation": "stage evidence gate removed", "case": "F11-EMPTY-EVIDENCE ×2", "expected": "FAIL", "actual": "FAIL (5)"},
-    {"mutation": "restore drops episode_id", "case": "F12-EPISODE/FOREIGN-EPISODE", "expected": "FAIL", "actual": "FAIL (5)"},
-    {"mutation": "row-based outcome dedup seeding removed", "case": "F12-OUTCOME-DEDUP", "expected": "FAIL", "actual": "FAIL (3)"},
-    {"mutation": "state digest drops stage outcomes + outcomes index", "case": "F13-DIGEST", "expected": "FAIL", "actual": "FAIL (3)"},
-    {"mutation": "null-current-scope guard removed", "case": "F10-A/B", "expected": "FAIL", "actual": "NOT CAUGHT — redundant with the outcome-scope guard"},
-    {"mutation": "stage null-scope guard removed", "case": "F11-MISSING-SCOPE ×2", "expected": "FAIL", "actual": "NOT CAUGHT — redundant with the outcome-scope guard"}
+    {
+      "mutation": "stage evidence gate removed",
+      "case": "F11-EMPTY-EVIDENCE ×2",
+      "expected": "FAIL",
+      "actual": "FAIL (5)"
+    },
+    {
+      "mutation": "restore drops episode_id",
+      "case": "F12-EPISODE/FOREIGN-EPISODE",
+      "expected": "FAIL",
+      "actual": "FAIL (5)"
+    },
+    {
+      "mutation": "row-based outcome dedup seeding removed",
+      "case": "F12-OUTCOME-DEDUP",
+      "expected": "FAIL",
+      "actual": "FAIL (3)"
+    },
+    {
+      "mutation": "state digest drops stage outcomes + outcomes index",
+      "case": "F13-DIGEST",
+      "expected": "FAIL",
+      "actual": "FAIL (3)"
+    },
+    {
+      "mutation": "null-current-scope guard removed",
+      "case": "F10-A/B",
+      "expected": "FAIL",
+      "actual": "NOT CAUGHT — redundant with the outcome-scope guard"
+    },
+    {
+      "mutation": "stage null-scope guard removed",
+      "case": "F11-MISSING-SCOPE ×2",
+      "expected": "FAIL",
+      "actual": "NOT CAUGHT — redundant with the outcome-scope guard"
+    }
   ],
   "evidence": {
     "real_eventlog_reconcile_matching": true,
@@ -93,7 +182,11 @@
     "hydration_preserves_episode_and_dedup": true,
     "external_side_effect_exactly_once_claimed": false
   },
-  "open_findings": {"P0": 0, "P1": 0, "P2": []},
+  "open_findings": {
+    "P0": 0,
+    "P1": 0,
+    "P2": []
+  },
   "blocked": [],
   "known_risks": [
     "Single-host ownership only.",
@@ -102,7 +195,11 @@
     "tsc: 0 campaign errors; 10 pre-existing errors in imported untyped runtime files.",
     "Two scope guards are redundant defence-in-depth; their removal is not mutation-killed."
   ],
-  "not_implemented": ["C2 real Pi Host-level Session rotation", "C3 real Broker/Oracle adapters", "C4/C4a Web UI and Pi /aegis commands"],
+  "not_implemented": [
+    "C2 real Pi Host-level Session rotation",
+    "C3 real Broker/Oracle adapters",
+    "C4/C4a Web UI and Pi /aegis commands"
+  ],
   "statements": {
     "auto_invoked_gpt_6_1_sol": false,
     "real_target_network_or_credentials_used": false,
