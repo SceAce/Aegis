@@ -105,12 +105,14 @@ export function projectQueueFromEvents({
 				depends_on: row.depends_on ?? [],
 				order: row.order ?? 1,
 			});
-			item.stage_ids = row.stage_ids ?? [];
-			item.definition = row.definition ?? null;
+			item.stage_ids = [...(row.stage_ids ?? [])];
+			item.definition = row.definition ? structuredClone(row.definition) : null;
 			item.parent_task_id = row.parent_task_id ?? null;
 			item.is_dynamic = row.is_dynamic === true;
-			item.reservation = row.reservation ?? zeroBudget();
-			item.budget_consumed = row.budget_consumed ?? zeroBudget();
+			// F15: copy the mutable recovery state so applying the tail never mutates
+			// the caller's cached checkpoint objects.
+			item.reservation = { ...(row.reservation ?? zeroBudget()) };
+			item.budget_consumed = { ...(row.budget_consumed ?? zeroBudget()) };
 			// F12: preserve the CURRENT episode and the bindings that participate in
 			// judgment. Dropping episode_id would admit a foreign-episode result.
 			item.episode_id = row.episode_id ?? null;
