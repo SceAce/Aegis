@@ -197,8 +197,12 @@ push, no history rewrite.
 
 - `3993e00` — feat: real Host-level Pi Session rotation supervisor (C2)
   (6 files, +1310/-1). Baseline before C2: `3fe5f90`.
-- Working tree clean after the commit; the 49-assertion C2 suite re-run from the
-  committed tree is exit 0.
+- `dde83a7` — test: reproduce C2 budget and premature completion failures
+  (external reviewer's red suites).
+- `8d70a0b` — fix: gate rotation on committed budget and verify Host completion
+  (C2-E1/E2) (4 files, +399/-76).
+- Working tree clean after `8d70a0b`; the E1/E2 suites, the 49-assertion C2 suite
+  and the handoff/Observer regressions all re-run exit 0 from the committed tree.
 
 C2 self-review is not external acceptance. C3-C4a are outside this assignment.
 
