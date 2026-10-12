@@ -1,10 +1,10 @@
 # C2：真实 Host 级 Pi Session 轮换
 
-状态：**C2 changes_required，仅收尾 C2-E1/E2**。实现基线 `702c63c` 的限定外部复核见
-`C2_EXTERNAL_REVIEW.md`；当前执行提示词为 `C2_SESSION_ROTATION_FIX_PROMPT.md`。
-两项分别为已冻结的累计预算门与绑定成功后完成确认，不增加性能/缓存/C3/C4 门槛。
-前置 C1 已通过限定外部验收，见 `C1_F14_EXTERNAL_ACCEPTANCE.md`；不重开 C1。
-以下冻结目标保留，修复复用现有 C2 报告，完成后只复核两项与受影响路径。
+状态：**C2 externally_accepted（冻结范围及已声明 Host 入口内）**。
+产品基线 `8e34c0f` 的 E1/E2 限定验收见 `C2_EXTERNAL_ACCEPTANCE.md`：
+边界 4/4、真实 SDK 预算拒绝/bind-failure、原 C2 与相关回归通过。
+C1 保持已验收，F16 后置；不重开 C2 或自动实施 C3。
+以下为历史冻结目标，交付限制（Host 可调用入口、非自动 Campaign 调用）以验收记录为准。
 
 ## 1. 核心交付与边界
 

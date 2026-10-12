@@ -10,8 +10,7 @@ Read these before Campaign development:
 - `../docs/GIT_STANDARD.md`
 - `../docs/C1_F14_EXTERNAL_ACCEPTANCE.md`
 - `../docs/C2_SESSION_ROTATION_TASK.md`
-- `../docs/C2_SESSION_ROTATION_FIX_PROMPT.md`
-- `../docs/C2_EXTERNAL_REVIEW.md`
+- `../docs/C2_EXTERNAL_ACCEPTANCE.md`
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -61,10 +60,9 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. C1 remains accepted.
-C2 implementation at `702c63c` needs only E1/E2 fixes from
-`../docs/C2_EXTERNAL_REVIEW.md`: committed cumulative budget gating and
-completion after successful Host bind. Follow the C2 fix prompt, reuse existing
-reports and run focused SDK/affected regressions. F16 stays deferred; do not
-reopen C1 or add cache/performance gates. C2 self-review is not external
-acceptance; C3-C4a remain outside this assignment.
+Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1 and C2 passed limited
+external acceptance; C2 product baseline is `8e34c0f` (see the acceptance record).
+Do not rerun historical E1/E2 repair assignments or reopen stages for F16.
+The supervisor is a Host-callable SDK entry, not yet an automatic Campaign
+loop integration. Keep that limitation and budget-baseline ownership explicit
+in later work. C3-C4a are not automatically started by C2 acceptance.

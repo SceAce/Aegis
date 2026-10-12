@@ -1,6 +1,8 @@
 # C2 限定外部验收：两项核心修复待完成
 
-状态：**C2 changes_required**。当前产品基线 `702c63c`，分支 `feat/c2-session-rotation`，
+历史 red 复核；E1/E2 已在产品基线 `8e34c0f` 通过限定外部验收，见 `C2_EXTERNAL_ACCEPTANCE.md`。下文保留原复现证据，不再作为当前待修任务。
+
+原复核状态：**C2 changes_required**。当时产品基线 `702c63c`，分支 `feat/c2-session-rotation`，
 开始时工作树干净。本次只检查 C2 冻结的 Session 生命周期、安全预算和成功确认；
 不重开 C1，不把 F16/C3/C4 等后置项纳入阻塞。本次未修改产品代码。
 

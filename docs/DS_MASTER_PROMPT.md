@@ -1,18 +1,14 @@
-# Aegis 主 DS 当前委派入口：C2 两项最小收尾
+# Aegis 阶段入口：C2 已验收
 
-状态：**C1 保持已验收；C2 changes_required，仅 C2-E1/E2**。
-C2 原真实 SDK 产品套件与相关回归通过，但当前累计预算门与完成记录时机有可复现核心缺陷。
+状态：**C1、C2 均已在冻结范围内外部验收通过**。
+C2 最新验收：[`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)，产品基线 `8e34c0f`。
+C2-E1/E2 修复完成，不再执行历史修复提示词，不因后置 F16 重开阶段。
 
-完整执行提示词：[`C2_SESSION_ROTATION_FIX_PROMPT.md`](C2_SESSION_ROTATION_FIX_PROMPT.md)。
-最新限定外部复核：[`C2_EXTERNAL_REVIEW.md`](C2_EXTERNAL_REVIEW.md)。
-冻结范围依据：[`C2_SESSION_ROTATION_TASK.md`](C2_SESSION_ROTATION_TASK.md)。
+当前已交付真实 Pi SDK Host 可调用轮换入口及预算/完成验证；现有 Campaign dispatch loop
+没有自动调用该入口。后续真实执行集成应明确调用与账本基线归属，不能夸大现有能力。
+C3 Broker/Oracle adapters、C4/C4a UI 仍未实现，不自动启动下一阶段。
 
-先读 Agent 入口及开发规范 §3.1、测试/Git 规范，只修：
-
-- E1 已完成轮换进入下一次预算准入，初始累计 usage 非零也正确扣一次，Host 重建不绕限额；
-- E2 create/bind 成功且结果持久后才完成，缺 committed 确认不得返回已验证成功，rebind 失败不留假完成。
-
-保留新外部反例，复用现有计划/矩阵/实现报告，做最小接线改动及受影响回归，不再新建整套报告。
-F16 继续后置，不重开 C1，不扩大性能/缓存/UI/Broker 要求。入口接线与限制如实报告。
-显式暂存、分任务本地提交，不 push/改写历史、不改 Pi 核心/凭据/锁文件、不触发真实模型/网络。
-内部通过后交回一次限定 E1/E2 验收，不自行宣称外部通过或进入 C3-C4a。
+后续按用户范围和既定架构形成下一阶段任务，继续遵守开发规范 §3.1、测试与 Git 规范：
+冻结核心目标、限定验收、区分 required/deferred，保留后置证据，不扩大审计清单。
+不自动调用验收模型，不触发未授权真实模型/目标网络，不修改 Pi 核心/凭据/锁文件，
+不 push 或改写 Git 历史。当前 C2 交付已结束，等待下一任务范围。
