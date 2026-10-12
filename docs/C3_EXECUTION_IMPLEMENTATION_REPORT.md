@@ -1,6 +1,6 @@
 # C3 Execution — Implementation Report
 
-Status: **internally_verified / awaiting_external_review**.
+Current status: **accepted_with_recorded_limits after in-session C3 review and authorized fixes**. See `C3_EXTERNAL_REVIEW.md` for new red/green evidence, changes and limitations; the implementation author below remains DS and the review/fix author is the current user-directed session. C4 is the next planned task. Historical delivery follows.
 Phase: C3 (Campaign Broker/Oracle/Host execution loop). Scope frozen in
 `C3_EXECUTION_TASK.md`, `C3_EXECUTION_WORK_PLAN.md`, `C3_EXECUTION_TEST_MATRIX.md`.
 C1/C2 are not reopened. F16 stays deferred. C4/C4a/real targets are out of scope.
@@ -10,11 +10,11 @@ Branch: `feat/c3-execution` (created from `feat/c2-session-rotation` @ `2d9041c`
 ## 0. Baseline and Git note
 
 - Start: branch `feat/c2-session-rotation`, worktree clean, last commit `2d9041c`.
-- Environment honesty: this sandbox's `git` masks `rev-parse`/`cat-file` object
-  ids to all-zero and fixes commit timestamps; only `git log --oneline/%h` prints
-  the real abbreviated id. Commits below are cited by the id `git log` shows;
-  full 40-char ids are not observable here. The earlier "forged timestamp"
-  inference remains withdrawn (`GIT_STANDARD.md` §3).
+- Earlier DS environment claim: full IDs were reportedly not observable. This
+  is not established as a Git masking or timestamp-rewriting fact by the current
+  review. The repository commits are readable; use actual command evidence and
+  mark unavailable values honestly, without inferring corruption or crypto
+  stubbing. Commit abbreviations below identify the historical DS delivery.
 - Commits on `feat/c3-execution`:
   - `c59f355` feat: campaign Host core, action gate and budget ownership (C3-A)
   - `5e36958` feat: brokered Worker, independent Host Oracle and fixture Host loop (C3-B)

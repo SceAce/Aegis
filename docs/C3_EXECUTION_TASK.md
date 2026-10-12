@@ -1,6 +1,6 @@
 # C3 任务书：Campaign 的 Broker / Oracle 执行闭环
 
-状态：**planned / 待委派实施，本次仅规划**。
+状态：**accepted_with_recorded_limits，本轮审查与授权修复完成**。当前结果、追加测试和运行限制见 `C3_EXTERNAL_REVIEW.md`。以下保留 C3 冻结范围，不重复启动；下一轮任务为 `C4_REPORT_TASK.md`。
 前置 C1/C2 已按冻结范围验收，见 `C1_F14_EXTERNAL_ACCEPTANCE.md`、`C2_EXTERNAL_ACCEPTANCE.md`。
 实施时基于最新已提交状态，不重开历史阶段。路线见 `CAMPAIGN_NEXT_PHASES.md`。
 

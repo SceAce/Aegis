@@ -1,18 +1,19 @@
-# Aegis 阶段入口：C2 已验收，C3 已规划
+# Aegis 阶段入口：C3 本轮审查修复完成，下一轮 C4
 
-状态：**C1、C2 均已按冻结范围验收；C3 planned，未启动实现**。
-当前核对基线 `0e5af0c`，父仓库干净；没有新的 C2 产品版本，不重复验收同一实现。
-C2 验收记录：[`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)。
+状态：**C1/C2 保持已验收；C3 accepted_with_recorded_limits；C4 下一轮待委派**。
+本轮审查和直接授权修复见 [`C3_EXTERNAL_REVIEW.md`](C3_EXTERNAL_REVIEW.md)。
+原 C3 交付有有效产品链，但当前核心反例已由本会话集中修复，不再让 DS 反复补同一轮。
 
-后续路线：[`CAMPAIGN_NEXT_PHASES.md`](CAMPAIGN_NEXT_PHASES.md)。
-下一阶段任务书：[`C3_EXECUTION_TASK.md`](C3_EXECUTION_TASK.md)。
-准备好的 DS 提示词：[`C3_EXECUTION_DS_PROMPT.md`](C3_EXECUTION_DS_PROMPT.md)。
-本轮用户请求为验收与规划，文档已准备，不自动开始 C3 产品修改；用户委派该任务后实施。
+下一任务书：[`C4_REPORT_TASK.md`](C4_REPORT_TASK.md)。
+给 DS 的提示词：[`C4_REPORT_DS_PROMPT.md`](C4_REPORT_DS_PROMPT.md)。
+C4 只做基于权威事件的确定性 report/bundle/validator/reviewer prompt，UI 留 C4a。
+本轮已布置文档，不在当前会话实施 C4；用户将提示词交 DS 后开始。
 
-C3 主线是产品 Host → Scheduler → 现有 Broker → 本地效果 → 独立 Oracle → 结果，
-并接入 C2 安全 Session 轮换与明确账本归属；内部里程碑自主完成，阶段仅做一次限定验收。
-后续 C4 报告、C4a 观察界面、C5 整体集成及可选能力实验依次推进，不把后续能力提前当门槛。
+遵守开发规范 §3.1，冻结阶段核心目标与 required/deferred，不重开已完成阶段。
+F16 cache、旧类型导入诊断、任意平台/多 Worker/真实模型或目标网络后置。
+C3 CLI 默认为离线 fixture，可信脚本/Oracle/Session 使用 programmatic Host 装配；
+下一阶段报告要如实显示这些限制，不能夸大 CLI 自动调度/模型能力。
 
-遵守开发规范 §3.1：冻结 required 范围，区分当前阻塞/非阻塞/后置，保留真实失败和证据。
-F16 后置，不重开 C1/C2，不为了全库完美无限修复。保持本地 Git 任务管理，不 push/改写历史，
-不修改 Pi 核心/凭据/模型/lockfile，不自动调用验收模型或未授权真实模型/目标网络。
+按 Git 规范本地任务分支、明确路径暂存、审查、逐里程碑提交，不 push/改写历史。
+不修改 Pi 核心/凭据/模型/锁文件、不自动调用验收模型。
+C4 内部通过后一次限定验收，不自动进入 C4a/C5。
