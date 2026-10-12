@@ -10,7 +10,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，完整提示词为 [`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)，范围见 [`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)。用户已确认：**C1 只收尾 F14，F15 非阻塞、F16 后置；F14 限定验证通过后进入 C2**。遵守开发规范 §3.1 的阶段范围冻结规则，不再逐轮扩大验收门槛。原反例与真实结果保留在 [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)，混合套件后置失败不自动阻止推进。
+当前状态：**C1 已按冻结范围通过限定外部验收，C2 可启动**，见 [`C1_F14_EXTERNAL_ACCEPTANCE.md`](C1_F14_EXTERNAL_ACCEPTANCE.md)。开发入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，完整提示词 [`C2_SESSION_ROTATION_DS_PROMPT.md`](C2_SESSION_ROTATION_DS_PROMPT.md)，范围见 [`C2_SESSION_ROTATION_TASK.md`](C2_SESSION_ROTATION_TASK.md)。F14 已验证通过、F15 局部修复、F16 缓存优化后置，不重开 C1。继续遵守开发规范 §3.1 的阶段范围冻结规则，C2 内部交付后做限定验收。
 
 开发依据：
 
@@ -26,7 +26,8 @@
 - [`C1_INTEGRATION_TEST_SPEC.md`](C1_INTEGRATION_TEST_SPEC.md)：本轮多维case与Scheduler+真实EventLog端到端测试要求。
 - [`C1_FINAL_EXTERNAL_AUDIT.md`](C1_FINAL_EXTERNAL_AUDIT.md)：F1-F6完成报告之后的历史独立复核，指出F7-F9。
 - [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：F10-F13 历史外部 red 基线及真实 Scheduler/EventLog 对照。
-- [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 交付后的最新复核，包含 F14-F16、12 个新增用例与报告一致性检查。
+- [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 交付后的历史复核，包含 F14-F16、12 个新增用例与报告一致性检查。
+- [`C1_F14_EXTERNAL_ACCEPTANCE.md`](C1_F14_EXTERNAL_ACCEPTANCE.md)：最新 C1 限定外部通过记录及 C2 阶段移交。
 - [`../Pi_Agent_base/AGENTS.md`](../Pi_Agent_base/AGENTS.md)：Aegis-owned代码的Agent自动发现入口，不恢复已删除根目录AGENTS。
 
 Campaign 层的统一设计与实现任务书分别见：

@@ -8,10 +8,9 @@ Read these before Campaign development:
 - `../docs/AGENT_DEVELOPMENT_STANDARD.md`
 - `../docs/AGENT_TESTING_STANDARD.md`
 - `../docs/GIT_STANDARD.md`
-- `../docs/C1_BOUNDARY_EXTERNAL_REVIEW.md`
-- `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md`
-- `../docs/C1_FINAL_EXTERNAL_AUDIT_3.md`
-- `../docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md`
+- `../docs/C1_F14_EXTERNAL_ACCEPTANCE.md`
+- `../docs/C2_SESSION_ROTATION_TASK.md`
+- `../docs/C2_SESSION_ROTATION_DS_PROMPT.md`
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -61,10 +60,10 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. User-approved scope:
-only F14 remains a C1 blocker; F15 is non-blocking, F16 is deferred cache work.
-Follow `../docs/C1_BOUNDARY_FOLLOWUP_TASK.md` for a minimal Stage binding fix,
-focused verification and existing regressions. Preserve deferred assertions and
-report failures separately from required checks. After limited external F14
-review passes, proceed to the already-authorized C2; do not reopen C1 for F15/F16
-or claim external acceptance yourself. C3-C4a remain outside this assignment.
+Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. C1 passed limited
+external acceptance at product baseline `53accb2`; C2 is approved to start.
+Follow `../docs/C2_SESSION_ROTATION_TASK.md` and the C2 DS prompt. Verify actual
+Pi SDK Session/Runtime/context replacement and continuity through the Host.
+F15 has a local fix; F16 cache optimization is deferred and does not reopen C1.
+Keep required/deferred checks separate. C2 self-review is not external
+acceptance; C3-C4a remain outside this assignment.

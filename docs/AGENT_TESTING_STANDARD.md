@@ -29,7 +29,7 @@
 
 修复后验证该缺陷的正负例与受影响回归，必要时做少量针对性 mutation；不为小修复强制补全所有边界组合或固定 mutation 配额。新发现只有证明破坏当前核心承诺才新增硬门槛；非阻塞/后置项进入记录后继续推进。
 
-C1 当前必需范围：F14 + 原有已通过回归。`aegis-campaign-c1-boundary-review.mjs` 混合了 F14/F15/F16，可用 Node 的 test-name-pattern 分别运行 F14/CONTROL 与 F15/F16，完整运行结果照实保留。F15 非阻塞，F16 后置，不要求这份混合脚本全绿才进入 C2。
+C1 限定外部验收已通过：F14 聚焦 10/10、原有 17 个 required 脚本通过。`aegis-campaign-c1-boundary-review.mjs` 混合 F14/F15/F16，可用 test-name-pattern 分组；完整诊断为 11 pass / 1 fail（F16 后置），不能称全量绿，也不因它阻止 C2。C2 required 清单按自身任务书冻结，不自动继承缓存优化为阻塞。
 
 ## 3. 矩阵字段
 

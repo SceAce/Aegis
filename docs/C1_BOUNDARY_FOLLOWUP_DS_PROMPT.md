@@ -1,5 +1,8 @@
 # 主 DS 提示词：最小修复 F14，然后推进 C2
 
+历史任务已完成并通过限定外部验收，见 `C1_F14_EXTERNAL_ACCEPTANCE.md`。当前请执行
+`C2_SESSION_ROTATION_DS_PROMPT.md`；下文仅保留当时任务范围，不重复启动 C1。
+
 用户已确认阶段推进规则：冻结验收范围，不把所有边界/优化都当阻塞。先阅读
 `Pi_Agent_base/AGENTS.md`、开发规范 §3.1、测试规范、Git 规范，以及
 `docs/C1_BOUNDARY_FOLLOWUP_TASK.md`，按更新后的范围执行；旧任务书扩大要求不再适用。

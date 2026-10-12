@@ -1,19 +1,19 @@
-# Aegis 主 DS 当前委派入口
+# Aegis 主 DS 当前委派入口：C2
 
-当前决定：**C1 只收尾 F14；F15 非阻塞、F16 后置；F14 验证通过后进入 C2**。
-这是用户确认的范围收敛，覆盖旧任务书“所有 F14-F16 全绿才放行”的要求。
+状态：**C1 externally_accepted（冻结范围内）；C2 approved_to_start**。
+限定外部记录：[`C1_F14_EXTERNAL_ACCEPTANCE.md`](C1_F14_EXTERNAL_ACCEPTANCE.md)。
+用户已同意 C2，无需重复请求阶段授权。
 
-完整提示词：[`C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md`](C1_BOUNDARY_FOLLOWUP_DS_PROMPT.md)。
-任务书：[`C1_BOUNDARY_FOLLOWUP_TASK.md`](C1_BOUNDARY_FOLLOWUP_TASK.md)。
-历史复现证据：[`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)，
-其早先严重度/阻塞结论按当前任务书重新分类，原测试结果仍保留。
+完整提示词：[`C2_SESSION_ROTATION_DS_PROMPT.md`](C2_SESSION_ROTATION_DS_PROMPT.md)。
+当前任务书：[`C2_SESSION_ROTATION_TASK.md`](C2_SESSION_ROTATION_TASK.md)。
+先完整阅读二者、`Pi_Agent_base/AGENTS.md`、开发/测试/Git 规范，再实施。
 
-完整阅读 `Pi_Agent_base/AGENTS.md`、开发规范 §3.1、测试规范和 Git 规范。
-实现者与审计者都必须冻结阶段目标：只把当前可达路径的核心正确性/授权损害作为阻塞；
-缓存性能、后续能力与已有限制的非阻塞项记录责任阶段后继续主线，不要求系统完美。
-不删失败证据或降低成功判定，只收敛当前必须完成的范围。
+C2 只交付真实 Host 级 Session 轮换：真实 SDK 新对象/context、安全边界、同 Episode/累计预算
+连续、失败/取消无假完成、handoff 幂等及必要恢复。实际 API 由完整 SDK 文档/源码核对。
+先冻结简洁契约/required 矩阵，再实现、聚焦验证、自审、分任务本地提交。
 
-F14 做最小准入修复并跑聚焦组、原有相关回归；复用现有报告，不重复整套文档/广泛审计。
-明确路径暂存和本地 commit，不 push、不改写历史。内部自审不是外部通过；
-一次限定外部复核通过后进入已获用户同意的 C2，不因后置项重开 C1，也不重复索取同一授权。
-C2 契约见 `C2_SESSION_ROTATION_TASK.md`；不提前实现 C3-C4a 或引入真实模型/目标网络。
+F15 已局部修复；F16 后置，保留全量 EventLog 重放正确性，不以缓存优化门槛重开 C1。
+遵守开发规范 §3.1，新增阻塞须证明当前可达核心损害，非阻塞/后置记录责任后继续推进。
+
+不修改 Pi 核心、凭据/模型设置/lockfile，不触发真实模型/目标网络，不 push/改写历史。
+C2 内部通过后交回限定外部验收，不自动调用验收模型，不自行进入 C3-C4a。
