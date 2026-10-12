@@ -1,0 +1,115 @@
+{
+  "schema": "aegis-c1-boundary-implementation-report/1.0",
+  "generated_at": "2026-10-12T00:00:00Z",
+  "status": "internally_verified / awaiting_external_review",
+  "c2_implemented": false,
+  "git": {
+    "branch": "audit/c1-external-boundaries",
+    "head_placeholder": "00000000000000000000000000000000",
+    "head_true_tip": "369e1f4",
+    "head_note": "ref-file placeholder; true tip from git reflog/git log",
+    "red_baseline_commit": "369e1f4",
+    "commits_this_task": []
+  },
+  "orchestration": {
+    "child_agent_tool_available": false,
+    "execution": "serial master-DS role switching (test-author/implementer/reviewer)",
+    "fabricated_child_reports": false
+  },
+  "baseline": {
+    "external_boundaries_red": {"exit": 1, "tests": 21, "pass": 3, "fail": 19},
+    "campaign_suites_pre_fix": "16/16 exit 0 (older suites used unscoped tasks; updated to the F10 contract)"
+  },
+  "environment_anomaly": {
+    "sha256_display_stubbed": true,
+    "detail": "sha256Hex returns the real 64-char hex; the terminal display replaces hex-looking output with zeros, but real values differ. Digest tests assert change/equality, never a literal."
+  },
+  "f_closure": [
+    {"id": "F10", "status": "fixed", "evidence": "resolveTaskOutcome returns unknown on a missing current scope; projection passes currentTaskScope; 2 cases green"},
+    {"id": "F11", "status": "fixed", "evidence": "resolveStageOutcome enforces task/episode/criterion/scope/provenance/evidence/observed; 12 cases + F11-PRODUCT ×2 green"},
+    {"id": "F12", "status": "fixed", "evidence": "hydration preserves episode + dedup; 4 cases green"},
+    {"id": "F13", "status": "fixed", "evidence": "complete state digest + real writer persists episode/dedup + prefix-first validation; 2 cases green"}
+  ],
+  "files_changed": {
+    "modified": [
+      "Pi_Agent_base/memory/campaign/projection.mjs",
+      "Pi_Agent_base/memory/campaign/outcome-resolver.mjs",
+      "Pi_Agent_base/memory/campaign/scheduler.mjs",
+      "Pi_Agent_base/memory/campaign/manifest.mjs",
+      "Pi_Agent_base/memory/campaign/fixture.mjs",
+      "Pi_Agent_base/memory/campaign/index.mjs"
+    ],
+    "tests_updated": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-contracts.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-recovery.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-e2e.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-final-audit.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-eventlog-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-scheduler-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-product-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-recovery-child.mjs"
+    ],
+    "external_suite_preserved": "Pi_Agent_base/tests/aegis-campaign-c1-external-boundaries.mjs (all 21 assertions retained)",
+    "not_modified": [
+      "Pi_Agent_base/pi/** (embedded Pi core)",
+      "credentials / model settings / lockfiles",
+      "Pi_Agent_base/memory/runtime/events.mjs (reused read-only)",
+      "deleted legacy Python tree",
+      "root AGENTS.md"
+    ]
+  },
+  "commands": [
+    {"cmd": "node --test Pi_Agent_base/tests/aegis-campaign-c1-external-boundaries.mjs", "exit": 0, "tests": 21, "pass": 21, "fail": 0},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-<16 suites>.mjs", "exit": 0, "ok_blocks": 309},
+    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>", "exit": 0, "warnings": 0},
+    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10}
+  ],
+  "regression": {
+    "offline": ["aegis-workflow-evidence-d", "aegis-workflow-engine-d", "aegis-runtime-core-smoke", "aegis-runtime-effective-board", "memory-runtime-batch-b-smoke", "memory-runtime-learning-evidence-smoke", "observer-smoke", "aegis-learning-bridge-e"],
+    "offline_all_exit": 0,
+    "real_pi_faux": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"],
+    "real_pi_faux_all_exit": 0
+  },
+  "mutations": [
+    {"mutation": "stage evidence gate removed", "case": "F11-EMPTY-EVIDENCE ×2", "expected": "FAIL", "actual": "FAIL (5)"},
+    {"mutation": "restore drops episode_id", "case": "F12-EPISODE/FOREIGN-EPISODE", "expected": "FAIL", "actual": "FAIL (5)"},
+    {"mutation": "row-based outcome dedup seeding removed", "case": "F12-OUTCOME-DEDUP", "expected": "FAIL", "actual": "FAIL (3)"},
+    {"mutation": "state digest drops stage outcomes + outcomes index", "case": "F13-DIGEST", "expected": "FAIL", "actual": "FAIL (3)"},
+    {"mutation": "null-current-scope guard removed", "case": "F10-A/B", "expected": "FAIL", "actual": "NOT CAUGHT — redundant with the outcome-scope guard"},
+    {"mutation": "stage null-scope guard removed", "case": "F11-MISSING-SCOPE ×2", "expected": "FAIL", "actual": "NOT CAUGHT — redundant with the outcome-scope guard"}
+  ],
+  "evidence": {
+    "real_eventlog_reconcile_matching": true,
+    "real_eventlog_reconcile_foreign_rejected": true,
+    "real_writer_persists_episode": true,
+    "state_digest_covers_stage_content": true,
+    "prefix_first_validation_then_tail": true,
+    "hydration_preserves_episode_and_dedup": true,
+    "external_side_effect_exactly_once_claimed": false
+  },
+  "open_findings": {"P0": 0, "P1": 0, "P2": []},
+  "blocked": [],
+  "known_risks": [
+    "Single-host ownership only.",
+    "External side-effect exactly-once not claimed (no Broker/executor).",
+    "Real SHA256 values are not visible in this harness (display stubbed).",
+    "tsc: 0 campaign errors; 10 pre-existing errors in imported untyped runtime files.",
+    "Two scope guards are redundant defence-in-depth; their removal is not mutation-killed."
+  ],
+  "not_implemented": ["C2 real Pi Host-level Session rotation", "C3 real Broker/Oracle adapters", "C4/C4a Web UI and Pi /aegis commands"],
+  "statements": {
+    "auto_invoked_gpt_6_1_sol": false,
+    "real_target_network_or_credentials_used": false,
+    "synthetic_evidence_labeled": true,
+    "session_count_is_not_episode_count": true,
+    "unknown_is_not_failure": true,
+    "external_side_effect_exactly_once_claimed": false,
+    "external_acceptance_pending": true
+  }
+}
