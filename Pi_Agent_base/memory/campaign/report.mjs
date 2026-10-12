@@ -221,7 +221,10 @@ export function buildAcceptanceBundle({ report, runtimeDigests = {} } = {}) {
 			invoked_by_aegis: false,
 			verdicts: [...REVIEWER_VERDICTS],
 			may_mutate_state: false,
-			inputs_are_digests_not_secrets: true,
+			// NOTE: the key must not contain the word "secret", or the value-level
+			// redactor (which matches on the KEY name) would redact this structural
+			// boolean. It is descriptive metadata, not a secret value.
+			inputs_are_digests_only: true,
 		},
 	};
 	const redacted = redactSecrets(bundle);

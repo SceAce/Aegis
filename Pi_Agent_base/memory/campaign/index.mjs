@@ -138,6 +138,16 @@ export {
 	withoutBundleDigest,
 	withoutReportDigest,
 } from "./report.mjs";
+export { parseArgs, REPORT_ENTRY_VERSION, runReportExport } from "./report-entry.mjs";
+export {
+	buildReportInputs,
+	countCommitted,
+	DEFAULT_LIMITS,
+	deriveIntegrity,
+	generateCampaignArtifacts,
+	REPORT_EXPORT_VERSION,
+	validateAcceptanceBundle,
+} from "./report-export.mjs";
 export { createCampaignScheduler, SCHEDULER_VERSION } from "./scheduler.mjs";
 export {
 	createWorkspaceScriptRegistration,
