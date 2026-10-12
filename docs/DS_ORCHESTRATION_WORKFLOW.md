@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认采用一次总委派、主 DS自行拆小任务的方法。当前任务是 `C1_INTEGRATION_CLOSURE_TASK.md` 的七组跨模块收尾；C0/C1任务图保留作背景，C2仍不启动。
+状态：用户确认采用一次总委派、主 DS自行拆小任务的方法。当前任务是 `C1_EXTERNAL_BOUNDARY_FIX_TASK.md` 的 F10-F13 修复；最新复核为 `C1_FINAL_EXTERNAL_AUDIT_3.md`。C0/C1旧任务图保留作背景，C2仍不启动。Git 管理遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 
@@ -63,7 +63,7 @@ stop conditions
 - 共享契约、index导出、lint/type配置、主runner、通用fixtures与docs归主DS。
 - 两个子任务需要同一文件时按依赖串行执行或由主DS集成，不能靠最后写入覆盖。
 - 开始和完成记录git status；只看本轮实际diff与新增文件，不恢复/清理旧删除状态。
-- 已有大量untracked Campaign文件，git diff不会自动显示其内容；主DS必须完整读取实际文件或用隔离基线对比，不能把“diff为空”当无改动。
+- 当前 Aegis-owned 实现已基线入库。新增未跟踪文件仍须全文审查；不能把“diff为空”当无改动。主 DS在任务分支按明确路径提交测试、实现和报告，不混入无关改动。
 - 子DS完成后主DS检查allowed files、接口变更、测试修改、注释声明、运行效果，然后重新跑集成检查。
 - 子DS返回“PASS”没有对应命令和log不算证据；主DS至少独立运行相关phase runner。
 
@@ -134,6 +134,7 @@ stop conditions
 - synthetic/faux/真实本地子进程各自验证范围；
 - 未实现的C2/Pi真实Session、C3/Broker与Oracle、C4a/UI等范围；
 - 无自动验收模型调用、无真实目标网络；
-- 状态：internally_verified / awaiting_external_review。
+- 本地任务分支、commit id、准确工作树状态与验证日志引用；
+- 状态：internally_verified / awaiting_external_review，仍有阻塞发现则 changes_required。
 
 最终报告不是主DS自动验收自身。用户把材料交回当前会话完成独立复核。

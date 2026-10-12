@@ -7,6 +7,9 @@ Read these before Campaign development:
 
 - `../docs/AGENT_DEVELOPMENT_STANDARD.md`
 - `../docs/AGENT_TESTING_STANDARD.md`
+- `../docs/GIT_STANDARD.md`
+- `../docs/C1_FINAL_EXTERNAL_AUDIT_3.md`
+- `../docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md`
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -40,10 +43,18 @@ do not restore the deleted Python demo or root AGENTS.md; do not commit or
 clean/reset unrelated changes. No real-model/target network experiments in
 this development assignment.
 
+Use local Git for all authorized Aegis-owned implementation, tests and docs.
+Work on a task branch, stage explicit paths, inspect the staged diff, and commit
+reviewable milestones. Historical instructions saying not to commit are
+superseded by the user's Git management requirement. Do not push or rewrite
+history. Embedded `pi/`, `config/` and `runtime/` remain outside the parent repo.
+
 Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. Close the seven C1
-integration findings through real scheduler-entry tests before external review.
-Preserve C0 regressions; C2-C4a remain later phases and must not start here.
+Current assignment entry: `../docs/DS_MASTER_PROMPT.md`. The latest external
+review reproduced F10-F13 after F7-F9. Follow
+`../docs/C1_EXTERNAL_BOUNDARY_FIX_TASK.md`; preserve the failing acceptance tests
+and verify the actual scheduler/checkpoint paths. C1 is changes_required and C2
+remains blocked until external review of the fixes. Do not implement C2-C4a.

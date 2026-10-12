@@ -494,10 +494,9 @@ await test("A9-RECONCILE-NO-STAGES: scheduler reconciliation without stage evide
 });
 
 // ---------------------------------------------------------------------------
-// A10. Snapshot completeness: the snapshot must expose reconciliation_reason
-// too, otherwise two projections differing only by blocked-reason look equal.
-// (Documents the CURRENT surface: reconciliation_reason is NOT in the snapshot.
-// If this assertion fails after a fix, the fix intentionally widened it.)
+// A10. A blocked reconciliation must remain pending in the snapshot.
+// Completeness of the other snapshot fields is audited separately; this test
+// must not freeze an existing omission as expected behavior.
 // ---------------------------------------------------------------------------
 
 await test("A10-SNAPSHOT-RECON-SURFACE: snapshot carries reconciliation state (documents current surface)", () => {
@@ -509,16 +508,12 @@ await test("A10-SNAPSHOT-RECON-SURFACE: snapshot carries reconciliation state (d
 	const snap = projectionSnapshot(project(events));
 	const t = snap.tasks[0];
 	assert.equal(t.reconciliation_state, "pending");
-	// Current surface: reconciliation_reason is NOT snapshotted. This documents a
-	// MINOR gap (audit note), not a contract violation: the reason is still in the
-	// live projection and the EventLog.
-	assert.equal(t.reconciliation_reason, undefined);
+	assert.equal(project(events).tasks[0].reconciliation_state, t.reconciliation_state);
 });
 
 // ---------------------------------------------------------------------------
-// A11. Mutation-style probes: each probe temporarily weakens the code under
-// test in-memory is not possible for .mjs modules; instead we assert the
-// gate's OBSERVABLE consequences under combinations the DS suite did not mix.
+// A11. Cross-boundary negative cases. These are behavioral regression tests,
+// not mutation runs.
 // ---------------------------------------------------------------------------
 
 await test("A11-STAGE-THEN-CORRUPT-TASK: valid stage + task success with unresolvable evidence does not complete", () => {

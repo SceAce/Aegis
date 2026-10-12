@@ -10,12 +10,13 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)：主 DS一次接收总任务，先生成共享契约和测试，再拆分/分发实现小任务并负责自审集成。当前最新任务是 [`C1_FINAL_AUDIT_FIX_TASK.md`](C1_FINAL_AUDIT_FIX_TASK.md)，依据 [`C1_FINAL_EXTERNAL_AUDIT.md`](C1_FINAL_EXTERNAL_AUDIT.md)：修复F7-F9并验证最终C1调用链，完成后停止并交回当前会话验收；不进入 C2。
+当前开发委派入口为 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)，可直接交给 DS 的完整提示词是 [`C1_EXTERNAL_BOUNDARY_DS_PROMPT.md`](C1_EXTERNAL_BOUNDARY_DS_PROMPT.md)。最新任务是 [`C1_EXTERNAL_BOUNDARY_FIX_TASK.md`](C1_EXTERNAL_BOUNDARY_FIX_TASK.md)，依据 [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：F7-F9 后仍复现 F10-F13，新增 21 个外部用例为 2 pass / 19 fail，当前 **C1 changes_required / C2 blocked**。主 DS先冻结共享契约和测试，分任务实现、自审、Git 提交后交回外部验收，不进入 C2。
 
 开发依据：
 
 - [`AGENT_DEVELOPMENT_STANDARD.md`](AGENT_DEVELOPMENT_STANDARD.md)：仓库规范、输入/证据/副作用边界、类型/格式检查和完成标准。
 - [`AGENT_TESTING_STANDARD.md`](AGENT_TESTING_STANDARD.md)：测试先行、正负例/边界/归属/恢复矩阵、可执行脚本要求、有限 mutation 和结果报告。
+- [`GIT_STANDARD.md`](GIT_STANDARD.md)：任务分支、逐路径暂存、本地提交、历史保护和主仓库纳管边界；已替代历史“不做 Git 提交”限制。
 - [`DS_ORCHESTRATION_WORKFLOW.md`](DS_ORCHESTRATION_WORKFLOW.md)：主 DS/子 DS分工、文件所有权、任务图、审查和自主推进边界。
 - [`CAMPAIGN_CONTRACT_BASELINE.md`](CAMPAIGN_CONTRACT_BASELINE.md)：共享接口契约、C0集中收尾清单、C1事件与预算约束。
 - [`C1_CLOSURE_BASELINE.md`](C1_CLOSURE_BASELINE.md)：当前 C1 审计缺口、来源权限、动态准入、队列、预算、checkpoint、ownership 和 recovery 的修复契约。
@@ -23,7 +24,8 @@
 - [`C1_CLOSURE_EXTERNAL_AUDIT.md`](C1_CLOSURE_EXTERNAL_AUDIT.md)：最新七组已复现产品跨模块发现及独立运行证据。
 - [`C1_INTEGRATION_CLOSURE_TASK.md`](C1_INTEGRATION_CLOSURE_TASK.md)：当前共享契约、主DS分任务、接线门和停止条件。
 - [`C1_INTEGRATION_TEST_SPEC.md`](C1_INTEGRATION_TEST_SPEC.md)：本轮多维case与Scheduler+真实EventLog端到端测试要求。
-- [`C1_FINAL_EXTERNAL_AUDIT.md`](C1_FINAL_EXTERNAL_AUDIT.md)：F1-F6完成报告之后的独立复核，指出F7-F9。
+- [`C1_FINAL_EXTERNAL_AUDIT.md`](C1_FINAL_EXTERNAL_AUDIT.md)：F1-F6完成报告之后的历史独立复核，指出F7-F9。
+- [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：最新外部复核，包含 F10-F13、可执行 red 证据及真实 Scheduler/EventLog 对照。
 - [`../Pi_Agent_base/AGENTS.md`](../Pi_Agent_base/AGENTS.md)：Aegis-owned代码的Agent自动发现入口，不恢复已删除根目录AGENTS。
 
 Campaign 层的统一设计与实现任务书分别见：
