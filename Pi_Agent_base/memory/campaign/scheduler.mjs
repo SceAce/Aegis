@@ -31,22 +31,42 @@ import { buildCommittedStream } from "./stream.mjs";
 
 export const SCHEDULER_VERSION = "2.0.0";
 
+/**
+ * F13: a digest of the COMPLETE projection STATE (every semantic field that
+ * participates in judgment/recovery). Stream position (tail offset/digest) and
+ * other non-semantic fields are intentionally excluded so a prefix checkpoint
+ * and its tail-applied state can be compared for state equivalence.
+ */
 function projectionDigest(projection) {
-	// Digest of the PROJECTION STATE only (queue + ledger + control). Stream
-	// position (tail offset/digest) is intentionally excluded so a prefix
-	// checkpoint and its tail replay can be compared for state equivalence.
 	return digest({
 		tasks: projection.tasks.map((task) => ({
 			task_id: task.task_id,
 			state: task.state,
+			episode_id: task.episode_id ?? null,
+			is_dynamic: task.is_dynamic === true,
+			definition: task.definition ?? null,
+			stage_ids: task.stage_ids ?? [],
+			depends_on: task.depends_on ?? [],
 			reservation: task.reservation ?? null,
 			budget_consumed: task.budget_consumed ?? null,
 			task_outcome_status: task.task_outcome_status ?? null,
 			task_outcome_ref: task.task_outcome_ref ?? null,
+			task_outcomes: task.task_outcomes ?? [],
+			stage_outcomes: task.stage_outcomes ?? [],
+			applied_command_keys: [...(task.applied_command_keys ?? [])].sort(),
 			stop_reason: task.stop_reason ?? null,
+			reconciliation_state: task.reconciliation_state ?? "none",
+			reconciliation_ref: task.reconciliation_ref ?? null,
+			reconciliation_reason: task.reconciliation_reason ?? null,
 		})),
 		budget: projection.budget,
 		control: { state: projection.control.state, reason: projection.control.reason },
+		proposals: [...projection.proposals.entries()]
+			.map(([id, entry]) => ({ id, digest: entry.digest, offset: entry.offset }))
+			.sort((a, b) => a.id.localeCompare(b.id)),
+		outcomes: [...projection.outcomes.entries()]
+			.map(([id, outcome]) => ({ id, outcome }))
+			.sort((a, b) => a.id.localeCompare(b.id)),
 	});
 }
 
@@ -117,6 +137,8 @@ export function createCampaignScheduler({
 				control: checkpoint.control,
 				proposals: checkpoint.proposals ?? [],
 				outcomes: checkpoint.outcomes ?? [],
+				applied_commands: checkpoint.applied_commands ?? [],
+				applied_outcomes: checkpoint.applied_outcomes ?? [],
 				tail_offset: checkpoint.stream_offset ?? -1,
 			},
 		});
@@ -143,6 +165,9 @@ export function createCampaignScheduler({
 			queue: projection.tasks.map((task) => ({
 				task_id: task.task_id,
 				state: task.state,
+				episode_id: task.episode_id ?? null,
+				session_id: task.session_id ?? null,
+				attempt_id: task.attempt_id ?? null,
 				depends_on: task.depends_on ?? [],
 				order: task.order ?? 1,
 				reservation: task.reservation ?? null,
@@ -155,8 +180,12 @@ export function createCampaignScheduler({
 				task_outcome_ref: task.task_outcome_ref ?? null,
 				task_outcomes: task.task_outcomes ?? [],
 				stage_outcomes: task.stage_outcomes ?? [],
+				applied_command_ids: task.applied_command_ids ?? [],
+				applied_command_keys: task.applied_command_keys ?? [],
 				stop_reason: task.stop_reason ?? null,
 				reconciliation_state: task.reconciliation_state ?? "none",
+				reconciliation_ref: task.reconciliation_ref ?? null,
+				reconciliation_reason: task.reconciliation_reason ?? null,
 			})),
 			budget: projection.budget,
 			control: projection.control,
@@ -167,6 +196,8 @@ export function createCampaignScheduler({
 				proposal: entry.proposal,
 			})),
 			outcomes: [...projection.outcomes.entries()].map(([id, outcome]) => ({ id, outcome })),
+			applied_commands: projection.applied_commands ?? [],
+			applied_outcomes: projection.applied_outcomes ?? [],
 		};
 		const written = writeCheckpointImpl(baseDir, manifest.campaign_id, record);
 		lastCheckpoint = written?.ok ? { ok: true, reason: null } : { ok: false, reason: written?.reason ?? "unknown" };
@@ -259,10 +290,34 @@ export function createCampaignScheduler({
 							cpOffset < startupEvents.length &&
 							(cpOffset < 0 || startupEvents[cpOffset]?.event_digest === cp.last_event_digest);
 						if (prefixValid) {
-							const resumed = projectWithPrior(cp);
-							if (resumed.ok && projectionDigest(resumed) === cp.projection_digest) {
-								baseProjection = resumed;
-								usedCheckpoint = true;
+							// F13: validate the checkpoint's PREFIX state digest FIRST (reduce only
+							// the prefix events on top of the cached state), THEN apply the tail.
+							const prefixEvents = startupEvents.slice(0, cpOffset + 1);
+							const prefixState = projectQueueFromEvents({
+								campaign_id: manifest.campaign_id,
+								tasks: staticTasks,
+								events: prefixEvents,
+								revision: manifest.revision ?? 0,
+								manifest,
+								artifacts,
+								priorState: {
+									queue: cp.queue,
+									budget: cp.budget,
+									control: cp.control,
+									proposals: cp.proposals ?? [],
+									outcomes: cp.outcomes ?? [],
+									applied_commands: cp.applied_commands ?? [],
+									applied_outcomes: cp.applied_outcomes ?? [],
+									tail_offset: cpOffset,
+								},
+							});
+							if (prefixState.ok && projectionDigest(prefixState) === cp.projection_digest) {
+								// The cached prefix is trusted; apply the tail on top of it.
+								const resumed = projectWithPrior(cp);
+								if (resumed.ok) {
+									baseProjection = resumed;
+									usedCheckpoint = true;
+								}
 							}
 						}
 					}
