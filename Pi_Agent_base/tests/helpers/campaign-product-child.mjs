@@ -20,6 +20,7 @@ import {
 	buildFixtureCampaign,
 	contentDigest,
 	createCampaignScheduler,
+	FIXTURE_SCOPE,
 	projectionSnapshot,
 	projectQueueFromEvents,
 	readCheckpoint,
@@ -96,6 +97,7 @@ function stageJudgments(task, status, episodeId) {
 				task_id: task.task_id,
 				criterion: { criterion_id: stage.criteria?.[0] ?? null, expected: stage.criteria?.[0] ?? null },
 				observed: bound ? { synthetic: true } : null,
+				scope: task?.scope ? { ...task.scope } : null,
 				oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 				provenance: { source: "oracle", independent: true, task_id: task.task_id, stage_id: stage.stage_id },
 				evidence_refs: bound ? [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }] : [],
@@ -114,7 +116,7 @@ function boundOutcome(taskId, task, status, episodeId, extra = {}) {
 		task_oracle: true,
 		criterion: { criterion_id: task?.goal?.goal_id ?? null, expected: task?.goal?.goal_id ?? null },
 		observed: bound ? { synthetic: true } : null,
-		scope: null,
+		scope: task?.scope ? { ...task.scope } : null,
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: taskId },
 		evidence_refs: bound ? [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }] : [],
@@ -179,6 +181,8 @@ function dynamicProposal() {
 		budget_reservation: { wall_time_ms: 1000, model_requests: 1, tool_calls: 1 },
 		priority: 1,
 		stop_condition: "no remaining authorized target",
+		// The dynamic task inherits the fixture environment scope (F10/F11).
+		scope: { ...FIXTURE_SCOPE },
 	};
 }
 

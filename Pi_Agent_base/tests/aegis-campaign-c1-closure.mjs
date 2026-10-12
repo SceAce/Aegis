@@ -53,6 +53,8 @@ const staticTasks = [
 ];
 
 // A task with a goal/stage definition so the trusted Outcome resolver can bind.
+const TASK_SCOPE = { environment: "fixture-env" };
+
 function boundTask(id, depends_on = []) {
 	return {
 		task_id: id,
@@ -60,6 +62,7 @@ function boundTask(id, depends_on = []) {
 		depends_on,
 		goal: { goal_id: `${id}-goal`, description: "goal", success_criteria: [`${id}-criterion`] },
 		stages: [{ stage_id: `${id}-stage`, criteria: [`${id}-criterion`], required: true }],
+		scope: TASK_SCOPE,
 	};
 }
 
@@ -75,7 +78,7 @@ function boundSuccess(task) {
 		task_oracle: true,
 		criterion: { criterion_id: goalId, expected: goalId },
 		observed: { synthetic: true },
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: task.task_id },
 		evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],
@@ -94,7 +97,7 @@ function stageSuccess(task) {
 		task_id: task.task_id,
 		criterion: { criterion_id: criterion, expected: criterion },
 		observed: { synthetic: true },
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: task.task_id, stage_id: stage.stage_id },
 		evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],

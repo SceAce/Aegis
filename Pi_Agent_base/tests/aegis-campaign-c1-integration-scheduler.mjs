@@ -13,7 +13,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildFixtureCampaign, createCampaignScheduler, projectQueueFromEvents } from "../memory/campaign/index.mjs";
+import {
+	buildFixtureCampaign,
+	createCampaignScheduler,
+	FIXTURE_SCOPE,
+	projectQueueFromEvents,
+} from "../memory/campaign/index.mjs";
 
 const failures = [];
 async function test(name, fn) {
@@ -72,6 +77,7 @@ function judged(taskId, task, status = "success", extra = {}) {
 					task_id: taskId,
 					criterion: { criterion_id: stage.criteria?.[0] ?? null, expected: stage.criteria?.[0] ?? null },
 					observed: { synthetic: true },
+					scope: { ...FIXTURE_SCOPE },
 					oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 					provenance: { source: "oracle", independent: true, task_id: taskId, stage_id: stage.stage_id },
 					evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }],
@@ -93,7 +99,7 @@ function judged(taskId, task, status = "success", extra = {}) {
 			task_oracle: true,
 			criterion: { criterion_id: task.goal?.goal_id ?? null, expected: task.goal?.goal_id ?? null },
 			observed: bound ? { synthetic: true } : null,
-			scope: null,
+			scope: { ...FIXTURE_SCOPE },
 			oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 			provenance: { source: "oracle", independent: true, task_id: taskId },
 			evidence_refs: bound ? [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }] : [],

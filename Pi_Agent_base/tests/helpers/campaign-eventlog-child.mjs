@@ -15,7 +15,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildFixtureCampaign } from "../../memory/campaign/index.mjs";
+import { buildFixtureCampaign, FIXTURE_SCOPE } from "../../memory/campaign/index.mjs";
 import { EventLog } from "../../memory/runtime/events.mjs";
 
 const [workDir, mode = "intent"] = process.argv.slice(2);
@@ -89,6 +89,7 @@ if (mode === "complete") {
 					task_id: taskId,
 					criterion: { criterion_id: stage.criteria[0], expected: stage.criteria[0] },
 					observed: { synthetic: true },
+					scope: { ...FIXTURE_SCOPE },
 					oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 					provenance: { source: "oracle", independent: true, task_id: taskId, stage_id: stage.stage_id },
 					evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }],
@@ -116,6 +117,7 @@ if (mode === "complete") {
 				task_oracle: true,
 				criterion: { criterion_id: manifest.tasks[0].goal.goal_id, expected: manifest.tasks[0].goal.goal_id },
 				observed: { synthetic: true },
+				scope: { ...FIXTURE_SCOPE },
 				oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 				provenance: { source: "oracle", independent: true, task_id: taskId },
 				evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }],

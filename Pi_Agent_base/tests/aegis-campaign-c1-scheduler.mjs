@@ -77,9 +77,14 @@ function artifactsFor(taskId) {
 	return { [`artifact:${taskId}`]: { ref_id: `artifact:${taskId}`, digest: `sha256:synthetic-${taskId}` } };
 }
 
+const TASK_SCOPE = { environment_fingerprint: "fixture-env", domain: "fixture" };
+
 function makeFixture() {
 	const fixture = buildFixtureCampaign();
 	const manifest = fixture.manifest;
+	// F10: every task needs a trusted CURRENT scope; the fixture historically had
+	// none, so declare one here (all tasks share the fixture environment).
+	for (const task of manifest.tasks) if (task.scope == null) task.scope = { ...TASK_SCOPE };
 	const workerCalls = [];
 	const worker = {
 		async run({ task }) {
@@ -119,6 +124,7 @@ function makeOracle(script) {
 							task_id: task.task_id,
 							criterion: { criterion_id: stage.criteria?.[0] ?? null, expected: stage.criteria?.[0] ?? null },
 							observed: { synthetic: true },
+							scope: { ...TASK_SCOPE },
 							oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 							provenance: { source: "oracle", independent: true, task_id: task.task_id, stage_id: stage.stage_id },
 							evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],
@@ -139,7 +145,7 @@ function makeOracle(script) {
 					task_oracle: true,
 					criterion: { criterion_id: task.goal?.goal_id ?? null, expected: task.goal?.goal_id ?? null },
 					observed: bound ? { synthetic: true, task_id: task.task_id } : null,
-					scope: entry.scope ?? null,
+					scope: entry.scope ?? { ...TASK_SCOPE },
 					oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 					provenance: { source: "oracle", independent: true, task_id: task.task_id },
 					evidence_refs: bound ? [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }] : [],
@@ -252,6 +258,7 @@ await test("RUN-01: budget exhaustion stops new dispatch and records a budget st
 	// A campaign whose budget is already fully consumed by a prior dispatch: seed a
 	// consumed event so the live ledger reports no fundable remaining budget.
 	const zeroBudget = structuredClone(manifest);
+	for (const task of zeroBudget.tasks) task.scope = { ...TASK_SCOPE };
 	zeroBudget.budget.model_requests = 1;
 	zeroBudget.budget.wall_time_ms = 200000;
 	zeroBudget.tasks[0].task_budget = { wall_time_ms: 100000, model_requests: 1, tool_calls: 1 };
@@ -344,6 +351,7 @@ await test("BUD-10/BUD-16: the scheduler reads the projection ledger and stops a
 	// an injected budgetExhausted() callback (which stays false here).
 	const fixture = buildFixtureCampaign();
 	const manifest = structuredClone(fixture.manifest);
+	for (const task of manifest.tasks) task.scope = { ...TASK_SCOPE };
 	const [taskA, taskB] = manifest.tasks;
 	// taskA may consume one model request; taskB may consume none. The Campaign
 	// limit is exactly one request, so only the first dispatch fits.
@@ -434,6 +442,7 @@ await test("CKP-12: a checkpoint whose tail digest mismatches the event log is r
 await test("CKP-13: a checkpoint write failure leaves the event log authoritative", async () => {
 	const fixture = buildFixtureCampaign();
 	const manifest = fixture.manifest;
+	for (const task of manifest.tasks) task.scope = { ...TASK_SCOPE };
 	const taskId = manifest.tasks[0].task_id;
 	const sink = makeSink();
 	const scheduler = createCampaignScheduler({
@@ -461,6 +470,7 @@ await test("CKP-13: a checkpoint write failure leaves the event log authoritativ
 await test("CKP-15: rebuild from checkpoint+tail equals a full replay", async () => {
 	const fixture = buildFixtureCampaign();
 	const manifest = fixture.manifest;
+	for (const task of manifest.tasks) task.scope = { ...TASK_SCOPE };
 	const taskId = manifest.tasks[0].task_id;
 	const sink = makeSink();
 	const scheduler = createCampaignScheduler({

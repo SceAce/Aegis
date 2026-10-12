@@ -103,6 +103,8 @@ function makeAdmission(taskId) {
 	return { manifest, proposal, decision, submittedEvent, admittedEvent };
 }
 
+const TASK_SCOPE = { environment: "fixture-env" };
+
 const staticTasks = [
 	{
 		task_id: TASK_A,
@@ -110,6 +112,7 @@ const staticTasks = [
 		depends_on: [],
 		goal: { goal_id: "goal-a", description: "a", success_criteria: ["c-a"] },
 		stages: [{ stage_id: "stage-a", criteria: ["c-a"], required: true }],
+		scope: TASK_SCOPE,
 	},
 	{
 		task_id: TASK_B,
@@ -117,6 +120,7 @@ const staticTasks = [
 		depends_on: [TASK_A],
 		goal: { goal_id: "goal-b", description: "b", success_criteria: ["c-b"] },
 		stages: [{ stage_id: "stage-b", criteria: ["c-b"], required: true }],
+		scope: TASK_SCOPE,
 	},
 ];
 
@@ -131,7 +135,7 @@ function boundSuccessA(overrides = {}) {
 		task_oracle: true,
 		criterion: { criterion_id: "goal-a", expected: "goal-a" },
 		observed: { synthetic: true },
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: TASK_A },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a" }],
@@ -151,7 +155,7 @@ function stageSuccessA(overrides = {}) {
 		task_id: TASK_A,
 		criterion: { criterion_id: "c-a", expected: "c-a" },
 		observed: { synthetic: true },
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: TASK_A, stage_id: "stage-a" },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a" }],

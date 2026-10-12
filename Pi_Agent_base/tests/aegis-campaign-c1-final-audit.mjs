@@ -47,12 +47,15 @@ function ev(o, kind, payload, source = { kind: "runtime" }, campaignId = CAMPAIG
 	};
 }
 
+const SCOPE = { environment_fingerprint: "fixture-env", domain: "fixture" };
+
 const taskA = {
 	task_id: "task-a",
 	order: 1,
 	depends_on: [],
 	goal: { goal_id: "goal-a", description: "a", success_criteria: ["c-a"] },
 	stages: [{ stage_id: "stage-a", criteria: ["c-a"], required: true }],
+	scope: { ...SCOPE },
 	task_budget: { wall_time_ms: 100, model_requests: 3, tool_calls: 3 },
 };
 const taskB = {
@@ -61,6 +64,7 @@ const taskB = {
 	depends_on: ["task-a"],
 	goal: { goal_id: "goal-b", description: "b", success_criteria: ["c-b"] },
 	stages: [{ stage_id: "stage-b", criteria: ["c-b"], required: true }],
+	scope: { ...SCOPE },
 	task_budget: { wall_time_ms: 100, model_requests: 3, tool_calls: 3 },
 };
 const ARTIFACTS = { "artifact:task-a": { ref_id: "artifact:task-a", digest: "sha256:content-a" } };
@@ -75,6 +79,7 @@ function boundOutcome(over = {}) {
 		task_oracle: true,
 		criterion: { criterion_id: "goal-a", expected: "goal-a" },
 		observed: { synthetic: true },
+		scope: { ...SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: "task-a" },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a", digest: "sha256:content-a" }],
@@ -92,6 +97,7 @@ function stageOutcome(over = {}) {
 		task_id: "task-a",
 		criterion: { criterion_id: "c-a", expected: "c-a" },
 		observed: { synthetic: true },
+		scope: { ...SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: "task-a", stage_id: "stage-a" },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a" }],
@@ -326,7 +332,7 @@ await test("F2-SRC-ORACLE-OK: a matching oracle source is accepted", () => {
 		result: boundOutcome(),
 		task: taskA,
 		episodeId: EP,
-		scope: null,
+		scope: { ...SCOPE },
 		artifacts: ARTIFACTS,
 		eventSource: "oracle",
 	});
@@ -338,7 +344,7 @@ await test("F2-SRC-RESOLVER-RUNTIME: the resolver refuses a runtime event source
 		result: boundOutcome(),
 		task: taskA,
 		episodeId: EP,
-		scope: null,
+		scope: { ...SCOPE },
 		artifacts: ARTIFACTS,
 		eventSource: "runtime",
 	});
@@ -455,6 +461,7 @@ await test("F3-RESOLVER: resolveTaskFromOutcomes requires every required stage",
 		stageResults: [stageOutcome()],
 		taskResult: boundOutcome(),
 		episodeId: EP,
+		scope: { ...SCOPE },
 		artifacts: ARTIFACTS,
 		eventSource: "oracle",
 	});
@@ -464,6 +471,7 @@ await test("F3-RESOLVER: resolveTaskFromOutcomes requires every required stage",
 		stageResults: [],
 		taskResult: boundOutcome(),
 		episodeId: EP,
+		scope: { ...SCOPE },
 		artifacts: ARTIFACTS,
 		eventSource: "oracle",
 	});
@@ -494,6 +502,7 @@ await test("F4-DIGEST-CHANGED: a changed sentinel changes the bound reference", 
 			result: boundOutcome({ evidence_refs: [ref] }),
 			task: taskA,
 			episodeId: EP,
+			scope: { ...SCOPE },
 			artifacts: indexV1,
 			eventSource: "oracle",
 		}).ok,
@@ -504,6 +513,7 @@ await test("F4-DIGEST-CHANGED: a changed sentinel changes the bound reference", 
 			result: boundOutcome({ evidence_refs: [ref] }),
 			task: taskA,
 			episodeId: EP,
+			scope: { ...SCOPE },
 			artifacts: indexV2,
 			eventSource: "oracle",
 		}).ok,

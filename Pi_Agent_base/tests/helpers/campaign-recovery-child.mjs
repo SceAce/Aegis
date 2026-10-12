@@ -14,7 +14,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildFixtureCampaign, createCampaignScheduler, projectQueueFromEvents } from "../../memory/campaign/index.mjs";
+import {
+	buildFixtureCampaign,
+	createCampaignScheduler,
+	FIXTURE_SCOPE,
+	projectQueueFromEvents,
+} from "../../memory/campaign/index.mjs";
 import { EventLog } from "../../memory/runtime/events.mjs";
 
 const [workDir, scenario = "recover"] = process.argv.slice(2);
@@ -77,6 +82,7 @@ function boundOutcome(taskId, task, status, episodeId, extra = {}) {
 		task_oracle: true,
 		criterion: { criterion_id: task?.goal?.goal_id ?? null, expected: task?.goal?.goal_id ?? null },
 		observed: bound ? { synthetic: true } : null,
+		scope: { ...FIXTURE_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: taskId },
 		evidence_refs: bound ? [{ ref_type: "artifact", ref_id: `artifact:${taskId}` }] : [],
@@ -100,6 +106,7 @@ function stageJudgments(task, status) {
 				task_id: task.task_id,
 				criterion: { criterion_id: st.criteria?.[0] ?? null, expected: st.criteria?.[0] ?? null },
 				observed: { synthetic: true },
+				scope: { ...FIXTURE_SCOPE },
 				oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 				provenance: { source: "oracle", independent: true, task_id: task.task_id, stage_id: st.stage_id },
 				evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],

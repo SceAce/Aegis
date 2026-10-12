@@ -50,12 +50,15 @@ function ev(offset, kind, payload, source = { kind: "runtime" }) {
 	};
 }
 
+const TASK_SCOPE = { environment: "local" };
+
 const taskA = {
 	task_id: TASK_A,
 	order: 1,
 	depends_on: [],
 	goal: { goal_id: "goal-a", description: "a", success_criteria: ["c-a"] },
 	stages: [{ stage_id: "stage-a", criteria: ["c-a"], required: true }],
+	scope: { ...TASK_SCOPE },
 	task_budget: { wall_time_ms: 100, model_requests: 3, tool_calls: 3 },
 };
 const taskB = {
@@ -64,6 +67,7 @@ const taskB = {
 	depends_on: [TASK_A],
 	goal: { goal_id: "goal-b", description: "b", success_criteria: ["c-b"] },
 	stages: [{ stage_id: "stage-b", criteria: ["c-b"], required: true }],
+	scope: { ...TASK_SCOPE },
 	task_budget: { wall_time_ms: 100, model_requests: 3, tool_calls: 3 },
 };
 const ARTIFACTS = { "artifact:task-a": { ref_id: "artifact:task-a", digest: "sha256:real-temp-a" } };
@@ -79,7 +83,7 @@ function boundStage(overrides = {}) {
 		task_id: TASK_A,
 		criterion: { criterion_id: "c-a", expected: "c-a" },
 		observed: { synthetic: true },
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: TASK_A, stage_id: "stage-a" },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a", digest: "sha256:real-temp-a" }],
@@ -97,7 +101,7 @@ function boundOutcome(overrides = {}) {
 		task_oracle: true,
 		criterion: { criterion_id: "goal-a", expected: "goal-a" },
 		observed: { synthetic: true },
-		scope: { environment: "local" },
+		scope: { ...TASK_SCOPE },
 		oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 		provenance: { source: "oracle", independent: true, task_id: TASK_A },
 		evidence_refs: [{ ref_type: "artifact", ref_id: "artifact:task-a", digest: "sha256:real-temp-a" }],
@@ -137,7 +141,7 @@ test("ORDER-POS: reduce uses append order, not per-episode sequence", () => {
 
 test("ORDER-NULL: mixed null/int sequence reduces in append order", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A, sequence: null }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP, sequence: null }),
 		ev(
 			1,
 			"campaign.oracle.result",
@@ -220,7 +224,7 @@ test("ORDER-DEDUP: the same command id is applied once", () => {
 
 test("OUT-POS: a fully bound trusted success completes and frees the dependency", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 		ev(
 			1,
 			"campaign.oracle.result",
@@ -338,7 +342,7 @@ test("OUT-RESOLVER: resolveTaskOutcome requires observed + resolvable evidence",
 		result: boundOutcome(),
 		task: taskA,
 		episodeId: EP,
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		artifacts: ARTIFACTS,
 	});
 	assert.equal(ok.ok, true, ok.reasons?.join("; "));
@@ -346,7 +350,7 @@ test("OUT-RESOLVER: resolveTaskOutcome requires observed + resolvable evidence",
 		result: boundOutcome({ evidence_refs: [] }),
 		task: taskA,
 		episodeId: EP,
-		scope: null,
+		scope: { ...TASK_SCOPE },
 		artifacts: ARTIFACTS,
 	});
 	assert.equal(noEvidence.ok, false);

@@ -25,7 +25,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { buildFixtureCampaign, createCampaignScheduler } from "../../memory/campaign/index.mjs";
+import { buildFixtureCampaign, createCampaignScheduler, FIXTURE_SCOPE } from "../../memory/campaign/index.mjs";
 
 const [workDir, boundary = "none"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });
@@ -85,6 +85,7 @@ const dynamicTask = {
 	task_type: "observe",
 	goal: { goal_id: "observe_again", description: "observe again", success_criteria: ["door.locked == true"] },
 	stages: [{ stage_id: "stage-dyn-child-1", criteria: ["door.locked == true"], required: true }],
+	scope: { ...FIXTURE_SCOPE },
 	oracle_ref: "fixture.oracle.v1",
 	task_budget: { wall_time_ms: 1000, model_requests: 1, tool_calls: 1 },
 };
@@ -160,6 +161,7 @@ const oracle = {
 					task_id: task.task_id,
 					criterion: { criterion_id: st.criteria?.[0] ?? null, expected: st.criteria?.[0] ?? null },
 					observed: { synthetic: true },
+					scope: { ...FIXTURE_SCOPE },
 					oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 					provenance: { source: "oracle", independent: true, task_id: task.task_id, stage_id: st.stage_id },
 					evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],
@@ -179,6 +181,7 @@ const oracle = {
 				task_oracle: true,
 				criterion: { criterion_id: task.goal?.goal_id ?? null, expected: task.goal?.goal_id ?? null },
 				observed: { synthetic: true },
+				scope: { ...FIXTURE_SCOPE },
 				oracle: { oracle_id: "synthetic.oracle", source: "oracle" },
 				provenance: { source: "oracle", independent: true, task_id: task.task_id },
 				evidence_refs: [{ ref_type: "artifact", ref_id: `artifact:${task.task_id}` }],
