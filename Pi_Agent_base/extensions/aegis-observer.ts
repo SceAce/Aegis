@@ -427,12 +427,13 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	/**
 	 * True when `handoff.completed` for `requestId` is already durable on disk.
 	 *
-	 * The completion is written by the NEW session's `session_start`
-	 * (`handleSessionStart`); the OLD session's `withSession` callback runs
-	 * afterwards and must NOT write a second completion (and must not resurrect a
-	 * closed EventLog handle). Reading the committed file is the one check that
-	 * works across both extension instances, so completion stays idempotent even
-	 * when a rebind races the callback.
+	 * The completion is written by the NEW session's first `before_agent_start`
+	 * (`recordStagedHandoffCompletion`), which runs only after the SDK rebound the
+	 * Session and its extension bind succeeded. The old session's `withSession`
+	 * callback runs before the new prompt and must NOT write a completion, and
+	 * must not resurrect a closed EventLog handle. Reading the committed file is
+	 * the check that works across both extension instances, so completion stays
+	 * idempotent even when a rebind races the callback.
 	 */
 	async function handoffAlreadyCompleted(requestId: string | undefined): Promise<boolean> {
 		if (!requestId) return false;
@@ -454,15 +455,57 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		return false;
 	}
 
+	/**
+	 * HOST-OWNED COMPLETION at the post-bind boundary. A staged handoff whose
+	 * episode is still open is recorded as `handoff.completed` exactly once, and
+	 * the staged file is retired only after the durable append. Called from
+	 * `before_agent_start` (the first prompt of the replacement Session, which is
+	 * strictly after the SDK rebind/extension bind succeeded).
+	 */
+	async function recordStagedHandoffCompletion(): Promise<void> {
+		let handoff: { episode_id?: string; request_id?: string } | null = null;
+		try {
+			handoff = JSON.parse(await readFile(handoffPath(), "utf8"));
+		} catch {
+			return; // no staged handoff
+		}
+		if (!handoff?.episode_id || !handoff.request_id) return;
+		const episode = state.episodes[handoff.episode_id];
+		if (!episode || (episode.status !== "open" && episode.status !== "active")) return;
+		// Bind the completion to THIS (the new) session, which is the one that has
+		// actually started.
+		if (await handoffAlreadyCompleted(handoff.request_id)) {
+			await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
+			return;
+		}
+		const recorded = await emit(
+			"handoff.completed",
+			{ request_id: handoff.request_id, to_session: sessionId, episode_id: handoff.episode_id },
+			{ episode_id: handoff.episode_id, source_kind: "runtime" },
+		);
+		if (!recorded.ok) {
+			process.stderr.write(
+				`[aegis-observer] handoff.completed was not committed (${recorded.error || "audit unavailable"}); leaving the staged handoff for recovery\n`,
+			);
+			return;
+		}
+		await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
+	}
+
 	async function handleSessionStart(ctx: ExtensionContext) {
 		await ensureLog(ctx);
 		sessionId = sessionKey(ctx);
 		if (!cliWorkspace && ctx.cwd) cliWorkspace = ctx.cwd;
 		refreshProjections();
-		// A pending handoff from a previous short session: bind the SAME episode
-		// and record completion. Session != Episode. Only an OPEN episode may be
-		// resumed from a staged handoff; a stale file for a closed/moved episode
-		// is ignored and left on disk (never silently grants continuation).
+		// A pending handoff from a previous short session: bind the SAME episode so
+		// the new Session continues the task. Session != Episode. The COMPLETION
+		// record is NOT written here: `session_start` fires inside the SDK bind
+		// callback, before the Host has confirmed the whole create/bind/continuation
+		// cycle. The trusted Host (handoff-host / the supervisor, or the `/aegis
+		// switch` command after `newSession` returns) owns `handoff.completed` and
+		// retires the staged file. Only an OPEN episode may be resumed from a staged
+		// handoff; a stale file for a closed/moved episode is ignored and left on
+		// disk (never silently grants continuation).
 		try {
 			const raw = await readFile(handoffPath(), "utf8");
 			const handoff = JSON.parse(raw);
@@ -471,17 +514,6 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				episodeId = handoff.episode_id;
 				taskId = handoff.task_id || episode.task_id || taskId;
 				currentGoal = episode.goal?.description || currentGoal;
-				// The NEW session owns the completion record. Only write it once: the
-				// old session's `withSession` callback runs after this and checks the
-				// committed file before writing anything.
-				if (!(await handoffAlreadyCompleted(handoff.request_id))) {
-					await emit(
-						"handoff.completed",
-						{ request_id: handoff.request_id, to_session: sessionId, episode_id: handoff.episode_id },
-						{ episode_id: handoff.episode_id, source_kind: "runtime" },
-					);
-				}
-				await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
 			} else if (handoff?.episode_id) {
 				process.stderr.write(
 					`[aegis-observer] ignoring stale handoff for ${handoff.episode_id}: episode is ${episode ? episode.status : "missing"}\n`,
@@ -510,6 +542,14 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		if (ctx.cwd) cliWorkspace = ctx.cwd;
 		taskId = process.env.AEGIS_TASK_ID || taskId || sessionId;
 		refreshProjections();
+
+		// HOST-OWNED COMPLETION (post-bind). A switch is only complete once the
+		// new Session has actually started its first prompt, which happens AFTER
+		// the SDK rebound the Session and its extension bind succeeded. Writing
+		// the completion at `session_start` was too early (that fires inside
+		// `bindExtensions`, before the Host rebind/continuation finished).
+		// This is idempotent and reads the staged request as the trigger.
+		await recordStagedHandoffCompletion();
 
 		const existing = resolveOpenEpisode(state, taskId);
 		if (existing) {
@@ -1696,22 +1736,10 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					try {
 						switchResult = await ctx.newSession({
 							withSession: async (next) => {
-								// The NEW session's `session_start` (handleSessionStart) records
-								// handoff.completed and renames the staged file. Only write here
-								// when that did not happen (e.g. an injected substitute that does
-								// not create a real session). Never write a second completion,
-								// and never append through the torn-down old log handle.
-								if (!(await handoffAlreadyCompleted(requestForSession))) {
-									try {
-										await emit(
-											"handoff.completed",
-											{ request_id: requestForSession, to_session: sessionKey(next), episode_id: episodeForSession },
-											{ episode_id: episodeForSession, source_kind: "runtime" },
-										);
-									} catch (error) {
-										process.stderr.write(`[aegis] handoff.completed append failed: ${String(error)}\n`);
-									}
-								}
+								// Continuation only. The completion record is written by the Host
+								// AFTER `newSession` returns non-cancelled, so a rebind/continuation
+								// failure cannot leave a false completion. The new session's
+								// `session_start` no longer writes it (it fires inside the bind).
 								await next.sendUserMessage(`[Aegis] continuing episode ${episodeForSession}: ${reasonForSession}`);
 							},
 						});
@@ -1729,6 +1757,22 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						// request staged so it can be retried deliberately.
 						notify("Aegis: session switch was cancelled; the handoff is still staged.", "warning");
 						return;
+					}
+					// The Host owns the completion and writes it only now that the whole
+					// create/bind/continuation cycle returned non-cancelled. It is idempotent.
+					if (!(await handoffAlreadyCompleted(requestForSession))) {
+						const recorded = await emit(
+							"handoff.completed",
+							{ request_id: requestForSession, to_session: sessionKey(commandCtx), episode_id: episodeForSession },
+							{ episode_id: episodeForSession, source_kind: "runtime" },
+						);
+						if (!recorded.ok) {
+							notify(
+								`Aegis: the session switched but the completion record was not durably committed (${recorded.error || "audit unavailable"}). The staged handoff is kept for recovery.`,
+								"error",
+							);
+							return;
+						}
 					}
 					await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
 					return;

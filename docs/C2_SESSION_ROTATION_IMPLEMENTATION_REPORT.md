@@ -201,3 +201,107 @@ push, no history rewrite.
   committed tree is exit 0.
 
 C2 self-review is not external acceptance. C3-C4a are outside this assignment.
+
+## 9. E1/E2 external-review follow-up (changes_required → fixed)
+
+External review `docs/C2_EXTERNAL_REVIEW.md` found two current-core counterexamples
+in `702c63c`. The reviewer committed red tests `dde83a7`
+(`aegis-c2-supervisor-boundaries.mjs`, `aegis-c2-budget-sdk.mjs`). Both are now
+fixed with minimal wiring; no C1/F16/C3/C4 scope was added.
+
+### E1 — committed rotation must enter the next admission gate
+
+Root cause: the budget gate read only the caller's base ledger; committed
+rotations were not part of the gate, and `max(base, localGeneration)` dropped the
+new charge when pre-existing cumulative usage exceeded the local generation.
+
+Fix (`session-supervisor.mjs`):
+
+- new `committedRotations(events, episodeId)` counts committed
+  `handoff.completed` rows bound to the episode;
+- the gate is `budgetAllowsSession(budget, committedRotations)` = remaining
+  `= limit - reserved - (base_consumed + committed_rotations)`; it is evaluated
+  **before** `newSession`;
+- the reported `budget_after.consumed.session_count = base_consumed +
+  committed_rotations_after`, so it is neither reset nor double-charged.
+
+Verified: `limit=2, base_used=1` refuses the second distinct request through a
+fresh supervisor with the unchanged base ledger and never calls `newSession`;
+`base_used=7, limit=8` reports `8`; a replay of the same request reuses and does
+not create again. Real SDK `aegis-c2-budget-sdk.mjs` reproduces the second
+refusal at the actual `runtime.session`/creation-counter level.
+
+### E2 — completion only after a verified Host create/bind
+
+Root cause: `applyStagedHandoff` treated a non-cancelled SDK return as verified;
+and the Observer wrote `handoff.completed` inside `session_start`, which the SDK
+emits inside `bindExtensions` — **before** the Host rebind/continuation cycle
+finishes. A rebind that threw after `bind()` still left one completion.
+
+Fix:
+
+- Observer no longer writes completion in `session_start`; it now records it in
+  `before_agent_start` (`recordStagedHandoffCompletion`) — the replacement
+  Session's first prompt, strictly after a successful rebind — keeping the
+  Observer as the single EventLog writer (a second Host writer would fork the
+  chain);
+- `applyStagedHandoff` no longer trusts the SDK return: after a non-cancelled
+  `newSession` it reads the committed completion (`readCommittedCompletion`,
+  uniqueness-checked), verifies the bound `runtime.session.sessionId` and the
+  request/episode, and retires the staged file only after a verified, durable
+  completion;
+- `session-supervisor.rotate` independently re-verifies a unique committed
+  completion bound to the episode and the bound session before returning
+  `applied:true`;
+- the `/aegis switch` command writes completion only after `newSession` returns
+  non-cancelled (post-bind).
+
+Verified: offline `recordCompletion:false` returns `applied:false`; the real SDK
+`bind-failure` mode injects a throw after `bind()` and the committed
+`handoff.completed` count stays `0` (was `1`).
+
+### E1/E2 commands and results
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c2-supervisor-boundaries.mjs            # exit 0 (4/4)
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c2-budget-sdk.mjs                               # exit 0
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c2-budget-sdk.mjs bind-failure                  # exit 0
+```
+
+- boundary suite: 4 tests, **4 pass / 0 fail**, exit 0 (was 1 pass / 3 fail).
+- SDK cumulative budget: pass. SDK bind-failure: pass (completion=0).
+- Original `aegis-c2-session-rotation.mjs`: **49 ok / 0 fail**, exit 0 (owner
+  change did not weaken it).
+- `aegis-observer-runtime-handoff.mjs` (manual `/aegis switch`, helper, cancel,
+  creation-failure, idempotency): **33 ok**, exit 0.
+- `aegis-observer-outcome-command` 38 ok; `aegis-observer-failclosed-pi` 5 ok;
+  `aegis-observer-data-use-pi` 32 ok; `observer-smoke` ok.
+- Campaign event-projection 22 ok, integration-scheduler 16 ok,
+  eventlog-durability 3 ok.
+- Biome on the four touched files: exit 0, no warnings.
+- Campaign tsc: exit 1, the same 10 pre-existing diagnostics; new
+  `session-supervisor.mjs` has 0 errors.
+
+### E1/E2 limited mutation
+
+| mutation | case | expected | actual |
+|---|---|---|---|
+| MUT-A gate ignores committed rotations | E1 boundary x2 + SDK | FAIL | **FAIL** (3 boundary fails) |
+| MUT-E helper + supervisor both skip completion verification | E2 boundary | FAIL | **FAIL** |
+| MUT-F re-add premature `session_start` completion | SDK bind-failure | FAIL | **FAIL** |
+| MUT-B/C/B2 remove one verification guard only | E2 | (no change) | pass — defense-in-depth |
+
+MUT-B/C/B2 are not blind spots: the helper, supervisor and Observer each verify
+independently, so removing one guard leaves behavior correct; MUT-E proves the
+chain is necessary.
+
+### Honest limitation
+
+The supervisor remains a **Host-callable entry**; the existing Campaign dispatch
+loop is not modified to call it automatically. The trusted owners introduced in
+this fix are explicit: the **Observer is the single EventLog writer** for
+completion (at the post-bind `before_agent_start`), and the **supervisor is the
+Host admission/verification owner** for budget and completion. No scheduling
+framework was added.
