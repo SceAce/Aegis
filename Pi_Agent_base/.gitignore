@@ -1,0 +1,4 @@
+# Runtime state, credentials, sessions, and local server sockets stay inside
+# Pi_Agent_base but must never be committed.
+/config/
+/runtime/

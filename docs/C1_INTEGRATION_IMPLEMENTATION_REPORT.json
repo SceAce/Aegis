@@ -1,0 +1,132 @@
+{
+  "schema": "aegis-c1-integration-implementation-report/1.0",
+  "generated_at": "2026-10-12T00:00:00Z",
+  "status": "C1 closure internally_verified / awaiting_external_review",
+  "c2_implemented": false,
+  "orchestration": {
+    "child_agent_tool_available": false,
+    "execution": "serial master-DS role switching (test-author/implementer/reviewer)",
+    "fabricated_child_reports": false
+  },
+  "baseline": {
+    "git_rev_parse_head": "00000000000000000000000000000000",
+    "git_head_note": "branch-ref placeholder; true tip from reflog is 972acd9",
+    "git_reflog_tip": "972acd9",
+    "node": "v26.10.0",
+    "biome": "2.3.5",
+    "campaign_suites_pre_fix": "9/9 exit 0",
+    "biome_warnings_pre_fix": 0
+  },
+  "environment_anomaly": {
+    "sha256_unavailable": true,
+    "detail": "crypto.createHash/randomUUID/subtle.digest, shasum, md5, sha256sum all return the all-zero placeholder; no NODE_OPTIONS preload",
+    "test_consequence": "digest tests assert cross-path structural equality and helper usage, never a hard-coded real digest"
+  },
+  "c1ext_closure": [
+    {"id": "C1EXT-01", "status": "fixed", "evidence": "outcome-resolver.mjs + OUT-* cases; mutation killed"},
+    {"id": "C1EXT-02", "status": "fixed", "evidence": "unified commit(); COMMIT-* cases; mutation killed"},
+    {"id": "C1EXT-03", "status": "fixed", "evidence": "prefix+tail recovery; CKP-* cases; mutation killed"},
+    {"id": "C1EXT-04", "status": "fixed", "evidence": "stream.mjs append order; ORDER-* cases; mutation killed"},
+    {"id": "C1EXT-05", "status": "fixed", "evidence": "submitted index + full definition + projection dispatch; DYN-* + E2E-NORMAL; mutation killed"},
+    {"id": "C1EXT-06", "status": "fixed", "evidence": "reserve-before-effect strict gate; BUD-* cases; mutation killed"},
+    {"id": "C1EXT-07", "status": "fixed", "evidence": "control from projection + reconcile; CTRL-* + REC-* + E2E-CONTROL; mutation killed"}
+  ],
+  "files_changed": {
+    "modified": [
+      "Pi_Agent_base/memory/campaign/projection.mjs",
+      "Pi_Agent_base/memory/campaign/scheduler.mjs",
+      "Pi_Agent_base/memory/campaign/ownership.mjs",
+      "Pi_Agent_base/memory/campaign/event-contract.mjs",
+      "Pi_Agent_base/memory/campaign/queue.mjs",
+      "Pi_Agent_base/memory/campaign/index.mjs"
+    ],
+    "added": [
+      "Pi_Agent_base/memory/campaign/stream.mjs",
+      "Pi_Agent_base/memory/campaign/outcome-resolver.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-contracts.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-recovery.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-e2e.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-product-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-recovery-child.mjs"
+    ],
+    "tests_updated": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-scheduler-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-eventlog-child.mjs"
+    ],
+    "not_modified": [
+      "Pi_Agent_base/pi/** (embedded Pi core)",
+      "credentials / model settings / lockfiles",
+      "Pi_Agent_base/memory/runtime/events.mjs (reused read-only)",
+      "deleted legacy Python tree",
+      "root AGENTS.md"
+    ]
+  },
+  "commands": [
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-closure-c0.mjs", "exit": 0, "ok": 39},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs", "exit": 0, "ok": 58},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs", "exit": 0, "ok": 12},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs", "exit": 0, "ok": 16},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs", "exit": 0, "ok": 29},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs", "exit": 0, "ok": 3},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-contracts.mjs", "exit": 0, "ok": 21},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-scheduler.mjs", "exit": 0, "ok": 16},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-e2e.mjs", "exit": 0, "ok": 5},
+    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>", "exit": 0, "warnings": 0},
+    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10}
+  ],
+  "regression": {
+    "offline": ["aegis-workflow-evidence-d", "aegis-workflow-engine-d", "aegis-runtime-core-smoke", "aegis-runtime-effective-board", "memory-runtime-batch-b-smoke", "memory-runtime-learning-evidence-smoke", "observer-smoke", "aegis-learning-bridge-e"],
+    "offline_all_exit": 0,
+    "real_pi_faux": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"],
+    "real_pi_faux_all_exit": 0
+  },
+  "mutations": [
+    {"mutation": "accept status:success without binding", "case": "OUT-*", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "return ok on post-effect append failure", "case": "COMMIT-BUDGET", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "re-sort by episode sequence", "case": "ORDER-POS", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "ignore checkpoint priorState.control", "case": "ORDER-CONTROL", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "inline admitted without submitted", "case": "DYN-NOSUB", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "dispatch from the initial array only", "case": "E2E-NORMAL", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "borrow Campaign remaining without reservation", "case": "BUD-ZERO/BUD-BOUND", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "scheduler ignores checkpoint prefix digest", "case": "CKP-FOREIGN", "expected": "FAIL", "actual": "FAIL"}
+  ],
+  "evidence": {
+    "scheduler_real_eventlog": true,
+    "dynamic_task_event_driven": true,
+    "budget_conservation": true,
+    "checkpoint_prefix_plus_tail": true,
+    "control_survives_restart": true,
+    "reconcile_applies_outcome_without_rerun": true,
+    "sigterm_vs_sigkill_distinct": true,
+    "external_side_effect_exactly_once_claimed": false
+  },
+  "open_findings": {"P0": 0, "P1": 0, "P2": []},
+  "blocked": [],
+  "known_risks": [
+    "Single-host ownership only.",
+    "External side-effect exactly-once not claimed (no Broker/executor).",
+    "Real SHA256 values unavailable in this harness (stubbed).",
+    "tsc: 0 campaign errors; 10 pre-existing errors in imported untyped runtime files."
+  ],
+  "not_implemented": ["C2 real Pi Host-level Session rotation", "C3 real Broker/Oracle adapters", "C4/C4a Web UI and Pi /aegis commands"],
+  "statements": {
+    "auto_invoked_gpt_6_1_sol": false,
+    "real_target_network_or_credentials_used": false,
+    "synthetic_evidence_labeled": true,
+    "session_count_is_not_episode_count": true,
+    "unknown_is_not_failure": true,
+    "external_side_effect_exactly_once_claimed": false,
+    "external_acceptance_pending": true
+  }
+}

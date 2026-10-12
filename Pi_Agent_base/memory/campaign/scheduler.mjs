@@ -1,0 +1,673 @@
+// Aegis Campaign C1 (INT-*) — durable single-worker scheduler control loop.
+//
+// One Campaign, one writer, at most one active Task. Injected interfaces:
+//
+//   sink      : { async append(event) -> {ok, event, durable, error}, replay?() }
+//   worker    : { async run({task}) -> {ok, outcome_ref} | {ok:false, failure_mode} }
+//   oracle    : { async judge({task, outcome_ref}) -> result }
+//               { async reconcile({task, intent, effect_probe}) -> {status, ...} } (optional)
+//   clock     : () => number (ms). NEVER the wall clock in tests.
+//   budgetAccount : synthetic per-dispatch cost (explicitly labelled synthetic).
+//
+// Invariants (C1_INTEGRATION_CLOSURE_TASK §3):
+//   * INT-ORDER: the projection reduces in verified append order.
+//   * INT-COMMIT: EVERY append result is checked. A non-durable append before an
+//     effect ⇒ no worker. A non-durable append after an effect ⇒ degraded, stop
+//     new dispatch, return non-ok.
+//   * INT-BUDGET: a dispatch requires the task's OWN persisted reservation; the
+//     Campaign remaining is not borrowed.
+//   * INT-DYNAMIC: tasks are resolved from the projection (static + admitted
+//     dynamic definitions), never from a mutable initial array.
+//   * INT-RECOVERY: control state comes from the projection; run() never
+//     implicitly resumes; stranded intents are reconciled through the Oracle.
+//   * INT-CHECKPOINT: the checkpoint binds the committed stream offset + tail;
+//     recovery uses cache+tail when it is a verified prefix, else full replay.
+
+import { digest } from "../fixture/contracts.mjs";
+import { canonicalManifestDigest } from "./manifest.mjs";
+import { acquireCampaignOwnership, readCheckpoint, releaseCampaignOwnership, writeCheckpoint } from "./ownership.mjs";
+import { canDispatch, parseBudgetStrict, projectQueueFromEvents, remainingBudget } from "./projection.mjs";
+import { buildCommittedStream } from "./stream.mjs";
+
+export const SCHEDULER_VERSION = "2.0.0";
+
+function projectionDigest(projection) {
+	// Digest of the PROJECTION STATE only (queue + ledger + control). Stream
+	// position (tail offset/digest) is intentionally excluded so a prefix
+	// checkpoint and its tail replay can be compared for state equivalence.
+	return digest({
+		tasks: projection.tasks.map((task) => ({
+			task_id: task.task_id,
+			state: task.state,
+			reservation: task.reservation ?? null,
+			budget_consumed: task.budget_consumed ?? null,
+			task_outcome_status: task.task_outcome_status ?? null,
+			task_outcome_ref: task.task_outcome_ref ?? null,
+			stop_reason: task.stop_reason ?? null,
+		})),
+		budget: projection.budget,
+		control: { state: projection.control.state, reason: projection.control.reason },
+	});
+}
+
+/**
+ * @param {{[key: string]: any}} args
+ */
+export function createCampaignScheduler({
+	manifest,
+	ownedTasks = [],
+	baseDir,
+	sink,
+	worker,
+	oracle,
+	clock = () => Date.now(),
+	budgetAccount = { wall_time_ms: 1, model_requests: 1, tool_calls: 1 },
+	acquireOwnership = true,
+	ownerId = `scheduler-${process.pid}-${Math.random().toString(16).slice(2)}`,
+	maxSteps = 1000,
+	writeCheckpointImpl = writeCheckpoint,
+	readCheckpointImpl = readCheckpoint,
+	effectProbe = null,
+	artifacts = {},
+} = {}) {
+	let ownership = null;
+	let lastCheckpoint = { ok: null, reason: null };
+	let usedCheckpoint = false;
+	let running = false; // single-flight guard
+	const manifestDigest = canonicalManifestDigest(manifest);
+	const staticTasks = [...ownedTasks];
+	const costCheck = parseBudgetStrict(budgetAccount);
+	const dispatchCost = costCheck.ok ? costCheck.value : { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	const syntheticCost = { ...dispatchCost, synthetic: true };
+
+	/** Read the committed rows in append order (via the real EventLog or a fake). */
+	function readCommittedRows() {
+		if (typeof sink.replay === "function") return sink.replay();
+		return sink.events ?? sink.rows ?? [];
+	}
+
+	/** Reduce the current committed stream into the projection. */
+	function project({ baseTasks = staticTasks, events = null } = {}) {
+		const rows = events ?? readCommittedRows();
+		return projectQueueFromEvents({
+			campaign_id: manifest.campaign_id,
+			tasks: baseTasks,
+			events: rows,
+			revision: manifest.revision ?? 0,
+			manifest,
+			artifacts,
+		});
+	}
+
+	/**
+	 * INT-CHECKPOINT: reduce the committed stream on top of a checkpoint snapshot.
+	 * Only events after the checkpoint's offset are applied.
+	 */
+	function projectWithPrior(checkpoint) {
+		return projectQueueFromEvents({
+			campaign_id: manifest.campaign_id,
+			tasks: staticTasks,
+			events: readCommittedRows(),
+			revision: manifest.revision ?? 0,
+			manifest,
+			artifacts,
+			priorState: {
+				queue: checkpoint.queue,
+				budget: checkpoint.budget,
+				control: checkpoint.control,
+				proposals: checkpoint.proposals ?? [],
+				outcomes: checkpoint.outcomes ?? [],
+				tail_offset: checkpoint.stream_offset ?? -1,
+			},
+		});
+	}
+
+	function releaseOwnership() {
+		if (ownership?.ok && baseDir) releaseCampaignOwnership(baseDir, manifest.campaign_id, { ownerId });
+		ownership = null;
+	}
+
+	/** Persist a checkpoint bound to the PHYSICAL committed tail. Never throws. */
+	function persistCheckpoint(projection) {
+		if (!baseDir) return { ok: true, skipped: true };
+		const stream = buildCommittedStream({ rows: readCommittedRows(), campaign_id: manifest.campaign_id });
+		const record = {
+			campaign_id: manifest.campaign_id,
+			manifest_digest: manifestDigest,
+			revision: manifest.revision ?? 0,
+			state_revision: manifest.revision ?? 0,
+			stream_offset: stream.tail_offset,
+			last_event_digest: stream.tail_digest,
+			last_event_id: stream.tail_event_id,
+			projection_digest: projectionDigest(projection),
+			queue: projection.tasks.map((task) => ({
+				task_id: task.task_id,
+				state: task.state,
+				depends_on: task.depends_on ?? [],
+				order: task.order ?? 1,
+				reservation: task.reservation ?? null,
+				budget_consumed: task.budget_consumed ?? null,
+				definition: task.definition ?? null,
+				is_dynamic: task.is_dynamic === true,
+				parent_task_id: task.parent_task_id ?? null,
+				stage_ids: task.stage_ids ?? [],
+				task_outcome_status: task.task_outcome_status ?? null,
+				task_outcome_ref: task.task_outcome_ref ?? null,
+				task_outcomes: task.task_outcomes ?? [],
+				stage_outcomes: task.stage_outcomes ?? [],
+				stop_reason: task.stop_reason ?? null,
+				reconciliation_state: task.reconciliation_state ?? "none",
+			})),
+			budget: projection.budget,
+			control: projection.control,
+			proposals: [...projection.proposals.entries()].map(([id, entry]) => ({
+				id,
+				digest: entry.digest,
+				offset: entry.offset,
+				proposal: entry.proposal,
+			})),
+			outcomes: [...projection.outcomes.entries()].map(([id, outcome]) => ({ id, outcome })),
+		};
+		const written = writeCheckpointImpl(baseDir, manifest.campaign_id, record);
+		lastCheckpoint = written?.ok ? { ok: true, reason: null } : { ok: false, reason: written?.reason ?? "unknown" };
+		return written;
+	}
+
+	/**
+	 * INT-COMMIT: a unified durable append boundary. Returns
+	 * `{ok, durable, event, error}` and NEVER treats a Promise resolution as a
+	 * durability guarantee.
+	 */
+	async function commit(kind, payload, source) {
+		let result;
+		try {
+			result = await sink.append({
+				event_type: "runtime.note",
+				source,
+				payload: { kind, campaign_id: manifest.campaign_id, ...payload },
+			});
+		} catch (error) {
+			return { ok: false, durable: false, event: null, error: `append threw: ${String(error)}` };
+		}
+		if (!result || result.ok !== true) {
+			return { ok: false, durable: false, event: null, error: result?.error ?? "append not ok" };
+		}
+		if (result.durable === false) {
+			return { ok: false, durable: false, event: result.event ?? null, error: "append reported durable:false" };
+		}
+		return { ok: true, durable: true, event: result.event ?? null, error: null };
+	}
+
+	return {
+		get state() {
+			return project().control.state;
+		},
+		lastCheckpointOk() {
+			return lastCheckpoint.ok;
+		},
+		lastCheckpointReason() {
+			return lastCheckpoint.reason;
+		},
+		usedCheckpoint() {
+			return usedCheckpoint;
+		},
+		/**
+		 * INT-RECOVERY: control changes are DURABLE Host commands. These append a
+		 * committed control event so the state survives a restart; they are not a
+		 * local boolean.
+		 */
+		async pause(reason = "user_paused") {
+			return commit("campaign.campaign.paused", { reason }, { kind: "runtime", actor_id: ownerId });
+		},
+		async resume(reason = "user_resumed") {
+			return commit("campaign.campaign.resumed", { reason }, { kind: "runtime", actor_id: ownerId });
+		},
+		async cancel(reason = "user_cancelled") {
+			return commit("campaign.campaign.cancelled", { reason }, { kind: "runtime", actor_id: ownerId });
+		},
+		async stop(reason = "user_stopped") {
+			return commit("campaign.campaign.stopped", { reason }, { kind: "runtime", actor_id: ownerId });
+		},
+		releaseOwnership,
+		async run() {
+			// INT-COMMIT: single-flight. A concurrent/re-entrant run is refused.
+			if (running) return { ok: false, reasons: ["run() is already in progress (single-flight)"], status: null };
+			running = true;
+			const runReasons = [];
+			try {
+				if (acquireOwnership && baseDir) {
+					ownership = acquireCampaignOwnership(baseDir, manifest.campaign_id, { ownerId });
+					if (!ownership.ok) {
+						return { ok: false, reasons: [ownership.reason], status: project(), used_checkpoint: false };
+					}
+				}
+
+				// INT-CHECKPOINT: attempt a verified cache+tail recovery.
+				const startupEvents = readCommittedRows();
+				let baseProjection = null;
+				usedCheckpoint = false;
+				if (baseDir) {
+					// A checkpoint may be at ANY verified prefix (not only the exact tail).
+					const read = readCheckpointImpl(baseDir, manifest.campaign_id, { manifest_digest: manifestDigest });
+					if (read.ok) {
+						const cp = read.checkpoint;
+						const cpOffset = cp.stream_offset ?? -1;
+						// The checkpoint offset must be inside the current stream and its
+						// recorded digest must equal the event at that offset (a verified prefix).
+						const prefixValid =
+							cpOffset >= -1 &&
+							cpOffset < startupEvents.length &&
+							(cpOffset < 0 || startupEvents[cpOffset]?.event_digest === cp.last_event_digest);
+						if (prefixValid) {
+							const resumed = projectWithPrior(cp);
+							if (resumed.ok && projectionDigest(resumed) === cp.projection_digest) {
+								baseProjection = resumed;
+								usedCheckpoint = true;
+							}
+						}
+					}
+				}
+
+				// Control state is taken from the PROJECTION (never a local default).
+				let projection = baseProjection ?? project();
+				let controlState = projection.control.state;
+
+				if (controlState === "cancelled") {
+					// A cancellation survives restart; the cancel event is already durable.
+					// Do not append a redundant `stopped` (which would overwrite the cancel).
+					persistCheckpoint(project());
+					return { ok: true, reasons: runReasons, status: snapshot(controlState), used_checkpoint: usedCheckpoint };
+				}
+				if (controlState === "paused" || controlState === "stopped" || controlState === "budget_stopped") {
+					return { ok: true, reasons: runReasons, status: snapshot(controlState), used_checkpoint: usedCheckpoint };
+				}
+
+				// INT-RECOVERY: reconcile stranded intents before dispatching.
+				const reconcile = await reconcileStrandedRunning(project());
+				if (!reconcile.ok) {
+					persistCheckpoint(project());
+					return {
+						ok: false,
+						reasons: [reconcile.reason],
+						status: snapshot(controlState),
+						used_checkpoint: usedCheckpoint,
+					};
+				}
+
+				// INT-RECOVERY: a DELAYED unknown is revisited with a fresh judgment (no
+				// worker re-run) so a late verification can advance the task legally.
+				// (Also run once more after the dispatch loop below.)
+
+				let steps = 0;
+				while (steps < maxSteps) {
+					steps += 1;
+					projection = project();
+					controlState = projection.control.state;
+					if (controlState !== "running") break;
+					const nextReady = projection.tasks.find((task) => task.state === "ready");
+					if (!nextReady) break;
+					// INT-BUDGET: gate on the task's OWN reservation.
+					const permit = canDispatch({ task: nextReady, need: dispatchCost });
+					if (!permit.ok) {
+						runReasons.push(`task ${nextReady.task_id} blocked: ${permit.reason}`);
+						// A durable budget-stop is recorded so a restart does not silently
+						// retry a task whose allocation cannot fund a dispatch.
+						const ledger = projection.budget;
+						const limit = projection.health?.budget_limit ?? {};
+						const remaining = remainingBudget(limit, ledger);
+						const campaignExhausted = ["wall_time_ms", "model_requests", "tool_calls"].some(
+							(key) => (limit[key] ?? 0) > 0 && remaining[key] < (dispatchCost[key] ?? 0),
+						);
+						if (campaignExhausted) {
+							await commit(
+								"campaign.campaign.stopped",
+								{ reason: "budget_exhausted" },
+								{ kind: "runtime", actor_id: ownerId },
+							);
+						}
+						break;
+					}
+					// INT-DYNAMIC: the task definition comes from the projection.
+					const definition = nextReady.definition ?? staticTasks.find((t) => t.task_id === nextReady.task_id);
+					if (!definition) {
+						runReasons.push(`task ${nextReady.task_id} has no resolvable definition`);
+						break;
+					}
+					const step = await dispatchOne({ task: definition });
+					if (!step.ok) {
+						if (step.reason) runReasons.push(step.reason);
+						break;
+					}
+					persistCheckpoint(project());
+				}
+				// INT-RECOVERY: after dispatch, revisit any task left `unknown` by a delayed
+				// verification (fresh judgment, no worker re-run).
+				await revisitDelayedUnknowns();
+				persistCheckpoint(project());
+				return {
+					ok: runReasons.length === 0,
+					reasons: runReasons,
+					status: snapshot(project().control.state),
+					used_checkpoint: usedCheckpoint,
+				};
+			} finally {
+				// INT-COMMIT: always clean up the held resource.
+				releaseOwnership();
+				running = false;
+			}
+		},
+	};
+
+	function snapshot(controlState) {
+		const p = project();
+		return { campaign_state: controlState ?? p.control.state, ...p };
+	}
+
+	/**
+	 * INT-RECOVERY: a task left `running` by a previous process holds a durable
+	 * intent with no committed result. Ask the Oracle to reconcile it against the
+	 * real effect. The worker is NEVER re-run to backfill a result.
+	 */
+	/**
+	 * INT-RECOVERY: for each task left `unknown` by a DELAYED verification, ask the
+	 * Oracle again and commit the (possibly corrected) judgment. The worker is NOT
+	 * re-run. A bounded number of passes avoids an infinite loop.
+	 */
+	async function revisitDelayedUnknowns() {
+		for (let pass = 0; pass < 3; pass += 1) {
+			const projection = project();
+			const delayed = projection.tasks.filter((t) => t.state === "unknown" && t.stop_reason === "delayed_verification");
+			if (delayed.length === 0) return;
+			let advanced = false;
+			for (const row of delayed) {
+				const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id) ?? null;
+				if (!definition) continue;
+				let judgment;
+				try {
+					judgment = await oracle.judge({ task: definition, outcome_ref: `artifact:${row.task_id}` });
+				} catch (error) {
+					judgment = { status: "unknown", failure_mode: "oracle_unavailable", error: String(error) };
+				}
+				const status = ["success", "failure", "unknown", "invalid"].includes(judgment?.status)
+					? judgment.status
+					: "unknown";
+				if (status === "unknown") continue;
+				const outcomeId =
+					judgment?.outcome_id && judgment.outcome_id !== `o-${row.task_id}`
+						? judgment.outcome_id
+						: `o-revisit-${row.task_id}-${pass}`;
+				// A fresh judgment must also supply the required stage evidence.
+				for (const stageJudgment of Array.isArray(judgment?.stage_outcomes) ? judgment.stage_outcomes : []) {
+					const stageCommit = await commit(
+						"campaign.oracle.result",
+						{
+							task_id: row.task_id,
+							outcome_id: stageJudgment.outcome_id ?? `o-${row.task_id}-${stageJudgment.step_id}-${pass}`,
+							status: stageJudgment.status,
+							step_id: stageJudgment.step_id,
+							episode_id: stageJudgment.episode_id ?? row.episode_id ?? `ep-${row.task_id}`,
+							outcome: stageJudgment.outcome ?? stageJudgment,
+						},
+						{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+					);
+					if (!stageCommit.ok) return;
+				}
+				const resultCommit = await commit(
+					"campaign.oracle.result",
+					{
+						task_id: row.task_id,
+						outcome_id: outcomeId,
+						status,
+						task_oracle: true,
+						episode_id: row.episode_id ?? `ep-${row.task_id}`,
+						outcome:
+							judgment?.outcome ??
+							buildJudgmentOutcome({
+								judgment,
+								task: definition,
+								status,
+								episodeId: row.episode_id ?? `ep-${row.task_id}`,
+							}),
+					},
+					{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+				);
+				if (!resultCommit.ok) return;
+				if (status === "success") {
+					const done = await commit(
+						"campaign.task.completed",
+						{ task_id: row.task_id, outcome_id: outcomeId },
+						{ kind: "runtime", actor_id: ownerId },
+					);
+					if (!done.ok) return;
+				}
+				advanced = true;
+			}
+			if (!advanced) return;
+		}
+	}
+
+	async function reconcileStrandedRunning(projection) {
+		for (const row of projection.tasks) {
+			if (row.state !== "running") continue;
+			if (row.task_outcome_status === "success") {
+				// INT-RECOVERY: result durable but completion missing → complete it.
+				const done = await commit(
+					"campaign.task.completed",
+					{ task_id: row.task_id, outcome_id: row.task_outcome_ref ?? null },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!done.ok) return { ok: false, reason: `could not complete recovered result: ${done.error}` };
+				continue;
+			}
+			const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id) ?? null;
+			if (!definition) return { ok: false, reason: `stranded task ${row.task_id} has no definition` };
+			let verdict;
+			try {
+				verdict =
+					typeof oracle.reconcile === "function"
+						? await oracle.reconcile({ task: definition, intent: row, effect_probe: effectProbe })
+						: { status: "unknown", failure_mode: "no_reconcile_adapter" };
+			} catch (error) {
+				verdict = { status: "unknown", failure_mode: "reconcile_threw", error: String(error) };
+			}
+			const status = ["success", "failure", "unknown", "invalid"].includes(verdict?.status)
+				? verdict.status
+				: "unknown";
+			if (status === "success" || status === "failure") {
+				// F7: commit the reconciled STAGE evidence too, so reconciliation goes
+				// through the same required-stage gate as a normal completion.
+				for (const stageJudgment of Array.isArray(verdict?.stage_outcomes) ? verdict.stage_outcomes : []) {
+					const stageCommit = await commit(
+						"campaign.oracle.result",
+						{
+							task_id: row.task_id,
+							outcome_id: stageJudgment.outcome_id ?? `o-${row.task_id}-${stageJudgment.step_id}`,
+							status: stageJudgment.status,
+							step_id: stageJudgment.step_id,
+							episode_id: stageJudgment.episode_id ?? row.episode_id ?? `ep-${row.task_id}`,
+							outcome: stageJudgment.outcome ?? stageJudgment,
+						},
+						{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+					);
+					if (!stageCommit.ok)
+						return { ok: false, reason: `could not commit reconciled stage result: ${stageCommit.error}` };
+				}
+				const resultCommit = await commit(
+					"campaign.oracle.result",
+					{
+						task_id: row.task_id,
+						outcome_id: verdict.outcome_id ?? `o-reconcile-${row.task_id}`,
+						status,
+						task_oracle: true,
+						episode_id: row.episode_id ?? `ep-${row.task_id}`,
+						outcome: verdict.outcome ?? verdict,
+					},
+					{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+				);
+				if (!resultCommit.ok) return { ok: false, reason: `could not commit reconciled result: ${resultCommit.error}` };
+				const resolved = await commit(
+					"campaign.reconciliation.resolved",
+					{ task_id: row.task_id, outcome_id: verdict.outcome_id ?? null, verdict: status },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!resolved.ok) return { ok: false, reason: `could not record reconciliation: ${resolved.error}` };
+			} else {
+				const pending = await commit(
+					"campaign.reconciliation.requested",
+					{
+						task_id: row.task_id,
+						failure_mode: verdict?.failure_mode ?? "unknown",
+						boundary: "restart_running_without_result",
+					},
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!pending.ok) return { ok: false, reason: `could not record reconciliation request: ${pending.error}` };
+			}
+		}
+		return { ok: true };
+	}
+
+	async function dispatchOne({ task }) {
+		const episodeId = `ep-${task.task_id}`;
+		// 1. DURABLE INTENT (+ reservation commit) FIRST.
+		const started = await commit(
+			"campaign.task.started",
+			{ task_id: task.task_id, episode_id: episodeId, command_id: `start-${task.task_id}-${clock()}` },
+			{ kind: "runtime", actor_id: ownerId },
+		);
+		if (!started.ok) return { ok: false, reason: `durable intent failed; worker not dispatched: ${started.error}` };
+
+		// 2. Execute the injected worker.
+		let run;
+		try {
+			run = await worker.run({ task });
+		} catch (error) {
+			run = { ok: false, failure_mode: "transport_failure", error: String(error) };
+		}
+
+		// 3. Charge the KNOWN synthetic cost (success, failure, or unknown).
+		const charged = await commit(
+			"campaign.budget.consumed",
+			{ task_id: task.task_id, command_id: `consume-${task.task_id}-${clock()}`, consumed: syntheticCost },
+			{ kind: "runtime", actor_id: ownerId },
+		);
+		// INT-COMMIT: a failed charge AFTER the effect is degraded, not ok:true,[].
+		if (!charged.ok) {
+			return {
+				ok: false,
+				reason: `budget charge failed after a possible effect; side effects halted: ${charged.error}`,
+			};
+		}
+
+		// 4. Worker failure → unknown + reconciliation (never a task failure).
+		if (!run || run.ok !== true) {
+			const recon = await commit(
+				"campaign.reconciliation.requested",
+				{
+					task_id: task.task_id,
+					failure_mode: run?.failure_mode ?? "unknown_failure",
+					detail: run?.error ?? null,
+					boundary: "post_effect_failure",
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!recon.ok) return { ok: false, reason: `could not record reconciliation: ${recon.error}` };
+			const unknown = await commit(
+				"campaign.task.unknown",
+				{ task_id: task.task_id, reason: "transport_failure" },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!unknown.ok) return { ok: false, reason: `could not record unknown task: ${unknown.error}` };
+			return { ok: true };
+		}
+
+		// 5. Oracle judgment (the worker's self-report is NOT a result).
+		let judgment;
+		try {
+			judgment = await oracle.judge({ task, outcome_ref: run.outcome_ref });
+		} catch (error) {
+			judgment = { status: "unknown", failure_mode: "oracle_unavailable", error: String(error) };
+		}
+		const status = ["success", "failure", "unknown", "invalid"].includes(judgment?.status)
+			? judgment.status
+			: "unknown";
+
+		// 5a. Stage-level judgments: the Host commits one `campaign.oracle.result`
+		//     per required stage the Oracle judged, so completion requires every stage.
+		const stageJudgments = Array.isArray(judgment?.stage_outcomes) ? judgment.stage_outcomes : [];
+		for (const stageJudgment of stageJudgments) {
+			const stageCommit = await commit(
+				"campaign.oracle.result",
+				{
+					task_id: task.task_id,
+					outcome_id: stageJudgment.outcome_id ?? `o-${task.task_id}-${stageJudgment.step_id}`,
+					status: stageJudgment.status,
+					step_id: stageJudgment.step_id,
+					episode_id: stageJudgment.episode_id ?? episodeId,
+					outcome: stageJudgment.outcome ?? stageJudgment,
+				},
+				{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+			);
+			if (!stageCommit.ok) return { ok: false, reason: `stage result commit failed: ${stageCommit.error}` };
+		}
+
+		const resultCommit = await commit(
+			"campaign.oracle.result",
+			{
+				task_id: task.task_id,
+				outcome_id: judgment?.outcome_id ?? `o-${task.task_id}`,
+				status,
+				episode_id: judgment?.episode_id ?? episodeId,
+				task_oracle: judgment?.task_oracle === true,
+				outcome: judgment?.outcome ?? buildJudgmentOutcome({ judgment, task, status, episodeId }),
+			},
+			{ kind: "oracle", actor_id: oracle.id ?? "oracle" },
+		);
+		if (!resultCommit.ok) {
+			return { ok: false, reason: `oracle result commit failed; result is not durable: ${resultCommit.error}` };
+		}
+
+		// 6. Close the task ONLY on a matched, current success.
+		if (status === "success" && judgment?.task_oracle === true && judgment?.delayed !== true) {
+			const done = await commit(
+				"campaign.task.completed",
+				{ task_id: task.task_id, outcome_id: judgment?.outcome_id ?? null },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!done.ok) return { ok: false, reason: `completion commit failed; lifecycle not closed: ${done.error}` };
+		} else if (judgment?.task_oracle === true && (status === "unknown" || judgment?.delayed === true)) {
+			const unknown = await commit(
+				"campaign.task.unknown",
+				{
+					task_id: task.task_id,
+					reason: judgment?.delayed === true ? "delayed_verification" : "insufficient_evidence",
+					outcome_id: judgment?.outcome_id ?? null,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!unknown.ok) return { ok: false, reason: `unknown commit failed: ${unknown.error}` };
+		}
+		return { ok: true };
+	}
+}
+
+/** Build a structurally complete Outcome payload for the projection/resolver. */
+function buildJudgmentOutcome({ judgment, task, status, episodeId }) {
+	return {
+		outcome_id: judgment?.outcome_id ?? null,
+		level: "episode",
+		status,
+		episode_id: judgment?.episode_id ?? episodeId,
+		task_id: task.task_id,
+		task_oracle: true,
+		criterion: judgment?.criterion ?? {
+			criterion_id: task.goal?.goal_id ?? null,
+			expected: task.goal?.goal_id ?? null,
+		},
+		observed: judgment?.observed ?? (status === "success" ? { synthetic: true } : null),
+		scope: judgment?.scope ?? task.scope ?? null,
+		oracle: judgment?.oracle ?? { oracle_id: "synthetic.oracle", source: "oracle" },
+		provenance: judgment?.provenance ?? { source: "oracle", independent: true, task_id: task.task_id },
+		evidence_refs: judgment?.evidence_refs ?? [],
+	};
+}

@@ -1,0 +1,106 @@
+{
+  "schema": "aegis-c1-final-audit-f789-implementation-report/1.0",
+  "generated_at": "2026-10-12T00:00:00Z",
+  "status": "C1 internally_verified / awaiting_external_review",
+  "c2_implemented": false,
+  "orchestration": {
+    "child_agent_tool_available": false,
+    "execution": "serial master-DS role switching (test-author/implementer/reviewer)",
+    "fabricated_child_reports": false
+  },
+  "baseline": {
+    "git_rev_parse_head": "00000000000000000000000000000000",
+    "git_head_note": "branch-ref placeholder; true tip from reflog is 972acd9",
+    "node": "v26.10.0",
+    "campaign_suites_pre_fix": "14/14 exit 0"
+  },
+  "environment_anomaly": {
+    "sha256_unavailable": true,
+    "test_consequence": "digest tests assert cross-path equality and helper usage, never a hard-coded real digest"
+  },
+  "f_closure": [
+    {"id": "F7", "status": "fixed", "evidence": "shared completeTaskIfVerified gate used by both task.completed and reconciliation.resolved; scheduler commits reconciled stage Outcomes; F7-* + E2E-FAULT recover; mutation killed"},
+    {"id": "F8", "status": "fixed", "evidence": "canonicalStageOutcome + full projectionSnapshot + outcomes index + checkpoint stage_outcomes/outcomes; F8-* cases; mutation killed"},
+    {"id": "F9", "status": "fixed", "evidence": "currentTaskScope(task) passed to the resolver; missing scope fail-closed; F9-* + E2E-F9-SCOPE; mutation killed"}
+  ],
+  "files_changed": {
+    "modified": [
+      "Pi_Agent_base/memory/campaign/projection.mjs",
+      "Pi_Agent_base/memory/campaign/scheduler.mjs"
+    ],
+    "added": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-final-audit2.mjs"
+    ],
+    "tests_updated": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-final-audit.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-integration-e2e.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-product-child.mjs"
+    ],
+    "not_modified": [
+      "Pi_Agent_base/pi/** (embedded Pi core)",
+      "credentials / model settings / lockfiles",
+      "Pi_Agent_base/memory/runtime/events.mjs (reused read-only)",
+      "deleted legacy Python tree",
+      "root AGENTS.md"
+    ]
+  },
+  "commands": [
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-closure-c0.mjs", "exit": 0, "ok": 39},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs", "exit": 0, "ok": 58},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs", "exit": 0, "ok": 12},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs", "exit": 0, "ok": 16},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs", "exit": 0, "ok": 29},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs", "exit": 0, "ok": 3},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-contracts.mjs", "exit": 0, "ok": 21},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-scheduler.mjs", "exit": 0, "ok": 16},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-integration-e2e.mjs", "exit": 0, "ok": 6},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-final-audit.mjs", "exit": 0, "ok": 19},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-final-audit2.mjs", "exit": 0, "ok": 17},
+    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>", "exit": 0, "warnings": 0},
+    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10}
+  ],
+  "regression": {
+    "offline": ["aegis-workflow-evidence-d", "aegis-workflow-engine-d", "aegis-runtime-core-smoke", "aegis-runtime-effective-board", "memory-runtime-batch-b-smoke", "memory-runtime-learning-evidence-smoke", "observer-smoke", "aegis-learning-bridge-e"],
+    "offline_all_exit": 0,
+    "real_pi_faux": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"],
+    "real_pi_faux_all_exit": 0
+  },
+  "old_code_failures": {
+    "aegis-campaign-c1-final-audit2.mjs": {"failures_on_old_code": 10, "passes_after_fix": 17}
+  },
+  "mutations": [
+    {"mutation": "reconciliation skips the stage gate", "case": "F7-NO-STAGE…", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "snapshot keeps only stage_outcome_ids", "case": "F8-STATUS/CRITERION/SCOPE", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "resolver uses manifest.scope", "case": "F9-FOREIGN-PROJECTION", "expected": "FAIL", "actual": "FAIL"}
+  ],
+  "evidence": {
+    "reconciliation_reuses_stage_gate": true,
+    "reconciliation_product_path_completes_with_stages": true,
+    "stage_outcome_full_projection_in_snapshot_checkpoint_digest": true,
+    "prefix_tail_equals_full_replay_complete": true,
+    "task_scope_enforced_in_resolver": true,
+    "external_side_effect_exactly_once_claimed": false
+  },
+  "open_findings": {"P0": 0, "P1": 0, "P2": []},
+  "blocked": [],
+  "known_risks": [
+    "Single-host ownership only.",
+    "External side-effect exactly-once not claimed (no Broker/executor).",
+    "Real SHA256 values unavailable in this harness (stubbed).",
+    "tsc: 0 campaign errors; 10 pre-existing errors in imported untyped runtime files."
+  ],
+  "not_implemented": ["C2 real Pi Host-level Session rotation", "C3 real Broker/Oracle adapters", "C4/C4a Web UI and Pi /aegis commands"],
+  "statements": {
+    "auto_invoked_gpt_6_1_sol": false,
+    "real_target_network_or_credentials_used": false,
+    "synthetic_evidence_labeled": true,
+    "session_count_is_not_episode_count": true,
+    "unknown_is_not_failure": true,
+    "external_side_effect_exactly_once_claimed": false,
+    "external_acceptance_pending": true
+  }
+}

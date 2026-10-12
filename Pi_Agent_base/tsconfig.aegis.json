@@ -1,0 +1,38 @@
+{
+	// Aegis-owned type-check config for the Batch-E learning modules ONLY.
+	//
+	// Pi's own tsconfig is immutable and only covers packages/*/src, so it never
+	// sees the Aegis extensions. Rather than copy Pi's whole program (which drags
+	// in hundreds of PRE-EXISTING strict errors in the untyped .mjs runtime the
+	// extensions import), this config checks the owned, newly-written Batch-E
+	// modules with checkJs on. The three legacy extensions are excluded: they were
+	// written before this config and are validated by their runtime smoke tests,
+	// not by tsc. This is reported honestly in OVERNIGHT_E_PENDING.md.
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"lib": ["ES2024"],
+		// Pre-existing Aegis runtime is author-JS without JSDoc. Batch-E's owned
+		// modules ARE annotated, but they import that legacy runtime, so full
+		// `strict` floods tsc with implicit-any from the import graph. The goal
+		// here is to catch REAL structural errors (bad property names, arity,
+		// assignability) in the owned files, so implicit-any is relaxed.
+		"strict": false,
+		"noImplicitAny": false,
+		"strictNullChecks": false,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowJs": true,
+		"checkJs": true,
+		"types": ["node"],
+		"typeRoots": ["./pi/node_modules/@types"]
+	},
+	"include": [
+		"memory/runtime/learning-bridge.mjs",
+		"memory/runtime/learning-commands.mjs",
+		"memory/runtime/learning-store.mjs"
+	],
+	"exclude": ["pi/**", "node_modules/**"]
+}

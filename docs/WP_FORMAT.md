@@ -1,4 +1,16 @@
-# WP 规范 v2（机器可解析）
+# WP 规范 v2（历史格式，教师回放输入）
+
+## 当前使用方式
+
+WP 现在首先是**教师轨迹和回放材料**，不是事实库，也不是可以直接注入
+prompt 的经验规则。回放驱动器应把它转换为
+`source_kind: teacher_replay` 的 `Episode`，在当前环境中执行动作，并用独立
+oracle 生成 `Outcome`。WP 中没有被重新观测和验证的内容只能保留为 provenance
+或 claim；不能直接写成 verified fact，也不能单独把 Experience 置为 `active`。
+
+完整的现行对象契约见 [`MEMORY_SCHEMA.md`](MEMORY_SCHEMA.md)。本文件下面的
+front matter 和 `cells` 规则只用于兼容历史 WP，不替代新的 Event / Episode /
+Outcome / Experience schema。
 
 > **状态（2026-09-26）：历史文档，部分已作废，待重写。**
 >

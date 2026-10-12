@@ -1,0 +1,991 @@
+// Aegis Campaign C1 (INT-*) — pure event projection + budget ledger + indexes.
+//
+// Events are the AUTHORITATIVE source, reduced STRICTLY in verified append order.
+// A per-Episode `event.sequence` is never used as a global index (INT-ORDER).
+//
+// This module owns:
+//   * the queue state machine (frozen `queue.mjs` transitions);
+//   * the budget ledger (reserved / consumed / released);
+//   * the submitted-proposal index and dynamic Task definitions (INT-DYNAMIC);
+//   * trusted Outcome resolution for `campaign.oracle.result` (INT-OUTCOME);
+//   * the Campaign control state projected from committed events (INT-RECOVERY).
+//
+// It is pure and deterministic: the same committed stream always produces the
+// same state. A checkpoint is a deletable derived cache.
+
+import { digest } from "../fixture/contracts.mjs";
+import { admitTaskProposal } from "./dynamic-policy.mjs";
+import { campaignEventEnvelope, validateCampaignEvent } from "./event-contract.mjs";
+import { isResolvableRef, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
+import { isLegalTransition, makeQueueItem } from "./queue.mjs";
+
+const BUDGET_KEYS = Object.freeze(["wall_time_ms", "model_requests", "tool_calls"]);
+const TERMINAL_STATES = Object.freeze(["completed", "failed", "unknown", "cancelled"]);
+
+function zeroBudget() {
+	return { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+}
+
+function addBudget(target, delta) {
+	for (const key of BUDGET_KEYS) target[key] += Number.isFinite(delta?.[key]) ? delta[key] : 0;
+}
+
+function subBudget(target, delta) {
+	for (const key of BUDGET_KEYS)
+		target[key] = Math.max(0, target[key] - (Number.isFinite(delta?.[key]) ? delta[key] : 0));
+}
+
+/**
+ * Strict budget parsing: every dimension must be a finite, non-negative, SAFE
+ * integer. Anything else (negative, decimal, NaN, Infinity, non-safe, wrong
+ * type) is INVALID and is reported rather than normalized to 0. Returns
+ * `{ok, value, reasons}`.
+ */
+export function parseBudgetStrict(value) {
+	const reasons = [];
+	const out = zeroBudget();
+	if (value === null || value === undefined) return { ok: true, value: out, reasons };
+	if (typeof value !== "object" || Array.isArray(value))
+		return { ok: false, value: null, reasons: ["budget must be an object"] };
+	for (const key of BUDGET_KEYS) {
+		const raw = value[key];
+		if (raw === undefined || raw === null) {
+			out[key] = 0;
+			continue;
+		}
+		if (!Number.isSafeInteger(raw) || raw < 0) {
+			reasons.push(`budget.${key} must be a non-negative safe integer, got ${String(raw)}`);
+			continue;
+		}
+		out[key] = raw;
+	}
+	return { ok: reasons.length === 0, value: out, reasons };
+}
+
+/** True when `delta` fits inside `held` on every dimension. */
+function fitsWithin(delta, held) {
+	return BUDGET_KEYS.every((key) => (delta[key] ?? 0) <= (held[key] ?? 0));
+}
+
+/**
+ * Project the Campaign queue + ledger + indexes + control state from a committed
+ * event sequence.
+ *
+ * @param {{[key: string]: any}} args
+ * @returns {{[key: string]: any}}
+ */
+export function projectQueueFromEvents({
+	campaign_id,
+	tasks = [],
+	events = [],
+	revision = 0,
+	manifest = null,
+	budgetLimit = null,
+	artifacts = {},
+	priorState = null,
+} = {}) {
+	const reasons = [];
+	const rejected = [];
+
+	if (typeof campaign_id !== "string" || campaign_id.length === 0) {
+		return { ok: false, reasons: ["campaign_id is required"], ...emptyProjection(campaign_id, revision) };
+	}
+
+	// 1. Static Manifest tasks seed the initial rows (or hydrate from a checkpoint).
+	const byId = new Map();
+	if (priorState?.queue) {
+		// INT-CHECKPOINT: resume from a verified checkpoint snapshot. Only events
+		// AFTER `priorState.tail_offset` are reduced on top of this state.
+		for (const row of priorState.queue) {
+			const item = makeQueueItem({
+				campaign_id,
+				task_id: row.task_id,
+				state: row.state,
+				depends_on: row.depends_on ?? [],
+				order: row.order ?? 1,
+			});
+			item.stage_ids = row.stage_ids ?? [];
+			item.definition = row.definition ?? null;
+			item.parent_task_id = row.parent_task_id ?? null;
+			item.is_dynamic = row.is_dynamic === true;
+			item.reservation = row.reservation ?? zeroBudget();
+			item.budget_consumed = row.budget_consumed ?? zeroBudget();
+			item.task_outcome_status = row.task_outcome_status ?? null;
+			item.task_outcome_ref = row.task_outcome_ref ?? null;
+			item.task_outcomes = row.task_outcomes ?? [];
+			item.stage_outcomes = row.stage_outcomes ?? [];
+			item.stop_reason = row.stop_reason ?? null;
+			item.reconciliation_state = row.reconciliation_state ?? "none";
+			item.applied_command_ids = [];
+			byId.set(item.task_id, item);
+		}
+	} else {
+		for (const task of [...tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
+			const item = makeQueueItem({
+				campaign_id,
+				task_id: task.task_id,
+				state: (task.depends_on ?? []).length === 0 ? "ready" : "queued",
+				depends_on: task.depends_on ?? [],
+				order: task.order ?? 1,
+			});
+			item.stage_ids = (task.stages ?? []).map((stage) => stage.stage_id);
+			item.definition = task;
+			item.parent_task_id = task.parent_task_id ?? null;
+			item.applied_command_ids = [];
+			item.is_dynamic = false;
+			byId.set(task.task_id, item);
+		}
+	}
+
+	// 2. Reduce STRICTLY in append order. NEVER re-sort by `event.sequence`.
+	const budget = priorState?.budget ? structuredClone(priorState.budget) : emptyLedger();
+	const limitParse = parseBudgetStrict(budgetLimit ?? manifest?.budget ?? null);
+	const limit = limitParse.ok ? limitParse.value : zeroBudget();
+	const appliedCommands = new Set();
+	const appliedOutcomes = new Set();
+	const proposals = new Map(
+		(priorState?.proposals ?? []).map((p) => [p.id, { digest: p.digest, offset: p.offset, proposal: p.proposal }]),
+	);
+	const outcomeIndex = new Map((priorState?.outcomes ?? []).map((o) => [o.id, o.outcome])); // outcome_id -> canonical outcome
+	const health = emptyHealth();
+	let lastAppliedEventId = null;
+	let lastAppliedOffset = priorState?.tail_offset ?? -1;
+
+	if (!priorState?.queue) {
+		for (const task of tasks) {
+			const alloc = parseBudgetStrict(task.task_budget);
+			const item = byId.get(task.task_id);
+			if (item && alloc.ok) item.reservation = { ...alloc.value };
+			if (alloc.ok) addBudget(budget.reserved, alloc.value);
+		}
+	}
+
+	const control = priorState?.control ? { ...priorState.control } : { state: "running", reason: null, offset: -1 };
+	const reduceFrom = priorState ? (priorState.tail_offset ?? -1) + 1 : 0;
+	const context = {
+		campaign_id,
+		byId,
+		budget,
+		appliedOutcomes,
+		proposals,
+		outcomeIndex,
+		manifest,
+		tasks,
+		artifacts,
+		rejected,
+		control,
+		revision,
+	};
+
+	for (let offset = reduceFrom; offset < events.length; offset += 1) {
+		const raw = events[offset];
+		const validation = validateCampaignEvent(raw);
+		if (!validation.ok) {
+			rejected.push({ offset, event_id: raw?.event_id ?? null, reason: validation.reasons.join("; ") });
+			health.events_rejected += 1;
+			continue;
+		}
+		const envelope = campaignEventEnvelope(raw);
+		if (envelope.campaign_id !== campaign_id) {
+			reasons.push(`event ${raw.event_id} belongs to campaign ${envelope.campaign_id}, not ${campaign_id}`);
+			continue;
+		}
+		// A revision-guarded command must match the current state revision.
+		if (envelope.expected_revision !== null && envelope.expected_revision !== revision) {
+			rejected.push({
+				offset,
+				event_id: raw.event_id,
+				reason: `expected_revision ${envelope.expected_revision} != ${revision}`,
+			});
+			health.events_rejected += 1;
+			continue;
+		}
+		const commandId = envelope.command_id;
+		const dedupKey = commandId ? `${envelope.kind}:${commandId}` : null;
+		if (dedupKey && appliedCommands.has(dedupKey)) {
+			health.events_deduplicated += 1;
+			continue;
+		}
+
+		const applied = applyEvent({ envelope, offset, ...context });
+		if (!applied.ok) {
+			rejected.push({ offset, event_id: raw.event_id, reason: applied.reason });
+			health.events_rejected += 1;
+			continue;
+		}
+		if (dedupKey) appliedCommands.add(dedupKey);
+		promoteReadyTasks(byId);
+		health.events_applied += 1;
+		lastAppliedEventId = raw.event_id ?? null;
+		lastAppliedOffset = offset;
+	}
+
+	// 3. Derive dependency status + ready promotion from the satisfied set.
+	for (const item of byId.values()) {
+		item.dependency_status = {};
+		for (const dep of item.depends_on) {
+			const depItem = byId.get(dep);
+			item.dependency_status[dep] = depItem?.state === "completed" ? "satisfied" : "pending";
+		}
+	}
+	promoteReadyTasks(byId);
+
+	health.last_applied_event_id = lastAppliedEventId;
+	health.last_applied_offset = lastAppliedOffset;
+	health.reservation_outstanding = { ...budget.reserved };
+	health.remaining = remainingBudget(limit, budget);
+	health.budget_limit = limit;
+	health.budget_limit_valid = limitParse.ok;
+	if (!limitParse.ok) reasons.push(...limitParse.reasons);
+
+	return {
+		ok: reasons.length === 0,
+		reasons,
+		tasks: [...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+		budget,
+		proposals,
+		outcomes: outcomeIndex,
+		control,
+		health,
+		rejected,
+		task_count: byId.size,
+		// Physical tail of the committed stream (last row, even if rejected).
+		tail_offset: events.length - 1,
+		tail_digest: events.length > 0 ? (events[events.length - 1]?.event_digest ?? "") : "",
+		tail_event_id: events.length > 0 ? (events[events.length - 1]?.event_id ?? null) : null,
+		// Diagnostic only.
+		last_applied_offset: lastAppliedOffset,
+		last_applied_event_id: lastAppliedEventId,
+		revision,
+	};
+}
+
+function emptyProjection(campaign_id, revision) {
+	return {
+		tasks: [],
+		budget: emptyLedger(),
+		proposals: new Map(),
+		outcomes: new Map(),
+		control: { state: "running", reason: null, offset: -1 },
+		health: emptyHealth(),
+		rejected: [],
+		tail_offset: -1,
+		tail_digest: "",
+		tail_event_id: null,
+		last_applied_offset: -1,
+		last_applied_event_id: null,
+		revision,
+		campaign_id,
+	};
+}
+
+function emptyLedger() {
+	return { reserved: zeroBudget(), consumed: zeroBudget(), released: zeroBudget() };
+}
+
+function emptyHealth() {
+	return {
+		events_applied: 0,
+		events_rejected: 0,
+		events_deduplicated: 0,
+		last_applied_event_id: null,
+		last_applied_offset: -1,
+	};
+}
+
+/** remaining = limit - reserved_outstanding - consumed, clamped at zero. */
+export function remainingBudget(limit, ledger) {
+	const out = zeroBudget();
+	for (const key of BUDGET_KEYS) {
+		out[key] = Math.max(0, (limit?.[key] ?? 0) - (ledger.reserved?.[key] ?? 0) - (ledger.consumed?.[key] ?? 0));
+	}
+	return out;
+}
+
+/**
+ * A dispatch of `task` is permitted ONLY when the task's OWN persisted
+ * reservation covers `need` on every dimension. The Campaign's unused remaining
+ * budget is NOT borrowed (INT-BUDGET): reallocation must be committed as an
+ * explicit reservation first.
+ */
+export function canDispatch({ task, need }) {
+	const held = parseBudgetStrict(task?.reservation);
+	if (!held.ok) return { ok: false, reason: `task reservation is invalid: ${held.reasons.join("; ")}` };
+	const want = parseBudgetStrict(need);
+	if (!want.ok) return { ok: false, reason: `dispatch cost is invalid: ${want.reasons.join("; ")}` };
+	if (!fitsWithin(want.value, held.value)) {
+		return {
+			ok: false,
+			reason: `dispatch needs ${JSON.stringify(want.value)} but the task holds ${JSON.stringify(held.value)}`,
+		};
+	}
+	return { ok: true };
+}
+
+function transition(item, to, reasonPrefix = "illegal transition") {
+	if (!isLegalTransition(item.state, to)) return { ok: false, reason: `${reasonPrefix}: ${item.state} -> ${to}` };
+	item.state = to;
+	return { ok: true };
+}
+
+/** Apply ONE validated, deduplicated event at physical `offset`. */
+function applyEvent({
+	envelope,
+	offset,
+	campaign_id,
+	byId,
+	budget,
+	appliedOutcomes,
+	proposals,
+	outcomeIndex,
+	manifest,
+	tasks,
+	artifacts,
+	control,
+}) {
+	switch (envelope.kind) {
+		case "campaign.task.started": {
+			if (!envelope.task_id) return { ok: false, reason: "task_id is required" };
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			if ([...byId.values()].some((t) => t.state === "running" && t.task_id !== envelope.task_id)) {
+				return { ok: false, reason: "another task is already running (single active Task)" };
+			}
+			if (TERMINAL_STATES.includes(item.state)) {
+				return { ok: false, reason: `terminal task ${item.task_id} (${item.state}) cannot be restarted` };
+			}
+			if (item.state === "queued") {
+				const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
+				if (!allSatisfied) return { ok: false, reason: "dependencies are not satisfied" };
+			} else if (item.state !== "ready") {
+				return { ok: false, reason: `task ${item.task_id} cannot start from ${item.state}` };
+			}
+			const moved = transition(item, "running");
+			if (!moved.ok) return moved;
+			item.episode_id = envelope.episode_id ?? item.episode_id;
+			item.applied_command_ids.push(envelope.command_id);
+			return { ok: true };
+		}
+		case "campaign.oracle.result": {
+			if (!envelope.task_id) return { ok: false, reason: "task_id is required" };
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			if (!envelope.outcome_id) return { ok: false, reason: "outcome_id is required" };
+			if (appliedOutcomes.has(envelope.outcome_id)) return { ok: true }; // idempotent
+			const definition = item.definition ?? null;
+			if (!definition) return { ok: false, reason: `task ${envelope.task_id} has no definition to bind an Outcome` };
+			const stepId = envelope.step_id ?? envelope.outcome?.step_id ?? null;
+			const isTaskOracle = envelope.task_oracle === true;
+
+			// F2: the committed event source must match the Outcome provenance for any
+			// trusted judgment (task OR stage level). `runtime` never judges.
+			const innerSource = envelope.outcome?.provenance?.source ?? envelope.outcome?.oracle?.source ?? null;
+
+			if (isTaskOracle) {
+				const resolved = resolveTaskOutcome({
+					result: envelope.outcome,
+					task: definition,
+					episodeId: item.episode_id ?? envelope.episode_id ?? null,
+					scope: currentTaskScope(definition),
+					artifacts,
+					eventSource: envelope.source_kind,
+				});
+				appliedOutcomes.add(envelope.outcome_id);
+				outcomeIndex.set(
+					envelope.outcome_id,
+					resolved.outcome ?? { outcome_id: envelope.outcome_id, status: "invalid" },
+				);
+				if (!resolved.ok) return { ok: false, reason: `oracle outcome rejected: ${resolved.reasons.join("; ")}` };
+				if (!item.task_outcomes) item.task_outcomes = [];
+				item.task_outcomes.push({ outcome_id: envelope.outcome_id, status: resolved.status, task_oracle: true });
+				item.task_outcome_status = resolved.status;
+				item.task_outcome_ref = envelope.outcome_id;
+				if (resolved.status === "unknown")
+					applyTerminalEvidence(
+						item,
+						"unknown",
+						envelope.reason === "delayed_verification" ? "delayed_verification" : "insufficient_evidence",
+					);
+				else if (resolved.status === "failure") applyTerminalEvidence(item, "failed", "oracle_failure");
+				else if (resolved.status === "invalid") applyTerminalEvidence(item, "failed", "invalid_outcome");
+				else if (resolved.status === "success" && item.state === "unknown") {
+					const reopened = transition(item, "waiting_oracle", "illegal unknown re-open");
+					if (!reopened.ok) return reopened;
+					item.stop_reason = null;
+				}
+				return { ok: true };
+			}
+
+			// A STAGE-level Outcome: bind it to the declared stage/criterion and evidence.
+			const stage = (definition.stages ?? []).find((s) => s.stage_id === stepId);
+			if (!stage) return { ok: false, reason: `stage outcome references unknown stage ${String(stepId)}` };
+			if (envelope.source_kind !== "oracle" && envelope.source_kind !== "human") {
+				return { ok: false, reason: `event source "${envelope.source_kind}" may not judge a stage` };
+			}
+			if (innerSource === null || innerSource !== envelope.source_kind) {
+				return {
+					ok: false,
+					reason: `stage outcome provenance "${innerSource}" does not match the event source "${envelope.source_kind}"`,
+				};
+			}
+			const outcome = envelope.outcome ?? {};
+			if (outcome.task_id != null && outcome.task_id !== item.task_id) {
+				return { ok: false, reason: `stage outcome is bound to a foreign task ${outcome.task_id}` };
+			}
+			const stageEpisode = outcome.episode_id ?? null;
+			if (stageEpisode !== null && item.episode_id !== null && stageEpisode !== item.episode_id) {
+				return { ok: false, reason: `stage outcome episode ${stageEpisode} does not match ${item.episode_id}` };
+			}
+			const criterionId = outcome.criterion?.criterion_id ?? null;
+			if (criterionId === null || !(stage.criteria ?? []).includes(criterionId)) {
+				return {
+					ok: false,
+					reason: `stage outcome criterion ${String(criterionId)} is not declared by stage ${stepId}`,
+				};
+			}
+			if (
+				outcome.status === "success" &&
+				(outcome.evidence_refs ?? []).some((ref) => !isResolvableRef(ref, artifacts))
+			) {
+				return { ok: false, reason: "stage outcome carries an unresolvable evidence ref" };
+			}
+			appliedOutcomes.add(envelope.outcome_id);
+			// F8: store the COMPLETE canonical Stage Outcome so the snapshot, the
+			// projection digest, the checkpoint and prefix+tail/full replay all see it.
+			const canonical = canonicalStageOutcome(outcome, {
+				outcome_id: envelope.outcome_id,
+				step_id: stepId,
+				task_id: item.task_id,
+			});
+			if (!item.stage_outcomes) item.stage_outcomes = [];
+			item.stage_outcomes.push(canonical);
+			outcomeIndex.set(envelope.outcome_id, canonical);
+			return { ok: true };
+		}
+		case "campaign.task.completed": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			return completeTaskIfVerified({
+				item,
+				outcomeId: envelope.outcome_id ?? null,
+				artifacts,
+				reasonPrefix: "completion",
+			});
+		}
+		case "campaign.task.failed": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			if (TERMINAL_STATES.includes(item.state)) {
+				return { ok: false, reason: `terminal task ${item.task_id} (${item.state}) cannot be renamed failed` };
+			}
+			const moved = transition(item, "failed", "illegal failure");
+			if (!moved.ok) return moved;
+			item.stop_reason = "scheduler_failure";
+			return { ok: true };
+		}
+		case "campaign.task.unknown": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			// Preserve a DELAYED verification marker so the scheduler can revisit it
+			// with a fresh judgment (without re-running the worker).
+			applyTerminalEvidence(
+				item,
+				"unknown",
+				envelope.reason === "delayed_verification" ? "delayed_verification" : "insufficient_evidence",
+			);
+			return { ok: true };
+		}
+		case "campaign.task.paused": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const moved = transition(item, "paused", "illegal pause");
+			if (!moved.ok) return moved;
+			return { ok: true };
+		}
+		case "campaign.task.resumed": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			if (item.state !== "paused") return { ok: false, reason: `only a paused task can resume, not ${item.state}` };
+			const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
+			const moved = transition(item, allSatisfied ? "ready" : "queued", "illegal resume");
+			if (!moved.ok) return moved;
+			return { ok: true };
+		}
+		case "campaign.task.cancelled": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const moved = transition(item, "cancelled", "illegal cancel");
+			if (!moved.ok) return moved;
+			item.stop_reason = "cancelled";
+			releasedReservationFor(item, budget, item.reservation ?? zeroBudget());
+			return { ok: true };
+		}
+		case "campaign.proposal.submitted": {
+			// INT-DYNAMIC: build the resolvable proposal index.
+			const proposalId = envelope.proposal_id;
+			if (!proposalId) return { ok: false, reason: "proposal_id is required for a submitted proposal" };
+			if (!envelope.proposal || typeof envelope.proposal !== "object") {
+				return { ok: false, reason: "submitted proposal has no resolvable proposal object" };
+			}
+			const existing = proposals.get(proposalId);
+			if (existing) {
+				if (existing.digest !== envelope.proposal_digest) {
+					return { ok: false, reason: `proposal_id ${proposalId} already submitted with a different digest` };
+				}
+				return { ok: true }; // idempotent
+			}
+			proposals.set(proposalId, { digest: envelope.proposal_digest, offset, proposal: envelope.proposal });
+			return { ok: true };
+		}
+		case "campaign.proposal.admitted":
+			return applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, tasks, campaign_id });
+		case "campaign.proposal.blocked":
+		case "campaign.proposal.rejected":
+			return { ok: true };
+		case "campaign.budget.reserved": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const delta = parseBudgetStrict(envelope.reservation);
+			if (!delta.ok) return { ok: false, reason: delta.reasons.join("; ") };
+			item.reservation = parseBudgetStrict(item.reservation).value ?? zeroBudget();
+			for (const key of BUDGET_KEYS) item.reservation[key] += delta.value[key];
+			addBudget(budget.reserved, delta.value);
+			return { ok: true };
+		}
+		case "campaign.budget.consumed": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const requested = parseBudgetStrict(envelope.consumed);
+			if (!requested.ok) return { ok: false, reason: requested.reasons.join("; ") };
+			const held = parseBudgetStrict(item.reservation).value ?? zeroBudget();
+			if (!fitsWithin(requested.value, held)) {
+				return {
+					ok: false,
+					reason: `consumed ${JSON.stringify(requested.value)} exceeds the outstanding reservation ${JSON.stringify(held)}`,
+				};
+			}
+			addBudget(budget.consumed, requested.value);
+			subBudget(budget.reserved, requested.value);
+			subBudget(item.reservation, requested.value);
+			item.budget_consumed = parseBudgetStrict(item.budget_consumed).value ?? zeroBudget();
+			addBudget(item.budget_consumed, requested.value);
+			return { ok: true };
+		}
+		case "campaign.budget.released": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const requested = parseBudgetStrict(envelope.released);
+			if (!requested.ok) return { ok: false, reason: requested.reasons.join("; ") };
+			const held = parseBudgetStrict(item.reservation).value ?? zeroBudget();
+			const actual = zeroBudget();
+			for (const key of BUDGET_KEYS) actual[key] = Math.min(requested.value[key], held[key]);
+			releasedReservationFor(item, budget, actual);
+			addBudget(budget.released, actual);
+			return { ok: true };
+		}
+		case "campaign.reconciliation.requested":
+		case "campaign.reconciliation.resolved": {
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			item.reconciliation_state = envelope.kind.endsWith("requested") ? "pending" : "resolved";
+			if (envelope.kind.endsWith("resolved")) {
+				item.reconciliation_ref = envelope.outcome_id ?? null;
+				// F7: reconciliation must NOT bypass the normal completion gate. A
+				// resolution completes a STRANDED task only through the SAME check as
+				// `campaign.task.completed` (current task-Oracle success + all required
+				// stages/criteria/evidence). Reason codes are preserved for audit; the
+				// worker is never re-run and the item stays in its evidence state when
+				// the gate is not satisfied.
+				const completed = completeTaskIfVerified({
+					item,
+					outcomeId: envelope.outcome_id ?? null,
+					artifacts,
+					reasonPrefix: "reconciliation",
+					soft: true,
+				});
+				if (!completed.ok) {
+					item.reconciliation_state = "pending";
+					item.reconciliation_reason = completed.reason;
+					return { ok: true };
+				}
+			}
+			return { ok: true };
+		}
+		case "campaign.handoff.requested":
+		case "campaign.handoff.completed":
+			return { ok: true };
+		case "campaign.campaign.paused": {
+			control.state = "paused";
+			control.reason = envelope.reason ?? "paused";
+			control.offset = offset;
+			return { ok: true };
+		}
+		case "campaign.campaign.resumed": {
+			control.state = "running";
+			control.reason = null;
+			control.offset = offset;
+			return { ok: true };
+		}
+		case "campaign.campaign.cancelled": {
+			control.state = "cancelled";
+			control.reason = envelope.reason ?? "cancelled";
+			control.offset = offset;
+			return { ok: true };
+		}
+		case "campaign.campaign.stopped": {
+			control.state = envelope.reason === "budget_exhausted" ? "budget_stopped" : "stopped";
+			control.reason = envelope.reason ?? "stopped";
+			control.offset = offset;
+			return { ok: true };
+		}
+		default:
+			return { ok: false, reason: `unhandled campaign kind ${envelope.kind}` };
+	}
+}
+
+/**
+ * F3 + F7: the single completion gate used by BOTH `campaign.task.completed` and
+ * `campaign.reconciliation.resolved`. It requires a current, matched task-Oracle
+ * success AND every required Stage to resolve through the C0 aggregation
+ * (`resolveTaskFromOutcomes`). When `soft` is true (reconciliation) a failed gate
+ * is a non-fatal "not yet complete" rather than a rejection.
+ */
+function completeTaskIfVerified({ item, outcomeId, artifacts, reasonPrefix, soft = false }) {
+	if (TERMINAL_STATES.includes(item.state)) {
+		return {
+			ok: false,
+			reason: `${reasonPrefix}: terminal task ${item.task_id} (${item.state}) cannot be renamed completed`,
+		};
+	}
+	if (item.task_outcome_status !== "success") {
+		return { ok: false, reason: `${reasonPrefix}: no current trusted task Oracle success` };
+	}
+	if (outcomeId && item.task_outcome_ref && outcomeId !== item.task_outcome_ref) {
+		return {
+			ok: false,
+			reason: `${reasonPrefix}: references ${outcomeId}, not the current result ${item.task_outcome_ref}`,
+		};
+	}
+	const aggregate = resolveTaskFromOutcomes({
+		task: item.definition,
+		stageResults: item.stage_outcomes ?? [],
+		taskResult: null,
+		episodeId: item.episode_id ?? null,
+		artifacts,
+		eventSource: null,
+	});
+	const requiredStages = (item.definition?.stages ?? []).filter((s) => s.required !== false);
+	for (const stage of requiredStages) {
+		const agg = aggregate.stage_aggregates?.find((a) => a.stage_id === stage.stage_id);
+		if (!agg || agg.status !== "success") {
+			return {
+				ok: false,
+				reason: `${reasonPrefix}: required stage ${stage.stage_id} is not verified (${agg?.status ?? "missing"})`,
+				soft,
+			};
+		}
+	}
+	const moved = transition(item, "completed", `illegal ${reasonPrefix}`);
+	if (!moved.ok) return { ok: false, reason: moved.reason, soft };
+	item.task_outcome_ref = outcomeId ?? item.task_outcome_ref ?? null;
+	item.stage_aggregate = aggregate.stage_aggregates ?? [];
+	return { ok: true };
+}
+
+function applyTerminalEvidence(item, to, stopReason) {
+	if (TERMINAL_STATES.includes(item.state) && item.state !== "unknown") {
+		return { ok: false, reason: `terminal task ${item.task_id} (${item.state}) cannot become ${to}` };
+	}
+	if (item.state === "unknown" && to === "unknown") {
+		// Re-affirming unknown: keep the newest reason (e.g. delayed_verification).
+		item.stop_reason = stopReason;
+		return { ok: true };
+	}
+	const moved = transition(item, to, "illegal terminal transition");
+	if (!moved.ok) return moved;
+	item.stop_reason = stopReason;
+	return { ok: true };
+}
+
+function promoteReadyTasks(byId) {
+	const anyRunning = [...byId.values()].some((t) => t.state === "running");
+	for (const item of byId.values()) {
+		if (item.state !== "queued") continue;
+		const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
+		if (allSatisfied && !anyRunning) item.state = "ready";
+	}
+}
+
+/**
+ * INT-DYNAMIC: `campaign.proposal.admitted` MUST reference a previously
+ * submitted proposal (same campaign) whose digest matches, and re-validate the
+ * admission against the live policy. The durable admitted record carries the
+ * FULL task definition so the scheduler can recover it without an external array.
+ */
+function applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, tasks, campaign_id }) {
+	const taskId = envelope.task_id;
+	if (!taskId) return { ok: false, reason: "task_id is required for an admitted proposal" };
+	if (byId.has(taskId)) return { ok: true }; // idempotent by task id
+	const proposalId = envelope.proposal_id;
+	if (!proposalId) return { ok: false, reason: "admitted event must reference a submitted proposal_id" };
+	const submitted = proposals.get(proposalId);
+	if (!submitted) return { ok: false, reason: `no submitted proposal ${proposalId} in this stream` };
+	if (envelope.proposal_digest && submitted.digest && envelope.proposal_digest !== submitted.digest) {
+		return { ok: false, reason: `admitted proposal digest does not match the submitted proposal ${proposalId}` };
+	}
+	const proposal = submitted.proposal;
+	if (!manifest) return { ok: false, reason: "no validated Manifest available to confirm admission" };
+	const admission = envelope.admission;
+	if (!admission || typeof admission !== "object" || admission.status !== "admitted") {
+		return { ok: false, reason: "admitted event has no dynamic-policy 'admitted' decision" };
+	}
+	const consideredTasks = [...tasks, ...[...byId.values()].filter((t) => t.is_dynamic).map(dynamicRowToTask)];
+	const derived = zeroBudget();
+	addBudget(derived, budget.reserved);
+	addBudget(derived, budget.consumed);
+	const revalidated = admitTaskProposal({
+		proposal,
+		manifest,
+		queueState: { tasks: consideredTasks, derived_budget: derived },
+		depth: proposal.depth ?? admission.depth ?? 1,
+	});
+	if (revalidated.status !== "admitted") {
+		return { ok: false, reason: `admission re-validation failed: ${revalidated.reasons.join("; ")}` };
+	}
+	if (proposal.proposed_task_id !== taskId) {
+		return { ok: false, reason: `admitted task_id ${taskId} does not match proposal ${proposal.proposed_task_id}` };
+	}
+	// Build the FULL recoverable task definition from the proposal.
+	const definition = buildDynamicTaskDefinition({ proposal, envelope, campaign_id, admission });
+	const validation = validateDynamicDefinition(definition);
+	if (!validation.ok)
+		return { ok: false, reason: `admitted task definition invalid: ${validation.reasons.join("; ")}` };
+	// F5: a Stage ID must be unique across the WHOLE Campaign, not only within a
+	// task. Refuse a definition whose stage ids collide with any known task.
+	const knownStageIds = new Set();
+	for (const existing of byId.values())
+		for (const sid of existing.definition?.stages ?? []) knownStageIds.add(sid.stage_id);
+	for (const task of tasks) for (const stage of task.stages ?? []) knownStageIds.add(stage.stage_id);
+	const collision = definition.stages.map((s) => s.stage_id).find((id) => knownStageIds.has(id));
+	if (collision) return { ok: false, reason: `dynamic stage id ${collision} is not unique across the Campaign` };
+	const item = makeQueueItem({ campaign_id, task_id: taskId, state: "ready", depends_on: [], order: byId.size + 1 });
+	item.parent_task_id = proposal.parent_task_id ?? null;
+	item.stage_ids = definition.stages.map((stage) => stage.stage_id);
+	item.applied_command_ids = [envelope.command_id];
+	const reservation = parseBudgetStrict(revalidated.reserved_budget);
+	item.reservation = reservation.ok ? reservation.value : zeroBudget();
+	item.is_dynamic = true;
+	item.definition = definition;
+	item.semantic_key = semanticKey(proposal);
+	item.proposal_id = proposalId;
+	item.proposal_offset = offset;
+	byId.set(taskId, item);
+	addBudget(budget.reserved, item.reservation);
+	return { ok: true };
+}
+
+/** Build a full, recoverable Task definition from an admitted proposal. */
+function buildDynamicTaskDefinition({ proposal, envelope, campaign_id, admission }) {
+	const stages =
+		Array.isArray(proposal.stages) && proposal.stages.length > 0
+			? proposal.stages
+			: [
+					{
+						stage_id: proposal.proposed_stage_id ?? `stage-${proposal.proposed_task_id}`,
+						criteria: proposal.goal?.success_criteria ?? [],
+						required: true,
+					},
+				];
+	const definition = {
+		task_id: proposal.proposed_task_id,
+		campaign_id,
+		order: proposal.priority ?? 1,
+		depends_on: [],
+		parent_task_id: proposal.parent_task_id ?? null,
+		parent_stage_id: proposal.parent_stage_id ?? null,
+		target_ref: proposal.target_ref,
+		task_type: proposal.task_type,
+		required_capabilities: [...(proposal.required_capabilities ?? [])],
+		goal: {
+			goal_id: proposal.goal?.goal_id ?? proposal.goal?.success_criteria?.[0] ?? proposal.proposed_task_id,
+			description: proposal.goal?.description ?? "",
+			success_criteria: [...(proposal.goal?.success_criteria ?? [])],
+		},
+		stages,
+		scope: proposal.scope ?? null,
+		oracle_ref: proposal.oracle_ref ?? envelope.oracle_ref ?? null,
+		execution_adapter: proposal.execution_adapter ?? null,
+		expected_evidence: [...(proposal.expected_evidence ?? [])],
+		stop_condition: proposal.stop_condition ?? null,
+		priority: proposal.priority ?? 0,
+		budget_reservation: { ...(proposal.budget_reservation ?? {}) },
+		admission_ref: {
+			proposal_id: envelope.proposal_id,
+			digest: envelope.proposal_digest ?? null,
+			status: admission.status,
+		},
+	};
+	// A stable digest over the FULL definition (identity, scope, capabilities,
+	// stages, budget, stop condition, expected evidence) so a restart recovers the
+	// exact same definition.
+	definition.task_digest = digest(withoutTaskDigest(definition));
+	return definition;
+}
+
+/**
+ * Remove the definition digest before recomputing it. Uses the existing SHA256
+ * helper (`digest` from the fixture contracts).
+ */
+export function withoutTaskDigest(value) {
+	const clone = { ...value };
+	delete clone.task_digest;
+	return clone;
+}
+
+/** A dynamic definition is not usable unless it is fully specified. */
+export function validateDynamicDefinition(definition) {
+	const reasons = [];
+	if (!definition || typeof definition !== "object") return { ok: false, reasons: ["definition must be an object"] };
+	if (typeof definition.task_id !== "string" || !definition.task_id) reasons.push("task_id is required");
+	if (!definition.goal || typeof definition.goal !== "object" || typeof definition.goal.goal_id !== "string") {
+		reasons.push("goal.goal_id is required");
+	}
+	if (!Array.isArray(definition.stages) || definition.stages.length === 0)
+		reasons.push("at least one stage is required");
+	else {
+		for (const stage of definition.stages) {
+			if (!stage || typeof stage.stage_id !== "string" || !stage.stage_id) reasons.push("each stage needs a stage_id");
+			if (!Array.isArray(stage.criteria) || stage.criteria.length === 0)
+				reasons.push(`stage ${stage?.stage_id} needs criteria`);
+		}
+	}
+	if (typeof definition.target_ref !== "string" || !definition.target_ref) reasons.push("target_ref is required");
+	if (typeof definition.task_type !== "string" || !definition.task_type) reasons.push("task_type is required");
+	if (typeof definition.stop_condition !== "string" || !definition.stop_condition)
+		reasons.push("stop_condition is required");
+	if (!Array.isArray(definition.expected_evidence) || definition.expected_evidence.length === 0) {
+		reasons.push("expected_evidence is required");
+	}
+	return { ok: reasons.length === 0, reasons };
+}
+
+/** A stable semantic identity so a re-proposal with a new id is still a duplicate. */
+export function semanticKey(proposal) {
+	return canonicalKey({
+		parent_task_id: proposal?.parent_task_id ?? null,
+		parent_stage_id: proposal?.parent_stage_id ?? null,
+		target_ref: proposal?.target_ref ?? null,
+		task_type: proposal?.task_type ?? null,
+		goal: proposal?.goal?.success_criteria ?? null,
+		capabilities: [...(proposal?.required_capabilities ?? [])].sort(),
+	});
+}
+
+function dynamicRowToTask(item) {
+	return {
+		task_id: item.task_id,
+		parent_task_id: item.parent_task_id ?? null,
+		target_ref: item.definition?.target_ref ?? null,
+		task_type: item.definition?.task_type ?? null,
+		stage_ids: item.stage_ids ?? [],
+	};
+}
+
+function releasedReservationFor(item, budget, delta) {
+	item.reservation = parseBudgetStrict(item.reservation).value ?? zeroBudget();
+	subBudget(item.reservation, delta);
+	subBudget(budget.reserved, delta);
+	return true;
+}
+
+/**
+ * F8: a canonical, complete projection of a Stage-level Outcome. Every semantic
+ * field that the aggregation/supersede logic reads is preserved so two outcomes
+ * that differ only by status/criterion/scope/evidence are NOT collapsed.
+ */
+export function canonicalStageOutcome(outcome, overrides = {}) {
+	const src = outcome ?? {};
+	return {
+		outcome_id: overrides.outcome_id ?? src.outcome_id ?? null,
+		level: src.level ?? "step",
+		status: src.status ?? null,
+		task_id: overrides.task_id ?? src.task_id ?? null,
+		episode_id: src.episode_id ?? null,
+		step_id: overrides.step_id ?? src.step_id ?? src.stage_id ?? null,
+		criterion: src.criterion ?? { criterion_id: src.criterion_id ?? null, expected: src.criterion?.expected ?? null },
+		observed: src.observed ?? null,
+		scope: src.scope ?? src.provenance?.scope ?? null,
+		oracle: src.oracle ?? null,
+		provenance: src.provenance ?? null,
+		evidence_refs: Array.isArray(src.evidence_refs) ? src.evidence_refs : [],
+		supersedes: src.supersedes ?? null,
+		failure_mode: src.failure_mode ?? null,
+	};
+}
+
+/**
+ * F9: the trusted CURRENT scope for a task. Resolution order:
+ *   task.definition.scope -> task.scope -> null (fail-closed).
+ * The top-level `manifest.scope` is NOT used: a Task's environment lives on the
+ * Task definition, and a missing scope is fail-closed rather than skipped.
+ */
+export function currentTaskScope(task) {
+	if (!task || typeof task !== "object") return null;
+	return task.definition?.scope ?? task.scope ?? null;
+}
+
+function canonicalKey(value) {
+	if (Array.isArray(value)) return `[${value.map(canonicalKey).join(",")}]`;
+	if (value && typeof value === "object") {
+		return `{${Object.keys(value)
+			.sort()
+			.map((k) => `${JSON.stringify(k)}:${canonicalKey(value[k])}`)
+			.join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
+/**
+ * F6: a deterministic, COMPLETE snapshot of a projection for equivalence checks.
+ * Covers task definitions, task states/outcome refs, stage outcomes, the proposal
+ * index, budget (reserved/consumed/released), control (state/reason), pending
+ * reconciliation, and the committed tail. Two projections are equivalent iff
+ * their snapshots are deep-equal.
+ */
+export function projectionSnapshot(projection) {
+	return {
+		tasks: [...projection.tasks]
+			.map((task) => ({
+				task_id: task.task_id,
+				state: task.state,
+				is_dynamic: task.is_dynamic === true,
+				definition_digest: task.definition?.task_digest ?? null,
+				definition: task.definition ?? null,
+				stage_ids: [...(task.stage_ids ?? [])],
+				depends_on: [...(task.depends_on ?? [])],
+				reservation: task.reservation ?? null,
+				budget_consumed: task.budget_consumed ?? null,
+				task_outcome_status: task.task_outcome_status ?? null,
+				task_outcome_ref: task.task_outcome_ref ?? null,
+				// F8: the COMPLETE canonical stage-Outcome projection, not only ids.
+				stage_outcomes: [...(task.stage_outcomes ?? [])]
+					.map((o) => canonicalStageOutcome(o))
+					.sort((a, b) => String(a.outcome_id).localeCompare(String(b.outcome_id))),
+				reconciliation_state: task.reconciliation_state ?? "none",
+				stop_reason: task.stop_reason ?? null,
+			}))
+			.sort((a, b) => a.task_id.localeCompare(b.task_id)),
+		proposals: [...projection.proposals.entries()]
+			.map(([id, entry]) => ({ id, digest: entry.digest, offset: entry.offset }))
+			.sort((a, b) => a.id.localeCompare(b.id)),
+		// F8: the outcome index carries the full task AND stage Outcomes.
+		outcomes: [...projection.outcomes.entries()]
+			.map(([id, entry]) => ({ id, outcome: entry }))
+			.sort((a, b) => a.id.localeCompare(b.id)),
+		outcome_ids: [...projection.outcomes.keys()].sort(),
+		budget: projection.budget,
+		control: { state: projection.control.state, reason: projection.control.reason, offset: projection.control.offset },
+		tail_offset: projection.tail_offset,
+		tail_digest: projection.tail_digest,
+	};
+}

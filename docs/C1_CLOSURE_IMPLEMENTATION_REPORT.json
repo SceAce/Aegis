@@ -1,0 +1,149 @@
+{
+  "schema": "aegis-c1-closure-implementation-report/1.0",
+  "generated_at": "2026-10-12T00:00:00Z",
+  "status": "C1 closure internally_verified / awaiting_external_review",
+  "orchestration": {
+    "child_agent_tool_available": false,
+    "execution": "serial master-DS role switching (test-author/implementer/reviewer)",
+    "fabricated_child_reports": false
+  },
+  "baseline": {
+    "git_head": "00000000000000000000000000000000",
+    "git_head_valid": false,
+    "git_head_note": "working tree baseline; no valid commit identity",
+    "campaign_suites_pre_fix": "7/7 exit 0",
+    "biome_warnings_pre_fix": 4
+  },
+  "files_changed": {
+    "modified": [
+      "Pi_Agent_base/memory/campaign/event-contract.mjs",
+      "Pi_Agent_base/memory/campaign/projection.mjs",
+      "Pi_Agent_base/memory/campaign/scheduler.mjs",
+      "Pi_Agent_base/memory/campaign/ownership.mjs",
+      "Pi_Agent_base/memory/campaign/index.mjs"
+    ],
+    "added_tests": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-reclaim-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-eventlog-child.mjs"
+    ],
+    "modified_tests": [
+      "Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-scheduler-child.mjs"
+    ],
+    "docs": [
+      "docs/C1_CLOSURE_WORK_PLAN.md",
+      "docs/C1_CLOSURE_TEST_MATRIX.md",
+      "docs/C1_CLOSURE_REVIEW_REPORT.md",
+      "docs/C1_CLOSURE_IMPLEMENTATION_REPORT.md",
+      "docs/C1_CLOSURE_IMPLEMENTATION_REPORT.json"
+    ],
+    "not_modified": [
+      "Pi_Agent_base/pi/** (embedded Pi core)",
+      "credentials / model settings / lockfiles",
+      "Pi_Agent_base/memory/runtime/events.mjs (reused read-only)",
+      "deleted legacy Python tree",
+      "root AGENTS.md"
+    ]
+  },
+  "subtasks": [
+    {"id": "C1C-BASE", "owner": "main DS", "status": "done"},
+    {"id": "C1C-TEST", "owner": "main DS", "status": "done", "old_code_failures": 18},
+    {"id": "C1C-SOURCE", "owner": "main DS", "file": "event-contract.mjs", "status": "done"},
+    {"id": "C1C-ADMISSION", "owner": "main DS", "file": "projection.mjs", "status": "done"},
+    {"id": "C1C-QUEUE", "owner": "main DS", "file": "projection.mjs", "status": "done"},
+    {"id": "C1C-BUDGET", "owner": "main DS", "files": ["projection.mjs", "scheduler.mjs"], "status": "done"},
+    {"id": "C1C-CHECKPOINT", "owner": "main DS", "files": ["ownership.mjs", "scheduler.mjs"], "status": "done"},
+    {"id": "C1C-OWNERSHIP", "owner": "main DS", "file": "ownership.mjs", "status": "done"},
+    {"id": "C1C-RECOVERY", "owner": "main DS", "files": ["tests/helpers", "tests/aegis-campaign-c1-eventlog-durability.mjs"], "status": "done"},
+    {"id": "C1C-INTEGRATE", "owner": "main DS", "status": "done"}
+  ],
+  "commands": [
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-closure-c0.mjs", "exit": 0, "ok": 39},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs", "exit": 0, "ok": 58},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs", "exit": 0, "ok": 12},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs", "exit": 0, "ok": 14, "flakes_over_15_runs": 0},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-closure.mjs", "exit": 0, "ok": 29},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-eventlog-durability.mjs", "exit": 0, "ok": 3},
+    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests+helpers>", "exit": 0, "warnings": 0},
+    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10}
+  ],
+  "regression": {
+    "offline": [
+      {"suite": "aegis-workflow-evidence-d", "exit": 0},
+      {"suite": "aegis-workflow-engine-d", "exit": 0},
+      {"suite": "aegis-runtime-core-smoke", "exit": 0},
+      {"suite": "aegis-runtime-effective-board", "exit": 0},
+      {"suite": "memory-runtime-batch-b-smoke", "exit": 0},
+      {"suite": "memory-runtime-learning-evidence-smoke", "exit": 0},
+      {"suite": "observer-smoke", "exit": 0},
+      {"suite": "aegis-learning-bridge-e", "exit": 0}
+    ],
+    "real_pi_faux": [
+      {"suite": "aegis-observer-data-use-pi", "exit": 0},
+      {"suite": "aegis-observer-verify-first-pi", "exit": 0},
+      {"suite": "aegis-observer-outcome-command", "exit": 0},
+      {"suite": "aegis-observer-failclosed-pi", "exit": 0}
+    ]
+  },
+  "old_code_failures": {
+    "aegis-campaign-c1-closure.mjs": {"failures_on_old_code": 18, "passes_after_fix": 29},
+    "reproduced": ["SRC-1", "SRC-2", "SRC-3", "SRC-10", "SRC-11", "ADM-1", "ADM-2", "ADM-3", "ADM-4", "QUE-1", "QUE-2", "QUE-3", "QUE-4", "BUD-11", "BUD-12"]
+  },
+  "mutations": [
+    {"mutation": "accept any source for any kind", "case": "SRC-01..05", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "admitted without decision accepted", "case": "ADM-01", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "transition table always legal", "case": "contracts queue", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "resume state guard removed", "case": "QUE-04", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "consumed-over-reservation accepted", "case": "BUD-11", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "scheduler ignores ledger budget", "case": "BUD-10", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "scheduler never writes checkpoint", "case": "CKP-10", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "checkpoint ignores tail digest", "case": "CKP-12", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "reclaim rename removed (not atomic)", "case": "WRT-02", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "release ignores owner id", "case": "OWN-12", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "explicit terminal guard removed", "case": "QUE-01..03", "expected": "FAIL", "actual": "NOT CAUGHT (redundant with the transition table; table mutation is caught)", "note": "defense-in-depth redundancy"}
+  ],
+  "evidence": {
+    "checkpoint_binds": ["campaign_id", "manifest_digest", "revision", "last_event_sequence", "last_event_digest", "projection_digest", "payload_digest"],
+    "checkpoint_tail_mismatch_rejected": true,
+    "checkpoint_write_failure_leaves_events_authoritative": true,
+    "ownership_atomic": "single wx claim file + atomic rename; 4-process race, exactly one winner, 15/15 stable",
+    "ownership_live_owner_not_preempted": true,
+    "ownership_release_verifies_owner": true,
+    "budget_from_live_ledger": true,
+    "budget_no_double_charge": true,
+    "recovery_synthetic_sink_control_flow": true,
+    "recovery_real_eventlog_fsync": true
+  },
+  "test_layers": {
+    "deterministic_fixture": ["closure-c0", "contracts-c0", "fixture-c0", "c1-event-projection", "c1-scheduler", "c1-closure"],
+    "real_local_subprocess_synthetic_sink": ["c1-ownership", "c1-recovery"],
+    "real_eventlog": ["c1-eventlog-durability"],
+    "real_pi_sdk_faux_provider": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"]
+  },
+  "open_findings": {"P0": 0, "P1": 0, "P2": []},
+  "blocked": [],
+  "known_risks": [
+    "Single-host ownership only; not a distributed lease.",
+    "External side-effect exactly-once is NOT claimed (no Broker/executor).",
+    "The explicit terminal restart guard is redundant with the transition table; only the table mutation is caught.",
+    "tsc: 0 campaign errors; 10 pre-existing errors in imported untyped runtime files."
+  ],
+  "not_implemented": ["C2 real Pi Host-level Session rotation", "C3 real Broker/Oracle adapters", "C4/C4a Web UI and Pi /aegis commands"],
+  "statements": {
+    "auto_invoked_gpt_6_1_sol": false,
+    "real_target_network_or_credentials_used": false,
+    "synthetic_evidence_labeled": true,
+    "session_count_is_not_episode_count": true,
+    "unknown_is_not_failure": true,
+    "external_side_effect_exactly_once_claimed": false,
+    "external_acceptance_pending": true
+  }
+}

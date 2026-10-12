@@ -1,0 +1,42 @@
+{
+	// Aegis-owned type-check config for the Campaign modules ONLY.
+	//
+	// The Campaign layer is author-JS with JSDoc in .mjs files. This config
+	// checks the campaign modules with `checkJs` on, using the same structural
+	// settings as `tsconfig.aegis.json` (non-strict to avoid flooding tsc with
+	// implicit-any from the untyped pre-existing runtime it imports). It is
+	// DELIBERATELY separate from the Batch-E config so Batch-E coverage is never
+	// claimed for the Campaign. It does NOT include Pi's own sources.
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"lib": ["ES2024"],
+		"strict": false,
+		"noImplicitAny": false,
+		"strictNullChecks": false,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowJs": true,
+		"checkJs": true,
+		"types": ["node"],
+		"typeRoots": ["./pi/node_modules/@types"]
+	},
+	"include": [
+		"memory/campaign/aggregate.mjs",
+		"memory/campaign/dynamic-policy.mjs",
+		"memory/campaign/event-contract.mjs",
+		"memory/campaign/fixture.mjs",
+		"memory/campaign/identifiers.mjs",
+		"memory/campaign/index.mjs",
+		"memory/campaign/manifest.mjs",
+		"memory/campaign/ownership.mjs",
+		"memory/campaign/projection.mjs",
+		"memory/campaign/queue.mjs",
+		"memory/campaign/registries.mjs",
+		"memory/campaign/report.mjs",
+		"memory/campaign/scheduler.mjs"
+	],
+	"exclude": ["pi/**", "node_modules/**", "tests/**"]
+}

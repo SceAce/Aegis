@@ -1,0 +1,38 @@
+{
+  "cards": [
+    {
+      "id": "example-observe-before-exploit",
+      "revision": "1",
+      "title": "Establish the environment before choosing a path",
+      "status": "verified",
+      "source_refs": ["docs/CONTEST_MVP.md (behavioral constraint)", "Pi_Agent_base/agent/ROM.md"],
+      "scope": {
+        "task_category": "example",
+        "environment": "linux"
+      },
+      "when": ["example", "task_started"],
+      "hint": [
+        "Identify the binary format, protections, and input surface before committing to an approach.",
+        "State explicitly what is observed vs assumed; keep an unknown until an external check resolves it."
+      ],
+      "expect": "An explicit statement separating observed facts from model assumptions."
+    },
+    {
+      "id": "example-candidate-only",
+      "revision": "1",
+      "title": "A candidate that is never auto-injected",
+      "status": "candidate",
+      "source_refs": ["docs/CONTEST_MVP.md (candidate semantics)"],
+      "scope": {
+        "task_category": "example",
+        "environment": "linux"
+      },
+      "when": ["example", "task_started"],
+      "hint": [
+        "This text is illustrative only. It is a candidate and must be selected manually to appear.",
+        "It contains no exploit technique and is not verified for any real task."
+      ],
+      "expect": "Nothing; it exists to test that candidates are gated behind manual selection."
+    }
+  ]
+}

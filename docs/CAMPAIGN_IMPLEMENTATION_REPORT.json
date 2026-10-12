@@ -1,0 +1,149 @@
+{
+  "schema": "aegis-campaign-implementation-report/1.0",
+  "generated_at": "2026-10-12T00:00:00Z",
+  "status": "internally_verified",
+  "external_acceptance": "awaiting_external_review",
+  "orchestration": {
+    "child_agent_tool_available": false,
+    "execution": "serial master-DS role switching (test-author/implementer/reviewer)",
+    "fabricated_child_reports": false
+  },
+  "contract_versions": {
+    "campaign_schema": "campaign-1.x (major 1; minors accepted)",
+    "event_type": "runtime.note",
+    "event_schema": "1.1",
+    "campaign_payload_kinds": "campaign.* (16 frozen kinds)",
+    "report_schema": "1.0",
+    "bundle_schema": "1.0",
+    "ownership_schema": "1.0",
+    "checkpoint_schema": "1.0",
+    "projection_version": "1.0.0",
+    "scheduler_version": "1.0.0"
+  },
+  "files_changed": {
+    "modified_c0": [
+      "Pi_Agent_base/memory/campaign/aggregate.mjs",
+      "Pi_Agent_base/memory/campaign/manifest.mjs",
+      "Pi_Agent_base/memory/campaign/identifiers.mjs",
+      "Pi_Agent_base/memory/campaign/dynamic-policy.mjs",
+      "Pi_Agent_base/memory/campaign/report.mjs",
+      "Pi_Agent_base/memory/campaign/index.mjs",
+      "Pi_Agent_base/memory/campaign/fixture.mjs"
+    ],
+    "added_c1": [
+      "Pi_Agent_base/memory/campaign/event-contract.mjs",
+      "Pi_Agent_base/memory/campaign/projection.mjs",
+      "Pi_Agent_base/memory/campaign/ownership.mjs",
+      "Pi_Agent_base/memory/campaign/scheduler.mjs"
+    ],
+    "tests": [
+      "Pi_Agent_base/tests/aegis-campaign-closure-c0.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-lock-child.mjs",
+      "Pi_Agent_base/tests/helpers/campaign-scheduler-child.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs",
+      "Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs"
+    ],
+    "config_docs": [
+      "Pi_Agent_base/tsconfig.aegis-campaign.json",
+      "docs/CAMPAIGN_WORK_PLAN.md",
+      "docs/CAMPAIGN_TEST_MATRIX.md",
+      "docs/CAMPAIGN_REVIEW_REPORT.md",
+      "docs/CAMPAIGN_IMPLEMENTATION_REPORT.md"
+    ],
+    "not_modified": [
+      "Pi_Agent_base/pi/** (embedded Pi core)",
+      "credentials / model settings / lockfiles",
+      "Pi_Agent_base/memory/runtime/events.mjs (reused only)",
+      "deleted legacy Python tree",
+      "root AGENTS.md"
+    ]
+  },
+  "phases": [
+    {"id": "C0-Closure", "status": "internally_verified", "evidence": "aegis-campaign-closure-c0.mjs 39 ok; contracts 58 ok; fixture 22 ok"},
+    {"id": "C1-A", "status": "done", "evidence": "aegis-campaign-c1-event-projection.mjs EVT-01/02"},
+    {"id": "C1-B", "status": "done", "evidence": "PRJ-01/02, BUD-01, SINGLE-ACTIVE"},
+    {"id": "C1-C", "status": "done", "evidence": "aegis-campaign-c1-ownership.mjs WRT-01/02, CKP-01/02"},
+    {"id": "C1-D", "status": "done", "evidence": "aegis-campaign-c1-scheduler.mjs RUN-01, DUR-01, RUN-UNKNOWN"},
+    {"id": "C1-E", "status": "done", "evidence": "aegis-campaign-c1-recovery.mjs REC-01/02/03, END-01"},
+    {"id": "C2", "status": "not_implemented", "evidence": "planned only"},
+    {"id": "C3", "status": "not_implemented", "evidence": "planned only"},
+    {"id": "C4a", "status": "not_implemented", "evidence": "planned only"}
+  ],
+  "commands": [
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-closure-c0.mjs", "exit": 0, "ok": 39},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs", "exit": 0, "ok": 58},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-event-projection.mjs", "exit": 0, "ok": 22},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-ownership.mjs", "exit": 0, "ok": 12},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-scheduler.mjs", "exit": 0, "ok": 7},
+    {"cmd": "node Pi_Agent_base/tests/aegis-campaign-c1-recovery.mjs", "exit": 0, "ok": 5},
+    {"cmd": "biome check --config-path=Pi_Agent_base/aegis-biome.json <campaign+tests>", "exit": 0},
+    {"cmd": "tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json", "exit": 1, "campaign_errors": 0, "preexisting_import_errors": 10},
+    {"cmd": "node tests/aegis-workflow-evidence-d.mjs", "exit": 0},
+    {"cmd": "node tests/aegis-workflow-engine-d.mjs", "exit": 0},
+    {"cmd": "node tests/aegis-runtime-core-smoke.mjs", "exit": 0},
+    {"cmd": "node tests/aegis-runtime-effective-board.mjs", "exit": 0},
+    {"cmd": "node tests/memory-runtime-batch-b-smoke.mjs", "exit": 0},
+    {"cmd": "node tests/memory-runtime-learning-evidence-smoke.mjs", "exit": 0},
+    {"cmd": "node tests/observer-smoke.mjs", "exit": 0},
+    {"cmd": "node tests/aegis-learning-bridge-e.mjs", "exit": 0},
+    {"cmd": "node --import ./pi/packages/coding-agent/src/experimental/source-resolver.ts tests/aegis-observer-data-use-pi.mjs", "exit": 0, "layer": "real Pi SDK + faux provider"},
+    {"cmd": "node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts tests/aegis-observer-verify-first-pi.mjs", "exit": 0, "layer": "real Pi SDK + faux provider"},
+    {"cmd": "node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts tests/aegis-observer-outcome-command.mjs", "exit": 0, "layer": "real Pi SDK + faux provider"},
+    {"cmd": "node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts tests/aegis-observer-failclosed-pi.mjs", "exit": 0, "layer": "real Pi SDK + faux provider"}
+  ],
+  "old_code_failures": {
+    "aegis-campaign-closure-c0.mjs": {"failures_on_old_code": 28, "passes_after_fix": 39},
+    "reproduced": ["P0-1", "P0-2", "P0-3", "P1-1", "P1-2", "P1-3", "P1-4", "P1-5", "CLOSE-08", "CLOSE-09", "CLOSE-10", "CLOSE-11"]
+  },
+  "mutations": [
+    {"mutation": "remove illegal-correction exclusion", "case": "CL-ILL-LLM/FOREIGN", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "scope null-match", "case": "CL-SCOPE-MISSING", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "unbound taskOracle allowed", "case": "CL-ORACLE-*", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "restore arbitrary credentials", "case": "CL-CRED-ENUM", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "bundle_digest stops covering report_digest", "case": "bundle-digest", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "ID suffix unvalidated", "case": "CL-ID-*", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "parent-stage ownership skipped", "case": "CL-PARENT-STAGE", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "dependent promoted without result", "case": "PRJ-01", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "scheduler skips durable-before-dispatch", "case": "DUR-01", "expected": "FAIL", "actual": "FAIL"},
+    {"mutation": "transport failure -> failed", "case": "RUN-UNKNOWN", "expected": "FAIL", "actual": "FAIL"}
+  ],
+  "rebuild": {
+    "c0_report_rebuild_identical_digest": true,
+    "c1_event_replay_identical_projection": true,
+    "c1_side_effects_exactly_once_across_kill_restart": true
+  },
+  "test_layers": {
+    "deterministic_fixture": ["closure-c0", "contracts-c0", "fixture-c0", "c1-event-projection", "c1-scheduler"],
+    "real_local_subprocess": ["c1-ownership (multi-process lock)", "c1-recovery (SIGKILL boundaries)"],
+    "real_pi_sdk_faux_provider": ["aegis-observer-data-use-pi", "aegis-observer-verify-first-pi", "aegis-observer-outcome-command", "aegis-observer-failclosed-pi"]
+  },
+  "open_findings": {"P0": 0, "P1": 0, "P2": ["writeFileAtomic uses join(path,'..') instead of dirname (cosmetic)"]},
+  "blocked": [],
+  "known_risks": [
+    "C1 ownership is single-host, fail-closed; NOT a distributed lease.",
+    "tsc campaign config: 0 errors in campaign files; 10 pre-existing errors in imported untyped runtime files.",
+    "A JSDoc-automation mistake corrupted 10 campaign files mid-session; restored/reconstructed and fully re-verified (see review report §8)."
+  ],
+  "not_proven": [
+    "C2 real Pi Host-level Session rotation",
+    "C3 real Broker/Oracle adapters",
+    "C4a Web UI and Pi /aegis commands",
+    "real CTF/penetration/remote target/network/credentials",
+    "distributed multi-host ownership",
+    "statistical learning efficacy from the fixture",
+    "a complete long-running Campaign claim"
+  ],
+  "statements": {
+    "auto_invoked_gpt_6_1_sol": false,
+    "real_target_network_or_credentials_used": false,
+    "synthetic_evidence_labeled": true,
+    "session_count_is_not_episode_count": true,
+    "unknown_is_not_failure": true,
+    "external_acceptance_pending": true
+  }
+}

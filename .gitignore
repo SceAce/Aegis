@@ -20,5 +20,12 @@ __pycache__/
 # changes are documented, not vendored as history.
 vendor/pi/
 
+# Embedded pi repo inside Pi_Agent_base: own git history + 478M node_modules.
+# Never track it here.
+Pi_Agent_base/pi/
+
+# Local scratch
+tmp/
+
 # OS
 .DS_Store
