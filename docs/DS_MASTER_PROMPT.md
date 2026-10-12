@@ -1,14 +1,18 @@
-# Aegis 阶段入口：C2 已验收
+# Aegis 阶段入口：C2 已验收，C3 已规划
 
-状态：**C1、C2 均已在冻结范围内外部验收通过**。
-C2 最新验收：[`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)，产品基线 `8e34c0f`。
-C2-E1/E2 修复完成，不再执行历史修复提示词，不因后置 F16 重开阶段。
+状态：**C1、C2 均已按冻结范围验收；C3 planned，未启动实现**。
+当前核对基线 `0e5af0c`，父仓库干净；没有新的 C2 产品版本，不重复验收同一实现。
+C2 验收记录：[`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)。
 
-当前已交付真实 Pi SDK Host 可调用轮换入口及预算/完成验证；现有 Campaign dispatch loop
-没有自动调用该入口。后续真实执行集成应明确调用与账本基线归属，不能夸大现有能力。
-C3 Broker/Oracle adapters、C4/C4a UI 仍未实现，不自动启动下一阶段。
+后续路线：[`CAMPAIGN_NEXT_PHASES.md`](CAMPAIGN_NEXT_PHASES.md)。
+下一阶段任务书：[`C3_EXECUTION_TASK.md`](C3_EXECUTION_TASK.md)。
+准备好的 DS 提示词：[`C3_EXECUTION_DS_PROMPT.md`](C3_EXECUTION_DS_PROMPT.md)。
+本轮用户请求为验收与规划，文档已准备，不自动开始 C3 产品修改；用户委派该任务后实施。
 
-后续按用户范围和既定架构形成下一阶段任务，继续遵守开发规范 §3.1、测试与 Git 规范：
-冻结核心目标、限定验收、区分 required/deferred，保留后置证据，不扩大审计清单。
-不自动调用验收模型，不触发未授权真实模型/目标网络，不修改 Pi 核心/凭据/锁文件，
-不 push 或改写 Git 历史。当前 C2 交付已结束，等待下一任务范围。
+C3 主线是产品 Host → Scheduler → 现有 Broker → 本地效果 → 独立 Oracle → 结果，
+并接入 C2 安全 Session 轮换与明确账本归属；内部里程碑自主完成，阶段仅做一次限定验收。
+后续 C4 报告、C4a 观察界面、C5 整体集成及可选能力实验依次推进，不把后续能力提前当门槛。
+
+遵守开发规范 §3.1：冻结 required 范围，区分当前阻塞/非阻塞/后置，保留真实失败和证据。
+F16 后置，不重开 C1/C2，不为了全库完美无限修复。保持本地 Git 任务管理，不 push/改写历史，
+不修改 Pi 核心/凭据/模型/lockfile，不自动调用验收模型或未授权真实模型/目标网络。

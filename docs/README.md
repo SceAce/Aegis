@@ -10,7 +10,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态：**C1、C2 均已在冻结范围内外部验收通过**。最新记录 [`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)，产品基线 `8e34c0f`；阶段入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。C2 提供真实 SDK Host 可调用轮换入口，现有 Campaign loop 尚未自动调用；不夸大自动接线。E1/E2 修复结束，F16 继续后置，不重开阶段。C3/C4 尚未实施，下一任务按用户范围推进。
+当前状态：**C1/C2 已验收；C3 已规划，未启动实现**。C2 记录 [`C2_EXTERNAL_ACCEPTANCE.md`](C2_EXTERNAL_ACCEPTANCE.md)，阶段入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。后续路线见 [`CAMPAIGN_NEXT_PHASES.md`](CAMPAIGN_NEXT_PHASES.md)，下一任务书 [`C3_EXECUTION_TASK.md`](C3_EXECUTION_TASK.md)，可直接委派的提示词 [`C3_EXECUTION_DS_PROMPT.md`](C3_EXECUTION_DS_PROMPT.md)。C3 将现有 Broker/Oracle/Session 入口接成产品闭环；F16 后置，不重开 C1/C2。当前请求仅为验收与规划，未进行产品修改。
 
 开发依据：
 
