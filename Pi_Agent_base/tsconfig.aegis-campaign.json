@@ -25,9 +25,11 @@
 	},
 	"include": [
 		"memory/campaign/aggregate.mjs",
+		"memory/campaign/campaign-mode.mjs",
 		"memory/campaign/dynamic-policy.mjs",
 		"memory/campaign/event-contract.mjs",
 		"memory/campaign/fixture.mjs",
+		"memory/campaign/host.mjs",
 		"memory/campaign/identifiers.mjs",
 		"memory/campaign/index.mjs",
 		"memory/campaign/manifest.mjs",

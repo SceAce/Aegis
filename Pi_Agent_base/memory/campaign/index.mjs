@@ -28,6 +28,11 @@ export {
 	validateTaskOracleBinding,
 } from "./aggregate.mjs";
 export {
+	BROKERED_TOOLS,
+	createCampaignActionGate,
+	DIRECT_TOOLS_DENIED,
+} from "./campaign-mode.mjs";
+export {
 	ADMISSION_STATUSES,
 	admitTaskProposal,
 	applyAdmission,
@@ -53,6 +58,7 @@ export {
 	fixtureOutcomes,
 	persistFixtureCampaign,
 } from "./fixture.mjs";
+export { buildBudgetLedger, createCampaignHost, ensureWorkspace, HOST_VERSION } from "./host.mjs";
 export * from "./identifiers.mjs";
 export {
 	CAMPAIGN_SCHEMA_VERSION,
