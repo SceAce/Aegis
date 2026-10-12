@@ -375,6 +375,7 @@ export function buildReportInputs(
 		faults,
 		campaignAggregate,
 		manifestDigest: manifestDigestValue,
+		integrity: deriveIntegrity(events),
 		runtimeDigests,
 	};
 }

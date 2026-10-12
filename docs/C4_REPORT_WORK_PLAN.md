@@ -1,6 +1,6 @@
 # C4 Report — Work Plan and Frozen Contract
 
-Status: **frozen before implementation**. Scope follows `C4_REPORT_TASK.md`,
+Status: **frozen before implementation; C4-A..D completed, internally verified, awaiting one C4 external review**. Scope follows `C4_REPORT_TASK.md`,
 `C4_REPORT_DS_PROMPT.md` and `CAMPAIGN_ARCHITECTURE.md` §3.7. This plan does not
 reopen C1/C2/C3 and does not implement C4a UI, C5 or any real target/network/model.
 
