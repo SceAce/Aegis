@@ -14,7 +14,7 @@
 //     Pi_Agent_base/tests/aegis-c6-learning-closure.mjs
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,7 +184,7 @@ try {
 	);
 
 	// Derived rebuild: delete the store, rebuild from committed notes.
-	const store = createLearningStore({ dir: join(workDir, "experiences") });
+	const _store = createLearningStore({ dir: join(workDir, "experiences") });
 	const committed = events.filter((e) => e.payload?.kind === "experience.compiled" && e.payload.active === true);
 	if (committed.length > 0) {
 		rmSync(join(workDir, "experiences"), { recursive: true, force: true });

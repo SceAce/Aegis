@@ -10,7 +10,7 @@
 // only provides the deterministic, auditable per-attempt plumbing.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 export const C6_RUNNER_VERSION = "2.0.0";
 

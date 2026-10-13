@@ -12,7 +12,7 @@
 //     Pi_Agent_base/tests/aegis-c6-rotation-reject.mjs
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +27,6 @@ import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
 import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
 import { validateManifest } from "../memory/campaign/manifest.mjs";
 import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-reject-"));

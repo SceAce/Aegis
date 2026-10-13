@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, Type } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import * as sdkBase from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
@@ -263,7 +263,7 @@ try {
 	// runtime creation must fail cleanly.
 	const failConfig = writeConfig({});
 	Object.assign(process.env, { AEGIS_EVENT_LOG: join(workDir, "events.jsonl") });
-	let failLogExists = false;
+	let _failLogExists = false;
 	const failOutcome = await runC6FromConfig({
 		configPath: failConfig,
 		scenario: "run",
@@ -271,7 +271,7 @@ try {
 		createSeam: async () => ({ ok: false, reason: "simulated bind failure" }),
 		print: () => {},
 	});
-	failLogExists = existsSync(join(workDir, "events.jsonl"));
+	_failLogExists = existsSync(join(workDir, "events.jsonl"));
 	check(
 		"SDK-L3 a bind failure is surfaced with no false completion",
 		failOutcome.ok === false && /bind failure|runtime seam/.test(JSON.stringify(failOutcome.reasons)),

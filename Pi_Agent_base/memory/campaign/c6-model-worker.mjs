@@ -235,7 +235,6 @@ export function createDecisionCaptureTool({
  *   onRequestCommitted?: ((record: object) => void)|null,
  *   setTaskBinding?: ((task: any) => void)|null,
  *   contextWindowChars?: number|null,
- *   remainingRequestsForTask?: (() => number)|null,
  * }} args
  */
 export function createModelWorker(
@@ -258,7 +257,6 @@ export function createModelWorker(
 		onRequestCommitted = null,
 		setTaskBinding = null,
 		contextWindowChars = null,
-		remainingRequestsForTask = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");

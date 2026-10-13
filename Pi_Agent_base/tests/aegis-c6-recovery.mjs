@@ -11,7 +11,6 @@
 //   node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
 //     Pi_Agent_base/tests/aegis-c6-recovery.mjs
 
-import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -44,7 +44,7 @@ export function createStructuredDataReplayAdapter() {
 				mkdirSync(root, { recursive: true });
 				const target = typeof args?.target === "string" ? args.target : "dataset.json";
 				writeFileSync(join(root, target), `${JSON.stringify(priorPreState)}\n`, "utf8");
-				const preState = readFileSync(join(root, target), "utf8");
+				const _preState = readFileSync(join(root, target), "utf8");
 				const adapter = createStructuredDataAdapter({ workspaceRoot: root });
 				const result = adapter.procedure.run({ arguments: { target, field: args.field, value: args.value } });
 				if (!result || result.ok !== true) {

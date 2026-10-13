@@ -188,7 +188,7 @@ export function createCodeRepairAdapter(
  */
 export const SUPPORTED_CRITERIA = Object.freeze(["external test passes"]);
 
-export function createCodeRepairJudge({ workspaceRoot, runTests, testFile = null } = /** @type {any} */ ({})) {
+export function createCodeRepairJudge({ workspaceRoot, runTests } = /** @type {any} */ ({})) {
 	if (typeof runTests !== "function") throw new Error("createCodeRepairJudge requires a trusted runTests procedure");
 	return ({ task, onEvidence }) => {
 		// Every declared stage criterion must be one this judge can actually verify;

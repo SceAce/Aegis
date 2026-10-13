@@ -31,7 +31,6 @@ import { projectState } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
 import {
 	buildCampaignLearningBridge,
-	compileExperienceFromProofs,
 	createCampaignLearningStore,
 	loadAuthoritativeExperiences,
 	rebuildExperienceStore,
@@ -469,7 +468,7 @@ export async function runC6FromConfig(
 	 * read-only observation; it lets the Router decide `direct`/`habit` from a
 	 * VERIFIED current state rather than an unknown one.
 	 */
-	async function observeCurrentState({ task, bridge }) {
+	async function observeCurrentState({ task }) {
 		const target = task?.target_ref ?? task?.definition?.target_ref ?? null;
 		if (!target || typeof target !== "string") return { state: null, currentStateRef: null };
 		let state = null;
@@ -700,7 +699,6 @@ export async function runC6FromConfig(
 									if (!learningStoreRef) learningStoreRef = createCampaignLearningStore(config.work_dir);
 									const { state: currentState, currentStateRef } = await observeCurrentState({
 										task: routedTask,
-										bridge,
 									});
 									const experiences = await loadAuthoritativeExperiences({
 										store: learningStoreRef,
