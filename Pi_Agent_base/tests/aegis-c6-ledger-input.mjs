@@ -105,6 +105,8 @@ test("the model worker refuses a request whose input estimate exceeds the limit"
 	});
 	const result = await worker.run({ task: { task_id: "task-x" } });
 	assert.equal(result.ok, false);
-	assert.equal(result.failure_mode, "budget_exhausted");
+	// The per-request context WINDOW is a distinct gate from the cumulative request
+	// budget: an input that cannot fit the window is refused before the call.
+	assert.equal(result.failure_mode, "context_window_exceeded");
 	assert.equal(prompted, 0, "the model must NOT be prompted when the input estimate exceeds the limit");
 });

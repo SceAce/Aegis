@@ -10,14 +10,16 @@
 // only provides the deterministic, auditable per-attempt plumbing.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-export const C6_RUNNER_VERSION = "1.0.0";
+export const C6_RUNNER_VERSION = "2.0.0";
 
 /**
- * Run a bounded attempt list. Each attempt names its own work_dir and optional
- * seed/initial-state override. Attempts are run SEQUENTIALLY; a failure does not
- * abort the list (its measurement is recorded with ok:false).
+ * Run a bounded attempt list. Each attempt gets its OWN materialized config with
+ * its own `work_dir`, so the product entry actually runs (and commits) in the
+ * attempt's directory rather than the base config's. Attempts are run
+ * SEQUENTIALLY; a failure does not abort the list (its measurement is recorded
+ * with ok:false). Duplicate attempt ids/paths are refused.
  *
  * @param {{
  *   runEntry: (args: any) => Promise<any>,
@@ -28,6 +30,7 @@ export const C6_RUNNER_VERSION = "1.0.0";
  *   createSeam?: Function|null,
  *   fauxProviderFactory?: Function|null,
  *   print?: (text: string) => void,
+ *   applyInitialState?: ((attempt: any, initial: any) => void)|null,
  * }} args
  */
 export async function runBoundedAttempts(
@@ -40,22 +43,49 @@ export async function runBoundedAttempts(
 		createSeam = null,
 		fauxProviderFactory = null,
 		print = null,
+		applyInitialState = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof runEntry !== "function") throw new Error("runBoundedAttempts requires runEntry");
 	if (!Array.isArray(attempts) || attempts.length === 0)
 		return { ok: false, reason: "no attempts were named", attempts: [] };
 	mkdirSync(baseDir, { recursive: true });
+	const baseConfig = JSON.parse(readFileSync(configPath, "utf8"));
+	const seenIds = new Set();
+	const seenDirs = new Set();
 	const results = [];
 	for (const [index, attempt] of attempts.entries()) {
 		const id = attempt.id ?? `attempt-${index + 1}`;
 		const attemptDir = attempt.work_dir ?? join(baseDir, id);
+		// X6: refuse a duplicate attempt id or work_dir so two attempts cannot
+		// silently share (and reuse) the same committed state.
+		if (seenIds.has(id)) {
+			results.push({ attempt_id: id, ok: false, error: `duplicate attempt id: ${id}` });
+			continue;
+		}
+		if (seenDirs.has(attemptDir)) {
+			results.push({ attempt_id: id, ok: false, error: `duplicate attempt work_dir: ${attemptDir}` });
+			continue;
+		}
+		seenIds.add(id);
+		seenDirs.add(attemptDir);
 		mkdirSync(attemptDir, { recursive: true });
+		// Materialize a per-attempt config so the product entry really runs in this
+		// attempt's work_dir (and writes its own committed source there).
+		const attemptConfigPath = join(attemptDir, "campaign.config.json");
+		writeFileSync(
+			attemptConfigPath,
+			`${JSON.stringify({ ...baseConfig, work_dir: attemptDir, seed: attempt.seed ?? baseConfig.seed ?? null }, null, 2)}\n`,
+			"utf8",
+		);
+		if (typeof applyInitialState === "function" && attempt.initial_state !== undefined) {
+			applyInitialState(attempt, attempt.initial_state);
+		}
 		let outcome = null;
 		let error = null;
 		try {
 			outcome = await runEntry({
-				configPath,
+				configPath: attemptConfigPath,
 				scenario: attempt.scenario ?? "run",
 				observe: attempt.observe === true,
 				export: attempt.export === true,
@@ -72,6 +102,8 @@ export async function runBoundedAttempts(
 			seed: attempt.seed ?? null,
 			initial_state: attempt.initial_state ?? null,
 			work_dir: attemptDir,
+			config_path: attemptConfigPath,
+			event_log: join(attemptDir, "events.jsonl"),
 			ok: outcome?.ok === true && error === null,
 			error,
 			reasons: outcome?.reasons ?? [],

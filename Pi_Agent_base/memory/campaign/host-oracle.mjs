@@ -142,6 +142,7 @@ export function createHostOracle(
 			failure_mode: raw?.failure_mode ?? null,
 			delayed: raw?.delayed === true,
 			when: Array.isArray(raw?.when) ? raw.when : [],
+			expect: Array.isArray(raw?.expect) ? raw.expect : [],
 			evidence: Array.isArray(raw?.evidence) ? raw.evidence : [],
 		};
 		// `unknown`/`invalid`/delayed carry no Stage success; the scheduler records

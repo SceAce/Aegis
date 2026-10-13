@@ -165,10 +165,25 @@ try {
 		outcome.ledger?.consumed?.model_requests >= rotations.length,
 		JSON.stringify(outcome.ledger?.consumed),
 	);
-	// Same Episode: a rotation does not add an independent Episode.
+	// Same Episode per Task: a rotation preserves the running Task's Episode and
+	// never adds an extra one. (Each distinct Host Task owns its own Episode; the
+	// SDK's unrelated label must NOT be the episode identity.)
 	const state = projectState(events);
 	const episodes = Object.keys(state.episodes);
-	check("SDK-L2 rotation kept a single Episode", episodes.length === 1, JSON.stringify(episodes));
+	const taskIds = new Set(
+		events.filter((e) => e.payload?.kind === "campaign.task.started").map((e) => e.payload.task_id),
+	);
+	check(
+		"SDK-L2 rotation added no extra Episode (one per real Task)",
+		episodes.length === taskIds.size && episodes.length >= 1,
+		JSON.stringify({ episodes: episodes.length, tasks: taskIds.size }),
+	);
+	const handoffEpisodes = new Set(events.filter((e) => e.event_type === "handoff.completed").map((e) => e.episode_id));
+	check(
+		"SDK-L2 every rotation stayed inside a real Task episode",
+		[...handoffEpisodes].every((id) => episodes.includes(id)),
+		JSON.stringify([...handoffEpisodes]),
+	);
 
 	// SDK-L2: a direct write is refused while Campaign mode is active. We drive a
 	// fresh session with the SAME gate loaded and attempt a write.

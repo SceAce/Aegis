@@ -40,6 +40,7 @@ export const KNOWN_CONFIG_V11_KEYS = Object.freeze([
 	"task_family",
 	"measure",
 	"registered_test",
+	"seed",
 ]);
 export const KNOWN_CONFIG_KEYS = Object.freeze([
 	"schema_version",
@@ -397,6 +398,7 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 		task_family: taskFamily,
 		measure: measureConfig,
 		registered_test: typeof raw.registered_test === "string" ? raw.registered_test : null,
+		seed: raw.seed ?? null,
 	};
 	return { ok: true, reasons: [], config, manifest };
 }

@@ -390,7 +390,12 @@ export async function assembleCampaignHost(
 
 	const host = createCampaignHost({
 		manifest,
-		ownedTasks: manifest.tasks,
+		// X8: a trusted run identity for every task outcome, so a Compiler proof
+		// carries a real run binding (never a model value).
+		ownedTasks: (manifest.tasks ?? []).map((task) => ({
+			...task,
+			run_id: `${manifest.campaign_id}:${String(manifest.revision ?? 0)}`,
+		})),
 		baseDir: join(workDir, "runtime"),
 		workspaceRoot,
 		sink,

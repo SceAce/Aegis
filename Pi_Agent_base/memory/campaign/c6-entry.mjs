@@ -364,11 +364,13 @@ export async function runC6FromConfig(
 	// so the tool installed on the SDK session (created below, before assembly) can
 	// still enforce the current task's tool/request allocation.
 	const ledgerHolder = { ledger: null };
+	const decisionState = { budget_terminated: false };
 	const decisionCapture = {
 		tool: createDecisionCaptureTool({
 			sdk: sdkImpl,
 			buffer,
 			type: TypeSchema ?? undefined,
+			state: decisionState,
 			admitTool: ({ tool_name }) => (ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true }),
 			remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
 		}),
@@ -584,6 +586,7 @@ export async function runC6FromConfig(
 						},
 					});
 					ledgerHolder.ledger = currentTaskLedger;
+					decisionState.budget_terminated = false;
 					return currentTaskLedger;
 				};
 				modelWorker = createModelWorker({
@@ -636,6 +639,7 @@ export async function runC6FromConfig(
 						pendingToolAdmissions.length = 0;
 					},
 					decisionBuffer: buffer,
+					decisionState,
 					router:
 						config.learning?.policy === "off"
 							? null
@@ -981,8 +985,20 @@ function modelDetails(model) {
 export function buildMeasurement({ config, manifest, ledger, events, outDir }) {
 	const attempts = [];
 	for (const event of events) {
-		if (event?.event_type === "runtime.note" && event.payload?.kind === "c6.attempt") {
-			attempts.push(event.payload.attempt);
+		if (event?.event_type !== "runtime.note") continue;
+		const payload = event.payload ?? {};
+		if (payload.kind === "c6.attempt") attempts.push(payload.attempt);
+		// X4: every committed provider request is a real, durable measurement record.
+		else if (payload.kind === "c6.request") {
+			attempts.push({
+				type: "provider_request",
+				task_id: payload.task_id ?? null,
+				input_chars_estimated: payload.input_chars ?? null,
+				tool_calls: payload.tool_calls ?? null,
+				usage: payload.usage ?? null,
+				usage_source: payload.usage_source ?? "unknown",
+				recorded_at: event.recorded_at ?? null,
+			});
 		}
 	}
 	const measurement = {

@@ -39,7 +39,7 @@ export function createObservationTool({ sdk, type, workspaceRoot, allowedTargets
 	const { resolve, relative, isAbsolute } = nodePath;
 	const { readFileSync, existsSync } = nodeFs;
 	return sdk.defineTool({
-		name: "aegis_observe_workspace",
+		name: "aegis_read",
 		label: "Aegis: read a file in the authorized workspace",
 		description:
 			"Read the real content of a file INSIDE the authorized task workspace (read-only; no effect). Use it to inspect the current target before proposing a registered action.",
@@ -121,7 +121,14 @@ export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
  *
  * @param {{ sdk: any, buffer: any, type?: any }} args
  */
-export function createDecisionCaptureTool({ sdk, buffer, type, admitTool = null, remainingRequests = null }) {
+export function createDecisionCaptureTool({
+	sdk,
+	buffer,
+	type,
+	admitTool = null,
+	remainingRequests = null,
+	state = null,
+}) {
 	const Type = type ?? sdk.Type;
 	if (!Type) throw new Error("createDecisionCaptureTool requires a Type schema builder");
 	return sdk.defineTool({
@@ -193,6 +200,7 @@ export function createDecisionCaptureTool({ sdk, buffer, type, admitTool = null,
 			// X2: when the task's request allocation cannot fund the SDK's automatic
 			// follow-up, terminate so NO further provider request is sent for this task.
 			const noFollowUp = typeof remainingRequests === "function" && remainingRequests() < 1;
+			if (noFollowUp && state) state.budget_terminated = true;
 			return {
 				content: [
 					{
@@ -244,6 +252,7 @@ export function createModelWorker(
 		historyCharsProvider = () => 0,
 		onEvent = null,
 		decisionBuffer = null,
+		decisionState = null,
 		router = null,
 		ledgerFactory = null,
 		onRequestCommitted = null,
@@ -291,7 +300,7 @@ export function createModelWorker(
 			target ? `TARGET: ${target}` : "TARGET: (none declared)",
 			criteria.length ? `ACCEPTANCE: ${criteria.join(" ; ")}` : "ACCEPTANCE: (none declared)",
 			catalogLines.length ? `REGISTERED ACTIONS:\n${catalogLines.join("\n")}` : "REGISTERED ACTIONS: (see catalog)",
-			"Use aegis_observe_workspace to inspect the target file first, then state your decision with aegis_task_decision (data-only arguments). Do not write files directly.",
+			"Use aegis_read to inspect the target file first, then state your decision with aegis_task_decision (data-only arguments). Do not write files directly.",
 		];
 		return lines.join("\n");
 	}
@@ -434,6 +443,24 @@ export function createModelWorker(
 			}
 		}
 		const decisions = decisionBuffer ? decisionBuffer.list() : [];
+		// X2: if the decision tool terminated because the task could not fund the
+		// SDK's automatic follow-up, the task did not complete its loop. Report it as
+		// blocked so the task does not execute a half-observed decision or advance a
+		// dependency on a budget-exhausted run.
+		if (decisionState?.budget_terminated === true) {
+			if (onEvent)
+				onEvent({
+					kind: "task.blocked",
+					task_id: effectiveTaskId,
+					reason: "task request allocation cannot fund the automatic follow-up",
+				});
+			return {
+				ok: false,
+				failure_mode: "task_request_budget_exhausted",
+				detail: "the task request allocation was spent before the model could complete its loop",
+				provider_requests: providerRequests,
+			};
+		}
 		if (onEvent) {
 			onEvent({
 				kind: "task.planned",

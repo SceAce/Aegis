@@ -329,17 +329,31 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 			{ ref_id: `artifact:${task.task_id}`, digest: digest(readFileSync(absolute, "utf8")), path: absolute },
 		];
 		if (typeof onEvidence === "function") onEvidence(evidence);
-		// `when`/`expect` come from the task's DECLARED scope/criterion, never from a
-		// model: a compiled rule must carry the preconditions that held and the
-		// postcondition that was verified in every supporting episode.
-		const when = Array.isArray(task?.when)
-			? task.when
-			: task?.scope?.environment_fingerprint
-				? [`environment=${task.scope.environment_fingerprint}`]
-				: [];
-		const expect = Array.isArray(task?.stages)
-			? task.stages.flatMap((stage) => (stage.criteria ?? []).map((criterion) => String(criterion)))
-			: [];
+		const artifactRef = { ref_type: "artifact", ref_id: `artifact:${task.task_id}`, digest: evidence[0].digest };
+		// X8: `when`/`expect` are STRUCTURED predicates produced by the trusted
+		// verification, never declaration strings. `verified_by` names the evidence
+		// ref the Oracle re-read, so the Compiler's predicate gate can accept them.
+		const when = [
+			{
+				path: "environment.fingerprint",
+				op: "eq",
+				value: task?.scope?.environment_fingerprint ?? "data-repair-env",
+				verified_by: [artifactRef],
+			},
+		];
+		const expect = [];
+		for (const stage of task?.stages ?? []) {
+			for (const criterion of stage.criteria ?? []) {
+				const match = /^data\.([A-Za-z0-9_]+)\s+(?:==|is)\s+(.+)$/.exec(String(criterion).trim());
+				if (!match) continue;
+				expect.push({
+					path: `data.${match[1]}`,
+					op: "eq",
+					value: match[2].replace(/^["']|["']$/g, ""),
+					verified_by: [artifactRef],
+				});
+			}
+		}
 		if (anyUnknown)
 			return {
 				status: "unknown",
