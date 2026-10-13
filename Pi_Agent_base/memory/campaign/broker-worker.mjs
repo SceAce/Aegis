@@ -351,12 +351,19 @@ export function createBrokerWorker(
 			// Oracle outcome must carry so a compiled rule pins the SAME action version
 			// and implementation digest that actually produced the effect.
 			const lastContract = last ? broker.registry?.get(last.action_ref) : null;
+			// Prefer the REAL pre-state the action observed before its side effect. It
+			// is the trusted, executed-before evidence a compiled rule's `when` must
+			// be supported by, not the task's declarative initial_state label.
+			const lastEffect = effects[effects.length - 1];
+			const observedPreState =
+				lastEffect?.observed && typeof lastEffect.observed === "object" ? lastEffect.observed.pre_state : null;
 			const actionPin = lastContract
 				? {
 						action_ref: lastContract.id,
 						action_version: lastContract.version ?? null,
 						implementation_digest: lastContract.implementation_digest ?? null,
 						arguments: last.arguments ?? {},
+						observed_pre_state: observedPreState && typeof observedPreState === "object" ? observedPreState : null,
 					}
 				: null;
 			return { ok: true, outcome_ref: outcomeRef, action_pin: actionPin, effects };

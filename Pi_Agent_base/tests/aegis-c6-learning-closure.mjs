@@ -4,10 +4,15 @@
 //
 // Phase 1 runs two INDEPENDENT, compatible episodes (same method) and, under the
 // explicit policy, performs a REAL isolated replay for each and compiles the
-// reviewed Compiler to `active`. Phase 2 runs a THIRD task that the Router must
-// resolve via the active Experience with ZERO planning provider requests, and
-// the resulting effect is still judged by the independent Oracle. The derived
-// store is then deleted and rebuilt from the committed authoritative note.
+// reviewed Compiler to `active`. The training manifest contains ONLY those two
+// tasks, so the reuse task has NOT executed when compilation happens.
+//
+// Phase 2 runs a THIRD, genuinely undispatched task (its own manifest/campaign)
+// whose target is reset to the pinned pre-state BEFORE dispatch. The Router must
+// resolve it DIRECT from the active Experience with ZERO planning provider
+// requests, and the resulting effect is judged by the independent Oracle. The
+// derived store is then deleted and rebuilt from the committed authoritative
+// note and a NEW task reuses it again.
 //
 // Run:
 //   node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
@@ -27,7 +32,10 @@ const sdk = { ...sdkBase, AuthStorage };
 
 import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
 import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildDataRepairLearningManifest } from "../memory/campaign/structured-data-adapter.mjs";
+import {
+	buildDataRepairLearningManifest,
+	buildDataRepairReuseManifest,
+} from "../memory/campaign/structured-data-adapter.mjs";
 import { authoritativeActiveExperiences, createLearningStore } from "../memory/runtime/learning-store.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -56,19 +64,51 @@ try {
 	const workspaceRoot = join(base, "workspace");
 	const workDir = join(base, "run");
 	mkdirSync(workspaceRoot, { recursive: true });
-	writeFileSync(join(workspaceRoot, "dataset.json"), `${JSON.stringify({ status: "pending" })}\n`, "utf8");
-	const validated = validateManifest(buildDataRepairLearningManifest({ workspaceRoot }));
-	assert.equal(validated.ok, true, validated.reasons?.join("; "));
-	const manifestPath = join(base, "manifest.json");
-	writeFileSync(manifestPath, `${JSON.stringify(validated.manifest, null, 2)}\n`, "utf8");
+	const writeDataset = (state) =>
+		writeFileSync(join(workspaceRoot, "dataset.json"), `${JSON.stringify(state)}\n`, "utf8");
+	writeDataset({ status: "pending" });
+	// Training manifests: each run contains ONLY one compatible episode. The reuse
+	// task does NOT exist in training, so it cannot have completed before the
+	// compiled rule is applied. Each training episode is a SEPARATE campaign with
+	// its own real reset to the pinned pre-state.
+	// The DECLARED initial_state is deliberately DIFFERENT from the real reset, so a
+	// rule whose `when` came from the declaration (not a real observation) would
+	// not match the real current state and could not route `direct`.
+	const DECLARED_STALE = { status: "declared-stale" };
+	const trainingAManifest = buildDataRepairLearningManifest({
+		workspaceRoot,
+		campaignId: "campaign-c6-learn-a",
+		taskIds: ["task-001"],
+	});
+	trainingAManifest.tasks[0].initial_state = DECLARED_STALE;
+	const trainingA = validateManifest(trainingAManifest);
+	assert.equal(trainingA.ok, true, trainingA.reasons?.join("; "));
+	const manifestAPath = join(base, "manifest-a.json");
+	writeFileSync(manifestAPath, `${JSON.stringify(trainingA.manifest, null, 2)}\n`, "utf8");
+	const trainingBManifest = buildDataRepairLearningManifest({
+		workspaceRoot,
+		campaignId: "campaign-c6-learn-b",
+		taskIds: ["task-002"],
+	});
+	trainingBManifest.tasks[0].initial_state = DECLARED_STALE;
+	const trainingB = validateManifest(trainingBManifest);
+	assert.equal(trainingB.ok, true, trainingB.reasons?.join("; "));
+	const manifestBPath = join(base, "manifest-b.json");
+	writeFileSync(manifestBPath, `${JSON.stringify(trainingB.manifest, null, 2)}\n`, "utf8");
+	const reuseValidated = validateManifest(
+		buildDataRepairReuseManifest({ workspaceRoot, taskId: "task-003", initial: DECLARED_STALE }),
+	);
+	assert.equal(reuseValidated.ok, true, reuseValidated.reasons?.join("; "));
+	const reuseManifestPath = join(base, "reuse-manifest.json");
+	writeFileSync(reuseManifestPath, `${JSON.stringify(reuseValidated.manifest, null, 2)}\n`, "utf8");
 
-	function makeConfig(name, { policy, proofIds = [] }) {
+	function makeConfig(name, { policy, proofIds = [], manifest = manifestAPath }) {
 		const configPath = join(base, `${name}.config.json`);
 		writeFileSync(
 			configPath,
 			`${JSON.stringify({
 				schema_version: "campaign-config-1.1",
-				manifest_path: manifestPath,
+				manifest_path: manifest,
 				workspace_root: workspaceRoot,
 				work_dir: workDir,
 				mode: "auto",
@@ -129,48 +169,58 @@ try {
 		return faux;
 	};
 
-	// PHASE 1: two independent episodes normalize the same field; compile active.
-	const phase1 = await runC6FromConfig({
-		configPath: makeConfig("phase1", { policy: "off" }),
+	// PHASE 1: two independent, separately-reset episodes normalize the same field.
+	writeDataset({ status: "pending" });
+	const runA = await runC6FromConfig({
+		configPath: makeConfig("run-a", { policy: "off", manifest: manifestAPath }),
 		scenario: "run",
 		sdk,
 		fauxProviderFactory: fauxFactory,
 		print: () => {},
 	});
-	check("phase 1 completed both independent tasks", phase1.ok === true, JSON.stringify(phase1.task_states));
-	check("phase 1 did not auto-promote", phase1.learning?.active !== true);
 	check(
-		"the reuse task is not already completed before compilation",
-		phase1.task_states?.["task-003"] !== "completed",
-		JSON.stringify(phase1.task_states),
+		"training episode A completed",
+		runA.task_states?.["task-001"] === "completed",
+		JSON.stringify(runA.task_states),
 	);
-
+	writeDataset({ status: "pending" });
+	const runB = await runC6FromConfig({
+		configPath: makeConfig("run-b", { policy: "off", manifest: manifestBPath }),
+		scenario: "run",
+		sdk,
+		fauxProviderFactory: fauxFactory,
+		print: () => {},
+	});
+	check(
+		"training episode B completed",
+		runB.task_states?.["task-002"] === "completed",
+		JSON.stringify(runB.task_states),
+	);
 	const eventsAfterRun = readEvents(eventLogPath);
 	const proofIds = eventsAfterRun
 		.filter((e) => e.payload?.kind === "campaign.oracle.result" && e.payload.status === "success" && !e.payload.step_id)
 		.map((e) => e.payload.outcome_id);
 	check("two independent success proofs were committed", proofIds.length >= 2, JSON.stringify(proofIds));
+	check(
+		"the reuse task did not exist before compilation",
+		reuseValidated.manifest.tasks.every(
+			(t) => !eventsAfterRun.some((e) => e.payload?.task_id === t.task_id && e.event_type === "action.requested"),
+		),
+		JSON.stringify(reuseValidated.manifest.tasks.map((t) => t.task_id)),
+	);
 
-	// Compile with a REAL isolated replay under the explicit policy.
-	const compileRun = await runC6FromConfig({
-		configPath: makeConfig("compile", { policy: "explicit", proofIds }),
-		scenario: "status",
-		sdk,
-		fauxProviderFactory: fauxFactory,
-		print: () => {},
-	});
-	check("status is a read-only projection", compileRun.ok === true, JSON.stringify(compileRun.reasons));
-
-	// Now run the SAME learning policy in the executing entry so the replay +
-	// compile happens with the Host writer, then a third task reuses the rule.
+	// Compile with a REAL isolated replay under the explicit policy, driving the
+	// SAME executing entry so the replay + compile happens with the Host writer.
+	const _phase2EventsBefore = readEvents(eventLogPath).length;
 	const phase2 = await runC6FromConfig({
-		configPath: makeConfig("phase2", { policy: "explicit", proofIds }),
+		configPath: makeConfig("phase2", { policy: "explicit", proofIds, manifest: manifestBPath }),
 		scenario: "run",
 		sdk,
 		fauxProviderFactory: fauxFactory,
 		print: () => {},
 	});
 	check("phase 2 ran", phase2.ok !== undefined, JSON.stringify(phase2.reasons));
+	console.error("DEBUG learning=", JSON.stringify(phase2.learning, null, 2).slice(0, 4000));
 
 	const events = readEvents(eventLogPath);
 	const compiledNotes = events.filter((e) => e.payload?.kind === "experience.compiled" && e.payload.active === true);
@@ -178,23 +228,44 @@ try {
 	const resetNotes = events.filter((e) => e.payload?.kind === "episode.isolated_reset");
 	check("a real isolated replay was performed and committed", replayNotes.length >= 1, `count=${replayNotes.length}`);
 	check("a real isolated reset was recorded", resetNotes.length >= 1, `count=${resetNotes.length}`);
-
-	// The experience reached active (either through the phase-2 boundary or a
-	// compile report).
-	const activeNote = compiledNotes.length > 0 || phase2.learning?.active === true;
 	check(
 		"the reviewed Compiler reached an active experience",
-		activeNote,
+		compiledNotes.length >= 1,
 		JSON.stringify({ notes: compiledNotes.length, learning: phase2.learning?.status }),
+	);
+	check("the committed stream verifies", phase2.chain_ok === true);
+	// The proof `when` predicates come from the REAL observed pre-state, not the
+	// declarative initial_state label, and are backed by a committed evidence ref.
+	const successOutcomes = events
+		.filter((e) => e.payload?.kind === "campaign.oracle.result" && e.payload.status === "success" && !e.payload.step_id)
+		.map((e) => e.payload.outcome);
+	check(
+		"proof when predicates are pre-state observations with trusted refs",
+		successOutcomes.length >= 2 &&
+			successOutcomes.every(
+				(o) =>
+					Array.isArray(o.when) &&
+					o.when.length > 0 &&
+					o.when.every(
+						(p) => typeof p.path === "string" && p.op && Array.isArray(p.verified_by) && p.verified_by.length > 0,
+					) &&
+					o.when.every((p) => p.path !== "environment.fingerprint"),
+			),
+		JSON.stringify(successOutcomes.map((o) => o.when)),
+	);
+	check(
+		"proof recorded the real pre-state, not the declared initial_state",
+		successOutcomes.every((o) => o.observed?.pre_state?.status === "pending") &&
+			successOutcomes.every((o) => o.when?.every((p) => p.value !== DECLARED_STALE.status)),
+		JSON.stringify(successOutcomes.map((o) => o.when)),
 	);
 
 	// Derived rebuild: delete the store, rebuild from committed notes.
 	const _store = createLearningStore({ dir: join(workDir, "experiences") });
-	const committed = events.filter((e) => e.payload?.kind === "experience.compiled" && e.payload.active === true);
-	if (committed.length > 0) {
+	if (compiledNotes.length > 0) {
 		rmSync(join(workDir, "experiences"), { recursive: true, force: true });
 		const rebuiltStore = createLearningStore({ dir: join(workDir, "experiences") });
-		for (const note of committed) {
+		for (const note of compiledNotes) {
 			await rebuiltStore.save(
 				{ experience: note.payload.experience, failures: [] },
 				{ sourceOutcomeIds: note.payload.source_outcome_ids ?? [], recordedAt: note.recorded_at ?? null },
@@ -210,24 +281,26 @@ try {
 	} else {
 		check("the derived store rebuilds from the committed note", false, "no committed active note to rebuild from");
 	}
-	check("the committed stream verifies", phase2.chain_ok === true);
 
-	// PHASE 3: a fresh run with the active experience present. Task-003 is still
-	// pending, so the Router must resolve it DIRECT (zero planning requests) and
-	// the resulting effect is still judged by the independent Oracle.
+	// PHASE 3: reset the target to the pinned pre-state, then run a genuinely
+	// undispatched reuse task with the active experience present. The Router must
+	// resolve it DIRECT (zero planning requests) and the resulting effect must be
+	// judged by the independent Oracle with NEW intent/effect/outcome.
+	const _phase3Base = readEvents(eventLogPath).length;
+	writeDataset({ status: "pending" });
 	const requestsBeforeP3 = requests;
 	const phase3 = await runC6FromConfig({
-		configPath: makeConfig("phase3", { policy: "explicit", proofIds: [] }),
+		configPath: makeConfig("phase3", { policy: "explicit", manifest: reuseManifestPath }),
 		scenario: "run",
 		sdk,
 		fauxProviderFactory: fauxFactory,
 		print: () => {},
 	});
 	const phase3Requests = requests - requestsBeforeP3;
-	check("phase 3 completed with the active experience", phase3.ok === true, JSON.stringify(phase3.reasons));
+	check("phase 3 completed the reuse task", phase3.ok === true, JSON.stringify(phase3.reasons));
 	check("a direct route issued ZERO planning provider requests", phase3Requests === 0, `requests=${phase3Requests}`);
 	const eventsAfterP3 = readEvents(eventLogPath);
-	const p3NewEvents = eventsAfterP3.slice(events.length);
+	const p3NewEvents = eventsAfterP3.slice(_phase3Base);
 	check(
 		"phase 3 commits a NEW Broker intent for task-003",
 		p3NewEvents.some((e) => e.event_type === "action.requested" && e.payload?.task_id === "task-003"),

@@ -354,26 +354,26 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 		// value and never guessed from the post-state.
 		const preState = task?.initial_state && typeof task.initial_state === "object" ? task.initial_state : null;
 		const args = actionPin?.arguments && typeof actionPin.arguments === "object" ? actionPin.arguments : null;
+		// The REAL pre-state the action OBSERVED before its side effect. It is
+		// preferred over the declared `initial_state` label: a declaration is not an
+		// observation, so a rule's `when` must be supported by what actually held.
+		const observedPreState =
+			actionPin?.observed_pre_state && typeof actionPin.observed_pre_state === "object"
+				? actionPin.observed_pre_state
+				: null;
 		const observedWithReplay = {
 			state,
-			pre_state: preState,
+			pre_state: observedPreState ?? preState,
 			arguments: args,
 		};
 		// X8: `when`/`expect` are STRUCTURED predicates produced by the trusted
-		// verification, never declaration strings. `verified_by` names the evidence
-		// ref the Oracle re-read, so the Compiler's predicate gate can accept them.
-		const when = [
-			{
-				path: "environment.fingerprint",
-				op: "eq",
-				value: task?.scope?.environment_fingerprint ?? "data-repair-env",
-				verified_by: [artifactRef],
-			},
-		];
-		// Also carry the REAL pre-state preconditions (from the declared initial
-		// state) so a reused rule can verify its `when` against a trusted current
-		// state at route time. Only fields the action actually changes are relevant.
-		for (const [field, value] of Object.entries(preState ?? {})) {
+		// verification, never declaration strings. The pre-state predicates come from
+		// the REAL pre-action observation and are `verified_by` the committed action
+		// result that recorded that observation (a trusted source ref), not from the
+		// declarative `initial_state`. The environment is handled by `scope`, so it is
+		// not duplicated here (its `when` value could not be read from the target).
+		const when = [];
+		for (const [field, value] of Object.entries(observedPreState ?? {})) {
 			when.push({ path: field, op: "eq", value, verified_by: [artifactRef] });
 		}
 		const expect = [];
@@ -419,12 +419,13 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
  * planning requests). The tasks have no dependency so each is a genuinely
  * independent Episode.
  *
- * @param {{workspaceRoot: string, campaignId?: string, target?: string}} args
+ * @param {{workspaceRoot: string, campaignId?: string, target?: string, taskIds?: string[]}} args
  */
 export function buildDataRepairLearningManifest({
 	workspaceRoot,
 	campaignId = "campaign-c6-learn",
 	target = "dataset.json",
+	taskIds = ["task-001", "task-002"],
 }) {
 	const base = buildDataRepairManifest({ workspaceRoot, campaignId, target });
 	const scope = {
@@ -452,15 +453,57 @@ export function buildDataRepairLearningManifest({
 		campaign_id: campaignId,
 		title: "C6 learning closure fixture",
 		objective: {
-			description: "Two independent episodes normalize the same field; a third repeats the verified method.",
+			description: "Two independent episodes normalize the same field; a later task reuses the verified method.",
 			success_criteria: criteria,
 			stage_policy: "declared_only",
 		},
-		tasks: [
-			makeTask("task-001", 1, { status: "pending" }),
-			makeTask("task-002", 2, { status: "pending" }),
-			makeTask("task-003", 3, { status: "pending" }),
-		],
+		tasks: taskIds.map((id, index) => makeTask(id, index + 1, { status: "pending" })),
 		dynamic_task_policy: { ...base.dynamic_task_policy, max_task_count: 4 },
+	};
+}
+
+/**
+ * Build a SEPARATE reuse manifest with task ids that have NOT run in the training
+ * campaign. It is used only AFTER compilation, so the reuse task is genuinely
+ * undispatched when the compiled rule is applied — the rule is not "reusing" a
+ * task that already completed in the training phase.
+ *
+ * @param {{workspaceRoot: string, campaignId?: string, target?: string, taskId?: string, initial?: object}} args
+ */
+export function buildDataRepairReuseManifest({
+	workspaceRoot,
+	campaignId = "campaign-c6-reuse",
+	target = "dataset.json",
+	taskId = "task-003",
+	initial = { status: "pending" },
+}) {
+	const base = buildDataRepairLearningManifest({ workspaceRoot, campaignId, target, taskIds: [] });
+	const scope = {
+		environment_fingerprint: "data-repair-env",
+		domain: "structured-data",
+		permissions: ["data.record.write"],
+		task_types: ["verify", "reproduce"],
+	};
+	const criteria = ["data.status == active"];
+	return {
+		...base,
+		campaign_id: campaignId,
+		title: "C6 learning reuse fixture",
+		tasks: [
+			{
+				task_id: taskId,
+				order: 1,
+				depends_on: [],
+				target_ref: target,
+				task_type: "verify",
+				scope,
+				initial_state: initial,
+				goal: { goal_id: "normalize_status", description: "Normalize the status field.", success_criteria: criteria },
+				stages: [{ stage_id: `stage-${taskId}`, criteria, required: true }],
+				oracle_ref: "fixture.oracle.v1",
+				task_budget: { wall_time_ms: 120000, model_requests: 20, tool_calls: 40 },
+			},
+		],
+		dynamic_task_policy: { ...base.dynamic_task_policy, max_task_count: 1 },
 	};
 }

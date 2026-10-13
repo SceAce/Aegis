@@ -19,7 +19,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
+import { stable } from "../fixture/contracts.mjs";
 import { projectBoard } from "../runtime/board.mjs";
 import { createLearningBridge } from "../runtime/learning-bridge.mjs";
 import { compile as compileCommand, replay as replayCommand } from "../runtime/learning-commands.mjs";
@@ -143,6 +143,42 @@ export function routeBeforeModel(
 }
 
 /**
+ * Derive a COMMON arguments template from the named proofs' resolved outcomes.
+ * Only fields whose observed value is a non-empty, non-wildcard scalar that is
+ * IDENTICAL across every proof are included: a rule may pin only the arguments
+ * the supporting episodes actually agreed on. When the proofs disagree (or no
+ * argument is observable) the template is empty, so the rule stays unbound and
+ * cannot be applied `direct` without re-binding the missing parameters.
+ *
+ * @param {{bridge: any, proofIds: string[]}} args
+ * @returns {object|null} the common template, or null when nothing agrees
+ */
+export function deriveArgumentsTemplate({ bridge, proofIds }) {
+	const resolver = bridge?.resolver ?? bridge?.supportResolver ?? null;
+	if (!resolver || typeof resolver.resolveSupport !== "function") return null;
+	const perProof = [];
+	for (const outcomeId of proofIds ?? []) {
+		const resolved = resolver.resolveSupport({ kind: "outcome", ref: { ref_type: "outcome", ref_id: outcomeId } });
+		if (!resolved || resolved.ok !== true || !resolved.record) return null;
+		const args = resolved.record.observed?.arguments ?? resolved.record.arguments ?? null;
+		if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+		perProof.push(args);
+	}
+	if (perProof.length < 1) return null;
+	const template = {};
+	for (const key of Object.keys(perProof[0])) {
+		const value = perProof[0][key];
+		if (value === null || value === undefined || value === "") continue;
+		if (typeof value === "object") continue;
+		const stableValue = stable(value);
+		if (perProof.every((args) => Object.hasOwn(args, key) && stable(args[key]) === stableValue)) {
+			template[key] = value;
+		}
+	}
+	return Object.keys(template).length > 0 ? template : null;
+}
+
+/**
  * Compile a rule from explicit proof ids through the reviewed compiler + store.
  * This is the ONLY path that may reach `active`; it is driven by the Host policy.
  *
@@ -170,11 +206,22 @@ export async function compileExperienceFromProofs(
 		revision,
 	});
 	if (gate.ok !== true) return gate;
+	// Bind only the arguments the supporting episodes ACTUALLY agreed on. A rule
+	// that pins nothing stays unbound and cannot go `direct` without re-binding the
+	// missing parameters (habit). This is derived from resolved outcomes, never a
+	// model proposal or a declaration.
+	let effectiveTemplates = argumentsTemplates;
+	if (!effectiveTemplates || Object.keys(effectiveTemplates).length === 0) {
+		const common = deriveArgumentsTemplate({ bridge, proofIds });
+		if (common) {
+			effectiveTemplates = Object.fromEntries(proofIds.map((id) => [id, common]));
+		}
+	}
 	const compiled = await compileCommand({
 		proofIds,
 		bridge,
 		store,
-		argumentsTemplates,
+		argumentsTemplates: effectiveTemplates,
 		experienceId,
 		revision,
 		supersedes,
