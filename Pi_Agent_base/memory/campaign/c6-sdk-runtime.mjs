@@ -117,7 +117,7 @@ export async function buildModelRuntime({ provider, workDir, sdk }) {
  *   tools?: string[],
  *   sdk: any,
  *   extraExtensionPaths?: string[],
- *   decisionCapture?: { tool: any, decisions: () => any[], reset: () => void } | null,
+ *   decisionCapture?: any,
  *   extraTools?: any[],
  * }} args
  * @returns {Promise<SdkRuntimeHandle>}

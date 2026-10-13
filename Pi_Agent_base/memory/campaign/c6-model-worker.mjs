@@ -119,7 +119,7 @@ export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
  * Broker Worker can admit and execute it through the ONE Broker path. The model
  * can never supply an executable, argv, authorization, or a verdict.
  *
- * @param {{ sdk: any, buffer: any, type?: any }} args
+ * @param {{ sdk: any, buffer: any, type?: any, admitTool?: any, remainingRequests?: any, state?: any }} args
  */
 export function createDecisionCaptureTool({
 	sdk,
@@ -229,8 +229,8 @@ export function createDecisionCaptureTool({
  *   historyCharsProvider?: () => number,
  *   onEvent?: (record: object) => void,
  *   decisionBuffer?: any,
+ *   decisionState?: any,
  *   router?: any,
- *   onEvent?: (record: object) => void,
  *   ledgerFactory?: ((task: any) => any)|null,
  *   onRequestCommitted?: ((record: object) => void)|null,
  *   setTaskBinding?: ((task: any) => void)|null,

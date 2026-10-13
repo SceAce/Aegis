@@ -78,7 +78,7 @@ export async function loadAuthoritativeExperiences({ store, events }) {
  * from the reviewed compiler, never from this caller).
  *
  * @param {{
- *   policy: "off"|"shadow"|"explicit",
+ *   policy: string,
  *   proofIds?: string[],
  *   promoteExperience?: boolean,
  *   existingExperiences?: object[],
@@ -86,7 +86,7 @@ export async function loadAuthoritativeExperiences({ store, events }) {
  *   experienceId?: string|null,
  *   revision?: number,
  * }} args
- * @returns {Promise<{ok: boolean, status: string, reason?: string, active?: boolean, stored?: boolean, experience?: object|null, gaps?: object[], failures?: object[]}>}
+ * @returns {Promise<any>}
  */
 export async function runCampaignLearningStep(
 	{
@@ -201,7 +201,7 @@ export async function replayCommittedOutcome({ bridge, outcomeId, adapterPath = 
  * records are committed through the same writer, so the compiler's replay gate
  * resolves them.
  *
- * @param {{policy: string, proofIds: string[], bridge: any, store: any, replayAdapterPath: string|null, existingExperiences?: object[], environment?: object}} args
+ * @param {{policy: string, proofIds: string[], bridge: any, store: any, replayAdapterPath: string|null, existingExperiences?: object[], refreshBridge?: (() => any)|null}} args
  */
 export async function replayThenCompile(
 	{

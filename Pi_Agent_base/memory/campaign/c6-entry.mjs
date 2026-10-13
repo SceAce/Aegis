@@ -78,7 +78,7 @@ function readEventsSafe(path) {
 
 /**
  * Build a decision buffer shared between the SDK custom tool and the model plan.
- * @returns {{push: (d: any) => void, list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
+ * @returns {{setTask: (taskId: string) => void, push: (d: any) => void, pushTask: (p: any) => boolean, listTasks: () => any[], list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
  */
 export function createDecisionBuffer() {
 	let currentTask = null;
@@ -152,6 +152,7 @@ export function createCompositeWorker({ modelWorker, brokerWorker, buffer, onTas
  *   fauxProviderFactory?: Function|null, print?: (text: string) => void,
  *   installSignalHandlers?: boolean, signalSource?: any,
  *   resident?: boolean,
+ *   workerSeam?: ((worker: any) => any)|null,
  * }} args
  */
 export async function runC6FromConfig(
@@ -169,6 +170,7 @@ export async function runC6FromConfig(
 		installSignalHandlers = false,
 		signalSource = process,
 		resident = false,
+		workerSeam = null,
 	} = /** @type {any} */ ({}),
 ) {
 	const out = typeof print === "function" ? print : (text) => process.stdout.write(`${text}\n`);
@@ -348,7 +350,7 @@ export async function runC6FromConfig(
 			wall_time_ms: manifest.budget.wall_time_ms,
 		},
 		baseConsumed: persistedUsage,
-		onEvent: (record) => {
+		onEvent: (/** @type {any} */ record) => {
 			// Count REAL provider requests (including the automatic tool loop) so a
 			// declared requests-per-session threshold can trigger a safe rotation.
 			if (record.kind === "request.committed") requestsSinceRotation += 1;
@@ -557,7 +559,9 @@ export async function runC6FromConfig(
 					reason: options.reason ?? "auto_request_threshold",
 				});
 				if (!staged.ok) return { applied: false, reason: staged.reason };
-				const result = await supervisor.rotate({ requestId: staged.request_id, reason: staged.reason });
+				const result = /** @type {any} */ (
+					await supervisor.rotate({ requestId: staged.request_id, reason: staged.reason })
+				);
 				if (result.applied === true && result.reused !== true) {
 					// Rebind the SDK subscriptions to the new session (C6-A rebind seam).
 					const after = sdkRuntime.session();
@@ -625,7 +629,7 @@ export async function runC6FromConfig(
 							input_chars: 0,
 							wall_time_ms: Number.isInteger(alloc.wall_time_ms) ? alloc.wall_time_ms : manifest.budget.wall_time_ms,
 						},
-						onEvent: (record) => {
+						onEvent: (/** @type {any} */ record) => {
 							if (record.kind === "tool.admitted") pendingToolAdmissions.push(record);
 						},
 					});
@@ -661,7 +665,7 @@ export async function runC6FromConfig(
 					},
 					// X4: persist each committed request as a durable runtime.note so the
 					// cumulative ledger rebuilds after restart/measure.
-					onRequestCommitted: (record) => {
+					onRequestCommitted: (/** @type {any} */ record) => {
 						const usage = record?.usage ?? null;
 						sinkRef
 							?.append?.({
@@ -724,7 +728,7 @@ export async function runC6FromConfig(
 									}
 									return decision;
 								},
-					onEvent: (record) => {
+					onEvent: (/** @type {any} */ record) => {
 						if (record.kind === "request.committed") requestsSinceRotation += 1;
 						out(`  [ledger] ${JSON.stringify(record)}`);
 					},
@@ -732,7 +736,7 @@ export async function runC6FromConfig(
 				const plan = createModelPlan({ decisionsByTask: buffer.byTask() });
 				// Rebuild the Broker Worker with the MODEL plan instead of the fixture plan.
 				brokerWorker.setPlan?.(plan);
-				return createCompositeWorker({
+				const composite = createCompositeWorker({
 					modelWorker,
 					brokerWorker,
 					buffer,
@@ -754,6 +758,9 @@ export async function runC6FromConfig(
 						if (rotation?.applied === true && rotation.reused !== true) requestsSinceRotation = 0;
 					},
 				});
+				// An optional outer worker seam (trusted tests/tooling) that observes the
+				// result AFTER the Broker effect; it never changes scheduling semantics.
+				return typeof workerSeam === "function" ? workerSeam(composite) : composite;
 			},
 		});
 	} catch (error) {
@@ -1111,13 +1118,18 @@ export function buildMeasurement({ config, manifest, ledger, events, outDir }) {
 }
 
 async function importSdk() {
-	const mod = await import("@earendil-works/pi-coding-agent");
+	// Runtime specifiers (resolved by the source resolver), not static literals, so
+	// the Campaign type check does not need Pi's workspace declarations.
+	const specifier = "@earendil-works/pi-coding-agent";
+	/** @type {any} */
+	const mod = await import(specifier);
 	// `AuthStorage` is not re-exported from the package index; the CLI resolves it
 	// through the documented core module path. Tests may supply their own `sdk`
 	// object with `AuthStorage` attached.
 	if (!mod.AuthStorage) {
 		try {
-			const auth = await import("@earendil-works/pi-coding-agent/core/auth-storage");
+			const authSpecifier = "@earendil-works/pi-coding-agent/core/auth-storage";
+			const auth = await import(authSpecifier);
 			return { ...mod, AuthStorage: auth.AuthStorage };
 		} catch {
 			return mod;
@@ -1126,10 +1138,11 @@ async function importSdk() {
 	return mod;
 }
 async function importPiAi() {
-	return import("@earendil-works/pi-ai/compat");
+	const specifier = "@earendil-works/pi-ai/compat";
+	return import(specifier);
 }
 async function importFauxFactory() {
-	const mod = await import("@earendil-works/pi-ai/compat");
+	const mod = await importPiAi();
 	return mod.registerFauxProvider;
 }
 

@@ -30,7 +30,7 @@ import { digest } from "../fixture/contracts.mjs";
  *   oracleId?: string,
  *   independenceGroup?: string,
  *   workspaceRoot: string,
- *   judgeTask: (args: {task: any, outcome_ref: string|null, attempt: number, onEvidence?: Function}) =>
+ *   judgeTask: (args: {task: any, outcome_ref: string|null, attempt: number, action_pin?: any, onEvidence?: Function}) =>
  *     {status: string, observed?: any, failure_mode?: string|null, delayed?: boolean,
  *      evidence?: Array<{ref_id: string, digest: string, path?: string}>,
  *      stage_overrides?: Record<string, object>} | Promise<any>,

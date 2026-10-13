@@ -295,7 +295,7 @@ export function buildDataRepairManifest({ workspaceRoot, campaignId = "campaign-
  *   - `data.<field> is <string>`   (same)
  *
  * @param {{workspaceRoot: string, target?: string}} args
- * @returns {(args: {task: any, attempt: number, onEvidence?: Function}) => object}
+ * @returns {(args: {task: any, attempt: number, action_pin?: any, onEvidence?: Function}) => object}
  */
 export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" } = /** @type {any} */ ({})) {
 	return ({ task, onEvidence, action_pin: actionPin }) => {

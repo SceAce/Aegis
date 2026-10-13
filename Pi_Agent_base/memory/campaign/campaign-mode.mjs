@@ -56,7 +56,7 @@ export const DIRECT_TOOLS_DENIED = Object.freeze([
 ]);
 
 /**
- * @param {{allowDirectTools?: string[], brokeredTools?: string[]}} [args]
+ * @param {{allowDirectTools?: string[], brokeredTools?: string[], controlTools?: string[]}} [args]
  * @returns {{active: boolean, activate: () => void, deactivate: () => void,
  *   guardToolCall: (input: {tool_name?: string, action_ref?: string| null}) =>
  *   {allowed: boolean, reason: string, mode: "campaign"|"standard", action_ref: string|null},

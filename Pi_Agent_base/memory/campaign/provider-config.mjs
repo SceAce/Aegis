@@ -85,7 +85,7 @@ export function resolveProviderConfig(provider) {
 			reasons.push("config.provider.credential_ref must be a non-empty string when present");
 	}
 	const spec = Object.hasOwn(KNOWN_PROVIDERS, kind)
-		? KNOWN_PROVIDERS[/** @type {keyof typeof KNOWN_PROVIDERS} */ (kind)]
+		? /** @type {any} */ (KNOWN_PROVIDERS[/** @type {keyof typeof KNOWN_PROVIDERS} */ (kind)])
 		: null;
 	if (spec?.requires_base_url && !provider.base_url) reasons.push(`config.provider "${kind}" requires base_url`);
 	if (spec?.loopback_only && provider.base_url && !isLoopbackBaseUrl(provider.base_url))
