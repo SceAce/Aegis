@@ -21,16 +21,133 @@ import { readFileSync } from "node:fs";
 
 import { digest, resolveInside } from "../fixture/contracts.mjs";
 
-export const MODEL_WORKER_VERSION = "1.1.0";
+export const MODEL_WORKER_VERSION = "2.0.0";
 
 /** A typed, distinguishable refusal from the provider-bound request gate. */
-function budgetRefused(message, category) {
-	/** @type {Error & {aegis_budget_refused?: boolean, aegis_category?: string}} */
+function budgetRefused(message, category, extra = null) {
+	/** @type {Error & {aegis_budget_refused?: boolean, aegis_category?: string, aegis_detail?: object|null}} */
 	const error = new Error(message);
 	error.name = "AegisBudgetRefused";
 	error.aegis_budget_refused = true;
 	error.aegis_category = category;
+	if (extra) error.aegis_detail = extra;
 	return error;
+}
+
+/**
+ * Count the characters of one message's content, regardless of the concrete
+ * content shape the SDK produced (string, text/thinking/toolCall/result parts,
+ * or an image placeholder). The estimate only has to be honest and monotonic;
+ * it is never presented as an exact tokenizer.
+ *
+ * @param {any} content
+ * @returns {number}
+ */
+function countContentChars(content) {
+	if (typeof content === "string") return content.length;
+	if (!Array.isArray(content)) return 0;
+	let total = 0;
+	for (const part of content) {
+		if (typeof part === "string") {
+			total += part.length;
+			continue;
+		}
+		if (!part || typeof part !== "object") continue;
+		if (typeof part.text === "string") total += part.text.length;
+		if (typeof part.thinking === "string") total += part.thinking.length;
+		if (part.type === "toolCall") {
+			total += String(part.name ?? "").length;
+			try {
+				total += JSON.stringify(part.arguments ?? {}).length;
+			} catch {
+				total += 0;
+			}
+		}
+		if (typeof part.data === "string") total += part.data.length;
+		if (part.type === "image" && typeof part.data !== "string") total += 0;
+	}
+	return total;
+}
+
+/**
+ * Measure the ACTUAL provider input for ONE request from the normalized SDK
+ * `llmContext` (the object the SDK passes to `streamFunction`).
+ *
+ * Honest, SDK-accurate coverage:
+ *   * every message of `llmContext.messages` (system/user/assistant/toolResult),
+ *     using the real content shapes (string or text/thinking/toolCall parts);
+ *   * tool schema from `messages[*].toolsAdded` (where `normalizeContext` folds
+ *     `Context.tools`) AND from a top-level `llmContext.tools` (some controlled
+ *     callers pass it directly); name/description/parameters are all counted;
+ *   * a small per-message structural overhead so the count is not an undercount;
+ *   * the configured output reserve.
+ *
+ * `promptMetadata` may carry constraints NOT present in the transcript (e.g. an
+ * explicit ROM section). Anything already inside `messages` is NOT counted twice.
+ * Backend tokens/currency are never fabricated.
+ *
+ * @param {{
+ *   llmContext?: any,
+ *   promptMetadata?: {extraChars?: number, source?: string}|null,
+ *   outputReserveChars?: number,
+ * }} args
+ * @returns {{chars: number, coverage: string[], source: string, details: object}}
+ */
+export function measureProviderInput({ llmContext = null, promptMetadata = null, outputReserveChars = 0 } = {}) {
+	const messages = Array.isArray(llmContext?.messages) ? llmContext.messages : [];
+	const coverage = [];
+	let messageChars = 0;
+	let toolsChars = 0;
+	let messageCount = 0;
+	/** @type {Set<any>} */
+	const seenTools = new Set();
+	function addTools(tools) {
+		if (!Array.isArray(tools)) return;
+		for (const tool of tools) {
+			if (!tool || typeof tool !== "object" || seenTools.has(tool)) continue;
+			seenTools.add(tool);
+			try {
+				toolsChars += JSON.stringify({
+					name: tool.name,
+					description: tool.description,
+					parameters: tool.parameters,
+				}).length;
+			} catch {
+				toolsChars += String(tool.name ?? "").length + String(tool.description ?? "").length;
+			}
+		}
+	}
+	for (const message of messages) {
+		if (!message || typeof message !== "object") continue;
+		messageCount += 1;
+		// ~12 chars of role/JSON structural overhead per message.
+		messageChars += countContentChars(message.content) + 12;
+		if (Array.isArray(message.sections)) messageChars += JSON.stringify(message.sections).length;
+		addTools(message.toolsAdded);
+	}
+	if (messageCount > 0) coverage.push("messages");
+	// A top-level tools array is a controlled-caller convenience; the real SDK
+	// folds tools into the leading system message's `toolsAdded`.
+	addTools(llmContext?.tools);
+	if (seenTools.size > 0) coverage.push("tools");
+	const extra = Number.isFinite(promptMetadata?.extraChars) ? Math.max(0, promptMetadata.extraChars) : 0;
+	if (extra > 0) coverage.push("prompt_metadata");
+	const reserve = Number.isFinite(outputReserveChars) ? Math.max(0, outputReserveChars) : 0;
+	if (reserve > 0) coverage.push("output_reserve");
+	const chars = messageChars + toolsChars + extra + reserve;
+	return {
+		chars,
+		source: "estimated",
+		coverage,
+		details: {
+			message_count: messageCount,
+			message_chars: messageChars,
+			tool_count: seenTools.size,
+			tools_chars: toolsChars,
+			extra_chars: extra,
+			output_reserve_chars: reserve,
+		},
+	};
 }
 
 /**
@@ -313,9 +430,11 @@ export function createDecisionCaptureTool({
  *   router?: any,
  *   ledgerFactory?: ((task: any) => any)|null,
  *   onRequestCommitted?: ((record: object) => void)|null,
- *   persistRequest?: ((record: {phase: string, task_id: string, reservation_id?: string, input_chars: number, usage?: any, usage_source?: string, tool_calls?: number}) => Promise<{ok: boolean, error?: string}>)|null,
+ *   persistRequest?: ((record: {phase: string, task_id: string, request_id?: string|null, task_reservation_id?: string|null, campaign_reservation_id?: string|null, input_chars: number, coverage?: string[], source?: string, usage?: any, usage_source?: string, tool_calls?: number}) => Promise<{ok: boolean, error?: string}>)|null,
  *   setTaskBinding?: ((task: any) => void)|null,
  *   contextWindowChars?: number|null,
+ *   clock?: () => number,
+ *   campaignId?: string|null,
  * }} args
  */
 export function createModelWorker(
@@ -339,6 +458,8 @@ export function createModelWorker(
 		persistRequest = null,
 		setTaskBinding = null,
 		contextWindowChars = null,
+		clock = () => Date.now(),
+		campaignId = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");
@@ -431,73 +552,139 @@ export function createModelWorker(
 	 *
 	 * @returns {boolean} whether the gate was installed
 	 */
-	function installProviderGate(
-		activeSession,
-		gate,
-		{ effectiveTaskId: gateTaskId, prompt, toolChars, outputReserveChars, activeLedger },
-	) {
+	function installProviderGate(activeSession, gate, { effectiveTaskId: gateTaskId, activeLedger, campaignLedger }) {
 		const agent = activeSession?.agent;
 		if (!agent || typeof agent.streamFunction !== "function") return false;
 		const realStream = agent.streamFunction;
 		gate.originalStreamFunction = realStream;
 		gate.sessionRef = activeSession;
 		const window = typeof contextWindowChars === "number" ? contextWindowChars : (context?.max_total_input_chars ?? 0);
+		const outputReserve = context?.output_reserve_chars ?? 0;
+		const sameLedger = activeLedger === campaignLedger;
 		agent.streamFunction = async (model, llmContext, options) => {
-			// Durable-before-provider: the previous request's commit must be durable
-			// before another provider request can start. A failed commit stops the run
-			// instead of silently continuing (reconciliation state is preserved).
+			// 1. Durable-before-provider: the previous request's commit must be durable
+			// before another provider request starts. A failed commit stops the run.
 			const flushed = await gate.pendingCommit;
 			if (flushed && flushed.ok === false) {
 				gate.stopped = true;
 				gate.refused = true;
+				gate.failure_mode = "accounting_failure";
 				gate.reason = `previous provider request could not be durably committed: ${flushed.error ?? "unknown"}`;
 				throw budgetRefused(gate.reason, "accounting_failure");
 			}
 			if (gate.stopped) {
 				gate.refused = true;
+				gate.failure_mode = gate.failure_mode ?? "accounting_failure";
 				gate.reason = gate.reason ?? "dispatch stopped after a budget/accounting failure";
-				throw budgetRefused(gate.reason, "stopped");
+				throw budgetRefused(gate.reason, gate.failure_mode);
 			}
-			const estimate = estimateInputChars({
-				prompt: typeof prompt === "string" ? prompt : "",
-				toolChars,
-				outputReserveChars,
-			});
-			// Per-request input WINDOW (never multiplied by the request budget).
+
+			// 2. Measure the ACTUAL request context (messages + tool schema), never a
+			// cached copy. First request and every continuation use the same function.
+			const measurement = measureProviderInput({ llmContext, outputReserveChars: outputReserve });
+			const estimate = measurement.chars;
+			const requestId = `req-${gateTaskId}-${gate.requestSeq + 1}-${clock()}`;
+			gate.inputMeasurement = measurement;
 			if (window > 0 && estimate > window) {
 				gate.refused = true;
-				gate.reason = `input estimate ${estimate} exceeds the per-request window ${window}`;
-				throw budgetRefused(gate.reason, "context_window_exceeded");
+				gate.stopped = true;
+				gate.failure_mode = "context_window_exceeded";
+				gate.reason = `provider input estimate ${estimate} exceeds the per-request window ${window} (coverage: ${measurement.coverage.join(",") || "none"})`;
+				throw budgetRefused(gate.reason, "context_window_exceeded", { request_id: requestId, measurement });
 			}
-			// Durable reservation BEFORE the provider is called. A persistence failure
-			// must not call the provider.
+
+			// 3. Joint in-memory admission. Campaign envelope first, then the Task
+			// allocation. Either refusal means ZERO provider calls; the first hold is
+			// compensated before returning, and nothing is persisted yet.
+			const campaignAdmission = campaignLedger.admitRequest({
+				inputChars: estimate,
+				kind: "provider_bound",
+				request_id: requestId,
+				ledger_id: gate.campaignLedgerId,
+			});
+			if (!campaignAdmission.ok) {
+				gate.refused = true;
+				gate.stopped = true;
+				gate.failure_mode = "budget_exhausted";
+				gate.reason = `campaign ${campaignAdmission.reason}`;
+				throw budgetRefused(gate.reason, "budget_exhausted", { request_id: requestId, layer: "campaign" });
+			}
+			let taskAdmission = campaignAdmission;
+			if (!sameLedger) {
+				taskAdmission = activeLedger.admitRequest({
+					inputChars: estimate,
+					kind: "provider_bound",
+					request_id: requestId,
+					ledger_id: gate.taskLedgerId,
+				});
+				if (!taskAdmission.ok) {
+					// Compensate the campaign hold: the provider has NOT been called, so a
+					// release is legal and keeps the campaign budget honest.
+					campaignLedger.cancelReservation({
+						reservation_id: campaignAdmission.reservation_id,
+						reason: "task_admission_refused",
+					});
+					gate.refused = true;
+					gate.stopped = true;
+					gate.failure_mode = "budget_exhausted";
+					gate.reason = `task ${taskAdmission.reason}`;
+					throw budgetRefused(gate.reason, "budget_exhausted", { request_id: requestId, layer: "task" });
+				}
+			}
+
+			// 4. Durable reservation BEFORE the provider call. One record links the
+			// request to BOTH reservations. A persistence failure means no provider call
+			// and the in-memory holds are compensated (provider not yet started).
 			if (typeof persistRequest === "function") {
 				let persisted;
 				try {
 					persisted = await persistRequest({
 						phase: "reserved",
 						task_id: gateTaskId,
+						request_id: requestId,
+						task_reservation_id: taskAdmission.reservation_id,
+						campaign_reservation_id: campaignAdmission.reservation_id,
 						input_chars: estimate,
+						coverage: measurement.coverage,
+						source: measurement.source,
 					});
 				} catch (error) {
 					persisted = { ok: false, error: String(error) };
 				}
 				if (persisted?.ok !== true) {
+					if (!sameLedger) {
+						activeLedger.cancelReservation({
+							reservation_id: taskAdmission.reservation_id,
+							reason: "durable_reservation_failed",
+						});
+					}
+					campaignLedger.cancelReservation({
+						reservation_id: campaignAdmission.reservation_id,
+						reason: "durable_reservation_failed",
+					});
 					gate.refused = true;
 					gate.stopped = true;
+					// The structured failure is `accounting_failure`; the reconciliation
+					// category distinguishes the exact root cause.
+					gate.failure_mode = "accounting_failure";
+					gate.category = "reservation_persist_failed";
 					gate.reason = `request reservation could not be made durable: ${persisted?.error ?? "unknown"}`;
-					throw budgetRefused(gate.reason, "reservation_persist_failed");
+					throw budgetRefused(gate.reason, "accounting_failure", { request_id: requestId });
 				}
 			}
-			const admission = activeLedger.admitRequest({ inputChars: estimate, kind: "provider_bound" });
-			if (!admission.ok) {
-				gate.refused = true;
-				gate.stopped = true;
-				gate.reason = admission.reason;
-				throw budgetRefused(admission.reason, "budget_exhausted");
-			}
-			gate.outstanding = { reservation_id: admission.reservation_id, inputChars: estimate };
+
+			// 5. All admissions + durable reservation succeeded: call the provider.
+			gate.requestSeq += 1;
+			gate.outstanding = {
+				request_id: requestId,
+				task_reservation_id: taskAdmission.reservation_id,
+				campaign_reservation_id: campaignAdmission.reservation_id,
+				inputChars: estimate,
+				coverage: measurement.coverage,
+				source: measurement.source,
+			};
 			gate.providerRequests += 1;
+			gate.providerStarted = true;
 			return realStream(model, llmContext, options);
 		};
 		return true;
@@ -584,23 +771,28 @@ export function createModelWorker(
 			};
 		}
 
-		// The provider gate state. `outstanding` holds the reservation created by
-		// the gate for the request currently in flight; `pendingCommit` is the
+		// The provider gate state. `outstanding` holds the joint reservations created
+		// by the gate for the request currently in flight; `pendingCommit` is the
 		// durable commit of the previous request that the next admission awaits.
 		const gate = {
 			refused: false,
 			stopped: false,
 			reason: null,
+			failure_mode: null,
 			outstanding: null,
 			pendingCommit: Promise.resolve({ ok: true }),
 			providerRequests: 0,
+			providerStarted: false,
+			requestSeq: 0,
+			inputMeasurement: null,
+			campaignLedgerId: campaignId ? `campaign-${campaignId}` : "campaign",
+			taskLedgerId: `task-${effectiveTaskId}`,
+			lastRequest: null,
 		};
 		const installed = installProviderGate(activeSession, gate, {
 			effectiveTaskId,
-			prompt,
-			toolChars,
-			outputReserveChars,
 			activeLedger,
+			campaignLedger: ledger,
 		});
 		if (!installed) {
 			return {
@@ -620,34 +812,52 @@ export function createModelWorker(
 					.map((part) => part.text)
 					.join("\n");
 				// A synthetic failure message (stopReason "error") carries no real
-				// reservation; never charge a request for it. Only commit the reservation
-				// the gate created for a REAL provider request.
+				// reservation; never charge a request for it. Only commit the JOINT
+				// reservations the gate created for a REAL provider request.
 				if (gate.outstanding) {
 					const reservation = gate.outstanding;
 					gate.outstanding = null;
+					gate.lastRequest = reservation;
 					usage = event.message.usage ?? usage;
 					assistantText = text;
-					const committedRecord = activeLedger.commitRequest({
-						reservation_id: reservation.reservation_id,
+					// Two-layer in-memory commit: each ledger commits ONLY its own
+					// reservation id (never a null-id mirror charge).
+					const taskCommit = activeLedger.commitRequest({
+						reservation_id: reservation.task_reservation_id,
 						usage,
 						inputChars: reservation.inputChars,
 					});
-					// Mirror the SAME usage into the cumulative campaign ledger once.
-					if (ledger !== activeLedger) ledger.commitRequest({ usage, inputChars: reservation.inputChars });
-					// Durable commit; the NEXT admission awaits this before its provider call.
+					let campaignCommit = { ok: true };
+					if (ledger !== activeLedger) {
+						campaignCommit = ledger.commitRequest({
+							reservation_id: reservation.campaign_reservation_id,
+							usage,
+							inputChars: reservation.inputChars,
+						});
+					}
+					const commitFailed = taskCommit?.ok === false || campaignCommit?.ok === false;
+					// Durable committed record; the NEXT admission AND the final flush await
+					// this before any decision can be returned.
 					if (typeof persistRequest === "function") {
 						gate.pendingCommit = Promise.resolve(
 							persistRequest({
 								phase: "committed",
 								task_id: effectiveTaskId,
-								reservation_id: reservation.reservation_id,
+								request_id: reservation.request_id,
+								task_reservation_id: reservation.task_reservation_id,
+								campaign_reservation_id: reservation.campaign_reservation_id,
 								input_chars: reservation.inputChars,
+								coverage: reservation.coverage ?? [],
+								source: reservation.source ?? "estimated",
 								usage,
-								usage_source: usage?.source ?? "unknown",
+								usage_source: usage ? "estimated" : "unknown",
 							}),
 						).catch((error) => ({ ok: false, error: String(error) }));
 					}
-					if (typeof onRequestCommitted === "function") onRequestCommitted(committedRecord);
+					if (commitFailed && typeof persistRequest !== "function") {
+						gate.pendingCommit = Promise.resolve({ ok: false, error: "in-memory commit failed" });
+					}
+					if (typeof onRequestCommitted === "function") onRequestCommitted({ ...reservation, usage });
 				} else if (text) {
 					assistantText = text;
 				}
@@ -662,8 +872,8 @@ export function createModelWorker(
 			// a transport failure but still flush the durable commit.
 			stopReason = "transport_failure";
 			if (!gate.refused) {
-				if (onEvent) onEvent({ kind: "task.error", task_id: effectiveTaskId, error: String(error) });
 				await gate.pendingCommit.catch(() => undefined);
+				if (onEvent) onEvent({ kind: "task.error", task_id: effectiveTaskId, error: String(error) });
 				return { ok: false, failure_mode: "transport_failure", detail: String(error) };
 			}
 		} finally {
@@ -680,28 +890,48 @@ export function createModelWorker(
 		} catch {
 			// ignore
 		}
+
+		// 6. FINAL FLUSH: even when there is no next continuation, the last provider
+		// request's durable commit must settle before ANY decision can be returned
+		// (and therefore before the CompositeWorker can enter the Broker).
+		/** @type {{ok: boolean, error?: string}} */
+		const finalCommit = await gate.pendingCommit.catch((error) => ({ ok: false, error: String(error) }));
+		const commitOk = !finalCommit || finalCommit.ok !== false;
+		const commitError = commitOk ? null : (finalCommit?.error ?? "durable commit failed");
+
 		const decisions = decisionBuffer ? decisionBuffer.list() : [];
-		// X2: an admission refusal is a hard, pre-provider stop. Report it as a
-		// budget/accounting failure so no half-observed decision executes and no
-		// dependency advances on an incomplete run. Reconciliation state is kept.
-		if (gate.refused) {
-			if (onEvent) onEvent({ kind: "task.blocked", task_id: effectiveTaskId, reason: gate.reason });
-			const failureMode = /input estimate/.test(String(gate.reason))
-				? "context_window_exceeded"
-				: /durab|reservation could not/.test(String(gate.reason))
-					? "accounting_failure"
-					: "budget_exhausted";
+		const reconciliation = {
+			category: gate.category ?? gate.failure_mode ?? (commitOk ? null : "accounting_commit_failed"),
+			task_id: effectiveTaskId,
+			campaign_id: campaignId,
+			request_id: gate.lastRequest?.request_id ?? null,
+			task_reservation_id: gate.lastRequest?.task_reservation_id ?? null,
+			campaign_reservation_id: gate.lastRequest?.campaign_reservation_id ?? null,
+			provider_started: gate.providerStarted,
+			provider_requests: gate.providerRequests,
+			commit_error: commitError,
+			reason: gate.reason ?? null,
+			pending: { campaign: ledger.reserved?.() ?? null, task: activeLedger.reserved?.() ?? null },
+			consumed: { campaign: ledger.consumed?.() ?? null, task: activeLedger.consumed?.() ?? null },
+		};
+
+		// A pre-provider refusal (budget/window/reservation) OR a failed final commit
+		// is a hard stop: no decision reaches the Broker, no dependency advances.
+		if (gate.refused || !commitOk) {
+			const failureMode = gate.refused ? (gate.failure_mode ?? "budget_exhausted") : "accounting_failure";
+			if (onEvent)
+				onEvent({
+					kind: "task.blocked",
+					task_id: effectiveTaskId,
+					reason: gate.reason ?? reconciliation.commit_error,
+					failure_mode: failureMode,
+				});
 			return {
 				ok: false,
 				failure_mode: failureMode,
-				detail: gate.reason ?? "the provider request gate refused the request",
+				detail: gate.reason ?? reconciliation.commit_error ?? "the provider request gate refused the request",
 				provider_requests: gate.providerRequests,
-				reconciliation: {
-					category: failureMode,
-					task_id: effectiveTaskId,
-					reason: gate.reason ?? null,
-					provider_requests: gate.providerRequests,
-				},
+				reconciliation,
 			};
 		}
 		// The decision tool may also have terminated the turn because the task
@@ -739,8 +969,8 @@ export function createModelWorker(
 				stop_reason: stopReason,
 			};
 		}
-		// The Worker returns the TRANSPORT fact only. The Oracle judges the effect.
-		// The evidence ref is the task sentinel; the Oracle reads the real artifact.
+		// The Worker returns the TRANSPORT fact only, and ONLY after the final
+		// durable commit settled. The Oracle judges the effect.
 		return {
 			ok: true,
 			outcome_ref: `artifact:${effectiveTaskId}`,
@@ -755,6 +985,7 @@ export function createModelWorker(
 		version: MODEL_WORKER_VERSION,
 		buildPrompt,
 		estimateInputChars,
+		measureProviderInput,
 		run,
 	};
 }

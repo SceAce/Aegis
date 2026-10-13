@@ -76,6 +76,101 @@ function readEventsSafe(path) {
 }
 
 /**
+ * Rebuild the request-ledger accounting from the COMMITTED event stream alone.
+ * This is the authoritative rebuild used on restart/measure; it is a pure
+ * function so it can be tested directly. Rules:
+ *
+ *   * a `reserved` note must carry non-null request + reservation ids, else it is
+ *     ignored (never a legal hold);
+ *   * a `committed` note must carry a non-null request id and at least one
+ *     reservation id; a null-id record is NOT a legal committed request;
+ *   * `released`/`rejected`/`reconciliation_required` cancel a pending request;
+ *   * a pending reservation whose ids are not committed still holds budget;
+ *   * `wall_time_ms` is elapsed, so a persisted absolute timestamp is not copied.
+ *
+ * @param {any[]} events
+ * @returns {{
+ *   consumed: {model_requests: number, tool_calls: number, input_chars: number, wall_time_ms: number},
+ *   byTask: Map<string, {model_requests: number, tool_calls: number, input_chars: number}>,
+ *   campaignPending: Array<{reservation_id: string, request_id: string|null, inputChars: number, kind: string}>,
+ *   taskPending: Array<{reservation_id: string, request_id: string|null, inputChars: number, kind: string}>,
+ *   committedReservations: Set<string>,
+ *   records: any[],
+ * }}
+ */
+export function summarizeRequestLedger(events = []) {
+	const consumed = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
+	/** @type {Map<string, {model_requests: number, tool_calls: number, input_chars: number}>} */
+	const byTask = new Map();
+	/** @type {Map<string, {request_id: string|null, task_reservation_id: string|null, campaign_reservation_id: string|null, inputChars: number, kind: string, task_id: string|null}>} */
+	const reservedNotes = new Map();
+	const committedReservations = new Set();
+	const records = [];
+	for (const event of Array.isArray(events) ? events : []) {
+		if (event?.event_type !== "runtime.note" || event.payload?.kind !== "c6.request") continue;
+		const payload = event.payload;
+		const requestId = typeof payload.request_id === "string" ? payload.request_id : null;
+		const taskRes = typeof payload.task_reservation_id === "string" ? payload.task_reservation_id : null;
+		const campaignRes = typeof payload.campaign_reservation_id === "string" ? payload.campaign_reservation_id : null;
+		if (payload.phase === "reserved") {
+			if (!taskRes && !campaignRes) continue;
+			reservedNotes.set(requestId ?? `${taskRes ?? campaignRes}`, {
+				request_id: requestId,
+				task_reservation_id: taskRes,
+				campaign_reservation_id: campaignRes,
+				inputChars: Number.isFinite(payload.input_chars) ? payload.input_chars : 0,
+				kind: payload.request_kind ?? "provider_bound",
+				task_id: payload.task_id ?? null,
+			});
+			continue;
+		}
+		if (payload.phase === "released" || payload.phase === "rejected" || payload.phase === "reconciliation_required") {
+			if (requestId) reservedNotes.delete(requestId);
+			continue;
+		}
+		if (payload.phase === "committed" || payload.usage !== undefined) {
+			if (!requestId || (!taskRes && !campaignRes)) continue;
+			consumed.model_requests += 1;
+			consumed.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
+			consumed.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
+			consumed.wall_time_ms = 0;
+			if (payload.task_id) {
+				const dims = byTask.get(payload.task_id) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
+				dims.model_requests += 1;
+				dims.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
+				dims.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
+				byTask.set(payload.task_id, dims);
+			}
+			if (taskRes) committedReservations.add(taskRes);
+			if (campaignRes) committedReservations.add(campaignRes);
+			if (requestId) reservedNotes.delete(requestId);
+			records.push(payload);
+		}
+	}
+	const pending = [...reservedNotes.values()].filter((note) => {
+		const ids = [note.task_reservation_id, note.campaign_reservation_id].filter(Boolean);
+		return ids.length > 0 && ids.every((id) => !committedReservations.has(id));
+	});
+	const campaignPending = pending
+		.filter((note) => note.campaign_reservation_id)
+		.map((note) => ({
+			reservation_id: /** @type {string} */ (note.campaign_reservation_id),
+			request_id: note.request_id,
+			inputChars: note.inputChars,
+			kind: note.kind,
+		}));
+	const taskPending = pending
+		.filter((note) => note.task_reservation_id)
+		.map((note) => ({
+			reservation_id: /** @type {string} */ (note.task_reservation_id),
+			request_id: note.request_id,
+			inputChars: note.inputChars,
+			kind: note.kind,
+		}));
+	return { consumed, byTask, campaignPending, taskPending, committedReservations, records };
+}
+
+/**
  * Build a decision buffer shared between the SDK custom tool and the model plan.
  * @returns {{setTask: (taskId: string) => void, push: (d: any) => void, pushTask: (p: any) => boolean, listTasks: () => any[], list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
  */
@@ -332,52 +427,31 @@ export async function runC6FromConfig(
 	const persistedLedgerRecords = [];
 	const persistedUsage = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
 	const persistedByTask = new Map();
-	const reservedNotes = new Map();
-	const committedReservations = new Set();
-	for (const event of readEventsSafe(eventLogPath)) {
-		if (event?.event_type !== "runtime.note" || event.payload?.kind !== "c6.request") continue;
-		const payload = event.payload;
-		if (payload.phase === "reserved" && typeof payload.reservation_id === "string") {
-			reservedNotes.set(payload.reservation_id, {
-				reservation_id: payload.reservation_id,
-				inputChars: Number.isFinite(payload.input_chars) ? payload.input_chars : 0,
-				kind: payload.request_kind ?? "provider_bound",
-				task_id: payload.task_id ?? null,
-			});
-			continue;
-		}
-		// A commit note (with usage) is a real provider request that happened.
-		if (payload.phase === "committed" || payload.usage !== undefined) {
-			persistedUsage.model_requests += 1;
-			persistedUsage.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
-			persistedUsage.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
-			// `wall_time_ms` is measured as ELAPSED time by the live ledger; a persisted
-			// note carries an absolute timestamp, so it must not be copied into the
-			// accumulated elapsed budget.
-			persistedUsage.wall_time_ms = 0;
-			if (payload.task_id) {
-				const byTask = persistedByTask.get(payload.task_id) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
-				byTask.model_requests += 1;
-				byTask.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
-				byTask.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
-				persistedByTask.set(payload.task_id, byTask);
-			}
-			if (typeof payload.reservation_id === "string") {
-				committedReservations.add(payload.reservation_id);
-				reservedNotes.delete(payload.reservation_id);
-			}
-			persistedLedgerRecords.push(payload);
-		}
-	}
-	const pendingReservations = [...reservedNotes.values()].filter(
-		(note) => !committedReservations.has(note.reservation_id),
-	);
+	const {
+		consumed: rebuiltConsumed,
+		byTask: rebuiltByTask,
+		campaignPending,
+		taskPending,
+		committedReservations,
+		records: rebuiltRecords,
+	} = summarizeRequestLedger(readEventsSafe(eventLogPath));
+	Object.assign(persistedUsage, rebuiltConsumed);
+	for (const [taskId, dims] of rebuiltByTask) persistedByTask.set(taskId, dims);
+	persistedLedgerRecords.push(...rebuiltRecords);
 	const baseReserved = {
-		model_requests: pendingReservations.length,
+		model_requests: campaignPending.length,
 		tool_calls: 0,
-		input_chars: pendingReservations.reduce((sum, note) => sum + note.inputChars, 0),
+		input_chars: campaignPending.reduce((sum, note) => sum + note.inputChars, 0),
 		wall_time_ms: 0,
-		pending: pendingReservations,
+		pending: campaignPending,
+		committed: [...committedReservations],
+	};
+	const taskBaseReserved = {
+		model_requests: taskPending.length,
+		tool_calls: 0,
+		input_chars: taskPending.reduce((sum, note) => sum + note.inputChars, 0),
+		wall_time_ms: 0,
+		pending: taskPending,
 		committed: [...committedReservations],
 	};
 	const ledger = createToolLedger({
@@ -684,6 +758,7 @@ export async function runC6FromConfig(
 							wall_time_ms: Number.isInteger(alloc.wall_time_ms) ? alloc.wall_time_ms : manifest.budget.wall_time_ms,
 						},
 						baseConsumed: taskBase,
+						baseReserved: taskBaseReserved,
 						onEvent: (/** @type {any} */ record) => {
 							if (record.kind === "tool.admitted") pendingToolAdmissions.push(record);
 						},
@@ -700,6 +775,7 @@ export async function runC6FromConfig(
 					romPath,
 					context: config.context ?? { max_total_input_chars: 24000, output_reserve_chars: 2000 },
 					taskId: config.label ?? "campaign-task",
+					campaignId: manifest.campaign_id ?? null,
 					goal: manifest.objective?.description ?? manifest.title ?? "",
 					actionCatalog: null,
 					getActionCatalog: () => ({ actions: safeDescribe(brokerRef) }),
@@ -733,9 +809,14 @@ export async function runC6FromConfig(
 							payload: {
 								kind: "c6.request",
 								phase: request?.phase ?? "committed",
+								campaign_id: manifest.campaign_id ?? null,
 								task_id: request?.task_id ?? currentTaskId,
-								reservation_id: request?.reservation_id ?? null,
+								request_id: request?.request_id ?? null,
+								task_reservation_id: request?.task_reservation_id ?? null,
+								campaign_reservation_id: request?.campaign_reservation_id ?? null,
 								input_chars: request?.input_chars ?? 0,
+								...(Array.isArray(request?.coverage) ? { coverage: request.coverage } : {}),
+								...(request?.source ? { input_source: request.source } : {}),
 								...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
 								wall_time_ms: Date.now(),
 								...(request?.phase === "committed"
