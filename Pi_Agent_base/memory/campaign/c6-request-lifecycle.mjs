@@ -178,6 +178,13 @@ export function summarizeRequestLedger(events = []) {
 		if (phase === REQUEST_PHASE.RELEASED || phase === REQUEST_PHASE.REJECTED) {
 			const note = requestId ? reservedNotes.get(requestId) : null;
 			if (!note) continue;
+			// A release/reject is only legal for a request that was NOT dispatched. A
+			// release that contradicts a reconciliation (or an already settled side)
+			// must not erase the unresolved hold.
+			if (note.reconciliation) {
+				diagnostics.push({ code: "release_after_reconciliation", request_id: requestId });
+				continue;
+			}
 			if (settledTask.has(note.task_reservation_id) || settledCampaign.has(note.campaign_reservation_id)) {
 				diagnostics.push({ code: "release_after_settlement", request_id: requestId });
 				continue;

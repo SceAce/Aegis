@@ -797,3 +797,31 @@ test("LC-D7: a legal release before dispatch cancels the hold without charging",
 	assert.equal(summary.taskPending.length, 0);
 	assert.equal(summary.unresolved, 0);
 });
+
+test("LC-D8: a release that contradicts a reconciliation cannot erase the unresolved hold", () => {
+	const summary = summarizeRequestLedger([
+		requestEvent({
+			phase: "reserved",
+			task_id: "task-001",
+			request_id: "req-1",
+			task_reservation_id: "task-res-1",
+			campaign_reservation_id: "camp-res-1",
+			input_chars: 100,
+		}),
+		requestEvent({
+			phase: "reconciliation_required",
+			task_id: "task-001",
+			request_id: "req-1",
+			task_reservation_id: "task-res-1",
+			campaign_reservation_id: "camp-res-1",
+			input_chars: 100,
+			provider_started: true,
+			provider_status: "unknown",
+		}),
+		requestEvent({ phase: "released", request_id: "req-1", reason: "foreign_release" }),
+	]);
+	assert.equal(summary.unresolved, 1, "a conflicting release must not resolve the request");
+	assert.equal(summary.campaignPending.length, 1);
+	assert.equal(summary.taskPending.length, 1);
+	assert.ok(summary.diagnostics.some((d) => d.code === "release_after_reconciliation"));
+});
