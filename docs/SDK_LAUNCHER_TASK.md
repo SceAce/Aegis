@@ -1,7 +1,11 @@
-# 下一轮：离线 SDK 启动器与 Host 生命周期
+# C6-A 参考：离线 SDK 启动器与 Host 生命周期
 
-状态：**planned / 待用户委派实施**。C5 限定审查与修复结束，见 `C5_EXTERNAL_REVIEW.md`。
-本任务补齐 C5 已记录的部署缺口，不重开 C1-C5，不把真实能力实验加入当前验收。
+状态：**纳入 C6，不再单独委派**。用户将原 R1-R6 代码合并为 C6，见
+[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。以下保留生命周期/L1-L8 要求，
+作为 C6-A 子任务依据；其中 faux-only、非模型 Worker 等限制仅描述这个子任务，
+整个 C6 的 provider 配置接口、模型 Worker 与学习交付以总任务书为准。
+原独立分支/最终验收安排由 C6 分支和一次总工程验收替代，实验以后单独处理。
+C5 限定审查见 `C5_EXTERNAL_REVIEW.md`，不重开旧阶段。
 
 ## 冻结目标
 

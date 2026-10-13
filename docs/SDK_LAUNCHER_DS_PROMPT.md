@@ -1,4 +1,8 @@
-# 给主 DS：实施离线 SDK launcher
+# 历史子任务提示词：离线 SDK launcher
+
+**已由 C6 总任务替代，不再单独使用此 prompt 委派。**
+请使用 [C6_AGENT_PRODUCT_DS_PROMPT.md](C6_AGENT_PRODUCT_DS_PROMPT.md)。
+以下保留 C6-A 生命周期参考；旧 launcher-only 范围/分支/验收要求不能覆盖整个 C6。
 
 C1-C5 已按已记录范围交付，最新依据 docs/C5_EXTERNAL_REVIEW.md。当前只实施
 **离线 SDK 启动器与 Host 生命周期**，完整范围和 required L1-L8 见

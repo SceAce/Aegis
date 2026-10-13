@@ -17,7 +17,9 @@ Read these before Campaign development:
 - `../docs/C4A_EXTERNAL_REVIEW.md`
 - `../docs/C5_INTEGRATION_TASK.md` (historical C5 scope)
 - `../docs/C5_EXTERNAL_REVIEW.md`
-- `../docs/SDK_LAUNCHER_TASK.md` (when delegated SDK launcher implementation)
+- `../docs/C6_AGENT_PRODUCT_TASK.md` (current overall development task)
+- `../docs/AEGIS_PRODUCT_ROADMAP.md`
+- `../docs/SDK_LAUNCHER_TASK.md` (C6-A lifecycle requirements; no longer a separate assignment)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -69,9 +71,12 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-Next delegated assignment is `../docs/SDK_LAUNCHER_TASK.md`: offline SDK/faux
-startup, actual Task/Episode binding and safe rotation policy, shared gate/writer,
-budget continuity, lifecycle/recovery and persistent read-only observation.
-C5 CLI still uses caller-provided SDK runtime; do not claim automatic SDK startup
-or re-run completed phase reviews. Do not initiate real-model/target experiments.
-Keep deferred F16 and the 74-diagnostic type baseline visible.
+Next delegated assignment is `../docs/C6_AGENT_PRODUCT_TASK.md`: one overall
+code delivery covering SDK lifecycle, model Worker and actual budgets, Campaign
+learning, provider configuration interfaces, measurement/run support and a second
+local task adapter. Progress autonomously through C6-A to F and return for one
+engineering review. SDK launcher requirements are part of C6-A.
+Validate with real SDK/faux and local effects/replay/HTTP; provider interfaces use
+offline substitutes. Real-model pilots, efficacy/transfer studies and daily-use
+experiments are separate later tasks. C6 does not read real credentials or call
+real providers/targets. Preserve deferred F16 and per-config type baselines.

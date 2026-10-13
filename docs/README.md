@@ -10,11 +10,12 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态：**C1-C4a 保持已交付；C5 本轮审查/授权修复完成，下一轮离线 SDK launcher**。最新证据 [`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md)，操作说明 [`C5_INTEGRATION_RUNBOOK.md`](C5_INTEGRATION_RUNBOOK.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`SDK_LAUNCHER_TASK.md`](SDK_LAUNCHER_TASK.md)，提示词 [`SDK_LAUNCHER_DS_PROMPT.md`](SDK_LAUNCHER_DS_PROMPT.md)。C5 接收离线入口与 caller-provided SDK 路径；自动 SDK 启动、Task/Episode 绑定/策略与常驻观察待部署补齐。F16/74 条旧类型诊断后置；真实能力实验须之后具体授权。
+当前状态：**C1-C5 按记录范围交付，下一轮 C6 统一代码交付**。最新证据 [`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md)，操作说明 [`C5_INTEGRATION_RUNBOOK.md`](C5_INTEGRATION_RUNBOOK.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。总任务书 [`C6_AGENT_PRODUCT_TASK.md`](C6_AGENT_PRODUCT_TASK.md)，完整提示词 [`C6_AGENT_PRODUCT_DS_PROMPT.md`](C6_AGENT_PRODUCT_DS_PROMPT.md)。
 
-后续产品与验证规划见 [`AEGIS_PRODUCT_ROADMAP.md`](AEGIS_PRODUCT_ROADMAP.md)：
-离线 SDK 启动 → 模型 Worker/任务族 → Campaign 经验闭环 → 真实 provider/本地模型 →
-经验及短上下文效果对照 → 第二任务族与日常试用。SDK 接线、产品可用与学习收益分别验收。
+用户确认原 R1-R6 的代码统一归入 C6：SDK/模型 Worker/预算/经验闭环/provider 配置接口/
+运行与测量支撑/第二任务族 adapter。主 DS 自主完成内部里程碑，只交一次工程验收；
+实际模型 pilot、效果对照与日常试用以后单独处理。划分见
+[`AEGIS_PRODUCT_ROADMAP.md`](AEGIS_PRODUCT_ROADMAP.md)。F16/旧类型基线后置。
 
 开发依据：
 

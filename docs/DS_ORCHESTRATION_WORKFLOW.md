@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认一次总委派、主 DS 拆小任务与开发规范 §3.1 范围冻结。C5 本轮审查/授权修复完成，见 `C5_EXTERNAL_REVIEW.md`；下一轮 `SDK_LAUNCHER_TASK.md`/`SDK_LAUNCHER_DS_PROMPT.md` 补离线 SDK 启动与生命周期，内部里程碑自主推进，只交一次限定验收。F16/74 条旧类型诊断后置，不重开阶段，不自动做真实能力实验。Git 遵守 `GIT_STANDARD.md`。
+状态：用户确认一次总委派与开发规范 §3.1 范围冻结。C5 收尾完成，见 `C5_EXTERNAL_REVIEW.md`；原 R1-R6 的代码工作合并为 `C6_AGENT_PRODUCT_TASK.md`/`C6_AGENT_PRODUCT_DS_PROMPT.md`，主 DS 自主完成 A-F，只交一次限定工程验收。实际模型 pilot、效果/迁移/日常实验以后单独处理。F16/旧类型基线后置，不重开阶段。Git 遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 
