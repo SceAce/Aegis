@@ -176,6 +176,13 @@ if (scenario === "runner") {
 		...args,
 		runEntry: runC6FromConfig,
 		baseDir: join(base, "attempts"),
+		applyInitialState: (_attempt, initial) => {
+			// Trusted task-family initializer: actually reset the shared target to the
+			// declared pre-state and re-read it, so the attempt starts from a verified
+			// state (never whatever the previous attempt left).
+			writeFileSync(join(workspace, "dataset.json"), JSON.stringify(initial));
+			return { ok: true, applied: JSON.parse(readFileSync(join(workspace, "dataset.json"), "utf8")) };
+		},
 		attempts: [
 			{ id: "a", work_dir: join(base, "attempt-a"), seed: 11, initial_state: { name: "reset-a" } },
 			{ id: "b", work_dir: join(base, "attempt-b"), seed: 12, initial_state: { name: "reset-b" } },
