@@ -167,6 +167,9 @@ node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs
 ```
 
 完整失败：ignored `runtime/dev/c6-final-review/final-guards.log`，退出统计remaining-results.json。
+会话恢复后在85b1d1d再次运行同一suite，仍为16例/13通过/3失败，实际exit1；
+记录见ignored `runtime/dev/c6-session-resume/recheck.log`及results.json。此次仅补齐修复提示词与
+阶段入口，未修改产品代码、未重跑其余suite或静态检查冒充新证据。
 修复应在run返回/每provider准入前统一处理，不能删断言或只保护有下一请求的分支。
 Task/Campaign reservation必须同一个实际request身份、失败时保守处理pending与已发生成本；
 先检查/预留再durable记录，避免拒绝前写null reservation给重启伪造状态。
