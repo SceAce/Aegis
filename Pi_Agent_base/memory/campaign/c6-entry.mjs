@@ -742,7 +742,8 @@ export async function runC6FromConfig(
 							return { ok: false, error: "no durable writer is bound" };
 						}
 						const usage = request?.usage ?? null;
-						const toolCalls = phase === "committed" ? pendingToolAdmissions.length : undefined;
+						const toolCalls =
+							phase === "committed" || phase === "reconciliation_required" ? pendingToolAdmissions.length : undefined;
 						const written = await sinkRef.append({
 							event_type: "runtime.note",
 							episode_id: `ep-${request?.task_id ?? currentTaskId}`,

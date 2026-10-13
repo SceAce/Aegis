@@ -20,6 +20,7 @@ import * as nodeFs from "node:fs";
 import { readFileSync } from "node:fs";
 
 import { digest, resolveInside } from "../fixture/contracts.mjs";
+import { classifyStopReason } from "./c6-request-lifecycle.mjs";
 
 export const MODEL_WORKER_VERSION = "2.0.0";
 
@@ -961,6 +962,7 @@ export function createModelWorker(
 			providerRequests: 0,
 			providerStarted: false,
 			providerStatus: null,
+			planningStatus: null,
 			reconciliationPersisted: null,
 			requestSeq: 0,
 			inputMeasurement: null,
@@ -1000,8 +1002,16 @@ export function createModelWorker(
 					gate.lastRequest = reservation;
 					usage = event.message.usage ?? usage;
 					assistantText = text;
-					const providerStatus = event.message.stopReason === "error" ? "error" : "ok";
+					// Pi distinguishes a completed response from a hard error/abort. Keep
+					// that distinction instead of mapping "not error" to ok.
+					const classified = classifyStopReason(event.message.stopReason);
+					const providerStatus = classified.providerStatus;
 					gate.providerStatus = providerStatus;
+					if (classified.planningStatus === "error" || classified.planningStatus === "aborted")
+						gate.planningStatus = classified.planningStatus;
+					else if (gate.planningStatus !== "error" && gate.planningStatus !== "aborted")
+						gate.planningStatus =
+							classified.planningStatus === "unknown" ? (gate.planningStatus ?? "unknown") : "normal";
 					const pending = finalizeRequest({
 						reservation,
 						usage,
@@ -1095,6 +1105,7 @@ export function createModelWorker(
 			provider_started: gate.providerStarted,
 			provider_requests: gate.providerRequests,
 			provider_status: gate.providerStatus,
+			planning_status: gate.planningStatus,
 			commit_status: finalCommit?.commit_status ?? gate.lastCommit?.commit_status ?? null,
 			reconciliation_persisted: gate.reconciliationPersisted?.persisted ?? null,
 			reconciliation_error: gate.reconciliationPersisted?.error ?? null,
@@ -1117,9 +1128,13 @@ export function createModelWorker(
 		} else if (!commitOk) {
 			failureMode = "accounting_failure";
 			failureDetail = reconciliation.commit_error;
-		} else if (gate.providerStatus === "error") {
+		} else if (gate.planningStatus === "error") {
 			failureMode = "provider_error";
 			failureDetail = "the provider request ended with an error; its settlement is retained for reconciliation";
+		} else if (gate.planningStatus === "aborted") {
+			failureMode = "provider_aborted";
+			failureDetail =
+				"the model planning was aborted; occurred requests stay charged and no decision reaches the Broker";
 		} else if (promptError && !gate.providerStarted) {
 			failureMode = "transport_failure";
 			failureDetail = String(promptError);
@@ -1132,7 +1147,7 @@ export function createModelWorker(
 			// certain (provider 0) and does not block independent tasks.
 			if (
 				reconciliationGuard &&
-				["reconciliation_required", "accounting_failure", "provider_error"].includes(failureMode)
+				["reconciliation_required", "accounting_failure", "provider_error", "provider_aborted"].includes(failureMode)
 			)
 				reconciliationGuard.runtimeBlocked = true;
 			if (onEvent)
@@ -1184,6 +1199,25 @@ export function createModelWorker(
 				failure_mode: "no_model_decision",
 				detail: "the model did not submit a structured task decision",
 				stop_reason: stopReason,
+			};
+		}
+		// A buffered decision is only executable when the planning ended with a
+		// trustworthy termination. Missing/unknown termination evidence is not a
+		// normal end (the real SDK always sets a stopReason; this guards the boundary).
+		if (gate.planningStatus === "unknown" || gate.planningStatus === null) {
+			if (onEvent)
+				onEvent({
+					kind: "task.blocked",
+					task_id: effectiveTaskId,
+					reason: "the model planning has no trustworthy termination evidence",
+					failure_mode: "planning_termination_unknown",
+				});
+			return {
+				ok: false,
+				failure_mode: "planning_termination_unknown",
+				detail: "no trustworthy SDK termination evidence; the buffered decision is not executable",
+				provider_requests: gate.providerRequests,
+				reconciliation,
 			};
 		}
 		// The Worker returns the TRANSPORT fact only, and ONLY after the final

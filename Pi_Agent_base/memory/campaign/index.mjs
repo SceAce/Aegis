@@ -70,6 +70,7 @@ export {
 	MODEL_WORKER_VERSION,
 } from "./c6-model-worker.mjs";
 export {
+	classifyStopReason,
 	REQUEST_PHASE,
 	reservedSeedForTask,
 	summarizeRequestLedger,
