@@ -177,11 +177,15 @@ Task/Campaign reservation必须同一个实际request身份、失败时保守处
 
 ## 6. 收敛处理与下一步
 
-本轮提交3个正常red断言与审查更新，**不修改产品代码**，便于DS以明确证据小修。
-当前提示词见 [C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)，复用现C6材料。
-第4节五组及初轮已闭环内容不再次整体委派，仅修第5节请求门三处遗漏及相关回归。
-这三项通过后即可对本轮冻结目标做最终限定判定，再由用户确定有界本地provider pilot参数。
-无新增框架/缓存/性能/样式要求。
+请求门三项（R12/R13/R14）已由主 DS 在 `feat/c6-agent-product` 完成重规划与修复
+（规划/契约/状态机/覆盖表见 [C6_PROVIDER_GATE_PLAN.md](C6_PROVIDER_GATE_PLAN.md)）：
+
+- 聚焦套件由 20 tests / 13 pass / 7 fail 转为 **23 tests / 23 pass, exit 0**（保留全部 red，新增 R14c/R15/R16）；
+- `aegis-c6-external-boundaries` 仍 **22/22 pass, exit 0**；15 个 C6 脚本与 26 个受影响回归 exit 0；
+- Campaign tsc 仍 **196 条旧诊断、修改文件 0 条**；Biome 修改范围 exit 0。
+
+细节、mutation 与 exact argv/exit/log 见 `docs/C6_PROVIDER_GATE_PLAN.md` 实施结果节与
+`Pi_Agent_base/runtime/dev/c6-gate/`（ignored）。DS 不自行宣布 external acceptance。
 
 F16、旧库类型清库、复杂检索/任意经验组合、多Worker/容器、真实模型pilot/效果/迁移仍后置。
 DS 完成后交当前会话复验；只有冻结工程目标通过，才讨论真实环境实验具体模型、授权与预算。

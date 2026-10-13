@@ -249,3 +249,31 @@ dacb511 test: C6 recheck boundaries for gate, test trust, grant and reset
 
 未 push、未改写历史；未改内嵌 Pi 核心/用户凭据/模型设置/lockfile；未调用真实 provider/目标。
 
+
+## 13. Provider Gate 重规划修复轮（本轮，基线 89cb4aa）
+
+外部复验 §5–6 认定请求门三处遗漏（R12/R13/R14），并明确这是架构收敛而非三个孤立断言。
+本轮按 `docs/C6_PROVIDER_GATE_PLAN.md`（状态机/联合 reservation/identity/持久顺序/reconciliation/
+transcript 覆盖表/测试矩阵）实现并自审。
+
+| 组 | 实现 | 证据 |
+| --- | --- | --- |
+| R12 末次 durable commit | `run()` 尾部 await `gate.pendingCommit`；失败→`ok:false`/`accounting_failure`/reconciliation，且不返回决策 | R12/R12b；Broker effect 0 |
+| R13 Campaign+Task 联合准入 | gate 同 `request_id` 先 campaign 后 task `admitRequest`，task 拒绝补偿 campaign；两层成功后一条 durable reservation 记录两个 id；message_end 各 commit 各 reservation | R13/R13b/R13c；campaign=0→provider 0 |
+| R14 实际 transcript | `measureProviderInput` 按 `llmContext.messages`(system/user/assistant/toolResult)+`messages[*].toolsAdded`/顶层 tools + output reserve 计窗；首请求与续请求同一门 | R14/R14b/R14c/R15 |
+| 持久/重建 | `persistRequest` 写 request_id + task/campaign reservation id + coverage/source；`summarizeRequestLedger` 从 committed 源重建 consumed/pending，null-id 不合法 | R16；restart 不重复计费 |
+
+数字：正常两任务 campaign consumed=4、任务各 2、pending 0；restart 第二次仍 4；rebuild 与运行一致。
+聚焦套件 **23/23**、external **22/22**、15 C6 脚本 exit 0、26 回归 exit 0；tsc 196 旧/0 新；Biome exit 0。
+mutation 9 项全部行为 FAIL。exact argv/exit/log 见 `docs/C6_PROVIDER_GATE_PLAN.md` 与
+`runtime/dev/c6-gate/`。未运行真实 provider pilot；真实环境参数由用户单独确定。
+
+### commits（本轮）
+
+```text
+637aeaa fix: C6 ledger joint reservations with stable request ids
+c9959ec fix: C6 provider gate joint admission, actual transcript window, final flush
+294ebc5 test: extend C6 provider gate recheck boundaries
+```
+
+状态：**internally_verified / awaiting_external_review**。

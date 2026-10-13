@@ -138,3 +138,35 @@ C1 `eventlog-durability`/`integration-recovery`。
 | proof `when` 改用声明 initial_state | closure 前态/direct | FAIL ✓（2 失败） |
 | compile 前跳过真实 replay | closure replay/reset | FAIL ✓（2 失败） |
 | 不派生 arguments template | closure direct 零规划 | FAIL ✓ |
+
+## C6 Provider Gate 重规划修复轮（基线 89cb4aa，本轮交付）
+
+对应 `C6_PROVIDER_GATE_REDESIGN_DS_PROMPT.md` 的 R12/R13/R14；规划与契约见
+`docs/C6_PROVIDER_GATE_PLAN.md`。日志 `Pi_Agent_base/runtime/dev/c6-gate/`（ignored）。
+
+| case_id | requirement | 入口 | 预期行为 | 脚本 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| C6-R12 | 末次 durable commit | `createModelWorker.run` | 末次 commit ok:false → 不返回决策，accounting_failure + reconciliation | `aegis-c6-recheck-boundaries.mjs` R12 | pass |
+| C6-R12b | 不进入 Broker | `createCompositeWorker` | accounting failure → brokerWorker.run 0 次 | 同上 R12b | pass |
+| C6-R13 | Campaign+Task 联合准入 | `installProviderGate` | campaign=0/task>0 或反之 → provider 0 次 | 同上 R13 | pass |
+| C6-R13b | 拒绝前不写 null-id reserved | 同上 | campaign 拒绝 → `persistRequest` 0 次 | 同上 R13b | pass |
+| C6-R13c | 各一 reservation/commit | 同上 | provider 1；两层 provider 前 pending 1，后 consumed 1 | 同上 R13c | pass |
+| C6-R14 | 实际 transcript 窗口 | `measureProviderInput` | 大 messages 超窗 → provider 0 次 | 同上 R14 | pass |
+| C6-R14b | tool schema+result 计窗 | 同上 | 超窗 → provider 0 次 | 同上 R14b | pass |
+| C6-R14c | tool schema 单独计窗 | 同上 | 小 message + 大 schema → provider 0 次 | 同上 R14c（新增） | pass |
+| C6-R15 | continuation 窗口 | 同上 | 首请求合法、续请求超窗 → provider 1 次 | 同上 R15（新增） | pass |
+| C6-R16 | durable payload 重建 | `summarizeRequestLedger` | 重建 consumed/byTask/pending；null-id committed 不合法 | 同上 R16（新增） | pass |
+
+### 本轮 mutation（关键 guard，行为 FAIL）
+
+| mutation | 目标 case | 实际 |
+| --- | --- | --- |
+| 删除 final pendingCommit flush | R12/R12b | FAIL ✓ |
+| accounting failure 改 ok:true | R12/R12b | FAIL ✓ |
+| 仅 Task admission | R13/R13b/R13c | FAIL ✓ |
+| null-id mirror commit | R13c | FAIL ✓ |
+| 缓存 prompt estimate | R14/R14b | FAIL ✓ |
+| 不读 llmContext.tools | R14c | FAIL ✓ |
+| 仅首请求窗口 | R15 | FAIL ✓ |
+| pending 不计入 remaining | C6-X1 | FAIL ✓ |
+| 重复 commit 非幂等 | C6-X1 duplicate | FAIL ✓ |

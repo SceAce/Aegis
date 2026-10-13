@@ -77,14 +77,12 @@ C5 review and user-authorized fixes are complete with recorded limitations.
 C6 external recheck remains **changes_required** at product baseline `22d075c`.
 The five repair groups are recognized within the review scope: all 15 C6 scripts,
 22 external boundary cases and the original 13 focused recheck cases passed.
-Review commit `85b1d1d` adds three failing cases on the same provider gate path:
-R12 must confirm the final durable commit before returning executable decisions;
-R13 must admit each request against both Task and Campaign budgets; R14 must
-measure the actual provider transcript and tool schemas for each input window.
-The focused suite is now 16 cases / 13 pass / 3 fail. Current assignment and
-review are `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md` and sections 5–6 of
-`../docs/C6_EXTERNAL_REVIEW.md`; do not reopen the five repaired groups.
-Campaign type diagnostics remain 0 (196 legacy diagnostics remain). Real-model
-pilots and learning efficacy experiments remain separate after engineering
-acceptance. Do not call real providers/targets or read real credentials. Preserve
-deferred F16 and honest per-config type baselines.
+The provider-bound request gate was then re-planned and repaired
+(`../docs/C6_PROVIDER_GATE_PLAN.md`): R12 final durable commit before any
+Broker dispatch, R13 Campaign+Task joint pre-call admission, R14 the actual
+provider transcript/tool-schema window. The focused suite is now 23 cases /
+23 pass; the five repaired groups are not reopened. Campaign type diagnostics
+remain 0 (196 legacy diagnostics remain). Real-model pilots and learning
+efficacy experiments remain separate after engineering acceptance. Do not call
+real providers/targets or read real credentials. Preserve deferred F16 and
+honest per-config type baselines.
