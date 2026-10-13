@@ -38,6 +38,7 @@ export {
 } from "./c3-entry.mjs";
 export {
 	C5_ENTRY_VERSION,
+	campaignGateExtensionFactory,
 	createHostSessionController,
 	runCampaignFromConfig,
 } from "./c5-entry.mjs";

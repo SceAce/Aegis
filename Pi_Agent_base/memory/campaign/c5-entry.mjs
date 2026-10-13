@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { committedRotations, createSessionSupervisor } from "../runtime/session-supervisor.mjs";
+import { projectState, resolveOpenEpisode } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
 import { loadCampaignConfig } from "./campaign-config.mjs";
 import { createObservationServer } from "./observation-server.mjs";
@@ -48,7 +49,13 @@ export function createHostSessionController({ config, runtime }) {
 	return {
 		committedRotations: () => {
 			const events = readEventsSafe(join(config.work_dir, "events.jsonl"));
-			return committedRotations(events, config.session.episode_id ?? null) || committedRotations(events, taskId);
+			// Resolve the SAME open Pi episode the supervisor uses, so a rotation's
+			// session generation is counted against the right episode. Fall back to the
+			// configured episode id, then to any committed rotation.
+			const state = projectState(events);
+			const openEpisode = resolveOpenEpisode(state, taskId)?.episode_id ?? config.session.episode_id ?? null;
+			if (openEpisode) return committedRotations(events, openEpisode);
+			return events.filter((e) => e.event_type === "handoff.completed").length;
 		},
 		canRotate: () => makeSupervisor().canRotate(),
 		rotate: (options) => makeSupervisor().rotate(options),
@@ -76,10 +83,27 @@ function readEventsSafe(path) {
 }
 
 /**
+ * The gate extension factory a C5 runtime MUST load into EVERY session's
+ * resource loader (including the rotated one) so a direct tool cannot bypass the
+ * Broker. It is the SAME gate object the Host uses, so activation on `run()` and
+ * deactivation on settle are observed by every session.
+ *
+ * @param {any} gate a `createCampaignActionGate` instance
+ * @returns {(pi: any) => void}
+ */
+export function campaignGateExtensionFactory(gate) {
+	if (!gate || typeof gate.extensionFactory !== "function") {
+		throw new Error("campaignGateExtensionFactory requires a Campaign gate with extensionFactory");
+	}
+	return gate.extensionFactory;
+}
+
+/**
  * Run a full Campaign from a trusted config.
  *
  * @param {{configPath: string, scenario?: string, observe?: boolean, export?: boolean,
- *   outDir?: string|null, runtime?: any, print?: (text: string) => void}} args
+ *   outDir?: string|null, runtime?: any, print?: (text: string) => void,
+ *   beforeRun?: Function|null, wrapWorker?: Function|null, gate?: any}} args
  */
 export async function runCampaignFromConfig(
 	{
@@ -90,6 +114,9 @@ export async function runCampaignFromConfig(
 		outDir = null,
 		runtime = null,
 		print = null,
+		beforeRun = null,
+		wrapWorker = null,
+		gate = null,
 	} = /** @type {any} */ ({}),
 ) {
 	const out = typeof print === "function" ? print : (text) => process.stdout.write(`${text}\n`);
@@ -125,8 +152,18 @@ export async function runCampaignFromConfig(
 		mode: config.mode,
 		scriptRegistrationConfig,
 		sessionController,
+		wrapWorker,
+		actionGate: gate,
 	});
-	const { host, sink, gate } = assembled;
+	const assembledGate = assembled.gate;
+	const { host, sink } = assembled;
+
+	// A preparation seam (tests / trusted setup): submit committed events (e.g. a
+	// dynamic proposal) through the SAME single writer BEFORE the loop runs. It
+	// never changes scheduling semantics.
+	if (typeof beforeRun === "function") {
+		await beforeRun({ host, sink, manifest, config });
+	}
 
 	// Optional observation server (read-only; failure never blocks execution).
 	let server = null;
@@ -189,7 +226,8 @@ export async function runCampaignFromConfig(
 	}
 
 	const status = runResult?.status ?? host.status();
-	const summary = status.projection;
+	// The run-scenario snapshot IS the projection; the status-scenario wraps it.
+	const summary = status.projection ?? status;
 	const taskStates = Object.fromEntries((summary?.tasks ?? []).map((t) => [t.task_id, t.state]));
 	const observationUrl = server ? server.url : null;
 	out(
@@ -207,7 +245,7 @@ export async function runCampaignFromConfig(
 		campaign_id: manifest.campaign_id,
 		observation_url: observationUrl,
 		task_states: taskStates,
-		gate,
+		gate: assembledGate,
 		export_dir: exportResult?.outDir ?? null,
 		config,
 	};

@@ -216,6 +216,7 @@ export async function assembleCampaignHost(
 		scriptRegistrationConfig = null,
 		delayedFirstByTask = {},
 		wrapWorker = null,
+		actionGate = null,
 	} = /** @type {any} */ ({}),
 ) {
 	const checked = validateManifest(manifest);
@@ -242,7 +243,9 @@ export async function assembleCampaignHost(
 		allowNetwork: false,
 		approved: mode === "auto",
 	});
-	const gate = createCampaignActionGate({ allowDirectTools: [] });
+	// A trusted deployment may pass ONE gate object so the runtime resource loader
+	// (including rotated sessions) and the Host share it; otherwise create one.
+	const gate = actionGate ?? createCampaignActionGate({ allowDirectTools: [] });
 	const artifactIndex = new Map();
 	// Recovery correctness: rebuild prior evidence digests from the COMMITTED
 	// stream so a restarted Host resolves the same evidence without re-running the
