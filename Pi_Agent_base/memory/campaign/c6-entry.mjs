@@ -22,9 +22,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectBoard } from "../runtime/board.mjs";
-import { bindHostEventLog, EventLog, parseJsonl, verifyChain } from "../runtime/events.mjs";
+import { bindHostEventLog, parseJsonl, verifyChain } from "../runtime/events.mjs";
+import { evaluateHandoff } from "../runtime/handoff.mjs";
 import { buildRam } from "../runtime/ram.mjs";
-import { projectState, resolveOpenEpisode } from "../runtime/state.mjs";
+import { createSessionSupervisor } from "../runtime/session-supervisor.mjs";
+import { projectState } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
 import { createDecisionCaptureTool, createModelPlan, createModelWorker } from "./c6-model-worker.mjs";
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
@@ -90,7 +92,7 @@ export function createDecisionBuffer() {
  * for a structured decision (driving the SDK + ledger), then executes the
  * admitted plan through the ORIGINAL Broker Worker. One Broker path only.
  */
-export function createCompositeWorker({ modelWorker, brokerWorker, buffer }) {
+export function createCompositeWorker({ modelWorker, brokerWorker, buffer, onTaskSettled = null }) {
 	return {
 		bindCampaign(manifest) {
 			brokerWorker.bindCampaign?.(manifest);
@@ -100,7 +102,12 @@ export function createCompositeWorker({ modelWorker, brokerWorker, buffer }) {
 			const planned = await modelWorker.run({ task });
 			if (!planned.ok) return planned;
 			// Execute the model's admitted decision through the existing Broker.
-			return brokerWorker.run({ task });
+			const result = await brokerWorker.run({ task });
+			// A safe settle boundary: the caller may rotate the Session here. The
+			// caller only rotates when idle/settled/committed with no pending effect
+			// and budget allowing; this callback never forces a rotation.
+			if (typeof onTaskSettled === "function") await onTaskSettled({ task, result });
+			return result;
 		},
 	};
 }
@@ -213,6 +220,11 @@ export async function runC6FromConfig(
 			input_chars: (config.context?.max_total_input_chars ?? 24000) * Math.max(1, manifest.budget.model_requests),
 			wall_time_ms: manifest.budget.wall_time_ms,
 		},
+		onEvent: (record) => {
+			// Count REAL provider requests (including the automatic tool loop) so a
+			// declared requests-per-session threshold can trigger a safe rotation.
+			if (record.kind === "request.committed") requestsSinceRotation += 1;
+		},
 	});
 
 	const buffer = createDecisionBuffer();
@@ -266,30 +278,60 @@ export async function runC6FromConfig(
 	let runResult = null;
 	let exportResult = null;
 	let rotationResult = null;
+	const rotationAttempts = [];
+	let requestsSinceRotation = 0;
+	let hostRef = null;
+
+	/** A C2-shaped budget ledger derived from the trusted config (session_count only). */
+	function sessionLedger() {
+		const limit = config.session.budget_ledger?.limit ?? { session_count: config.session.session_count };
+		const consumed = config.session.budget_ledger?.consumed ?? { session_count: 0 };
+		const reserved = config.session.budget_ledger?.reserved ?? { session_count: 0 };
+		return { limit, consumed, reserved, max_requests_per_session: config.session.max_requests_per_session };
+	}
 
 	function buildSessionController() {
 		// Reuse the accepted C2 supervisor through the SDK runtime's newSession seam.
+		// The Host stages a handoff decision into the shared handoff file, then the
+		// supervisor applies it through the REAL SDK and verifies that exactly one
+		// `handoff.completed` is committed for the request (no false completion).
+		const supervisor = createSessionSupervisor({
+			eventLogPath,
+			handoffPath: config.session.handoff_path,
+			runtime: {
+				newSession: (options) => sdkRuntime.runtime.newSession(options),
+				get session() {
+					return sdkRuntime.session();
+				},
+			},
+			taskId: config.label ?? "campaign-task",
+			budget: sessionLedger(),
+		});
 		return {
 			committedRotations: () => readEventsSafe(eventLogPath).filter((e) => e.event_type === "handoff.completed").length,
-			canRotate: () => sdkRuntime.canRotate?.() ?? { allowed: true, reason: "runtime seam" },
-			rotate: async (options) => {
+			canRotate: () => supervisor.canRotate(),
+			rotate: async (options = {}) => {
 				const before = sdkRuntime.session();
-				const result = await sdkRuntime.runtime.newSession({
-					withSession: async (next) => {
-						await next.sendUserMessage(`[Aegis] continuing episode: ${options?.reason ?? "rotation"}`);
-					},
+				// Stage the Host's rotation request so the observer writes exactly one
+				// completion at the post-bind boundary (the same path as a model request).
+				const staged = stageHostHandoff({
+					eventLogPath,
+					handoffPath: config.session.handoff_path,
+					taskId: config.label ?? "campaign-task",
+					reason: options.reason ?? "auto_request_threshold",
 				});
-				if (result?.cancelled) return { applied: false, reason: "switch was cancelled" };
-				const after = sdkRuntime.session();
-				await sdkRuntime.rebind?.(after);
-				return {
-					applied: true,
-					reused: false,
-					new_session_id: safeSessionId(after),
-					new_object: after !== before,
-				};
+				if (!staged.ok) return { applied: false, reason: staged.reason };
+				const result = await supervisor.rotate({ requestId: staged.request_id, reason: staged.reason });
+				if (result.applied === true && result.reused !== true) {
+					// Rebind the SDK subscriptions to the new session (C6-A rebind seam).
+					const after = sdkRuntime.session();
+					await sdkRuntime.rebind?.(after);
+					result.new_session_id = safeSessionId(after);
+					result.new_object = after !== before;
+				}
+				return result;
 			},
-			recoverInterrupted: () => ({ recovered: false, reason: "no staged handoff" }),
+			recoverInterrupted: () => supervisor.recoverInterrupted(),
 		};
 	}
 
@@ -325,12 +367,29 @@ export async function runC6FromConfig(
 						return buildRam({ board, state, episodeId, goal: manifest.objective?.description ?? "" });
 					},
 					decisionBuffer: buffer,
-					onEvent: (record) => out(`  [ledger] ${JSON.stringify(record)}`),
+					onEvent: (record) => {
+						if (record.kind === "request.committed") requestsSinceRotation += 1;
+						out(`  [ledger] ${JSON.stringify(record)}`);
+					},
 				});
 				const plan = createModelPlan({ decisionsByTask: buffer.byTask() });
 				// Rebuild the Broker Worker with the MODEL plan instead of the fixture plan.
 				brokerWorker.setPlan?.(plan);
-				return createCompositeWorker({ modelWorker, brokerWorker, buffer });
+				return createCompositeWorker({
+					modelWorker,
+					brokerWorker,
+					buffer,
+					onTaskSettled: async () => {
+						// A safe settle boundary: rotate only when the declared threshold is
+						// reached, an idle/settled/committed Host exists and budget allows.
+						const threshold = config.session.max_requests_per_session;
+						if (!hostRef || !Number.isInteger(threshold) || threshold < 1) return;
+						if (requestsSinceRotation < threshold) return;
+						const rotation = await hostRef.rotateSession({ reason: "auto_request_threshold" });
+						rotationAttempts.push(rotation);
+						if (rotation?.applied === true && rotation.reused !== true) requestsSinceRotation = 0;
+					},
+				});
 			},
 		});
 	} catch (error) {
@@ -339,6 +398,7 @@ export async function runC6FromConfig(
 	}
 	const { host, sink } = assembled;
 	brokerRef = assembled.broker ?? null;
+	hostRef = host;
 
 	try {
 		unbind = bindHostEventLog(eventLogPath, sink.log);
@@ -448,6 +508,7 @@ export async function runC6FromConfig(
 			export_dir: exportResult?.outDir ?? null,
 			measurement: measureResult,
 			rotation: rotationResult,
+			rotation_attempts: rotationAttempts,
 			ledger: ledger.snapshot(),
 			chain_ok: verifyChain(events).ok,
 			config,
@@ -478,6 +539,42 @@ function safeSessionId(session) {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Stage a Host-initiated handoff request into the shared handoff file. It
+ * re-validates against the COMMITTED stream (open episode, no pending effect)
+ * through the accepted `evaluateHandoff`, so an unsafe switch is refused, never
+ * forced. The observer writes the single `handoff.completed` at the post-bind
+ * boundary; the Host never writes a completion itself.
+ *
+ * @param {{eventLogPath: string, handoffPath: string, taskId: string, reason: string}} args
+ */
+export function stageHostHandoff({ eventLogPath, handoffPath, taskId, reason }) {
+	const events = readEventsSafe(eventLogPath);
+	const state = projectState(events);
+	const board = projectBoard(events);
+	const episodeId = state.open_handoff?.episode_id ?? resolveOpenEpisodeId(state, taskId);
+	if (!episodeId) return { ok: false, reason: "no open episode to hand over" };
+	const ram = buildRam({ board, state, episodeId, goal: state.episodes[episodeId]?.goal?.description ?? "" });
+	const requestId = `host-rotate-${events.length}-${Date.now()}`;
+	const verdict = evaluateHandoff({ state, board, ram, episodeId, reason, requestId });
+	if (!verdict.allowed) return { ok: false, reason: verdict.reason, blocking: verdict.pending_actions ?? [] };
+	mkdirSync(dirname(handoffPath), { recursive: true });
+	writeFileSync(handoffPath, JSON.stringify({ ...verdict.handoff, request_id: requestId }, null, 2), "utf8");
+	return { ok: true, request_id: requestId, episode_id: episodeId, reason };
+}
+
+function resolveOpenEpisodeId(state, taskId) {
+	for (const [id, episode] of Object.entries(state.episodes ?? {})) {
+		if (episode.status === "open" || episode.status === "active") {
+			if (!taskId || episode.task_id === taskId) return id;
+		}
+	}
+	for (const [id, episode] of Object.entries(state.episodes ?? {})) {
+		if (episode.status === "open" || episode.status === "active") return id;
+	}
+	return null;
 }
 
 function safeDescribe(broker) {
