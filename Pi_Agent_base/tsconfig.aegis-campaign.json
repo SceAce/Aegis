@@ -32,6 +32,7 @@
 		"memory/campaign/c6-entry.mjs",
 		"memory/campaign/c6-learning.mjs",
 		"memory/campaign/c6-model-worker.mjs",
+		"memory/campaign/c6-request-lifecycle.mjs",
 		"memory/campaign/c6-runner.mjs",
 		"memory/campaign/c6-sdk-runtime.mjs",
 		"memory/campaign/c6-tool-ledger.mjs",

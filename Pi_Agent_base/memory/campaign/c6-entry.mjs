@@ -44,6 +44,7 @@ import {
 	createModelWorker,
 	createObservationTool,
 } from "./c6-model-worker.mjs";
+import { reservedSeedForTask, summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
 import { createToolLedger } from "./c6-tool-ledger.mjs";
 import { loadCampaignConfig } from "./campaign-config.mjs";
@@ -75,100 +76,10 @@ function readEventsSafe(path) {
 	}
 }
 
-/**
- * Rebuild the request-ledger accounting from the COMMITTED event stream alone.
- * This is the authoritative rebuild used on restart/measure; it is a pure
- * function so it can be tested directly. Rules:
- *
- *   * a `reserved` note must carry non-null request + reservation ids, else it is
- *     ignored (never a legal hold);
- *   * a `committed` note must carry a non-null request id and at least one
- *     reservation id; a null-id record is NOT a legal committed request;
- *   * `released`/`rejected`/`reconciliation_required` cancel a pending request;
- *   * a pending reservation whose ids are not committed still holds budget;
- *   * `wall_time_ms` is elapsed, so a persisted absolute timestamp is not copied.
- *
- * @param {any[]} events
- * @returns {{
- *   consumed: {model_requests: number, tool_calls: number, input_chars: number, wall_time_ms: number},
- *   byTask: Map<string, {model_requests: number, tool_calls: number, input_chars: number}>,
- *   campaignPending: Array<{reservation_id: string, request_id: string|null, inputChars: number, kind: string}>,
- *   taskPending: Array<{reservation_id: string, request_id: string|null, inputChars: number, kind: string}>,
- *   committedReservations: Set<string>,
- *   records: any[],
- * }}
- */
-export function summarizeRequestLedger(events = []) {
-	const consumed = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
-	/** @type {Map<string, {model_requests: number, tool_calls: number, input_chars: number}>} */
-	const byTask = new Map();
-	/** @type {Map<string, {request_id: string|null, task_reservation_id: string|null, campaign_reservation_id: string|null, inputChars: number, kind: string, task_id: string|null}>} */
-	const reservedNotes = new Map();
-	const committedReservations = new Set();
-	const records = [];
-	for (const event of Array.isArray(events) ? events : []) {
-		if (event?.event_type !== "runtime.note" || event.payload?.kind !== "c6.request") continue;
-		const payload = event.payload;
-		const requestId = typeof payload.request_id === "string" ? payload.request_id : null;
-		const taskRes = typeof payload.task_reservation_id === "string" ? payload.task_reservation_id : null;
-		const campaignRes = typeof payload.campaign_reservation_id === "string" ? payload.campaign_reservation_id : null;
-		if (payload.phase === "reserved") {
-			if (!taskRes && !campaignRes) continue;
-			reservedNotes.set(requestId ?? `${taskRes ?? campaignRes}`, {
-				request_id: requestId,
-				task_reservation_id: taskRes,
-				campaign_reservation_id: campaignRes,
-				inputChars: Number.isFinite(payload.input_chars) ? payload.input_chars : 0,
-				kind: payload.request_kind ?? "provider_bound",
-				task_id: payload.task_id ?? null,
-			});
-			continue;
-		}
-		if (payload.phase === "released" || payload.phase === "rejected" || payload.phase === "reconciliation_required") {
-			if (requestId) reservedNotes.delete(requestId);
-			continue;
-		}
-		if (payload.phase === "committed" || payload.usage !== undefined) {
-			if (!requestId || (!taskRes && !campaignRes)) continue;
-			consumed.model_requests += 1;
-			consumed.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
-			consumed.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
-			consumed.wall_time_ms = 0;
-			if (payload.task_id) {
-				const dims = byTask.get(payload.task_id) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
-				dims.model_requests += 1;
-				dims.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
-				dims.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
-				byTask.set(payload.task_id, dims);
-			}
-			if (taskRes) committedReservations.add(taskRes);
-			if (campaignRes) committedReservations.add(campaignRes);
-			if (requestId) reservedNotes.delete(requestId);
-			records.push(payload);
-		}
-	}
-	const pending = [...reservedNotes.values()].filter((note) => {
-		const ids = [note.task_reservation_id, note.campaign_reservation_id].filter(Boolean);
-		return ids.length > 0 && ids.every((id) => !committedReservations.has(id));
-	});
-	const campaignPending = pending
-		.filter((note) => note.campaign_reservation_id)
-		.map((note) => ({
-			reservation_id: /** @type {string} */ (note.campaign_reservation_id),
-			request_id: note.request_id,
-			inputChars: note.inputChars,
-			kind: note.kind,
-		}));
-	const taskPending = pending
-		.filter((note) => note.task_reservation_id)
-		.map((note) => ({
-			reservation_id: /** @type {string} */ (note.task_reservation_id),
-			request_id: note.request_id,
-			inputChars: note.inputChars,
-			kind: note.kind,
-		}));
-	return { consumed, byTask, campaignPending, taskPending, committedReservations, records };
-}
+// The rebuild rules live in ONE shared module (`c6-request-lifecycle.mjs`) so the
+// live gate and the restart/measure rebuild cannot drift apart. Re-exported here
+// for the existing import surface (`../memory/campaign/c6-entry.mjs`).
+export { summarizeRequestLedger };
 
 /**
  * Build a decision buffer shared between the SDK custom tool and the model plan.
@@ -433,11 +344,17 @@ export async function runC6FromConfig(
 		campaignPending,
 		taskPending,
 		committedReservations,
+		taskCommittedByTask,
+		unresolved: unresolvedRequestCount,
+		diagnostics: rebuildDiagnostics,
 		records: rebuiltRecords,
 	} = summarizeRequestLedger(readEventsSafe(eventLogPath));
 	Object.assign(persistedUsage, rebuiltConsumed);
 	for (const [taskId, dims] of rebuiltByTask) persistedByTask.set(taskId, dims);
 	persistedLedgerRecords.push(...rebuiltRecords);
+	// C-ISOLATION: a Task ledger is seeded ONLY with THAT Task's outstanding and
+	// committed reservation identities. A global pending set would let Task A's
+	// hold leak into Task B's ledger.
 	const baseReserved = {
 		model_requests: campaignPending.length,
 		tool_calls: 0,
@@ -446,13 +363,15 @@ export async function runC6FromConfig(
 		pending: campaignPending,
 		committed: [...committedReservations],
 	};
-	const taskBaseReserved = {
-		model_requests: taskPending.length,
-		tool_calls: 0,
-		input_chars: taskPending.reduce((sum, note) => sum + note.inputChars, 0),
-		wall_time_ms: 0,
-		pending: taskPending,
-		committed: [...committedReservations],
+	// The reconciliation guard: a restart may not blindly re-dispatch while a
+	// prior provider request is unresolved (pending hold) OR the rebuild saw an
+	// invalid/conflicting record. This is the running stop/block path, not a
+	// display-only unknown.
+	const reconciliationGuard = {
+		unresolved: unresolvedRequestCount,
+		diagnostics: rebuildDiagnostics.length,
+		diagnostics_detail: rebuildDiagnostics,
+		runtimeBlocked: false,
 	};
 	const ledger = createToolLedger({
 		limit: {
@@ -748,6 +667,9 @@ export async function runC6FromConfig(
 					currentTaskRef.task = task ?? currentTaskRef.task;
 					const alloc = task?.task_budget ?? {};
 					const taskBase = persistedByTask.get(currentTaskId) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
+					// C-ISOLATION: only THIS Task's own pending holds and committed
+					// reservation identities seed this Task's ledger.
+					const taskBaseReserved = reservedSeedForTask(taskPending, taskCommittedByTask, currentTaskId);
 					currentTaskLedger = createToolLedger({
 						limit: {
 							model_requests: Number.isInteger(alloc.model_requests)
@@ -773,6 +695,7 @@ export async function runC6FromConfig(
 					ledgerFactory,
 					contextWindowChars,
 					romPath,
+					reconciliationGuard,
 					context: config.context ?? { max_total_input_chars: 24000, output_reserve_chars: 2000 },
 					taskId: config.label ?? "campaign-task",
 					campaignId: manifest.campaign_id ?? null,
@@ -800,33 +723,55 @@ export async function runC6FromConfig(
 					// restart/measure. The provider gate AWAITS this before calling the
 					// provider; a failed reservation write means the provider is not called.
 					persistRequest: async (/** @type {any} */ request) => {
-						if (!sinkRef || typeof sinkRef.append !== "function") return { ok: true };
+						const phase = request?.phase ?? "committed";
+						const requestId = request?.request_id ?? null;
+						const taskRes = request?.task_reservation_id ?? null;
+						const campaignRes = request?.campaign_reservation_id ?? null;
+						// A reservation without a stable request identity and at least one
+						// reservation id is NOT a legal hold: refuse it so the provider is not
+						// called behind a null-id record.
+						if (phase === "reserved" && (!requestId || (!taskRes && !campaignRes))) {
+							return { ok: false, error: "reserved request requires request_id and a reservation id" };
+						}
+						// A committed/reconciliation record must name BOTH sides for a joint
+						// request (single-ledger mode uses the same id twice).
+						if (phase === "committed" && (!requestId || !taskRes || !campaignRes)) {
+							return { ok: false, error: "committed request requires request_id, task and campaign reservation ids" };
+						}
+						if (!sinkRef || typeof sinkRef.append !== "function") {
+							return { ok: false, error: "no durable writer is bound" };
+						}
 						const usage = request?.usage ?? null;
-						const toolCalls = request?.phase === "committed" ? pendingToolAdmissions.length : undefined;
+						const toolCalls = phase === "committed" ? pendingToolAdmissions.length : undefined;
 						const written = await sinkRef.append({
 							event_type: "runtime.note",
-							episode_id: `ep-${currentTaskId}`,
+							episode_id: `ep-${request?.task_id ?? currentTaskId}`,
 							payload: {
 								kind: "c6.request",
-								phase: request?.phase ?? "committed",
+								phase,
 								campaign_id: manifest.campaign_id ?? null,
 								task_id: request?.task_id ?? currentTaskId,
-								request_id: request?.request_id ?? null,
-								task_reservation_id: request?.task_reservation_id ?? null,
-								campaign_reservation_id: request?.campaign_reservation_id ?? null,
+								request_id: requestId,
+								task_reservation_id: taskRes,
+								campaign_reservation_id: campaignRes,
 								input_chars: request?.input_chars ?? 0,
 								...(Array.isArray(request?.coverage) ? { coverage: request.coverage } : {}),
 								...(request?.source ? { input_source: request.source } : {}),
 								...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+								...(request?.provider_started === true ? { provider_started: true } : {}),
+								...(request?.provider_status ? { provider_status: request.provider_status } : {}),
+								...(request?.stop_reason ? { stop_reason: request.stop_reason } : {}),
+								...(request?.commit_status ? { commit_status: request.commit_status } : {}),
+								...(request?.failure_reason ? { failure_reason: request.failure_reason } : {}),
 								wall_time_ms: Date.now(),
-								...(request?.phase === "committed"
+								...(phase === "committed" || phase === "reconciliation_required"
 									? { usage, usage_source: request?.usage_source ?? usage?.source ?? "unknown" }
 									: {}),
 							},
 							source: { kind: "runtime", actor_id: "c6-ledger", adapter: "c6-entry", version: C6_ENTRY_VERSION },
 							schema_version: "1.1",
 						});
-						if (request?.phase === "committed") pendingToolAdmissions.length = 0;
+						if (phase === "committed" || phase === "reconciliation_required") pendingToolAdmissions.length = 0;
 						if (written?.ok === true) return { ok: true };
 						return { ok: false, error: written?.error ?? "durable append failed" };
 					},
@@ -1125,6 +1070,11 @@ export async function runC6FromConfig(
 			rotation_attempts: rotationAttempts,
 			dynamic_admissions: dynamicAdmissions,
 			ledger: ledger.snapshot(),
+			reconciliation: {
+				unresolved_requests: reconciliationGuard.unresolved,
+				diagnostics: reconciliationGuard.diagnostics_detail,
+				blocked: reconciliationGuard.unresolved > 0 || reconciliationGuard.diagnostics > 0,
+			},
 			chain_ok: verifyChain(events).ok,
 			config,
 		};

@@ -69,6 +69,13 @@ export {
 	createModelWorker,
 	MODEL_WORKER_VERSION,
 } from "./c6-model-worker.mjs";
+export {
+	REQUEST_PHASE,
+	reservedSeedForTask,
+	summarizeRequestLedger,
+	validateCommittedRecord,
+	validateReservation,
+} from "./c6-request-lifecycle.mjs";
 export { readRunnerManifest, runBoundedAttempts } from "./c6-runner.mjs";
 export {
 	AEGIS_OBSERVER_PATH,

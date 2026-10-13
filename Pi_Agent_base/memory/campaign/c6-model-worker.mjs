@@ -430,11 +430,12 @@ export function createDecisionCaptureTool({
  *   router?: any,
  *   ledgerFactory?: ((task: any) => any)|null,
  *   onRequestCommitted?: ((record: object) => void)|null,
- *   persistRequest?: ((record: {phase: string, task_id: string, request_id?: string|null, task_reservation_id?: string|null, campaign_reservation_id?: string|null, input_chars: number, coverage?: string[], source?: string, usage?: any, usage_source?: string, tool_calls?: number}) => Promise<{ok: boolean, error?: string}>)|null,
+ *   persistRequest?: ((record: {phase: string, task_id: string, request_id?: string|null, task_reservation_id?: string|null, campaign_reservation_id?: string|null, input_chars: number, coverage?: string[], source?: string, usage?: any, usage_source?: string, tool_calls?: number, provider_started?: boolean, provider_status?: string|null, stop_reason?: string|null, commit_status?: object|null, failure_reason?: string|null}) => Promise<{ok: boolean, error?: string}>)|null,
  *   setTaskBinding?: ((task: any) => void)|null,
  *   contextWindowChars?: number|null,
  *   clock?: () => number,
  *   campaignId?: string|null,
+ *   reconciliationGuard?: {unresolved: number, diagnostics: number, runtimeBlocked?: boolean}|null,
  * }} args
  */
 export function createModelWorker(
@@ -460,6 +461,7 @@ export function createModelWorker(
 		contextWindowChars = null,
 		clock = () => Date.now(),
 		campaignId = null,
+		reconciliationGuard = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");
@@ -577,6 +579,26 @@ export function createModelWorker(
 				gate.failure_mode = gate.failure_mode ?? "accounting_failure";
 				gate.reason = gate.reason ?? "dispatch stopped after a budget/accounting failure";
 				throw budgetRefused(gate.reason, gate.failure_mode);
+			}
+
+			// 1b. Unresolved prior request. A pending hold or an invalid/conflicting
+			// rebuild means a PRIOR request may already have reached the provider. Re-
+			// dispatching would risk a double charge/effect, so the run stops here and
+			// keeps the budget responsibility until an explicit reconciliation.
+			if (!gate.guardReported) {
+				const outstandingHolds =
+					(campaignLedger.pending?.() ?? []).length + (sameLedger ? 0 : (activeLedger.pending?.() ?? []).length);
+				const guardUnresolved = (reconciliationGuard?.unresolved ?? 0) + outstandingHolds;
+				const guardDiagnostics = reconciliationGuard?.diagnostics ?? 0;
+				if (guardUnresolved > 0 || guardDiagnostics > 0 || reconciliationGuard?.runtimeBlocked === true) {
+					gate.guardReported = true;
+					gate.refused = true;
+					gate.stopped = true;
+					gate.failure_mode = "reconciliation_required";
+					gate.category = "unresolved_prior_request";
+					gate.reason = `an unresolved prior provider request must be reconciled before a new dispatch (unresolved=${guardUnresolved}, diagnostics=${guardDiagnostics})`;
+					throw budgetRefused(gate.reason, "reconciliation_required");
+				}
 			}
 
 			// 2. Measure the ACTUAL request context (messages + tool schema), never a
@@ -704,6 +726,44 @@ export function createModelWorker(
 		// campaign ledger is mirrored on each commit for cross-restart accounting.
 		const activeLedger = typeof ledgerFactory === "function" ? ledgerFactory(task) : ledger;
 
+		// RESTART/DISPATCH BLOCK: an unresolved prior request (or an invalid rebuild)
+		// means a previous provider request may already have happened. No provider AND
+		// no Broker dispatch may proceed until it is reconciled; the budget hold is
+		// kept. This is the running stop path -- showing `unknown` in a report is not
+		// enough.
+		if (
+			reconciliationGuard &&
+			(reconciliationGuard.unresolved > 0 ||
+				reconciliationGuard.diagnostics > 0 ||
+				reconciliationGuard.runtimeBlocked === true)
+		) {
+			const guardReason = `an unresolved prior provider request must be reconciled before dispatch (unresolved=${reconciliationGuard.unresolved}, diagnostics=${reconciliationGuard.diagnostics})`;
+			if (onEvent)
+				onEvent({
+					kind: "task.blocked",
+					task_id: effectiveTaskId,
+					reason: guardReason,
+					failure_mode: "reconciliation_required",
+				});
+			return {
+				ok: false,
+				failure_mode: "reconciliation_required",
+				detail: guardReason,
+				provider_requests: 0,
+				reconciliation: {
+					category: "unresolved_prior_request",
+					task_id: effectiveTaskId,
+					campaign_id: campaignId,
+					provider_started: false,
+					provider_requests: 0,
+					unresolved_requests: reconciliationGuard.unresolved,
+					diagnostics: reconciliationGuard.diagnostics,
+					pending: { campaign: ledger.reserved?.() ?? null, task: activeLedger.reserved?.() ?? null },
+					consumed: { campaign: ledger.consumed?.() ?? null, task: activeLedger.consumed?.() ?? null },
+				},
+			};
+		}
+
 		// ROUTE BEFORE THE MODEL. `direct` executes the confirmed action with ZERO
 		// provider requests; `habit` gives the model ONLY the missing parameters to
 		// bind (the method is fixed). Anything else plans deliberately. A paused or
@@ -771,6 +831,121 @@ export function createModelWorker(
 			};
 		}
 
+		// --- one shared settlement rule for every exit path ---------------------
+		/** Commit one reservation on a ledger; a throw becomes a typed failure. */
+		function safeCommit(targetLedger, reservationId, usageValue, inputChars) {
+			try {
+				const result = targetLedger.commitRequest({ reservation_id: reservationId, usage: usageValue, inputChars });
+				return result ?? { ok: false, error: "commit returned no result" };
+			} catch (error) {
+				return { ok: false, error: String(error) };
+			}
+		}
+
+		/**
+		 * Persist a reconciliation record for a request whose settlement is NOT a
+		 * clean joint commit. Best-effort: a failure is reported, never hidden. The
+		 * earlier durable `reserved` record still lets a restart rebuild the hold.
+		 */
+		async function persistReconciliation({
+			reservation,
+			usage: usageValue,
+			providerStatus,
+			stopReason: endReason,
+			commitStatus,
+			failureReason,
+		}) {
+			if (typeof persistRequest !== "function") return { persisted: false, ok: false, error: "no durable writer" };
+			try {
+				const written = await persistRequest({
+					phase: "reconciliation_required",
+					task_id: effectiveTaskId,
+					request_id: reservation?.request_id ?? null,
+					task_reservation_id: reservation?.task_reservation_id ?? null,
+					campaign_reservation_id: reservation?.campaign_reservation_id ?? null,
+					input_chars: reservation?.inputChars ?? 0,
+					coverage: reservation?.coverage ?? [],
+					source: reservation?.source ?? "estimated",
+					usage: usageValue ?? null,
+					usage_source: usageValue ? "estimated" : "unknown",
+					provider_started: true,
+					provider_status: providerStatus ?? "unknown",
+					stop_reason: endReason ?? null,
+					commit_status: commitStatus ?? null,
+					failure_reason: failureReason ?? null,
+				});
+				return { persisted: written?.ok === true, ok: written?.ok === true, error: written?.error ?? null };
+			} catch (error) {
+				return { persisted: false, ok: false, error: String(error) };
+			}
+		}
+
+		/**
+		 * Settle ONE provider request. A joint success requires BOTH in-memory
+		 * commits AND the durable commit; a memory commit failure is NEVER written
+		 * as a joint-success record even when the durable writer would succeed.
+		 */
+		async function finalizeRequest({ reservation, usage: usageValue, providerStatus, stopReason: endReason }) {
+			const taskCommit = safeCommit(activeLedger, reservation.task_reservation_id, usageValue, reservation.inputChars);
+			const campaignCommit =
+				ledger === activeLedger
+					? { ok: true }
+					: safeCommit(ledger, reservation.campaign_reservation_id, usageValue, reservation.inputChars);
+			const commitStatus = {
+				task: taskCommit.ok === false ? "failed" : "committed",
+				campaign: campaignCommit.ok === false ? "failed" : "committed",
+			};
+			if (commitStatus.task === "failed" || commitStatus.campaign === "failed") {
+				const failureReason = `in-memory commit failed (task=${commitStatus.task}, campaign=${commitStatus.campaign}; task_error=${taskCommit.error ?? "none"}; campaign_error=${campaignCommit.error ?? "none"})`;
+				const reconciliation = await persistReconciliation({
+					reservation,
+					usage: usageValue,
+					providerStatus,
+					stopReason: endReason,
+					commitStatus,
+					failureReason,
+				});
+				return { ok: false, error: failureReason, commit_status: commitStatus, reconciliation };
+			}
+			if (typeof persistRequest === "function") {
+				try {
+					const written = await persistRequest({
+						phase: "committed",
+						task_id: effectiveTaskId,
+						request_id: reservation.request_id,
+						task_reservation_id: reservation.task_reservation_id,
+						campaign_reservation_id: reservation.campaign_reservation_id,
+						input_chars: reservation.inputChars,
+						coverage: reservation.coverage ?? [],
+						source: reservation.source ?? "estimated",
+						usage: usageValue,
+						usage_source: usageValue ? "estimated" : "unknown",
+						provider_started: true,
+						provider_status: providerStatus,
+						stop_reason: endReason,
+						commit_status: commitStatus,
+					});
+					if (written?.ok === true) return { ok: true, commit_status: commitStatus };
+					// The durable joint commit failed. The in-memory charge stands, so do
+					// not release it; try to persist the reconciliation (the writer may be
+					// transiently failing, and a second record gives a precise restart).
+					const failureReason = `durable committed append failed: ${written?.error ?? "unknown"}`;
+					const reconciliation = await persistReconciliation({
+						reservation,
+						usage: usageValue,
+						providerStatus,
+						stopReason: endReason,
+						commitStatus,
+						failureReason,
+					});
+					return { ok: false, error: failureReason, commit_status: commitStatus, reconciliation };
+				} catch (error) {
+					return { ok: false, error: String(error), commit_status: commitStatus };
+				}
+			}
+			return { ok: true, commit_status: commitStatus };
+		}
+
 		// The provider gate state. `outstanding` holds the joint reservations created
 		// by the gate for the request currently in flight; `pendingCommit` is the
 		// durable commit of the previous request that the next admission awaits.
@@ -779,12 +954,17 @@ export function createModelWorker(
 			stopped: false,
 			reason: null,
 			failure_mode: null,
+			category: null,
 			outstanding: null,
 			pendingCommit: Promise.resolve({ ok: true }),
+			lastCommit: null,
 			providerRequests: 0,
 			providerStarted: false,
+			providerStatus: null,
+			reconciliationPersisted: null,
 			requestSeq: 0,
 			inputMeasurement: null,
+			guardReported: false,
 			campaignLedgerId: campaignId ? `campaign-${campaignId}` : "campaign",
 			taskLedgerId: `task-${effectiveTaskId}`,
 			lastRequest: null,
@@ -811,71 +991,51 @@ export function createModelWorker(
 					.filter((part) => part?.type === "text")
 					.map((part) => part.text)
 					.join("\n");
-				// A synthetic failure message (stopReason "error") carries no real
-				// reservation; never charge a request for it. Only commit the JOINT
-				// reservations the gate created for a REAL provider request.
 				if (gate.outstanding) {
+					// A REAL provider request the gate admitted. A synthetic SDK error
+					// message (stopReason "error") is NOT a successful settlement; it is
+					// classified as a provider error with the reservations still charged.
 					const reservation = gate.outstanding;
 					gate.outstanding = null;
 					gate.lastRequest = reservation;
 					usage = event.message.usage ?? usage;
 					assistantText = text;
-					// Two-layer in-memory commit: each ledger commits ONLY its own
-					// reservation id (never a null-id mirror charge).
-					const taskCommit = activeLedger.commitRequest({
-						reservation_id: reservation.task_reservation_id,
+					const providerStatus = event.message.stopReason === "error" ? "error" : "ok";
+					gate.providerStatus = providerStatus;
+					const pending = finalizeRequest({
+						reservation,
 						usage,
-						inputChars: reservation.inputChars,
-					});
-					let campaignCommit = { ok: true };
-					if (ledger !== activeLedger) {
-						campaignCommit = ledger.commitRequest({
-							reservation_id: reservation.campaign_reservation_id,
-							usage,
-							inputChars: reservation.inputChars,
+						providerStatus,
+						stopReason: event.message.stopReason ?? null,
+					})
+						.then((result) => {
+							gate.lastCommit = result;
+							if (result?.reconciliation) gate.reconciliationPersisted = result.reconciliation;
+							return result;
+						})
+						.catch((error) => {
+							gate.lastCommit = { ok: false, error: String(error) };
+							return gate.lastCommit;
 						});
-					}
-					const commitFailed = taskCommit?.ok === false || campaignCommit?.ok === false;
-					// Durable committed record; the NEXT admission AND the final flush await
-					// this before any decision can be returned.
-					if (typeof persistRequest === "function") {
-						gate.pendingCommit = Promise.resolve(
-							persistRequest({
-								phase: "committed",
-								task_id: effectiveTaskId,
-								request_id: reservation.request_id,
-								task_reservation_id: reservation.task_reservation_id,
-								campaign_reservation_id: reservation.campaign_reservation_id,
-								input_chars: reservation.inputChars,
-								coverage: reservation.coverage ?? [],
-								source: reservation.source ?? "estimated",
-								usage,
-								usage_source: usage ? "estimated" : "unknown",
-							}),
-						).catch((error) => ({ ok: false, error: String(error) }));
-					}
-					if (commitFailed && typeof persistRequest !== "function") {
-						gate.pendingCommit = Promise.resolve({ ok: false, error: "in-memory commit failed" });
-					}
-					if (typeof onRequestCommitted === "function") onRequestCommitted({ ...reservation, usage });
+					gate.pendingCommit = pending;
+					if (typeof onRequestCommitted === "function")
+						onRequestCommitted({ ...reservation, usage, provider_status: providerStatus });
 				} else if (text) {
 					assistantText = text;
 				}
 			}
 		});
 		let stopReason = "completed";
+		let promptError = null;
 		try {
 			await activeSession.prompt(prompt);
 		} catch (error) {
-			// The gate refuses by throwing; the SDK's run loop converts it into a
-			// synthetic failure message, so this path is unexpected. Treat any throw as
-			// a transport failure but still flush the durable commit.
+			// A gate refusal is converted by the real SDK into a synthetic message; a
+			// raw throw is a transport failure. Either way the unified finalization
+			// below decides the outcome -- there is no early return.
+			promptError = error;
 			stopReason = "transport_failure";
-			if (!gate.refused) {
-				await gate.pendingCommit.catch(() => undefined);
-				if (onEvent) onEvent({ kind: "task.error", task_id: effectiveTaskId, error: String(error) });
-				return { ok: false, failure_mode: "transport_failure", detail: String(error) };
-			}
+			if (onEvent) onEvent({ kind: "task.error", task_id: effectiveTaskId, error: String(error) });
 		} finally {
 			try {
 				unsubscribe();
@@ -891,11 +1051,36 @@ export function createModelWorker(
 			// ignore
 		}
 
+		// An admitted request that produced NO completion event is UNKNOWN, not a
+		// refund: keep the hold, persist a durable reconciliation, and stop.
+		let unresolvedOutstanding = false;
+		if (gate.outstanding) {
+			const reservation = gate.outstanding;
+			gate.outstanding = null;
+			gate.lastRequest = reservation;
+			gate.providerStatus = gate.providerStatus ?? "unknown";
+			unresolvedOutstanding = true;
+			const reconciliation = await persistReconciliation({
+				reservation,
+				usage: null,
+				providerStatus: "unknown",
+				stopReason,
+				commitStatus: null,
+				failureReason: promptError ? String(promptError) : "provider started without a completion event",
+			});
+			gate.reconciliationPersisted = reconciliation;
+			gate.pendingCommit = Promise.resolve({
+				ok: false,
+				error: promptError ? String(promptError) : "provider result unknown (no completion event)",
+			});
+		}
+
 		// 6. FINAL FLUSH: even when there is no next continuation, the last provider
 		// request's durable commit must settle before ANY decision can be returned
 		// (and therefore before the CompositeWorker can enter the Broker).
-		/** @type {{ok: boolean, error?: string}} */
-		const finalCommit = await gate.pendingCommit.catch((error) => ({ ok: false, error: String(error) }));
+		const finalCommit = /** @type {any} */ (
+			await gate.pendingCommit.catch((error) => ({ ok: false, error: String(error) }))
+		);
 		const commitOk = !finalCommit || finalCommit.ok !== false;
 		const commitError = commitOk ? null : (finalCommit?.error ?? "durable commit failed");
 
@@ -909,31 +1094,63 @@ export function createModelWorker(
 			campaign_reservation_id: gate.lastRequest?.campaign_reservation_id ?? null,
 			provider_started: gate.providerStarted,
 			provider_requests: gate.providerRequests,
+			provider_status: gate.providerStatus,
+			commit_status: finalCommit?.commit_status ?? gate.lastCommit?.commit_status ?? null,
+			reconciliation_persisted: gate.reconciliationPersisted?.persisted ?? null,
+			reconciliation_error: gate.reconciliationPersisted?.error ?? null,
 			commit_error: commitError,
 			reason: gate.reason ?? null,
 			pending: { campaign: ledger.reserved?.() ?? null, task: activeLedger.reserved?.() ?? null },
 			consumed: { campaign: ledger.consumed?.() ?? null, task: activeLedger.consumed?.() ?? null },
 		};
 
-		// A pre-provider refusal (budget/window/reservation) OR a failed final commit
-		// is a hard stop: no decision reaches the Broker, no dependency advances.
-		if (gate.refused || !commitOk) {
-			const failureMode = gate.refused ? (gate.failure_mode ?? "budget_exhausted") : "accounting_failure";
+		// Every failure path below stops the chain: no decision reaches the Broker
+		// and no dependency advances.
+		let failureMode = null;
+		let failureDetail = null;
+		if (gate.refused) {
+			failureMode = gate.failure_mode ?? "budget_exhausted";
+			failureDetail = gate.reason ?? reconciliation.commit_error ?? "the provider request gate refused the request";
+		} else if (unresolvedOutstanding) {
+			failureMode = "reconciliation_required";
+			failureDetail = reconciliation.commit_error ?? "provider result unknown (no completion event)";
+		} else if (!commitOk) {
+			failureMode = "accounting_failure";
+			failureDetail = reconciliation.commit_error;
+		} else if (gate.providerStatus === "error") {
+			failureMode = "provider_error";
+			failureDetail = "the provider request ended with an error; its settlement is retained for reconciliation";
+		} else if (promptError && !gate.providerStarted) {
+			failureMode = "transport_failure";
+			failureDetail = String(promptError);
+		}
+		if (failureMode) {
+			reconciliation.category = failureMode;
+			// A post-provider failure (unknown/accounting/provider error) leaves a
+			// budget responsibility or an unbalanced settlement. Block later dispatch
+			// in THIS run until that is reconciled. A pre-call budget/window refusal is
+			// certain (provider 0) and does not block independent tasks.
+			if (
+				reconciliationGuard &&
+				["reconciliation_required", "accounting_failure", "provider_error"].includes(failureMode)
+			)
+				reconciliationGuard.runtimeBlocked = true;
 			if (onEvent)
 				onEvent({
 					kind: "task.blocked",
 					task_id: effectiveTaskId,
-					reason: gate.reason ?? reconciliation.commit_error,
+					reason: failureDetail,
 					failure_mode: failureMode,
 				});
 			return {
 				ok: false,
 				failure_mode: failureMode,
-				detail: gate.reason ?? reconciliation.commit_error ?? "the provider request gate refused the request",
+				detail: failureDetail,
 				provider_requests: gate.providerRequests,
 				reconciliation,
 			};
 		}
+
 		// The decision tool may also have terminated the turn because the task
 		// allocation could not fund the SDK's automatic follow-up. Keep that as a
 		// secondary, explicit budget stop.
