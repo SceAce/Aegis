@@ -22,6 +22,22 @@
 export const BROKERED_TOOLS = Object.freeze(["aegis_workspace", "aegis_script"]);
 
 /**
+ * Aegis CONTROL / PROPOSAL tools. These are not workspace side effects: they
+ * only record a proposal, a structured decision for the Broker to admit, a
+ * handoff request or an observation. Campaign mode allows them because the
+ * Broker/oracle still own any real effect; a direct `write`/`bash`/`edit` stays
+ * denied. `aegis_task_decision` in particular records a decision, never an
+ * effect, so the Broker Worker is the only path that can produce one.
+ */
+export const CONTROL_TOOLS_ALLOWED = Object.freeze([
+	"aegis_propose",
+	"aegis_switch_session",
+	"aegis_task_decision",
+	"aegis_observe",
+	"aegis_execute",
+]);
+
+/**
  * Direct Pi tools that must never be a Campaign side-effect path. This list is
  * advisory/documentation: the default is DENY for anything not brokered or
  * explicitly allow-listed, so an unknown/new tool is refused rather than
@@ -50,9 +66,11 @@ export function createCampaignActionGate(
 	{
 		allowDirectTools = [],
 		brokeredTools = /** @type {string[]} */ ([...BROKERED_TOOLS]),
-	} = /** @type {{allowDirectTools?: string[], brokeredTools?: string[]}} */ ({}),
+		controlTools = /** @type {string[]} */ ([...CONTROL_TOOLS_ALLOWED]),
+	} = /** @type {{allowDirectTools?: string[], brokeredTools?: string[], controlTools?: string[]}} */ ({}),
 ) {
 	const brokered = new Set(brokeredTools);
+	const control = new Set(controlTools);
 	const allowDirect = new Set(allowDirectTools);
 	let active = false;
 
@@ -82,6 +100,14 @@ export function createCampaignActionGate(
 			return {
 				allowed: true,
 				reason: "campaign mode: brokered action tool (still subject to the Broker gate)",
+				mode: "campaign",
+				action_ref,
+			};
+		}
+		if (control.has(tool_name)) {
+			return {
+				allowed: true,
+				reason: "campaign mode: Aegis control/proposal tool (records a decision, never an effect)",
 				mode: "campaign",
 				action_ref,
 			};

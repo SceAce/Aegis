@@ -294,6 +294,16 @@ export function createBrokerWorker(
 			campaignManifest = manifest;
 		},
 		/**
+		 * Replace the trusted action-plan resolver. C6 uses this to inject the MODEL's
+		 * admitted structured decision as the plan, so the ONE Broker Worker executes
+		 * it. It never accepts model text: the caller passes a structured plan object.
+		 *
+		 * @param {ActionPlan|((task: any) => ActionPlan|null)} nextPlan
+		 */
+		setPlan(nextPlan) {
+			plan = nextPlan;
+		},
+		/**
 		 * Run one task's trusted action plan. Returns the TRANSPORT/effect fact; the
 		 * Oracle decides success. A failure is `{ok:false, failure_mode}` for the
 		 * scheduler, which records unknown + reconciliation (never a task failure).

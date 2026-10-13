@@ -19,6 +19,27 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { validateManifest } from "./manifest.mjs";
 
 export const CONFIG_SCHEMA_VERSION = "campaign-config-1.0";
+// C6 adds `campaign-config-1.1`. A 1.0 document keeps its exact previous
+// behaviour (no provider/context/learning/task_family keys). A 1.1 document may
+// carry the additive C6 keys below; any other top-level key is still refused.
+export const CONFIG_SCHEMA_VERSION_V11 = "campaign-config-1.1";
+export const KNOWN_CONFIG_V11_KEYS = Object.freeze([
+	"schema_version",
+	"manifest_path",
+	"workspace_root",
+	"work_dir",
+	"mode",
+	"script_config_path",
+	"session",
+	"observation",
+	"oracle",
+	"label",
+	"provider",
+	"context",
+	"learning",
+	"task_family",
+	"measure",
+]);
 export const KNOWN_CONFIG_KEYS = Object.freeze([
 	"schema_version",
 	"manifest_path",
@@ -34,6 +55,109 @@ export const KNOWN_CONFIG_KEYS = Object.freeze([
 
 const MODES = ["auto", "normal"];
 const ORACLE_KINDS = ["fixture"];
+const TASK_FAMILIES = ["fixture-state", "structured-data-repair", "code-repair"];
+const CONTEXT_STRATEGIES = ["bounded_ram", "full_history"];
+const LEARNING_POLICIES = ["off", "shadow", "explicit"];
+
+/** Validate the C6 `provider` object. Unknown keys/types are refused. */
+function validateProviderKey(provider, reasons) {
+	if (!isPlainObject(provider)) {
+		reasons.push("config.provider must be an object");
+		return null;
+	}
+	for (const key of Object.keys(provider)) {
+		if (!["kind", "model", "base_url", "credential_ref"].includes(key))
+			reasons.push(`unknown config.provider key ${key}`);
+	}
+	if (typeof provider.kind !== "string" || provider.kind.length === 0) reasons.push("config.provider.kind is required");
+	if (typeof provider.model !== "string" || provider.model.trim().length === 0)
+		reasons.push("config.provider.model is required");
+	if (provider.base_url !== undefined && provider.base_url !== null && typeof provider.base_url !== "string")
+		reasons.push("config.provider.base_url must be a string");
+	if (
+		provider.credential_ref !== undefined &&
+		provider.credential_ref !== null &&
+		typeof provider.credential_ref !== "string"
+	)
+		reasons.push("config.provider.credential_ref must be a string");
+	return provider;
+}
+
+/** Validate the C6 `context` object. */
+function validateContextKey(context, reasons) {
+	if (context === undefined)
+		return { strategy: "bounded_ram", max_total_input_chars: 24000, output_reserve_chars: 2000 };
+	if (!isPlainObject(context)) {
+		reasons.push("config.context must be an object");
+		return null;
+	}
+	for (const key of Object.keys(context)) {
+		if (!["strategy", "max_total_input_chars", "output_reserve_chars"].includes(key))
+			reasons.push(`unknown config.context key ${key}`);
+	}
+	const strategy = context.strategy ?? "bounded_ram";
+	if (!CONTEXT_STRATEGIES.includes(strategy))
+		reasons.push(`config.context.strategy must be one of ${CONTEXT_STRATEGIES.join(", ")}`);
+	for (const field of ["max_total_input_chars", "output_reserve_chars"]) {
+		if (context[field] !== undefined && (!Number.isSafeInteger(context[field]) || context[field] < 0))
+			reasons.push(`config.context.${field} must be a non-negative safe integer`);
+	}
+	return {
+		strategy,
+		max_total_input_chars:
+			Number.isSafeInteger(context.max_total_input_chars) && context.max_total_input_chars > 0
+				? context.max_total_input_chars
+				: 24000,
+		output_reserve_chars:
+			Number.isSafeInteger(context.output_reserve_chars) && context.output_reserve_chars >= 0
+				? context.output_reserve_chars
+				: 2000,
+	};
+}
+
+/** Validate the C6 `learning` object. `promote_experience` must stay false. */
+function validateLearningKey(learning, reasons) {
+	if (learning === undefined) return { policy: "off", promote_experience: false, environment: null, proof_ids: [] };
+	if (!isPlainObject(learning)) {
+		reasons.push("config.learning must be an object");
+		return null;
+	}
+	for (const key of Object.keys(learning)) {
+		if (!["policy", "promote_experience", "environment", "proof_ids"].includes(key))
+			reasons.push(`unknown config.learning key ${key}`);
+	}
+	const policy = learning.policy ?? "off";
+	if (!LEARNING_POLICIES.includes(policy))
+		reasons.push(`config.learning.policy must be one of ${LEARNING_POLICIES.join(", ")}`);
+	if (learning.promote_experience !== undefined && learning.promote_experience !== false)
+		reasons.push("config.learning.promote_experience must be false (C6 never auto-promotes)");
+	if (learning.proof_ids !== undefined && !Array.isArray(learning.proof_ids))
+		reasons.push("config.learning.proof_ids must be an array");
+	return {
+		policy,
+		promote_experience: false,
+		environment: isPlainObject(learning.environment) ? learning.environment : null,
+		proof_ids: Array.isArray(learning.proof_ids) ? learning.proof_ids.filter((id) => typeof id === "string") : [],
+	};
+}
+
+/** Validate the C6 `measure` object. */
+function validateMeasureKey(measure, reasons) {
+	if (measure === undefined) return null;
+	if (!isPlainObject(measure)) {
+		reasons.push("config.measure must be an object");
+		return null;
+	}
+	for (const key of Object.keys(measure)) {
+		if (!["out_dir", "attempts"].includes(key)) reasons.push(`unknown config.measure key ${key}`);
+	}
+	if (measure.attempts !== undefined && !Array.isArray(measure.attempts))
+		reasons.push("config.measure.attempts must be an array when present");
+	return {
+		out_dir: typeof measure.out_dir === "string" ? measure.out_dir : null,
+		attempts: Array.isArray(measure.attempts) ? measure.attempts.filter((a) => isPlainObject(a)) : [],
+	};
+}
 
 function isPlainObject(value) {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -75,16 +199,20 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	}
 	if (!isPlainObject(raw))
 		return { ok: false, reasons: ["config must be a JSON object"], config: null, manifest: null };
-	if (raw.schema_version !== CONFIG_SCHEMA_VERSION) {
+	const isV11 = raw.schema_version === CONFIG_SCHEMA_VERSION_V11;
+	if (raw.schema_version !== CONFIG_SCHEMA_VERSION && !isV11) {
 		return {
 			ok: false,
-			reasons: [`config.schema_version must be "${CONFIG_SCHEMA_VERSION}", got ${String(raw.schema_version)}`],
+			reasons: [
+				`config.schema_version must be "${CONFIG_SCHEMA_VERSION}" or "${CONFIG_SCHEMA_VERSION_V11}", got ${String(raw.schema_version)}`,
+			],
 			config: null,
 			manifest: null,
 		};
 	}
+	const knownKeys = isV11 ? KNOWN_CONFIG_V11_KEYS : KNOWN_CONFIG_KEYS;
 	for (const key of Object.keys(raw)) {
-		if (!KNOWN_CONFIG_KEYS.includes(key)) reasons.push(`unknown config key "${key}"`);
+		if (!knownKeys.includes(key)) reasons.push(`unknown config key "${key}"`);
 	}
 
 	const baseDir = dirname(absoluteConfig);
@@ -226,11 +354,32 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	}
 	if (!Number.isSafeInteger(ledger.limit?.session_count) || ledger.limit.session_count > sessionLimit)
 		reasons.push("Session ledger limit exceeds configured grant or is missing");
+
+	// --- C6 additive keys (schema_version campaign-config-1.1 only) ---------
+	let providerConfig = null;
+	let contextConfig = null;
+	let learningConfig = null;
+	let taskFamily = null;
+	let measureConfig = null;
+	if (isV11) {
+		providerConfig = validateProviderKey(raw.provider, reasons);
+		contextConfig = validateContextKey(raw.context, reasons);
+		learningConfig = validateLearningKey(raw.learning, reasons);
+		measureConfig = validateMeasureKey(raw.measure, reasons);
+		if (raw.task_family !== undefined) {
+			if (!TASK_FAMILIES.includes(raw.task_family))
+				reasons.push(`config.task_family must be one of ${TASK_FAMILIES.join(", ")}`);
+			else taskFamily = raw.task_family;
+		} else {
+			taskFamily = "fixture-state";
+		}
+	}
+
 	if (reasons.length) return { ok: false, reasons, config: null, manifest: null };
 	sessionConfig.session_count = sessionLimit;
 	sessionConfig.budget_ledger = ledger;
 	const config = {
-		schema_version: CONFIG_SCHEMA_VERSION,
+		schema_version: isV11 ? CONFIG_SCHEMA_VERSION_V11 : CONFIG_SCHEMA_VERSION,
 		config_path: absoluteConfig,
 		label: typeof raw.label === "string" ? raw.label : null,
 		manifest_path: manifestPath,
@@ -241,6 +390,11 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 		session: sessionConfig,
 		observation: observationConfig,
 		oracle: oracleConfig,
+		provider: providerConfig,
+		context: contextConfig,
+		learning: learningConfig,
+		task_family: taskFamily,
+		measure: measureConfig,
 	};
 	return { ok: true, reasons: [], config, manifest };
 }
