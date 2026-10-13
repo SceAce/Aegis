@@ -226,10 +226,14 @@ FileHandle GC finalizer 错误）。`c6-suite-runner.mjs` 按测试是否 import
 每个 provider 请求在调用前预留两层（Campaign + Task）额度，并写 durable
 `runtime.note kind=c6.request, phase=reserved`；provider 返回后两层各自 commit，再写
 `phase=committed`（含 `provider_status`/`commit_status`），才允许决策进入 Broker。
+恢复时把每侧预算责任、请求联合结清、规划结束三个事实分开推导（见 implementation report §15）。
 
-- `provider_status=error`（SDK 合成错误消息）：请求仍计费一次，任务转 unknown，决策不执行。
+- `provider_status=error`/`aborted`（SDK 硬退出）：请求仍计费一次，任务转 unknown，决策不执行。
+  `aborted` 不再被当作正常结束；`message_end`/`prompt()` 返回不单独证明正常完成。
 - provider 已启动但无 completion（进程崩溃 / 传输中断）：保留 pending hold 不退款，
   写 `phase=reconciliation_required`，运行停止。
+- `reconciliation_required` 确认某侧 committed 时只恢复该侧已发生责任；两侧均确认但无
+  合法完整 committed 仍为未决。仅合法完整 committed 才联合结清，且不重复计费。
 - 重启时若存在未决 reserved/reconciliation 或 invalid/conflicting 校准记录，入口重建
   `reconciliationGuard`，拒绝新的 provider/Broker dispatch（含 direct 路由）并保留预算责任。
   只有明确确认的结算/释放才降低预算责任。

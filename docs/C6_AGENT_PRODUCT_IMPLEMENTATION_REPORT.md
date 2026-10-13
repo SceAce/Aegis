@@ -357,3 +357,59 @@ node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs <out> <26 regressions>     
 
 状态：**internally_verified / awaiting_external_review**（DS 内部工程验证完成，非用户接受、
 非真实模型能力验证）。
+
+## 15. C6 三个事实分离轮（本轮，基线 `93d4617` / 补测 `290313f`）
+
+本轮修复独立审查 §7 的两组阻塞：恢复时每侧预算责任丢失、以及 SDK aborted 后仍执行
+已缓冲 decision。交付单位不是两个孤立 if，而是将三个事实分开表示与推导。
+
+### 15.1 三个事实的实际表示与调用点
+
+| 事实 | 表示 | 推导/写入位置 | live 调用点 | durable 事实 | replay 调用点 |
+| --- | --- | --- | --- | --- | --- |
+| 每侧预算责任 | per-request note 的 `taskConsumed`/`campaignConsumed` + `inputChars` + reservation 身份 | `c6-request-lifecycle.mjs` `summarizeRequestLedger`/`chargeSide`/`confirmSide` | `c6-model-worker.mjs` `finalizeRequest` 两层 `commitRequest`；`persistRequest(phase=committed/reconciliation_required, commit_status)` | `runtime.note kind=c6.request` 的 `reserved`/`committed`/`reconciliation_required` + `commit_status` | `c6-entry.mjs` 启动 `summarizeRequestLedger` → `baseConsumed`/`baseReserved`/`reservedSeedForTask` |
+| 请求联合结清 | `unresolved`（有 reservation 且无合法完整 committed 且未 release） | 同上：只有 `committed` 置 `jointlySettled`；reconciliation 不置 | worker 最终 flush 后才返回 decision；`reconciliationGuard` 阻断 | `committed` 必须 request + 两侧 reservation 且与原 reserved 一致 | `c6-entry.mjs` `reconciliationGuard.unresolved` |
+| 规划结束结果 | `providerStatus`/`planningStatus` | `c6-request-lifecycle.mjs` `classifyStopReason`；worker `gate.planningStatus` 逐 `message_end` 更新且 error/aborted 不被 downgrade | worker 最后依据正常结束 + 结清 + 无 outstanding 才返回 decision | committed 的 `provider_status`/`stop_reason` | 恢复不重发；aborted/error 的任务转 unknown + reconciliation |
+
+关联身份：`request_id` + `task_reservation_id` + `campaign_reservation_id` + `task_id`/`campaign_id`。
+缺失语义：只有 reserved → 两侧保守 hold；reconciliation 缺少 `commit_status` → 两侧 hold；
+committed 缺任一 id/错配 → invalid 诊断、不结算；未知终止 + 有 decision → `planning_termination_unknown`。
+
+### 15.2 具体修改
+
+| 文件 | 修改 |
+| --- | --- |
+| `c6-request-lifecycle.mjs` | `summarizeRequestLedger` 改为 side-aware：reconciliation 确认 committed 的一侧按身份恢复 consumed（幂等）；`unresolved` 独立于 pending；新增 `classifyStopReason` |
+| `c6-model-worker.mjs` | `message_end` 用 `classifyStopReason` 保留 error/aborted；`gate.planningStatus`；新增 `provider_aborted`/`planning_termination_unknown` 失败模式；中止/错误仍计费但不放行 decision；reconciliation payload 保留 provider/commit 事实 |
+| `c6-entry.mjs` | `persistRequest` 为 reconciliation 也写 `tool_calls`（来自可信准入） |
+| `index.mjs` | 导出 `classifyStopReason` |
+| tests | 增强 `aegis-c6-architecture-review.mjs`（AR-09 断言 durable `provider_status`/`stop_reason` 与 `failure_mode`）；`aegis-c6-lifecycle-convergence.mjs` 新增 LC-B7/LC-D9/LC-T1；child summary 增加 `stop_reason`/`failure_modes` |
+
+### 15.3 关键数值与真实证据
+
+- AR-02-task（Task commit 失败，Campaign 成功）：Task/Campaign 重建 remaining 各 **4**（修前成功侧被退为 5）；input consumed 100 侧、pending 100 侧。
+- AR-03（两层内存 consumed、durable committed 失败、fallback reconciliation）：consumed 1/1、pending 0/0、**unresolved 1**；重建 remaining 4/4。
+- AR-04：无 pending 但未结清 → 独立下一 Task **provider 0**。
+- AR-06：重复 reconciliation + 合法完整 committed → consumed 1（不双计）、unresolved 0。
+- AR-08（正常控制）：真实文件 effect、Oracle completed；重启 provider 0/effect 0、consumed 保留 2。
+- AR-09-error/aborted：provider 2、Broker effect 0、`dataset.name=??`、task 非 completed、consumed 2；aborted 的 durable `provider_status=aborted`/`stop_reason=aborted`，worker `failure_mode=provider_aborted`。
+- AR-10（real EventLog + SIGKILL）：重启独立任务 **provider 0**、**Broker effect 0**、`dataset.status=pending`、`unresolved_requests=1`、`consumed+reserved=1`、链 verifyChain ok。
+
+### 15.4 red → green / mutation / required
+
+- red：`aegis-c6-architecture-review.mjs` **6 pass / 6 fail**（`architecture-red.log`）；green：**12/12**。
+- focused：`aegis-c6-lifecycle-convergence.mjs` 19 → **22/22**；`aegis-c6-lifecycle-restart.mjs` all checks；
+  `aegis-c6-recheck-boundaries.mjs` 23/23；`aegis-c6-external-boundaries.mjs` 22/22。
+- mutation 5/5 行为 FAIL：丢掉成功侧 consumed、pending=0 判无未决、aborted 当 normal（focused 与产品两级）、
+  reconciliation→committed 重复计费（`mutations.log`）。
+- required：18 个 C6 脚本 0 failed、26 个回归 0 failed；tsc 196 → 196（修改文件 0，诊断集合逐条相同）；
+  Biome exit 0。
+
+### 15.5 未实测限制（本轮）
+
+- 终止分类以真实 Pi SDK/faux 的 `stopReason` 验证；真实 provider 的流式故障/远程取消未实测。
+- aborted 结果接入现有 task-unknown + reconciliation 策略，未新增自动退款/重试/人工结算平台。
+- 取消发生在 dispatch 前的检查由既有 Host/Scheduler 控制边界保证；本轮未新增分布式取消机制。
+
+状态：**internally_verified / awaiting_external_review**（DS 内部工程验证完成，交限定复验；
+不代表用户接受或真实模型能力已验证）。

@@ -176,3 +176,26 @@ provider 错误（有可信结束）：committed(provider_status=error)    计�
 
 required 检查与真实结果见 `C6_AGENT_PRODUCT_TEST_MATRIX.md` / `C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md`
 本轮收敛段；私有日志 `Pi_Agent_base/runtime/dev/c6-lifecycle-run1/`（ignored）。
+
+## 9. C6 三个事实分离轮（本轮，基线 `93d4617` / 补测 `290313f`）
+
+状态：`internally_verified / awaiting_external_review`（DS 内部验证，交限定复验；
+非外部接受、非真实 pilot）。依据 `docs/C6_THREE_FACTS_DSV41FLASH_TASK.md`、
+`C6_EXTERNAL_REVIEW.md` §7、`C6_AGENT_LIFECYCLE_OPEN_SOURCE_RESEARCH.md`。
+
+本轮将三个事实分开表示与推导，修复独立审查两组阻塞：
+
+1. **每侧预算责任**：`summarizeRequestLedger` 改为 side-aware；durable reconciliation 确认的一侧
+   按身份恢复 consumed（幂等）；未知侧保留 hold；输入占用沿既有权威估算字段。
+2. **请求联合结清**：`unresolved` 独立于 pending；只有合法完整 `committed` 才结清；
+   两侧已记账但无联合 settlement 仍为未决，恢复 guard 实际阻断。
+3. **规划结束结果**：`classifyStopReason` 保留 Pi 的 error/aborted 硬退出；
+   aborted/error 不返回可执行 decision，已发生请求仍计费。
+
+允许范围：`c6-request-lifecycle.mjs`、`c6-model-worker.mjs`、`c6-entry.mjs`、`index.mjs`、
+直接接线与测试、C6 文档。禁止：第二套预算/事务/调度平台、改 Pi 核心/凭据/lockfile、
+真实 provider/目标、全仓历史类型清理、自动退款/人工结算平台。
+
+required：18 个 C6 脚本 0 failed（旧15 + lifecycle-convergence + lifecycle-restart +
+architecture-review）、26 个回归 0 failed；tsc 196→196（修改文件 0）；Biome exit 0。
+日志 `Pi_Agent_base/runtime/dev/c6-three-facts-run1/`（ignored）。

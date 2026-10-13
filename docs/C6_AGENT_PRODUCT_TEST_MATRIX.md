@@ -229,3 +229,74 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 日志：`Pi_Agent_base/runtime/dev/c6-lifecycle-run1/mutations.log`（7/7 killed），
 `final4/results.json`（17 C6 脚本 0 failed），`final-regress3/results.json`（26 回归 0 failed），
 `tsc-before.log`/`tsc-final.log`（196 → 196，modified files 0），`biome-final.log`（exit 0）。
+
+## C6 三个事实分离轮（本轮，基线 `93d4617` / 补测 `290313f`）
+
+来源：`docs/C6_THREE_FACTS_DSV41FLASH_TASK.md`、`docs/C6_EXTERNAL_REVIEW.md` §7、
+`docs/C6_AGENT_LIFECYCLE_OPEN_SOURCE_RESEARCH.md`。独立补测
+`aegis-c6-architecture-review.mjs` 本轮实际复跑为 **12 tests / 6 pass / 6 fail**。
+
+### 三个事实的输入来源、关联身份与推导位置
+
+| 事实 | 输入来源 | 关联身份 | 缺失行为 | 推导位置 |
+| --- | --- | --- | --- | --- |
+| 每侧预算责任 | live `createToolLedger`；durable `reserved`/`committed`/`reconciliation_required` | `request_id` + `task_reservation_id` + `campaign_reservation_id` + `task_id`/`campaign_id` | 只有 reserved → 两侧 hold；一侧失败/未知 → 该侧 hold；reconciliation 确认 committed → 该侧 consumed（幂等） | `summarizeRequestLedger`（live/replay 共用） |
+| 请求联合结清 | 只有合法完整 `committed`（request + 两侧 id 且与原 reserved 一致） | 同上 | 无合法联合 committed 且未 release → `unresolved=1`；pending=0 不代表 unresolved=0 | `unresolved` 统计 |
+| 规划结束结果 | 真实 SDK `stopReason`（`c6-model-worker.mjs` 的 `message_end`） | 当前 request 的 `provider_status`/`stop_reason` 持久化 | 缺失/未知且有待执行 decision → `planning_termination_unknown`，不放行 | `classifyStopReason` + `gate.planningStatus` |
+
+执行许可：规划正常结束 + 本规划已准入请求联合结清 + 无 outstanding/恢复阻断 + decision 过结构/授权门；
+Task 完成仍由独立 Oracle 决定。
+
+### 必须成立的数值例子（每侧额度5，请求输入占用100）
+
+| durable 事实 | Task consumed/pending | Campaign consumed/pending | unresolved | dispatch |
+| --- | --- | --- | --- | --- |
+| 只有 reserved，结果未知 | 0/1 | 0/1 | 1 | 阻断 |
+| reconciliation：Task committed，Campaign failed/unknown | 1/0 | 0/1 | 1 | 阻断 |
+| reconciliation：Task failed/unknown，Campaign committed | 0/1 | 1/0 | 1 | 阻断 |
+| reconciliation：两侧 committed，缺联合 durable commit | 1/0 | 1/0 | 1 | 阻断 |
+| 前一行后再有合法完整 committed（含重复） | 1/0 | 1/0 | 0 | 依规划结果 |
+| 正常完整 committed | 1/0 | 1/0 | 0 | 正常规划可放行 |
+| 完整记账但 SDK aborted/error | 1/0 | 1/0 | 0 | 该规划 decision 不放行 |
+
+以上每侧 remaining 均为4；已消费侧恢复 input consumed=100，未知侧保持 input hold=100（不重复）。
+
+### 本轮 case 与结果
+
+| case | 层级/输入 | 预期行为 | 状态 |
+| --- | --- | --- | --- |
+| AR-01 | live worker | 正常两侧消费/剩余/归属/无未决 | pass |
+| AR-02-task/campaign | memory commit fault + live records | 两侧责任重建后 remaining 各 4（旧为成功侧被退为 0） | pass |
+| AR-03 | durable fault + fallback reconciliation | 两侧已记账但未联合结清 → unresolved 1 | pass |
+| AR-04 | rebuilt guard+ledger | 无 pending 但未结清时独立下一 Task provider 0 | pass |
+| AR-05 | throwing durable writer | 两侧 hold+未决保留 | pass |
+| AR-06 | duplicate reconciliation + 合法 committed | 只计一次、无悬挂 | pass |
+| AR-07 | provider throw 无 completion | 两侧 hold+未决保留 | pass |
+| AR-08 | real SDK/faux 产品链 | 真实 effect+Oracle completed；重启 provider0/effect0，消费2 | pass |
+| AR-09-error_followup | real SDK error | 已缓冲 decision 不执行、文件不变、消费2、`provider_status=error`、`failure_mode=provider_error` | pass |
+| AR-09-aborted_followup | real SDK aborted | 同上但 `provider_status=aborted`、`failure_mode=provider_aborted`（旧为执行并 completed） | pass |
+| AR-10 | writer fault + real EventLog + SIGKILL | 重启独立任务 provider0/effect0、责任保留、链完整（旧为 provider2/effect1） | pass |
+| LC-B7 | live worker（focused） | aborted 为硬退出：不返回 decision、仍计费、durable 保留中止类别 | pass |
+| LC-D9 | summarize + rebuild（focused） | 上表 exact consumed/pending/remaining/input 逐行 | pass |
+| LC-T1 | 纯分类器 | error/aborted ≠ normal；unknown 不为正常 | pass |
+
+### 本轮 red → green、mutation、检查
+
+| 阶段 | 命令 | 结果 |
+| --- | --- | --- |
+| red | `node --test …/aegis-c6-architecture-review.mjs` | **12 tests / 6 pass / 6 fail**, exit 1 |
+| green | 同上 | **12 pass / 0 fail**, exit 0 |
+| focused | `aegis-c6-lifecycle-convergence.mjs` | 19 → **22 pass / 0 fail** |
+
+| mutation | 目标 | 实际 |
+| --- | --- | --- |
+| 丢掉成功侧 consumed | LC-D9 | FAIL ✓ |
+| 以 pending=0 判无未决 | LC-D9（AR-03 同类） | FAIL ✓ |
+| aborted 当 normal（focused） | LC-B7 | FAIL ✓ |
+| reconciliation→committed 重复计费 | LC-D9 | FAIL ✓ |
+| aborted 当 normal（真实产品） | AR-09-aborted | FAIL ✓ |
+
+required：**18 个 C6 脚本 0 failed**（旧15 + lifecycle-convergence + lifecycle-restart + architecture-review）、
+**26 个回归 0 failed**；tsc 196→196/修改文件 0；Biome exit 0。
+日志 `Pi_Agent_base/runtime/dev/c6-three-facts-run1/`（ignored）：`architecture-red.log`、
+`mutations.log`、`final/results.json`、`regress/results.json`、`tsc-before.log`、`tsc-after.log`、`biome.log`。

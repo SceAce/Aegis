@@ -98,13 +98,17 @@ real providers/targets or read real credentials. Preserve deferred F16 and
 honest per-config type baselines.
 
 Current repair supplement (2026-10-14): product baseline `93d4617`, independent
-audit tests in `290313f`, and `../docs/C6_EXTERNAL_REVIEW.md` section 7 supersede
-the historical milestone status above. C6 remains **changes_required** because
-reconciliation rebuild drops confirmed consumption and may erase unresolved
-joint settlement, and SDK `aborted` can still release a buffered decision to
-the Broker. Follow `../docs/C6_THREE_FACTS_DSV41FLASH_TASK.md`: keep per-side
-budget responsibility, joint request settlement and planning termination
-separate; fix the two demonstrated groups with bounded validation. The prior
+audit tests in `290313f`, and `../docs/C6_EXTERNAL_REVIEW.md` section 7 defined
+two blockers: reconciliation rebuild dropped confirmed consumption and could
+erase unresolved joint settlement, and SDK `aborted` could still release a
+buffered decision to the Broker. Per `../docs/C6_THREE_FACTS_DSV41FLASH_TASK.md`
+this round keeps per-side budget responsibility, joint request settlement and
+planning termination separate: `summarizeRequestLedger` is side-aware,
+`unresolved` is independent of pending, and `classifyStopReason` preserves
+Pi's error/aborted hard exits. `aegis-c6-architecture-review.mjs` is now 12/12
+(was 6 pass / 6 fail); the 18 C6 scripts and 26 regressions pass and the type
+baseline is unchanged. Status is **internally_verified / awaiting_external_review**
+(DS internal engineering verification, not external acceptance). The prior
 four repairs remain recognized. Engineering acceptance permits consideration
 of a limited real-task pilot; unrelated warnings and deferred infrastructure
 do not reopen this repair scope.
