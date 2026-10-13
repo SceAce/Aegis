@@ -74,8 +74,15 @@ const factory = (options) => {
 	const faux = registerFauxProvider(options);
 	const response = (context) => {
 		requests++;
+		// The SDK normalizes the transcript so the prompt and tool declarations live
+		// on the LEADING SYSTEM MESSAGE (`toolsAdded`), never on the context itself.
+		// (The original harness read `context.tools`, which the real Pi SDK contract
+		// does not populate, so it could never observe the model's tool set.)
+		const leadingSystem = Array.isArray(context.messages)
+			? context.messages.find((m) => m && m.role === "system")
+			: null;
 		providerInputs.push({
-			tools: (context.tools ?? []).map((tool) => tool.name),
+			tools: (leadingSystem?.toolsAdded ?? []).map((tool) => tool.name),
 			messages: JSON.stringify(context.messages),
 		});
 		const text = JSON.stringify(context.messages);

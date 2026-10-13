@@ -118,6 +118,7 @@ export async function buildModelRuntime({ provider, workDir, sdk }) {
  *   sdk: any,
  *   extraExtensionPaths?: string[],
  *   decisionCapture?: { tool: any, decisions: () => any[], reset: () => void } | null,
+ *   extraTools?: any[],
  * }} args
  * @returns {Promise<SdkRuntimeHandle>}
  */
@@ -133,6 +134,7 @@ export async function createCampaignSdkRuntime({
 	sdk,
 	extraExtensionPaths = [],
 	decisionCapture = null,
+	extraTools = [],
 }) {
 	if (!gate || typeof gate.extensionFactory !== "function") {
 		throw new Error("createCampaignSdkRuntime requires a Campaign gate with extensionFactory");
@@ -169,13 +171,15 @@ export async function createCampaignSdkRuntime({
 					extensionFactories: [gate.extensionFactory],
 				},
 			});
+			const customTools = [...(decisionCapture ? [decisionCapture.tool] : []), ...extraTools];
+			const toolNames = [...tools, ...customTools.map((tool) => tool.name)];
 			const created = await sdk.createAgentSessionFromServices({
 				services,
 				sessionManager,
 				sessionStartEvent,
 				model,
-				tools: decisionCapture ? [...tools, decisionCapture.tool.name] : tools,
-				...(decisionCapture ? { customTools: [decisionCapture.tool] } : {}),
+				tools: toolNames,
+				...(customTools.length ? { customTools } : {}),
 			});
 			return { ...created, services, diagnostics: services.diagnostics };
 		},

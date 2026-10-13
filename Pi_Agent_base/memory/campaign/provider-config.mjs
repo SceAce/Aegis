@@ -14,12 +14,26 @@ import { isAbsolute, resolve } from "node:path";
 
 export const PROVIDER_CONFIG_VERSION = "1.0";
 
-/** Known provider kinds. `implemented` gates whether C6 can create them. */
+/**
+ * Known provider kinds.
+ *
+ * `implemented: true` means C6 can produce the SDK creation arguments for it
+ * (model + isolated runtime + endpoint/credential references) without any real
+ * network call. `faux` and `local-openai` are implemented; the concrete remote
+ * providers are recognized but NOT wired for a real call in C6 and are listed as
+ * untested.
+ */
 export const KNOWN_PROVIDERS = Object.freeze({
-	faux: { implemented: true, offline: true, requires_base_url: false },
-	"local-openai": { implemented: false, offline: false, requires_base_url: true, loopback_only: true },
-	anthropic: { implemented: false, offline: false },
-	openai: { implemented: false, offline: false },
+	faux: { implemented: true, offline: true, requires_base_url: false, loopback_only: false },
+	"local-openai": {
+		implemented: true,
+		offline: false,
+		requires_base_url: true,
+		loopback_only: true,
+		api: "openai-completions",
+	},
+	anthropic: { implemented: false, offline: false, requires_base_url: false, loopback_only: false },
+	openai: { implemented: false, offline: false, requires_base_url: false, loopback_only: false },
 });
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -93,6 +107,8 @@ export function resolveProviderConfig(provider) {
 			model: provider.model,
 			base_url: provider.base_url ?? null,
 			credential_ref: provider.credential_ref ?? null,
+			api: spec?.api ?? null,
+			offline: spec?.offline === true,
 		},
 	};
 }

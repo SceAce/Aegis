@@ -37,7 +37,12 @@ import {
 	routeBeforeModel,
 	runCampaignLearningStep,
 } from "./c6-learning.mjs";
-import { createDecisionCaptureTool, createModelPlan, createModelWorker } from "./c6-model-worker.mjs";
+import {
+	createDecisionCaptureTool,
+	createModelPlan,
+	createModelWorker,
+	createObservationTool,
+} from "./c6-model-worker.mjs";
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
 import { createToolLedger } from "./c6-tool-ledger.mjs";
 import { loadCampaignConfig } from "./campaign-config.mjs";
@@ -144,6 +149,7 @@ export function createCompositeWorker({ modelWorker, brokerWorker, buffer, onTas
  *   outDir?: string|null, port?: number|null, sdk?: any, createSeam?: Function|null,
  *   fauxProviderFactory?: Function|null, print?: (text: string) => void,
  *   installSignalHandlers?: boolean, signalSource?: any,
+ *   resident?: boolean,
  * }} args
  */
 export async function runC6FromConfig(
@@ -160,6 +166,7 @@ export async function runC6FromConfig(
 		print = null,
 		installSignalHandlers = false,
 		signalSource = process,
+		resident = false,
 	} = /** @type {any} */ ({}),
 ) {
 	const out = typeof print === "function" ? print : (text) => process.stdout.write(`${text}\n`);
@@ -205,6 +212,40 @@ export async function runC6FromConfig(
 	// SDK runtime, never dispatch a task and never append an event.
 	const READ_ONLY = ["status", "export", "observe", "measure"].includes(scenario);
 
+	// X5: the TRUSTED config decides the SDK/Observer stream, RAM, handoff and Task
+	// binding. The Aegis Observer extension reads these from the environment, so we
+	// set them from the config BEFORE any SDK object exists (overriding an inherited
+	// decoy) and restore the previous values on exit, so a caller's stale
+	// AEGIS_EVENT_LOG can never silently redirect the SDK writes. This is scoped to
+	// the single Campaign run (C6 runs one Campaign at a time).
+	const aegisEnvKeys = [
+		"AEGIS_EVENT_LOG",
+		"AEGIS_RAM_DIR",
+		"AEGIS_HANDOFF_FILE",
+		"AEGIS_ROM_FILE",
+		"AEGIS_TASK_ID",
+		"AEGIS_PROJECTION_DIR",
+	];
+	const envBefore = Object.fromEntries(aegisEnvKeys.map((key) => [key, process.env[key]]));
+	const ramDir = join(config.work_dir, "ram");
+	mkdirSync(ramDir, { recursive: true });
+	const romPath = join(resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."), "agent", "ROM.md");
+	function bindObserverEnv(taskId) {
+		process.env.AEGIS_EVENT_LOG = eventLogPath;
+		process.env.AEGIS_RAM_DIR = ramDir;
+		process.env.AEGIS_HANDOFF_FILE = config.session.handoff_path;
+		process.env.AEGIS_ROM_FILE = romPath;
+		process.env.AEGIS_PROJECTION_DIR = join(config.work_dir, "projections");
+		if (typeof taskId === "string" && taskId) process.env.AEGIS_TASK_ID = taskId;
+	}
+	function restoreObserverEnv() {
+		for (const key of aegisEnvKeys) {
+			if (envBefore[key] === undefined) delete process.env[key];
+			else process.env[key] = envBefore[key];
+		}
+	}
+	bindObserverEnv(config.label ?? manifest.tasks?.[0]?.task_id ?? "campaign-task");
+
 	// Provider model. For the offline default we register the faux provider.
 	let modelRuntime;
 	let model;
@@ -227,6 +268,39 @@ export async function runC6FromConfig(
 				allowModelNetwork: false,
 			});
 			modelRuntime.registerProvider(model.provider, modelDetails(model));
+		} else if (providerCheck.provider.kind === "local-openai") {
+			// X7: an explicit LOCAL endpoint is created through the SDK without any
+			// network call. The model is registered against the loopback base_url with
+			// an isolated credential store; the actual endpoint is never contacted in
+			// C6 (a later experiment does that).
+			const authDir = join(config.work_dir, "sdk");
+			mkdirSync(authDir, { recursive: true });
+			const credentials = sdkImpl.AuthStorage.inMemory();
+			const providerId = "local-openai";
+			if (credentialInfo.env_name && process.env[credentialInfo.env_name]) {
+				await credentials.modify(providerId, async () => ({
+					type: "api_key",
+					key: process.env[credentialInfo.env_name],
+				}));
+			}
+			modelRuntime = await sdkImpl.ModelRuntime.create({
+				credentials,
+				modelsPath: join(authDir, "models.json"),
+				allowModelNetwork: false,
+			});
+			model = {
+				id: providerCheck.provider.model,
+				name: providerCheck.provider.model,
+				provider: providerId,
+				api: providerCheck.provider.api ?? "openai-completions",
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 16384,
+				baseUrl: providerCheck.provider.base_url,
+			};
+			modelRuntime.registerProvider(providerId, modelDetails(model));
 		} else {
 			return {
 				ok: false,
@@ -243,13 +317,35 @@ export async function runC6FromConfig(
 	const { createCampaignActionGate } = await import("./campaign-mode.mjs");
 	const gate = createCampaignActionGate();
 
+	// X3: the context max is a PER-REQUEST window, not a cumulative budget. The
+	// campaign ledger's `input_chars` is the accumulated sum across requests; the
+	// per-request window is enforced in the worker against `context.max_total_input_chars`.
+	const contextWindowChars = config.context?.max_total_input_chars ?? 24000;
+	// The cumulative ledger is rebuilt from the committed stream so a restart/measure
+	// never resets it (X4). We persist each committed request as a runtime.note.
+	const persistedLedgerRecords = [];
+	const persistedUsage = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
+	for (const event of readEventsSafe(eventLogPath)) {
+		if (event?.event_type === "runtime.note" && event.payload?.kind === "c6.request" && event.payload.usage) {
+			persistedUsage.model_requests += 1;
+			persistedUsage.tool_calls += Number.isInteger(event.payload.tool_calls) ? event.payload.tool_calls : 0;
+			persistedUsage.input_chars += Number.isFinite(event.payload.input_chars) ? event.payload.input_chars : 0;
+			persistedUsage.wall_time_ms = Number.isFinite(event.payload.wall_time_ms)
+				? event.payload.wall_time_ms
+				: persistedUsage.wall_time_ms;
+			persistedLedgerRecords.push(event.payload);
+		}
+	}
 	const ledger = createToolLedger({
 		limit: {
 			model_requests: manifest.budget.model_requests,
 			tool_calls: manifest.budget.tool_calls,
-			input_chars: (config.context?.max_total_input_chars ?? 24000) * Math.max(1, manifest.budget.model_requests),
+			// The cumulative input budget still exists as a bound, but it is NOT the
+			// per-request window (that is contextWindowChars).
+			input_chars: 0,
 			wall_time_ms: manifest.budget.wall_time_ms,
 		},
+		baseConsumed: persistedUsage,
 		onEvent: (record) => {
 			// Count REAL provider requests (including the automatic tool loop) so a
 			// declared requests-per-session threshold can trigger a safe rotation.
@@ -264,10 +360,32 @@ export async function runC6FromConfig(
 	} catch {
 		TypeSchema = null;
 	}
+	// X2: the decision tool consults the ACTIVE per-task ledger through this holder,
+	// so the tool installed on the SDK session (created below, before assembly) can
+	// still enforce the current task's tool/request allocation.
+	const ledgerHolder = { ledger: null };
 	const decisionCapture = {
-		tool: createDecisionCaptureTool({ sdk: sdkImpl, buffer, type: TypeSchema ?? undefined }),
+		tool: createDecisionCaptureTool({
+			sdk: sdkImpl,
+			buffer,
+			type: TypeSchema ?? undefined,
+			admitTool: ({ tool_name }) => (ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true }),
+			remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
+		}),
 		buffer,
 	};
+	// X11: an authorized, read-only observation path so the model can inspect the
+	// real target before deciding. It performs NO effect; the Broker remains the
+	// only effect path.
+	const observationTool = TypeSchema
+		? createObservationTool({
+				sdk: sdkImpl,
+				type: TypeSchema,
+				workspaceRoot: config.workspace_root,
+				allowedTargets: [...new Set((manifest.tasks ?? []).map((task) => task.target_ref).filter(Boolean))],
+			})
+		: null;
+	const extraTools = observationTool ? [observationTool] : [];
 
 	// The real SDK runtime (or an injected seam for tests). Read-only scenarios do
 	// not create one.
@@ -285,6 +403,7 @@ export async function runC6FromConfig(
 						sessionDir,
 						sdk: sdkImpl,
 						decisionCapture,
+						extraTools,
 					})
 				: await createCampaignSdkRuntime({
 						provider: providerCheck.provider,
@@ -296,6 +415,7 @@ export async function runC6FromConfig(
 						sessionDir,
 						sdk: sdkImpl,
 						decisionCapture,
+						extraTools,
 					});
 		} catch (error) {
 			return { ok: false, reasons: [`SDK runtime creation failed: ${String(error)}`], stage: "sdk" };
@@ -313,6 +433,7 @@ export async function runC6FromConfig(
 	let rotationResult = null;
 	const rotationAttempts = [];
 	const dynamicAdmissions = [];
+	const pendingToolAdmissions = [];
 	let requestsSinceRotation = 0;
 	let hostRef = null;
 	let sinkRef = null;
@@ -442,21 +563,77 @@ export async function runC6FromConfig(
 			judgeFactory,
 			sessionController: buildSessionController(),
 			wrapWorker: (brokerWorker) => {
+				// X2: a PER-TASK ledger bounded by the task's own allocation. The
+				// cumulative campaign ledger is mirrored on each commit for restart/measure.
+				let currentTaskId = config.label ?? "campaign-task";
+				let currentTaskLedger = null;
+				const ledgerFactory = (task) => {
+					currentTaskId = task?.task_id ?? currentTaskId;
+					const alloc = task?.task_budget ?? {};
+					currentTaskLedger = createToolLedger({
+						limit: {
+							model_requests: Number.isInteger(alloc.model_requests)
+								? alloc.model_requests
+								: manifest.budget.model_requests,
+							tool_calls: Number.isInteger(alloc.tool_calls) ? alloc.tool_calls : manifest.budget.tool_calls,
+							input_chars: 0,
+							wall_time_ms: Number.isInteger(alloc.wall_time_ms) ? alloc.wall_time_ms : manifest.budget.wall_time_ms,
+						},
+						onEvent: (record) => {
+							if (record.kind === "tool.admitted") pendingToolAdmissions.push(record);
+						},
+					});
+					ledgerHolder.ledger = currentTaskLedger;
+					return currentTaskLedger;
+				};
 				modelWorker = createModelWorker({
 					session: () => sdkRuntime?.session() ?? null,
 					ledger,
-					romPath: join(resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."), "agent", "ROM.md"),
+					ledgerFactory,
+					contextWindowChars,
+					romPath,
 					context: config.context ?? { max_total_input_chars: 24000, output_reserve_chars: 2000 },
 					taskId: config.label ?? "campaign-task",
 					goal: manifest.objective?.description ?? manifest.title ?? "",
 					actionCatalog: null,
 					getActionCatalog: () => ({ actions: safeDescribe(brokerRef) }),
+					// X5: the RAM/facts/refs are bound to the CURRENT task's episode, never
+					// the first episode in the map.
 					ramProvider: () => {
 						const events = readEventsSafe(eventLogPath);
 						const board = projectBoard(events);
 						const state = projectState(events);
-						const episodeId = Object.keys(state.episodes)[0] ?? "ep-none";
+						const episodeId = `ep-${currentTaskId}`;
 						return buildRam({ board, state, episodeId, goal: manifest.objective?.description ?? "" });
+					},
+					// X5: bind the Observer's Task/Episode (and stream env) to the current
+					// Host task before its prompt.
+					setTaskBinding: (task) => {
+						currentTaskId = task?.task_id ?? currentTaskId;
+						bindObserverEnv(currentTaskId);
+					},
+					// X4: persist each committed request as a durable runtime.note so the
+					// cumulative ledger rebuilds after restart/measure.
+					onRequestCommitted: (record) => {
+						const usage = record?.usage ?? null;
+						sinkRef
+							?.append?.({
+								event_type: "runtime.note",
+								episode_id: `ep-${currentTaskId}`,
+								payload: {
+									kind: "c6.request",
+									task_id: currentTaskId,
+									input_chars: record?.input_chars_estimated ?? 0,
+									tool_calls: pendingToolAdmissions.length,
+									wall_time_ms: Date.now(),
+									usage,
+									usage_source: usage?.source ?? "unknown",
+								},
+								source: { kind: "runtime", actor_id: "c6-ledger", adapter: "c6-entry", version: C6_ENTRY_VERSION },
+								schema_version: "1.1",
+							})
+							?.catch?.(() => undefined);
+						pendingToolAdmissions.length = 0;
 					},
 					decisionBuffer: buffer,
 					router:
@@ -518,22 +695,58 @@ export async function runC6FromConfig(
 			},
 		});
 	} catch (error) {
-		await sdkRuntime.dispose?.().catch?.(() => undefined);
+		// X12: a read-only scenario has no sdkRuntime; never let a null access
+		// replace the real, structured failure. Dispose only what exists.
+		try {
+			await sdkRuntime?.dispose?.();
+		} catch {
+			// ignore cleanup failure; preserve the original reason
+		}
 		return { ok: false, reasons: [error instanceof Error ? error.message : String(error)], stage: "assembly" };
 	}
 	const { host, sink } = assembled;
 	brokerRef = assembled.broker ?? null;
 	hostRef = host;
 	sinkRef = sink;
+	let removeSignalHandlers = () => {};
 
 	try {
 		unbind = bindHostEventLog(eventLogPath, sink.log);
 
+		// X9: signal handling that AWAITS the durable drain and removes the handler
+		// before cleanup, so a resident observe can exit cleanly.
+		let signalReceived = null;
+		let resolveSignal = null;
+		const signalPromise = new Promise((resolve) => {
+			resolveSignal = resolve;
+		});
+		const onSignal = (signal) => {
+			if (signalReceived) return;
+			signalReceived = signal;
+			void (async () => {
+				try {
+					await host.stop(`signal_${signal}`);
+				} catch {
+					// ignore: the drain is best-effort
+				}
+				resolveSignal(signal);
+			})();
+		};
+		const sigtermHandler = () => onSignal("SIGTERM");
+		const sigintHandler = () => onSignal("SIGINT");
+		let signalsInstalled = false;
 		if (installSignalHandlers && signalSource && typeof signalSource.on === "function") {
-			signalSource.on("SIGTERM", () => {
-				void host.stop("sigterm_drain");
-			});
+			signalSource.on("SIGTERM", sigtermHandler);
+			signalSource.on("SIGINT", sigintHandler);
+			signalsInstalled = true;
 		}
+		const removeSignalHandlers_ = () => {
+			if (!signalsInstalled || typeof signalSource.removeListener !== "function") return;
+			signalSource.removeListener("SIGTERM", sigtermHandler);
+			signalSource.removeListener("SIGINT", sigintHandler);
+			signalsInstalled = false;
+		};
+		removeSignalHandlers = removeSignalHandlers_;
 
 		if (observe || scenario === "observe" || config.observation.enabled) {
 			server = createObservationServer({
@@ -585,6 +798,14 @@ export async function runC6FromConfig(
 			}
 		} finally {
 			host.releaseOwnership();
+		}
+
+		// X9: a resident observe OWNS its listener until a signal. It returns only
+		// after the drain completed, then the finally block closes the service.
+		if (resident && scenario === "observe" && server) {
+			out(`observation resident: ${server.url} (waiting for SIGTERM/SIGINT)`);
+			const signal = await signalPromise;
+			out(`observation closing on ${signal}`);
 		}
 
 		// The explicit learning boundary: compile ONLY when the trusted policy is
@@ -671,6 +892,7 @@ export async function runC6FromConfig(
 		return { ok: false, reasons: [error instanceof Error ? error.message : String(error)], stage: "run" };
 	} finally {
 		try {
+			removeSignalHandlers();
 			host.releaseOwnership();
 			if (server) await server.close();
 		} finally {
@@ -681,6 +903,7 @@ export async function runC6FromConfig(
 					if (sink.close) await sink.close();
 				} finally {
 					if (unbind) unbind();
+					restoreObserverEnv();
 				}
 			}
 		}
@@ -861,6 +1084,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
 		outDir: parsed.args.outDir,
 		port: parsed.args.port,
 		installSignalHandlers: parsed.args.subcommand === "observe",
+		resident: parsed.args.subcommand === "observe",
 	});
 	if (!outcome.ok) {
 		for (const reason of outcome.reasons ?? []) process.stderr.write(`c6-entry: ${reason}\n`);
