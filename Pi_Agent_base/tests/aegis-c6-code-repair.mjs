@@ -48,8 +48,9 @@ function readEvents(path) {
 const BROKEN_SOLUTION = `export function add(a, b) {\n\treturn a - b;\n}\n`;
 const FIXED_SOLUTION = `export function add(a, b) {\n\treturn a + b;\n}\n`;
 // The EXTERNAL test is written by the HOST, not the model. It imports the
-// solution and prints a machine-readable summary.
-const CHECK_TEST = `import { add } from "./solution.mjs";\nlet passed = 0, failed = 0;\nif (add(2, 3) === 5) passed++; else failed++;\nif (add(-1, 1) === 0) passed++; else failed++;\nconsole.log(\`PASSED=\${passed} FAILED=\${failed}\`);\nprocess.exit(failed === 0 ? 0 : 1);\n`;
+// solution and uses the standard `node:assert` module; success is the test's
+// normal completion (the Host harness confirms the top-level assertions ran).
+const CHECK_TEST = `import assert from "node:assert/strict";\nimport { add } from "./solution.mjs";\nassert.equal(add(2, 3), 5);\nassert.equal(add(-1, 1), 0);\n`;
 
 try {
 	const workspaceRoot = join(base, "workspace");
