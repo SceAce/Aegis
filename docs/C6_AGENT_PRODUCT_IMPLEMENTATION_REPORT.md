@@ -288,7 +288,7 @@ c9959ec fix: C6 provider gate joint admission, actual transcript window, final f
 | 缺陷/语义 | 根本原因 | 实现 | 测试 |
 | --- | --- | --- | --- |
 | A 内存 commit 失败被 durable success 掩盖 | `message_end` 回调先算 `commitFailed`，但 durable 回调成功或 `persistRequest` 存在时以 durable 结果决定放行 | `c6-model-worker.mjs` 统一 `finalizeRequest`：两层内存 commit（`safeCommit` 包抛异常）任一失败→写 `reconciliation_required`（不写 joint-success）、`pendingCommit` 置失败、返回 accounting_failure；durable `committed` 失败也尝试写 reconciliation | LC-A1/A2/A3 |
-| B provider error 未进入可恢复 reconciliation | `prompt()` 抛错时提前 `return transport_failure`，绕过统一 flush/reconciliation | `c6-model-worker.mjs` `catch` 只记录 `promptError`，所有路径汇入统一收尾；`gate.outstanding` 未清→保留 hold、写 `reconciliation_required`、`pendingCommit` 失败；合成 error message 分类为 `provider_error` 并标 `provider_status=error` | LC-B1/B2/B3/B4/B5 |
+| B provider error 未进入可恢复 reconciliation | `prompt()` 抛错时提前 `return transport_failure`，绕过统一 flush/reconciliation | `c6-model-worker.mjs` `catch` 只记录 `promptError`，所有路径汇入统一收尾；`gate.outstanding` 未清→保留 hold、写 `reconciliation_required`、`pendingCommit` 失败；合成 error message 分类为 `provider_error` 并标 `provider_status=error`；reconciliation append 失败只报事实、保留 reserved 源 | LC-B1/B2/B3/B4/B5/B6 |
 | C Task pending 未按 Task 隔离 | `c6-entry.mjs` 生成一个全局 `taskBaseReserved`，每个 Task ledger 复用 | `c6-request-lifecycle.mjs` `reservedSeedForTask(taskPending, taskCommittedByTask, taskId)`；`c6-entry.mjs` `ledgerFactory` 每 Task 只注入自身 pending/committed；Campaign ledger 保留聚合 | LC-C1/C2 |
 | D 部分 committed 被当联合提交 | `summarizeRequestLedger` 接受单侧 reservation id 并删除 pending | `c6-request-lifecycle.mjs` `validateCommittedRecord`：必须 request + 两侧 reservation 且与原 reserved 的 Campaign/Task/reservation 一致；`countedRequests` 防重复计费；`reconciliation_required` 保持未决 | LC-D1…D7 |
 
@@ -331,7 +331,7 @@ provider/Broker dispatch（含 `direct` 路由），并保留预算 hold。无�
 ```bash
 node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs                 # 23/23 pass, exit 0
 node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs                # 22/22 pass, exit 0
-node --test Pi_Agent_base/tests/aegis-c6-lifecycle-convergence.mjs              # 17/17 pass, exit 0
+node --test Pi_Agent_base/tests/aegis-c6-lifecycle-convergence.mjs              # 18/18 pass, exit 0
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
   Pi_Agent_base/tests/aegis-c6-lifecycle-restart.mjs                           # all checks passed, exit 0
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \

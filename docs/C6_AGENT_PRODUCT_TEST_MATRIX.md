@@ -173,7 +173,7 @@ C1 `eventlog-durability`/`integration-recovery`。
 
 ## C6 请求生命周期收敛轮（本轮，基线 `17e1728`）
 
-新增脚本：`aegis-c6-lifecycle-convergence.mjs`（17 例，`node --test`）、
+新增脚本：`aegis-c6-lifecycle-convergence.mjs`（18 例，`node --test`）、
 `aegis-c6-lifecycle-restart.mjs`（真实子进程 SIGKILL + 重启，非 node:test）。
 expected 来自冻结契约（联合成功定义、单侧 reservation 不合法、reconciliation 未决），
 不由实现返回值倒推。red 基线在 `runtime/dev/c6-lifecycle-run1/red-baseline.log` 与
@@ -189,6 +189,7 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 | LC-B3 | 拒绝前合成错误 | 同上 | provider 0 次；不写任何 reserved/committed；不计费 | convergence | pass |
 | LC-B4 | 未决 provider 错误 + Composite | `createCompositeWorker` | Broker effect 0 次 | convergence | pass |
 | LC-B5 | reserved + reconciliation 重启 | summarize + seed + `createModelWorker` | 未决保持；provider 0 次；guard 拒绝 dispatch | convergence | pass |
+| LC-B6 | reconciliation append 再失败 | `createModelWorker` | 返回持久化失败事实；reserved 源仍保留两层 pending；不释放预算 | convergence | pass |
 | LC-C1 | 每 Task 只注入自身 pending/committed | `summarizeRequestLedger` + `reservedSeedForTask` | A/B 各自 pending；C committed 不泄漏；Campaign 聚合 A+B | convergence | pass |
 | LC-C2 | 重建后每 Task 只计自身 hold | `createToolLedger` | remaining 各减 1；pending 只有自身 | convergence | pass |
 | LC-D1 | 仅 Task 侧 committed | `summarizeRequestLedger` | 不结算；两侧 pending 保留；invalid_committed 诊断 | convergence | pass |
@@ -207,8 +208,8 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 
 | 阶段 | 命令 | 结果 |
 | --- | --- | --- |
-| red（HEAD `17e1728`） | `node --test …/aegis-c6-lifecycle-convergence.mjs` | 16 tests / **1 pass / 15 fail**, exit 1 |
-| green（本轮） | 同上 | **17 pass / 0 fail**, exit 0 |
+| red（HEAD `17e1728`） | `node --test …/aegis-c6-lifecycle-convergence.mjs` | 18 tests / **1 pass / 17 fail**, exit 1 |
+| green（本轮） | 同上 | **18 pass / 0 fail**, exit 0 |
 | red（重启） | `node --import <resolver> …/aegis-c6-lifecycle-restart.mjs` | **2 fail**（guard 缺失、provider_status 未标） |
 | green（重启） | 同上 | **all checks passed** |
 
