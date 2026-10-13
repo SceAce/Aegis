@@ -381,6 +381,46 @@ test("LC-B4: an unresolved provider error cannot dispatch a Broker effect", asyn
 	assert.equal(brokerEffects, 0, "no Broker effect after an unresolved provider request");
 });
 
+test("LC-B6: a failed reconciliation append still leaves the reserved hold on disk", async () => {
+	const { session } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		throw new Error("provider transport boom");
+	};
+	session.prompt = async () => {
+		await session.agent.streamFunction({}, { messages: [] });
+	};
+	const { campaign, task } = makeLedgers();
+	const persisted = [];
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaign,
+		ledgerFactory: () => task,
+		context: CONTEXT,
+		taskId: "task-001",
+		goal: "demo",
+		persistRequest: async (record) => {
+			persisted.push(record);
+			// The reservation succeeds; the reconciliation append fails.
+			return record.phase === "reserved" ? { ok: true } : { ok: false, error: "injected reconciliation fsync failure" };
+		},
+	});
+	const result = await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+
+	assert.equal(providerCalls, 1);
+	assert.equal(result.ok, false);
+	assert.equal(result.failure_mode, "reconciliation_required");
+	assert.equal(result.reconciliation.reconciliation_persisted, false, "the failure is reported, never hidden");
+	assert.match(String(result.reconciliation.reconciliation_error), /reconciliation fsync failure/);
+	assert.equal(campaign.pending().length, 1, "the Campaign hold survives a failed reconciliation append");
+	assert.equal(task.pending().length, 1, "the Task hold survives a failed reconciliation append");
+	assert.ok(
+		persisted.some((record) => record.phase === "reserved"),
+		"the earlier durable reserved record is the restart source",
+	);
+});
+
 // ---------------------------------------------------------------------------
 // B5. A reconciliation-only restart (durable): the hold is kept and a new
 // provider dispatch is refused, using the REAL seeding path.
