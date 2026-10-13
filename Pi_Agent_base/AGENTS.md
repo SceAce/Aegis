@@ -74,13 +74,13 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-C6 repair recheck is **changes_required**; see `../docs/C6_EXTERNAL_REVIEW.md`
-section 4 and `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md`. Original 21 boundary cases
-now pass; C6 Campaign type diagnostics are 0 (196 legacy diagnostics remain).
-Focused follow-ups still reproduce observation continuation budget overruns,
-registered-test normal/forged completion errors, symlink reads, unapplied runner
-initial state, and a vacuous third-task reuse test. Repair those existing goals;
-do not reopen completed boundaries or weaken tests. Real-model pilots and
-learning efficacy experiments remain separate after engineering acceptance.
-Do not call real providers/targets or read real credentials. Preserve deferred
-F16 and honest per-config type baselines.
+C6 external recheck is **internally_verified / awaiting_external_review**: the
+five remaining groups in `../docs/C6_EXTERNAL_REVIEW.md` section 4 (provider
+pre-call gate, registered-test trusted completion, aegis_read real path/current
+grant, runner actual initial state, real third-task reuse/pre-state) are repaired,
+with the original 14 C6 scripts, 22 external boundary cases and 13 focused recheck
+cases green. Original 21 boundary cases and C6 Campaign type diagnostics remain 0
+(196 legacy diagnostics remain). Real-model pilots and learning efficacy
+experiments remain separate after engineering acceptance. Do not call real
+providers/targets or read real credentials. Preserve deferred F16 and honest
+per-config type baselines.

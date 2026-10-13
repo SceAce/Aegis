@@ -1,16 +1,14 @@
 # C6 模型 Agent 与经验闭环 — 实现报告
 
-**最新限定复验：changes_required**，见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第4节。
-35b053a的原14suite/21外部例通过、Campaign新增类型0条已认可，但观察续请求预算、test harness、
-symlink读取、runner实际初态和第三任务真复用仍有失败。以下为DS修复交付记录，不代表外部接受。
+**本轮修复复验：internally_verified / awaiting_external_review**。外部复验（`C6_EXTERNAL_REVIEW.md` 第4节，
+基线 `35b053a`）认定的五组遗漏已在 `23d754e` 上修复并本地提交，见第 11 节。
+原14suite/21外部例通过、Campaign新增类型0条已认可；本轮外部边界套件 **22/22 pass**、
+聚焦复验 **13/13 pass**、学习闭环全绿。以下为DS修复交付记录，不代表外部接受。
 
-历史 DS 状态：**internally_verified / awaiting_external_review**；随后限定工程审查结论为
-**changes_required**（见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)）。本轮修复后状态：
-**internally_verified / awaiting_external_review**（C6 限定修复）。
-外部边界套件 21 tests：修复前 2 pass/19 fail，修复后 **21/21 pass, exit 0**。
-Campaign tsc：C6-owned 文件新增诊断 **0**（总 196，均为既有 runtime D/C2 文件按实际 import graph 纳入）。
+历史状态：**internally_verified / awaiting_external_review** → 限定工程审查 **changes_required** →
+本轮修复后 **internally_verified / awaiting_external_review**（C6 限定修复）。
 SHA256/UUID 控制在本次复核正常（撤回旧“全零桩”归因）。
-active/replay/direct/habit 属 C6-P5 工程目标，本轮已完成代码与离线产品证据（见第 7b 节），未移交 E2。
+active/replay/direct/habit 属 C6-P5 工程目标，已完成代码与离线产品证据（第 7b、11 节），未移交 E2。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
 本报告是工程交付，不宣称特定模型能力、context 收益或学习效果成立。
 
@@ -196,3 +194,58 @@ c774190 feat: C6-E runner and C6-F second code-repair task family
 
 C6 实现与工程测试完成，标 **internally_verified / awaiting_external_review**，交回一次 C6 限定工程验收。
 工程通过不等于学习收益成立；真实模型 pilot、经验效果对照、迁移与日常试用另立实验任务。
+
+## 11. 复验剩余五组的修复轮（本次，交回前一轮）
+
+外部复验（`C6_EXTERNAL_REVIEW.md` §4）在 `35b053a` 认定五组遗漏。本轮在 `23d754e` 上修复并提交：
+`a02e93f`（registered-test 可信完成协议）、`c31bed0`（runner 实际初态）、
+`d1e0efa`（学习真复用/真实前态）、`2d8532e`（provider 调用前门 + 当前 Task grant）、
+`dacb511`（聚焦测试与 runner）。
+
+| 组 | 修复要点 | 证据 |
+| --- | --- | --- |
+| 1 provider 通用请求门 | 在 `agent.streamFunction`（真实 provider 边界，首请求/tool loop/续请求均经过）统一准入；每次请求检查窗口、wall-time、Task+Campaign 请求额度，**预留先 durable 后调用 provider**；预留失败不调用 provider；commit 失败停止后续 dispatch 并保留 reconciliation；从 committed 源重建 consumed+pending | 额度 1 时实际 provider 请求 **1** 次（原来 4 次）；R4/R5/R6 |
+| 2 registered-test | 最小可信 Host 完成协议：import 解析/抛错才写完成记录；提前 exit 无记录=unknown；记录带随机 nonce；不改 assert、不读 stack、不特判 process.exit | 合法 `node:assert/strict` 通过、正常错误 failure、伪造帧/提前退出 unknown；R1/R8/R9、C6-X10 |
+| 3 aegis_read | 用 `resolveInside`（realpath）校验真实目标位置，拒绝 symlink 越界；读取 grant 为**当前 Task** 目标而非整个 Manifest 并集 | R2（symlink 拒绝、不返回外部内容）、R7（当前 Task 隔离）、控制普通文件可读 |
+| 4 runner 真实初态 | `initial_state` 不再只是 metadata：有声明必须有可信 `applyInitialState`，否则拒绝该 attempt；记录**实际应用的初态**；初始化异常只影响该 attempt | R3（无 initializer 拒绝）、R10（真实初态记录 + 失败隔离）、C6-X6（独立 work_dir） |
+| 5 学习复用 | 训练为两个独立 campaign、各自真实 reset；复用是编译前真正未执行的 `task-003`；前态取自 broker 记录的**真实 pre_state**（非声明），`verified_by` 指向实际证据；编译参数模板仅取支持 episode 一致的实参；router 用含刚提交 currentState 的最新 resolver | closure 全绿：NEW Broker intent、NEW effect、NEW Oracle success、零规划请求；mutation 捕获声明前态/跳过 replay/不派模板 |
+
+### 11.1 本轮 exact argv / exit / private logs
+
+日志目录 `Pi_Agent_base/runtime/dev/c6-recheck-2/`（ignored）。
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs        # 22 tests / 22 pass / 0 fail, exit 0
+node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs        # 13 tests / 13 pass / 0 fail, exit 0
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-learning-closure.mjs                    # all checks passed, exit 0
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs <out> <14 C6 scripts + recheck>   # 15 scripts, 0 failed
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs <out> <26 affected regressions>    # 26 scripts, 0 failed
+```
+
+- `final/results.json`：15 个 C6 脚本 argv/exit/log（含 `aegis-c6-recheck-boundaries`）。
+- `final-regress/results.json`：26 个受影响回归 argv/exit/log。
+- `tsc3.log`：`tsc -p tsconfig.aegis-campaign.json` exit 1，**196 条既有诊断、修改文件 0 条**。
+- `biome.log`/`biome2.log`：修改范围 `biome check` exit 0。
+- mutation 记录见 `docs/C6_AGENT_PRODUCT_TEST_MATRIX.md` §修复轮 mutation。
+
+### 11.2 未实测限制（本轮）
+
+gate 的 durable 预留/commit 用 faux + 注入的持久回调与失败回调验证，未对接真实 provider 计费；
+registered-test 的完成协议不是 OS sandbox，不声称抵抗任意敌对进程直接改写结果文件；
+runner 的可信 initializer 由调用方（Host/fixture）提供，本任务不建设通用 benchmark 平台。
+
+## 12. 本轮 commits 与工作树
+
+工作树干净。相对 `23d754e`：
+
+```text
+a02e93f fix: C6 registered-test minimal trusted Host completion protocol
+c31bed0 fix: C6 runner refuses unapplicable initial_state, records actual reset
+d1e0efa fix: C6 learning reuse proves a real third task with real pre-state
+2d8532e fix: C6 provider-bound pre-call budget gate and current-task read grant
+dacb511 test: C6 recheck boundaries for gate, test trust, grant and reset
+```
+
+未 push、未改写历史；未改内嵌 Pi 核心/用户凭据/模型设置/lockfile；未调用真实 provider/目标。
+

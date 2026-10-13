@@ -1,12 +1,13 @@
 # C6 模型 Agent 与经验闭环 — 工作计划
 
-状态：`internally_verified / awaiting_external_review`（C6-A–F + 审查修复轮；交一次限定复验）。
-外部审查结论 `changes_required`（`C6_EXTERNAL_REVIEW.md`）已按 `C6_REPAIR_DS_PROMPT.md` 完成 X1–X12 修复：
-外部边界套件从 2/19 恢复到 21/21 pass；新增真实恢复与学习闭合产品证据；C6-owned 类型诊断降至 0。
+状态：`internally_verified / awaiting_external_review`（C6-A–F + 两轮审查修复；交一次限定复验）。
+第一轮修复 `C6_REPAIR_DS_PROMPT.md`（X1–X12）后外部复验仍认定五组遗漏（`C6_EXTERNAL_REVIEW.md` §4）。
+本轮按 `C6_RECHECK_REPAIR_DS_PROMPT.md` 在 `23d754e` 上修复五组：通用 provider 调用前门、
+registered-test 可信完成、aegis_read 真实路径/当前 Task grant、runner 实际初态、学习真复用/真实前态。
+外部边界套件 **22/22 pass**、聚焦复验 **13/13 pass**、学习闭环全绿、14 原 C6 脚本 exit 0。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
-依据：`C6_AGENT_PRODUCT_TASK.md`、`SDK_LAUNCHER_TASK.md`（并入 C6-A）、
-`AGENT_DEVELOPMENT_STANDARD.md` §3.1、`AGENT_TESTING_STANDARD.md`、`GIT_STANDARD.md`、
-`DS_ORCHESTRATION_WORKFLOW.md`。
+依据：`C6_AGENT_PRODUCT_TASK.md`、`AGENT_DEVELOPMENT_STANDARD.md` §3.1、`AGENT_TESTING_STANDARD.md`、
+`GIT_STANDARD.md`、`DS_ORCHESTRATION_WORKFLOW.md`。
 
 ## 1. BASE 基线（已记录）
 

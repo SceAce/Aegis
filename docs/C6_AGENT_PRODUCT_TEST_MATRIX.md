@@ -111,3 +111,30 @@ C1 `eventlog-durability`/`integration-recovery`。
 | runner 忽略 per-attempt config | C6-X6 FAIL | FAIL ✓ |
 | compile 前跳过真实 replay | closure FAIL | FAIL ✓ |
 | process.exit 归因设为恒真 | C6-X10 FAIL | FAIL ✓ |
+
+## C6 复验剩余五组修复轮（基线 23d754e，本轮交付）
+
+对应 `C6_EXTERNAL_REVIEW.md` §4 / `C6_RECHECK_REPAIR_DS_PROMPT.md` 五组。
+日志 `runtime/dev/c6-recheck-2/`（ignored）。
+
+| case_id | requirement | 入口 | 预期行为 | 脚本 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| C6-RB | 通用 provider 请求门 | `runC6FromConfig` | 额度 1 时连续 read 续请求只发 1 次 provider 请求；每请求调用前+durable 准入 | `aegis-c6-external-boundaries.mjs`（C6-X2 read-budget）、`aegis-c6-recheck-boundaries.mjs` R4 | pass |
+| C6-RD | 持久预留/commit | `createModelWorker` | 预留不可持久化不调用 provider；commit 失败停止后续 dispatch 且保留 reconciliation | `aegis-c6-recheck-boundaries.mjs` R5/R6 | pass |
+| C6-RT | registered-test 可信完成 | `runRegisteredTest` | 合法 assert/strict 通过；正常错误 failure；提前 exit/伪造帧 unknown；记录带 nonce | `aegis-c6-recheck-boundaries.mjs` R1/R8/R9、`aegis-c6-external-boundaries.mjs` C6-X10 | pass |
+| C6-RG | 当前 Task 读取 grant | `createObservationTool` | symlink 越界拒绝且不返回外部内容；当前 Task 外的 workspace 文件拒绝；普通授权文件可读 | `aegis-c6-recheck-boundaries.mjs` R2/R7（控制例） | pass |
+| C6-RI | runner 实际初态 | `runBoundedAttempts` | 无 initializer 拒绝；记录实际应用初态；初始化异常隔离 | `aegis-c6-recheck-boundaries.mjs` R3/R10、`aegis-c6-runner.mjs`、`aegis-c6-external-boundaries.mjs` C6-X6 | pass |
+| C6-RL | 学习真复用/真实前态 | `c6-entry` learning | 编译前 task-003 未执行；新 intent/effect/Oracle success；零规划请求；前态取真实观测非声明 | `aegis-c6-learning-closure.mjs` | pass |
+| C6-RH | habit/退场 | `createModelWorker` router | habit 固定方法、仅请求缺参数；paused/refuse 带原因不静默转规划 | `aegis-c6-recheck-boundaries.mjs` R11、router 既有测试 | pass |
+
+### 本轮有限 mutation（关键 guard，行为 FAIL 证明）
+
+| mutation | 预期 FAIL case | 实际 |
+| --- | --- | --- |
+| provider gate 不再拒绝超额度请求 | R4 | FAIL ✓ |
+| registered-test 缺记录仍视为完成 | R1/R9 | FAIL ✓ |
+| aegis_read 退回 lexical 路径检查 | R2/R7 | FAIL ✓ |
+| runner 忽略缺 initializer | R3/R10 | FAIL ✓ |
+| proof `when` 改用声明 initial_state | closure 前态/direct | FAIL ✓（2 失败） |
+| compile 前跳过真实 replay | closure replay/reset | FAIL ✓（2 失败） |
+| 不派生 arguments template | closure direct 零规划 | FAIL ✓ |

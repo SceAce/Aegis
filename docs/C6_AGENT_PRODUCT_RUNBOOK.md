@@ -191,3 +191,32 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 ```
 
 证据/日志：`Pi_Agent_base/runtime/dev/c6-repair/`（ignored）。
+
+## 12. 复验剩余五组修复回归（模型本地）
+
+```bash
+# 聚焦复验：provider 调用前门/持久预留、registered-test 可信完成、
+# aegis_read 当前 Task grant、runner 实际初态、habit 路由
+node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs
+
+# 外部工程边界（含 read-budget：额度 1 实际 1 次 provider 请求）
+node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs
+
+# 学习真复用：两独立 reset 训练 → 真实 Replay/Compiler active →
+# 未执行的 task-003 产生 NEW intent/effect/Oracle success，零规划请求
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-learning-closure.mjs
+
+# 全 C6 脚本 + 受影响回归（自动选择 source resolver）
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/c6-recheck-2/<name> \
+  aegis-c6-code-repair aegis-c6-durability-recovery aegis-c6-external-boundaries \
+  aegis-c6-learning-closure aegis-c6-learning-reuse aegis-c6-ledger-input \
+  aegis-c6-product-chain aegis-c6-provider aegis-c6-recovery aegis-c6-rotation-reject \
+  aegis-c6-runbook aegis-c6-runner aegis-c6-sdk-lifecycle aegis-c6-service-measure \
+  aegis-c6-recheck-boundaries
+```
+
+证据/日志：`Pi_Agent_base/runtime/dev/c6-recheck-2/`（ignored）。
+注意：非 SDK 测试不要加载 source resolver（纯 node 测试加载它会引入无关的
+FileHandle GC finalizer 错误）。`c6-suite-runner.mjs` 按测试是否 import
+`@earendil-works/pi-` 自动选择启动方式。
