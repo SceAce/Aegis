@@ -125,7 +125,7 @@ function validateLearningKey(learning, reasons) {
 		return null;
 	}
 	for (const key of Object.keys(learning)) {
-		if (!["policy", "promote_experience", "environment", "proof_ids"].includes(key))
+		if (!["policy", "promote_experience", "environment", "proof_ids", "replay_adapter"].includes(key))
 			reasons.push(`unknown config.learning key ${key}`);
 	}
 	const policy = learning.policy ?? "off";
@@ -135,11 +135,18 @@ function validateLearningKey(learning, reasons) {
 		reasons.push("config.learning.promote_experience must be false (C6 never auto-promotes)");
 	if (learning.proof_ids !== undefined && !Array.isArray(learning.proof_ids))
 		reasons.push("config.learning.proof_ids must be an array");
+	if (
+		learning.replay_adapter !== undefined &&
+		learning.replay_adapter !== null &&
+		typeof learning.replay_adapter !== "string"
+	)
+		reasons.push("config.learning.replay_adapter must be a path string when present");
 	return {
 		policy,
 		promote_experience: false,
 		environment: isPlainObject(learning.environment) ? learning.environment : null,
 		proof_ids: Array.isArray(learning.proof_ids) ? learning.proof_ids.filter((id) => typeof id === "string") : [],
+		replay_adapter: typeof learning.replay_adapter === "string" ? learning.replay_adapter : null,
 	};
 }
 

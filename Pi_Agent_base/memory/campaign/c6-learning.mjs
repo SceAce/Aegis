@@ -195,6 +195,48 @@ export async function replayCommittedOutcome({ bridge, outcomeId, adapterPath = 
 }
 
 /**
+ * Perform a REAL isolated replay for each named proof outcome through the
+ * configured trusted adapter, then compile from the SAME proof ids. This is the
+ * only path that reaches `active`; it never lowers the compiler gate. The replay
+ * records are committed through the same writer, so the compiler's replay gate
+ * resolves them.
+ *
+ * @param {{policy: string, proofIds: string[], bridge: any, store: any, replayAdapterPath: string|null, existingExperiences?: object[], environment?: object}} args
+ */
+export async function replayThenCompile(
+	{
+		policy = "off",
+		proofIds = [],
+		bridge,
+		store,
+		replayAdapterPath = null,
+		existingExperiences = [],
+		refreshBridge = null,
+	} = /** @type {any} */ ({}),
+) {
+	if (policy !== "explicit" || !Array.isArray(proofIds) || proofIds.length === 0) {
+		return runCampaignLearningStep({ policy, proofIds });
+	}
+	const replays = [];
+	let activeBridge = bridge;
+	for (const outcomeId of proofIds) {
+		const replayed = await replayCommittedOutcome({ bridge: activeBridge, outcomeId, adapterPath: replayAdapterPath });
+		replays.push({ outcome_id: outcomeId, ...replayed });
+		// X8: after a replay is committed to the same stream, rebuild the bridge so
+		// its resolver sees the new reset/replay records (never a cached old bridge).
+		if (typeof refreshBridge === "function") activeBridge = (await refreshBridge()) ?? activeBridge;
+	}
+	const compiled = await compileExperienceFromProofs({
+		policy,
+		proofIds,
+		bridge: activeBridge,
+		store,
+		existingExperiences,
+	});
+	return { ...compiled, replays };
+}
+
+/**
  * Rebuild the derived experience store from the committed authoritative notes.
  * Deleting the store loses nothing: this re-derives it from the source records.
  *

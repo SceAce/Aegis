@@ -78,6 +78,7 @@ export function createStructuredDataAdapter(
 					return { ok: false, failure_mode: "action_rejected", detail: String(error) };
 				}
 				let state = {};
+				let preState = {};
 				if (existsSync(absolute)) {
 					try {
 						state = JSON.parse(readFileSync(absolute, "utf8"));
@@ -87,6 +88,9 @@ export function createStructuredDataAdapter(
 					if (!state || typeof state !== "object" || Array.isArray(state)) {
 						return { ok: false, failure_mode: "precondition_unmet", detail: "existing data is not an object" };
 					}
+					// X8: record the REAL prior state so a later isolated replay can rebuild
+					// the same pre-state rather than guessing it.
+					preState = structuredClone(state);
 				} else {
 					const parent = dirname(absolute);
 					if (!existsSync(parent))
@@ -100,6 +104,8 @@ export function createStructuredDataAdapter(
 					field: args.field,
 					value: String(args.value),
 					state,
+					pre_state: preState,
+					arguments: { target: args.target, field: args.field, value: String(args.value) },
 					file_digest: digest(content),
 					content_digest: digest(content),
 				};
@@ -228,7 +234,13 @@ export function buildDataRepairManifest({ workspaceRoot, campaignId = "campaign-
 				depends_on: [],
 				target_ref: target,
 				task_type: "verify",
-				scope: { environment_fingerprint: "data-repair-env", domain: "structured-data" },
+				scope: {
+					environment_fingerprint: "data-repair-env",
+					domain: "structured-data",
+					permissions: ["data.record.write"],
+					task_types: ["verify", "reproduce"],
+				},
+				initial_state: { name: "before" },
 				goal: { goal_id: "repair_name", description: "Repair the name field.", success_criteria: ["data.name == Ada"] },
 				stages: [{ stage_id: "stage-001-name", criteria: ["data.name == Ada"], required: true }],
 				oracle_ref: "fixture.oracle.v1",
@@ -240,7 +252,13 @@ export function buildDataRepairManifest({ workspaceRoot, campaignId = "campaign-
 				depends_on: ["task-001"],
 				target_ref: target,
 				task_type: "reproduce",
-				scope: { environment_fingerprint: "data-repair-env", domain: "structured-data" },
+				scope: {
+					environment_fingerprint: "data-repair-env",
+					domain: "structured-data",
+					permissions: ["data.record.write"],
+					task_types: ["verify", "reproduce"],
+				},
+				initial_state: { name: "Ada" },
 				goal: {
 					goal_id: "transform_status",
 					description: "Transform the status field.",
@@ -280,7 +298,7 @@ export function buildDataRepairManifest({ workspaceRoot, campaignId = "campaign-
  * @returns {(args: {task: any, attempt: number, onEvidence?: Function}) => object}
  */
 export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" } = /** @type {any} */ ({})) {
-	return ({ task, onEvidence }) => {
+	return ({ task, onEvidence, action_pin: actionPin }) => {
 		const file = task?.target_ref ?? target;
 		let absolute;
 		try {
@@ -330,6 +348,17 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 		];
 		if (typeof onEvidence === "function") onEvidence(evidence);
 		const artifactRef = { ref_type: "artifact", ref_id: `artifact:${task.task_id}`, digest: evidence[0].digest };
+		// X8: record the real pre-state and the final action arguments so a later
+		// isolated replay can rebuild the same run and pin its inputs. The pre-state
+		// is the task's DECLARED initial state (trusted Host input), never a model
+		// value and never guessed from the post-state.
+		const preState = task?.initial_state && typeof task.initial_state === "object" ? task.initial_state : null;
+		const args = actionPin?.arguments && typeof actionPin.arguments === "object" ? actionPin.arguments : null;
+		const observedWithReplay = {
+			state,
+			pre_state: preState,
+			arguments: args,
+		};
 		// X8: `when`/`expect` are STRUCTURED predicates produced by the trusted
 		// verification, never declaration strings. `verified_by` names the evidence
 		// ref the Oracle re-read, so the Compiler's predicate gate can accept them.
@@ -366,12 +395,66 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 		for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
 		return {
 			status: allSuccess ? "success" : "failure",
-			observed: state,
+			observed: observedWithReplay,
 			evidence,
 			when,
 			expect,
 			stage_overrides: stageOverrides,
 			...(allSuccess ? {} : { failure_mode: "criterion_not_met" }),
 		};
+	};
+}
+
+/**
+ * Build a manifest for the C6-C learning closure: TWO INDEPENDENT tasks that use
+ * the SAME method (data.record.set on the same field/value) with compatible
+ * `expect`, so the reviewed Compiler can derive ONE rule from two independently
+ * reset Episodes. A third task then exercises the `direct` reuse path (zero
+ * planning requests). The tasks have no dependency so each is a genuinely
+ * independent Episode.
+ *
+ * @param {{workspaceRoot: string, campaignId?: string, target?: string}} args
+ */
+export function buildDataRepairLearningManifest({
+	workspaceRoot,
+	campaignId = "campaign-c6-learn",
+	target = "dataset.json",
+}) {
+	const base = buildDataRepairManifest({ workspaceRoot, campaignId, target });
+	const scope = {
+		environment_fingerprint: "data-repair-env",
+		domain: "structured-data",
+		permissions: ["data.record.write"],
+		task_types: ["verify", "reproduce"],
+	};
+	const criteria = ["data.status == active"];
+	const makeTask = (id, order, initial) => ({
+		task_id: id,
+		order,
+		depends_on: [],
+		target_ref: target,
+		task_type: "verify",
+		scope,
+		initial_state: initial,
+		goal: { goal_id: "normalize_status", description: "Normalize the status field.", success_criteria: criteria },
+		stages: [{ stage_id: `stage-${id}`, criteria, required: true }],
+		oracle_ref: "fixture.oracle.v1",
+		task_budget: { wall_time_ms: 120000, model_requests: 20, tool_calls: 40 },
+	});
+	return {
+		...base,
+		campaign_id: campaignId,
+		title: "C6 learning closure fixture",
+		objective: {
+			description: "Two independent episodes normalize the same field; a third repeats the verified method.",
+			success_criteria: criteria,
+			stage_policy: "declared_only",
+		},
+		tasks: [
+			makeTask("task-001", 1, { status: "pending" }),
+			makeTask("task-002", 2, { status: "pending" }),
+			makeTask("task-003", 3, { status: "pending" }),
+		],
+		dynamic_task_policy: { ...base.dynamic_task_policy, max_task_count: 4 },
 	};
 }

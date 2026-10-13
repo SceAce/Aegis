@@ -34,6 +34,7 @@ import {
 	createCampaignLearningStore,
 	loadAuthoritativeExperiences,
 	rebuildExperienceStore,
+	replayThenCompile,
 	routeBeforeModel,
 	runCampaignLearningStep,
 } from "./c6-learning.mjs";
@@ -455,8 +456,15 @@ export async function runC6FromConfig(
 		if (learningBridgeRef) return learningBridgeRef;
 		if (!hostRef) return null;
 		learningStoreRef = createCampaignLearningStore(config.work_dir);
+		learningBridgeRef = buildLearningBridgeFromStream();
+		return learningBridgeRef;
+	}
+
+	/** Build a fresh bridge over the CURRENT committed stream (never cached). */
+	function buildLearningBridgeFromStream() {
+		if (!hostRef) return null;
 		const events = readEventsSafe(eventLogPath);
-		learningBridgeRef = buildCampaignLearningBridge({
+		return buildCampaignLearningBridge({
 			events,
 			registry: assembled?.registry,
 			broker: assembled?.broker,
@@ -469,7 +477,6 @@ export async function runC6FromConfig(
 			},
 			sink: sinkRef,
 		});
-		return learningBridgeRef;
 	}
 
 	function buildSessionController() {
@@ -822,15 +829,43 @@ export async function runC6FromConfig(
 				const bridge = await ensureLearningBridge();
 				if (bridge) {
 					await rebuildExperienceStore({ store: learningStoreRef, events: readEventsSafe(eventLogPath) });
-					if (config.learning?.policy && config.learning.policy !== "off") {
-						learningResult = await compileExperienceFromProofs({
-							policy: config.learning.policy,
-							proofIds: config.learning.proof_ids ?? [],
+					const policy = config.learning?.policy ?? "off";
+					const proofIds = config.learning?.proof_ids ?? [];
+					if (policy === "explicit" && proofIds.length > 0) {
+						// X8: perform the REAL isolated replay, then compile from the SAME
+						// proof ids. A compile that reaches `active` is recorded through the
+						// SAME writer as an authoritative `experience.compiled` note, so the
+						// derived store rebuilds from the committed stream.
+						learningResult = await replayThenCompile({
+							policy,
+							proofIds,
 							bridge,
 							store: learningStoreRef,
+							replayAdapterPath: config.learning.replay_adapter ?? null,
+							refreshBridge: () => buildLearningBridgeFromStream(),
 						});
+						if (learningResult.active === true && learningResult.experience && sinkRef) {
+							const note = {
+								event_type: "runtime.note",
+								episode_id: null,
+								payload: {
+									kind: "experience.compiled",
+									active: true,
+									experience_id: learningResult.experience.experience_id,
+									revision: learningResult.experience.revision ?? 1,
+									source_outcome_ids: proofIds,
+									content_digest: learningResult.content_digest ?? null,
+									experience: learningResult.experience,
+								},
+								source: { kind: "runtime", actor_id: "c6-learning", adapter: "c6-entry", version: C6_ENTRY_VERSION },
+								schema_version: "1.1",
+							};
+							const written = await sinkRef.append(note);
+							if (written?.ok === true)
+								await rebuildExperienceStore({ store: learningStoreRef, events: readEventsSafe(eventLogPath) });
+						}
 					} else {
-						learningResult = await runCampaignLearningStep({ policy: "off" });
+						learningResult = await runCampaignLearningStep({ policy, proofIds });
 					}
 				}
 			} catch (error) {

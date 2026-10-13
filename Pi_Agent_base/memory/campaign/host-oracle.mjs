@@ -133,7 +133,7 @@ export function createHostOracle(
 		const episodeId = `ep-${task.task_id}`;
 		const attempt = (attemptTracker.get(task.task_id) ?? 0) + 1;
 		attemptTracker.set(task.task_id, attempt);
-		const raw = await judgeTask({ task, outcome_ref, attempt, onEvidence: indexEvidence });
+		const raw = await judgeTask({ task, outcome_ref, attempt, action_pin, onEvidence: indexEvidence });
 		const status = ["success", "failure", "unknown", "invalid"].includes(raw?.status) ? raw.status : "unknown";
 		const verdict = {
 			status,
