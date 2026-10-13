@@ -1,20 +1,24 @@
 # C2 之后的推进计划
 
-当前状态：**C3 本轮审查与授权修复完成，下一轮 C4 报告与验收包**。
-当前证据见 `C3_EXTERNAL_REVIEW.md`，后续任务/提示词为 `C4_REPORT_TASK.md` 与
-`C4_REPORT_DS_PROMPT.md`。以下路线保留；C3 执行主线已落地，运行限制仍明确，
-F16 和旧类型导入诊断后置，不重开 C1/C2/C3。
+当前状态：**C5 本轮审查与授权修复完成，下一轮离线 SDK launcher**。
+当前证据见 `C5_EXTERNAL_REVIEW.md`，后续任务/提示词为 `SDK_LAUNCHER_TASK.md` 与
+`SDK_LAUNCHER_DS_PROMPT.md`。C1-C5 按记录范围交付；C5 CLI 已支持离线总装，SDK runtime
+仍由 caller 提供。F16/74 条旧类型诊断后置，不重开已完成阶段。
+
+下一轮补齐自动 SDK 启动、当前 Task/Episode 绑定、实际请求阈值轮换和常驻观察/退出/恢复。
+这是离线部署任务，不启用付费模型/目标。之后用户选择任务、provider、授权、预算和对照，
+再启动真实能力实验。历史 C3 里程碑保留为已完成记录，不再次委派。
 
 ## 当前能力与下一缺口
 
 - C1：持久队列、动态任务准入、预算与恢复已按冻结范围验收。
 - C2：真实 Pi SDK Host 可调用 Session 轮换及限定预算/完成验证已验收。
-- 现有 Broker、脚本注册、授权和 Observer 可复用；Campaign scheduler 仍注入 worker/oracle，
-  没有一条已验证的产品链把 Manifest → Worker → Broker → 实际效果 → Oracle → Task 串起来。
-- C2 尚未自动接入 Campaign loop，Session 基础账本与轮换增量的归属仍需在集成处明确。
-- C0 已有 aggregation/report 模块，后续应接真实 committed 输入，不重新造报告框架。
+- C3：Manifest → Worker → Broker → 实际本地效果 → Oracle → Task 的链已验证，支持动态任务与恢复。
+- C4/C4a：报告/只读观察从同一 verified committed stream 重建，坏源不显示成功。
+- C5：配置入口接上述模块；SDK 注入路径验证真实轮换、完整写链及跨 Episode 预算，
+  CLI 的自动 SDK 创建/Task 绑定/轮换策略仍需 launcher，观察服务目前随 entry 调用结束。
 
-下一步优先交付一个能离线运行的 Campaign 闭环，然后补汇总和观察面。
+下一步部署上述离线 SDK 生命周期，复用现有报告与观察模块。
 
 ## 阶段路线
 
@@ -39,8 +43,8 @@ F16 和旧类型导入诊断后置，不重开 C1/C2/C3。
 里程碑由主 DS按依赖自主完成并分任务提交，不为每个 helper 请求批准或外部审计。
 以现有模块接线为主，不新增通用调度/插件/Oracle 平台。
 实施任务书：`C3_EXECUTION_TASK.md`；可交给 DS 的提示词：`C3_EXECUTION_DS_PROMPT.md`。
-上述 C3 里程碑已由 DS 实施并经本轮审查集中修复。当前不再委派同一任务；下一轮实施 C4。
-C4a UI 与 C5 整体集成仍按后续范围推进，不提前加入 C4 验收。
+上述 C3 里程碑已由 DS 实施并经审查集中修复，当前不再委派同一任务。
+C4/C4a/C5 均已按限定范围交付；上文为历史里程碑。当前下一任务以 SDK launcher 任务书为准。
 
 ## 遗留项归属
 
@@ -49,7 +53,7 @@ C4a UI 与 C5 整体集成仍按后续范围推进，不提前加入 C4 验收�
 | F16 缓存增量效率 | 继续 deferred；全量权威重放正确即可，只在实际恢复依赖处做必要接线 |
 | 旧 tsc 导入诊断 | 记录实际 exit 与差异，不清库、不降低检查，也不因此阻塞无关里程碑 |
 | C2 预算基础消耗/轮换增量 | C3 Host 明确唯一记账来源与基线覆盖位置，不能把 budget_after 再当不含增量的基础账本 |
-| C2 自动轮换入口 | C3 当前执行 Host 接入安全边界，C5 验证整体连续性，不回头重审 C2 helper |
+| C2 自动轮换入口 | Host 可调用入口已验证；实际 SDK Task 绑定/阈值策略由下一轮 launcher 补齐，不回头重审 C2 helper |
 | 工作区隔离 | 显式 workspace_is_sandbox=false；本地测试只操作临时授权目录，不声称进程/网络强隔离 |
 
 阶段开始冻结 required/non_blocking/deferred，新增阻塞必须证明当前可达核心损害。

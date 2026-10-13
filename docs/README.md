@@ -10,7 +10,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态：**C1-C4 保持已交付；C4a 本轮审查/授权修复完成，下一轮 C5**。最新证据 [`C4A_EXTERNAL_REVIEW.md`](C4A_EXTERNAL_REVIEW.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`C5_INTEGRATION_TASK.md`](C5_INTEGRATION_TASK.md)，提示词 [`C5_INTEGRATION_DS_PROMPT.md`](C5_INTEGRATION_DS_PROMPT.md)，只做离线单入口整体集成。F16/旧类型基线后置，不重开阶段；真实模型/目标/能力实验须之后具体授权。
+当前状态：**C1-C4a 保持已交付；C5 本轮审查/授权修复完成，下一轮离线 SDK launcher**。最新证据 [`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md)，操作说明 [`C5_INTEGRATION_RUNBOOK.md`](C5_INTEGRATION_RUNBOOK.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`SDK_LAUNCHER_TASK.md`](SDK_LAUNCHER_TASK.md)，提示词 [`SDK_LAUNCHER_DS_PROMPT.md`](SDK_LAUNCHER_DS_PROMPT.md)。C5 接收离线入口与 caller-provided SDK 路径；自动 SDK 启动、Task/Episode 绑定/策略与常驻观察待部署补齐。F16/74 条旧类型诊断后置；真实能力实验须之后具体授权。
 
 开发依据：
 

@@ -15,7 +15,9 @@ Read these before Campaign development:
 - `../docs/C3_EXTERNAL_REVIEW.md`
 - `../docs/C4_EXTERNAL_REVIEW.md`
 - `../docs/C4A_EXTERNAL_REVIEW.md`
-- `../docs/C5_INTEGRATION_TASK.md` (when delegated C5 implementation)
+- `../docs/C5_INTEGRATION_TASK.md` (historical C5 scope)
+- `../docs/C5_EXTERNAL_REVIEW.md`
+- `../docs/SDK_LAUNCHER_TASK.md` (when delegated SDK launcher implementation)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -65,9 +67,11 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4 remain accepted;
-C4a review and user-authorized fixes are complete with recorded limitations.
-Next delegated assignment is `../docs/C5_INTEGRATION_TASK.md`: one offline
-Campaign entry wiring the existing execution, SDK/faux Sessions, budget,
-recovery, report and optional observation components. Do not re-run C4a repairs
-or initiate real-model/target experiments. Keep deferred F16/type limits visible.
+Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
+C5 review and user-authorized fixes are complete with recorded limitations.
+Next delegated assignment is `../docs/SDK_LAUNCHER_TASK.md`: offline SDK/faux
+startup, actual Task/Episode binding and safe rotation policy, shared gate/writer,
+budget continuity, lifecycle/recovery and persistent read-only observation.
+C5 CLI still uses caller-provided SDK runtime; do not claim automatic SDK startup
+or re-run completed phase reviews. Do not initiate real-model/target experiments.
+Keep deferred F16 and the 74-diagnostic type baseline visible.
