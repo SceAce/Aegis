@@ -1,5 +1,8 @@
 # 给主 DS：实施 C4a 本地只读观察面
 
+历史任务已交付并经本轮审查/授权修复，见 `C4A_EXTERNAL_REVIEW.md`。当前下一提示词为
+`C5_INTEGRATION_DS_PROMPT.md`；不重复执行下文重开 C4a。
+
 C4 本轮审查/授权修复已完成，记录 `docs/C4_EXTERNAL_REVIEW.md`。下一轮只做 C4a，
 不重开 C1-C4，不把 F16 缓存、65 个旧类型诊断或 UI 美化作为阻塞。
 

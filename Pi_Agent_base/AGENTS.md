@@ -14,7 +14,8 @@ Read these before Campaign development:
 - `../docs/CAMPAIGN_NEXT_PHASES.md`
 - `../docs/C3_EXTERNAL_REVIEW.md`
 - `../docs/C4_EXTERNAL_REVIEW.md`
-- `../docs/C4A_OBSERVATION_TASK.md` (when delegated C4a implementation)
+- `../docs/C4A_EXTERNAL_REVIEW.md`
+- `../docs/C5_INTEGRATION_TASK.md` (when delegated C5 implementation)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -64,9 +65,9 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C3 remain accepted;
-C4 review and user-authorized fixes are complete with recorded limitations.
-Next delegated assignment is `../docs/C4A_OBSERVATION_TASK.md`: loopback read-only
-observation and Pi view commands over the same committed projection. Do not
-re-run C4 repair assignments or expand into C5/real-model experiments. Preserve
-deferred F16/type limits, source immutability, privacy and bounded output.
+Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4 remain accepted;
+C4a review and user-authorized fixes are complete with recorded limitations.
+Next delegated assignment is `../docs/C5_INTEGRATION_TASK.md`: one offline
+Campaign entry wiring the existing execution, SDK/faux Sessions, budget,
+recovery, report and optional observation components. Do not re-run C4a repairs
+or initiate real-model/target experiments. Keep deferred F16/type limits visible.

@@ -1,6 +1,6 @@
 # C4a Observation — Implementation Report
 
-Status: **internally_verified / awaiting_external_review**.
+Current status: **accepted_with_recorded_limits after this session's authorized C4a review/fixes**. See `C4A_EXTERNAL_REVIEW.md` for eight additional red/green cases, same-source/integrity/bounds corrections and limitations. Historical DS delivery follows; the current review also implemented fixes and does not fabricate a separate independent team.
 Phase: C4a (localhost read-only observation surface + Pi view commands). Scope
 frozen in `C4A_OBSERVATION_TASK.md` / `C4A_OBSERVATION_DS_PROMPT.md`, plan/matrix
 in `C4A_OBSERVATION_WORK_PLAN.md` / `C4A_OBSERVATION_TEST_MATRIX.md`.
@@ -16,10 +16,9 @@ Branch: `feat/c4a-observation` (created from `feat/c4-report` @ `4f3dda4`).
   - `e1fd300` feat: localhost read-only Campaign observation surface and Pi view commands (C4a)
   - `66b6eb6` test: C4a required HTTP/XSS/command/SDK suites
   - (this commit) docs: C4a implementation report
-- Environment note: this sandbox masks hash-looking text in process OUTPUT
-  (`console.log` of a digest prints as zeroes), but the digest VALUES are real
-  (verified: `digest("a") !== digest("b")`, length 71, prefix `sha256:`). C4a tests
-  compare digests programmatically and never assert on printed hash text.
+- Earlier DS note attributed printed hash output to masking. The current review
+  does not establish that cause; real equality/change checks remain valid, but
+  unavailable output is recorded without treating an environment inference as fact.
 
 ## 1. Delivered entry
 
@@ -120,9 +119,9 @@ Static:
 
 - Loopback is NOT a security boundary against a local hostile process; this is a
   local single-user observation surface, not a remote admin plane.
-- The view is rebuilt from the committed stream on each request (bounded); it
-  serves the last good snapshot marked `stale` if a later read fails. F16 cache
-  incrementality is not used or needed.
+- The view is rebuilt from the committed stream on each request (bounded).
+  Invalid/half-written sources now return explicit unavailable/integrity failure
+  without live successful rows; no last-good cache is served. F16 remains deferred.
 - No browser automation, styling polish or remote sharing (out of scope).
 - Printed digest text is masked by the sandbox; digest VALUES are real and the
   tests compare them in-process.

@@ -1,6 +1,6 @@
 # C4a：本地只读观察界面与 Pi 查看命令
 
-状态：下一轮待委派；C4 本轮审查/修复已完成，见 `C4_EXTERNAL_REVIEW.md`。
+状态：accepted_with_recorded_limits，本轮审查/授权修复完成，见 `C4A_EXTERNAL_REVIEW.md`。下文保留冻结范围，当前下一任务是 `C5_INTEGRATION_TASK.md`，不要重复启动 C4a。
 本任务只实现观察面，不实现 C5 总入口/能力实验，不重开 C1-C4、F16 或类型清库。
 
 ## 冻结目标
