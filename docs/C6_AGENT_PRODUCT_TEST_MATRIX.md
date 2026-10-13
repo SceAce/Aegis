@@ -173,7 +173,7 @@ C1 `eventlog-durability`/`integration-recovery`。
 
 ## C6 请求生命周期收敛轮（本轮，基线 `17e1728`）
 
-新增脚本：`aegis-c6-lifecycle-convergence.mjs`（18 例，`node --test`）、
+新增脚本：`aegis-c6-lifecycle-convergence.mjs`（19 例，`node --test`）、
 `aegis-c6-lifecycle-restart.mjs`（真实子进程 SIGKILL + 重启，非 node:test）。
 expected 来自冻结契约（联合成功定义、单侧 reservation 不合法、reconciliation 未决），
 不由实现返回值倒推。red 基线在 `runtime/dev/c6-lifecycle-run1/red-baseline.log` 与
@@ -199,6 +199,7 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 | LC-D5 | reconciliation_required | 同上 | 保持 pending/unresolved，不释放 | convergence | pass |
 | LC-D6 | committed 后 released | 同上 | 已发生计费不被抹除；release_after_settlement 诊断 | convergence | pass |
 | LC-D7 | 调用前合法 release | 同上 | 取消 hold、不计费 | convergence | pass |
+| LC-D8 | release 与 reconciliation 冲突 | 同上 | 不释放；pending 保留；release_after_reconciliation 诊断 | convergence | pass |
 | LC-R1 | SIGKILL 后保留 durable reserved | 真实子进程 + 产品入口 | reserved 含 request/两侧 reservation；无 committed | restart | pass |
 | LC-R2 | reserved-only 重启 | 产品入口 | provider 0 次；预算 hold 保留；reconciliation/unresolved 可见；Broker effect 0；stream verify | restart | pass |
 | LC-R3 | provider 错误结算一次 | 产品入口 | committed(provider_status=error)；consumed=1；task unknown；Broker 0 | restart | pass |
@@ -208,8 +209,8 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 
 | 阶段 | 命令 | 结果 |
 | --- | --- | --- |
-| red（HEAD `17e1728`） | `node --test …/aegis-c6-lifecycle-convergence.mjs` | 18 tests / **1 pass / 17 fail**, exit 1 |
-| green（本轮） | 同上 | **18 pass / 0 fail**, exit 0 |
+| red（HEAD `17e1728`） | `node --test …/aegis-c6-lifecycle-convergence.mjs` | 19 tests / **1 pass / 18 fail**, exit 1 |
+| green（本轮） | 同上 | **19 pass / 0 fail**, exit 0 |
 | red（重启） | `node --import <resolver> …/aegis-c6-lifecycle-restart.mjs` | **2 fail**（guard 缺失、provider_status 未标） |
 | green（重启） | 同上 | **all checks passed** |
 

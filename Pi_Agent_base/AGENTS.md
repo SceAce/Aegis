@@ -88,7 +88,7 @@ convergence round then unified live/durable/replay settlement in
 never a durable success, a provider error keeps a recoverable hold and a
 durable reconciliation, per-Task pending is isolated, and a partial/mismatched
 `committed` record never settles a joint request. New focused checks:
-`aegis-c6-lifecycle-convergence.mjs` (18) and `aegis-c6-lifecycle-restart.mjs`
+`aegis-c6-lifecycle-convergence.mjs` (19) and `aegis-c6-lifecycle-restart.mjs`
 (real subprocess SIGKILL + restart). Campaign type diagnostics
 remain 0 (196 legacy diagnostics remain). Real-model pilots and learning
 efficacy experiments remain separate after engineering acceptance. Do not call
