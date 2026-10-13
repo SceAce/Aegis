@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createCompositeWorker, summarizeRequestLedger } from "../memory/campaign/c6-entry.mjs";
 import { createModelWorker } from "../memory/campaign/c6-model-worker.mjs";
-import { reservedSeedForTask } from "../memory/campaign/c6-request-lifecycle.mjs";
+import { classifyStopReason, reservedSeedForTask } from "../memory/campaign/c6-request-lifecycle.mjs";
 import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
 
 const LIMIT = { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 };
@@ -493,6 +493,49 @@ test("LC-B5: a reconciliation-only restart refuses a new provider dispatch", asy
 });
 
 // ---------------------------------------------------------------------------
+// B7. SDK termination: aborted is a hard exit, never an executable decision.
+// ---------------------------------------------------------------------------
+
+test("LC-B7: an aborted SDK response is a hard exit, not an executable decision", async () => {
+	const { session, listeners } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		return { ok: true };
+	};
+	session.prompt = async () => {
+		await session.agent.streamFunction({}, { messages: [] });
+		emitMessageEnd(listeners, { role: "assistant", content: [], stopReason: "aborted" });
+	};
+	const { campaign, task } = makeLedgers();
+	const persisted = [];
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaign,
+		ledgerFactory: () => task,
+		context: CONTEXT,
+		taskId: "task-001",
+		goal: "demo",
+		decisionBuffer: { list: () => [{ action_ref: "data.record.set", arguments: {} }] },
+		persistRequest: async (record) => {
+			persisted.push(record);
+			return { ok: true };
+		},
+	});
+	const result = await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+
+	assert.equal(providerCalls, 1);
+	assert.equal(result.ok, false, "an aborted planning is a hard exit");
+	assert.equal(result.failure_mode, "provider_aborted");
+	assert.equal(campaign.consumed().model_requests, 1, "the occurred request stays charged");
+	assert.equal(task.consumed().model_requests, 1);
+	const committed = persisted.find((record) => record.phase === "committed");
+	assert.ok(committed, "the request is durably settled");
+	assert.equal(committed.provider_status, "aborted", "the durable record keeps the aborted category");
+	assert.equal(committed.stop_reason, "aborted", "the durable record keeps the raw stopReason");
+});
+
+// ---------------------------------------------------------------------------
 // C. Per-Task pending isolation and Campaign aggregation.
 // ---------------------------------------------------------------------------
 function requestEvent(payload) {
@@ -824,4 +867,171 @@ test("LC-D8: a release that contradicts a reconciliation cannot erase the unreso
 	assert.equal(summary.campaignPending.length, 1);
 	assert.equal(summary.taskPending.length, 1);
 	assert.ok(summary.diagnostics.some((d) => d.code === "release_after_reconciliation"));
+});
+
+/** Limit used by the per-side numeric table (5 requests / 1000 input each side). */
+const TABLE_LIMIT = { model_requests: 5, tool_calls: 10, input_chars: 1000, wall_time_ms: 100000 };
+function tableReserved() {
+	return requestEvent({
+		phase: "reserved",
+		task_id: "task-a",
+		campaign_id: "campaign-a",
+		request_id: "req-1",
+		task_reservation_id: "task-res-1",
+		campaign_reservation_id: "camp-res-1",
+		input_chars: 100,
+	});
+}
+function tableReconciliation(commitStatus) {
+	return requestEvent({
+		phase: "reconciliation_required",
+		task_id: "task-a",
+		campaign_id: "campaign-a",
+		request_id: "req-1",
+		task_reservation_id: "task-res-1",
+		campaign_reservation_id: "camp-res-1",
+		input_chars: 100,
+		provider_started: true,
+		provider_status: "unknown",
+		commit_status: commitStatus,
+	});
+}
+function tableCommitted() {
+	return requestEvent({
+		phase: "committed",
+		task_id: "task-a",
+		campaign_id: "campaign-a",
+		request_id: "req-1",
+		task_reservation_id: "task-res-1",
+		campaign_reservation_id: "camp-res-1",
+		input_chars: 100,
+		usage: { input: 1 },
+		commit_status: { task: "committed", campaign: "committed" },
+	});
+}
+function tableRebuild(summary) {
+	return {
+		campaign: createToolLedger({
+			limit: { ...TABLE_LIMIT },
+			baseConsumed: summary.consumed,
+			baseReserved: {
+				model_requests: summary.campaignPending.length,
+				input_chars: summary.campaignPending.reduce((sum, note) => sum + note.inputChars, 0),
+				pending: summary.campaignPending,
+				committed: [...summary.committedReservations],
+			},
+		}),
+		task: createToolLedger({
+			limit: { ...TABLE_LIMIT },
+			baseConsumed: { wall_time_ms: 0, ...(summary.byTask.get("task-a") ?? {}) },
+			baseReserved: reservedSeedForTask(summary.taskPending, summary.taskCommittedByTask, "task-a"),
+		}),
+	};
+}
+
+test("LC-D9: the per-side responsibility table restores exact consumed/pending/remaining/input", () => {
+	// Row 1: reserved only, result unknown → both sides hold, unresolved 1.
+	{
+		const summary = summarizeRequestLedger([tableReserved()]);
+		assert.equal(summary.consumed.model_requests, 0);
+		assert.equal(summary.byTask.size, 0);
+		assert.equal(summary.campaignPending[0].inputChars, 100);
+		assert.equal(summary.taskPending[0].inputChars, 100);
+		assert.equal(summary.unresolved, 1);
+		const rebuilt = tableRebuild(summary);
+		assert.equal(rebuilt.campaign.remaining().model_requests, 4);
+		assert.equal(rebuilt.campaign.remaining().input_chars, 900);
+		assert.equal(rebuilt.task.remaining().model_requests, 4);
+		assert.equal(rebuilt.task.remaining().input_chars, 900);
+	}
+	// Row 2: reconciliation Task committed / Campaign unknown → Task consumed, Campaign hold.
+	{
+		const summary = summarizeRequestLedger([
+			tableReserved(),
+			tableReconciliation({ task: "committed", campaign: "unknown" }),
+		]);
+		assert.deepEqual(summary.byTask.get("task-a"), { model_requests: 1, tool_calls: 0, input_chars: 100 });
+		assert.equal(summary.consumed.model_requests, 0);
+		assert.equal(summary.taskPending.length, 0);
+		assert.equal(summary.campaignPending[0].inputChars, 100);
+		assert.equal(summary.unresolved, 1);
+		const rebuilt = tableRebuild(summary);
+		assert.equal(rebuilt.task.remaining().model_requests, 4);
+		assert.equal(rebuilt.task.remaining().input_chars, 900);
+		assert.equal(rebuilt.campaign.remaining().model_requests, 4);
+		assert.equal(rebuilt.campaign.remaining().input_chars, 900);
+		assert.equal(rebuilt.task.consumed().input_chars, 100);
+	}
+	// Row 3: reconciliation Campaign committed / Task unknown → mirror.
+	{
+		const summary = summarizeRequestLedger([
+			tableReserved(),
+			tableReconciliation({ task: "unknown", campaign: "committed" }),
+		]);
+		assert.equal(summary.consumed.model_requests, 1);
+		assert.equal(summary.consumed.input_chars, 100);
+		assert.equal(summary.byTask.size, 0);
+		assert.equal(summary.campaignPending.length, 0);
+		assert.equal(summary.taskPending[0].inputChars, 100);
+		assert.equal(summary.unresolved, 1);
+		const rebuilt = tableRebuild(summary);
+		assert.equal(rebuilt.campaign.remaining().model_requests, 4);
+		assert.equal(rebuilt.campaign.remaining().input_chars, 900);
+		assert.equal(rebuilt.task.remaining().model_requests, 4);
+		assert.equal(rebuilt.task.remaining().input_chars, 900);
+	}
+	// Row 4: reconciliation both committed, no joint durable commit → charged but unresolved.
+	{
+		const summary = summarizeRequestLedger([
+			tableReserved(),
+			tableReconciliation({ task: "committed", campaign: "committed" }),
+		]);
+		assert.equal(summary.consumed.model_requests, 1);
+		assert.equal(summary.consumed.input_chars, 100);
+		assert.equal(summary.byTask.get("task-a").model_requests, 1);
+		assert.equal(summary.campaignPending.length, 0);
+		assert.equal(summary.taskPending.length, 0);
+		assert.equal(summary.unresolved, 1, "both-side reconciliation is not a joint settlement");
+		const rebuilt = tableRebuild(summary);
+		assert.equal(rebuilt.campaign.remaining().model_requests, 4);
+		assert.equal(rebuilt.task.remaining().model_requests, 4);
+	}
+	// Row 5: a later legal full committed closes it without double-charging.
+	{
+		const summary = summarizeRequestLedger([
+			tableReserved(),
+			tableReconciliation({ task: "committed", campaign: "committed" }),
+			tableCommitted(),
+			tableCommitted(),
+		]);
+		assert.equal(summary.consumed.model_requests, 1, "no double charge");
+		assert.equal(summary.consumed.input_chars, 100);
+		assert.equal(summary.byTask.get("task-a").model_requests, 1);
+		assert.equal(summary.campaignPending.length, 0);
+		assert.equal(summary.taskPending.length, 0);
+		assert.equal(summary.unresolved, 0);
+		const rebuilt = tableRebuild(summary);
+		assert.equal(rebuilt.campaign.remaining().model_requests, 4);
+		assert.equal(rebuilt.campaign.remaining().input_chars, 900);
+		assert.equal(rebuilt.task.remaining().model_requests, 4);
+		assert.equal(rebuilt.task.remaining().input_chars, 900);
+	}
+	// Row 6: normal full committed → charged, jointly settled.
+	{
+		const summary = summarizeRequestLedger([tableReserved(), tableCommitted()]);
+		assert.equal(summary.consumed.model_requests, 1);
+		assert.equal(summary.byTask.get("task-a").model_requests, 1);
+		assert.equal(summary.unresolved, 0);
+	}
+});
+
+test("LC-T1: the SDK termination classifier keeps error/aborted distinct from normal", () => {
+	assert.deepEqual(classifyStopReason("error"), { providerStatus: "error", planningStatus: "error" });
+	assert.deepEqual(classifyStopReason("aborted"), { providerStatus: "aborted", planningStatus: "aborted" });
+	assert.deepEqual(classifyStopReason("stop"), { providerStatus: "ok", planningStatus: "normal" });
+	assert.deepEqual(classifyStopReason("toolUse"), { providerStatus: "ok", planningStatus: "normal" });
+	assert.deepEqual(classifyStopReason("length"), { providerStatus: "ok", planningStatus: "normal" });
+	assert.deepEqual(classifyStopReason("deferred"), { providerStatus: "ok", planningStatus: "normal" });
+	assert.deepEqual(classifyStopReason("pending"), { providerStatus: "unknown", planningStatus: "unknown" });
+	assert.deepEqual(classifyStopReason(undefined), { providerStatus: "unknown", planningStatus: "unknown" });
 });

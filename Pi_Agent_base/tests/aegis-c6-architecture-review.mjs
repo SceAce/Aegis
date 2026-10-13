@@ -270,6 +270,22 @@ for (const scenario of ["error_followup", "aborted_followup"]) {
 		assert.equal(summary.dataset.name, "??", "the actual authorized file must remain untouched");
 		assert.notEqual(summary.task_states["task-001"], "completed");
 		assert.equal(summary.ledger.consumed.model_requests, 2, "interruption never refunds dispatched requests");
+		// The SDK termination category must survive into the durable record and the
+		// Worker result: error and aborted are NOT collapsed into "ok".
+		const expectedStatus = scenario === "aborted_followup" ? "aborted" : "error";
+		const expectedFailure = scenario === "aborted_followup" ? "provider_aborted" : "provider_error";
+		const interrupted = summary.requests.filter((request) => request.provider_status === expectedStatus);
+		assert.equal(interrupted.length, 1, `one durable record carries provider_status=${expectedStatus}`);
+		assert.equal(interrupted[0].phase, "committed");
+		assert.equal(
+			interrupted[0].stop_reason,
+			expectedStatus,
+			"the raw SDK stopReason is preserved on the durable settlement",
+		);
+		assert.ok(
+			summary.failure_modes.includes(expectedFailure),
+			`the worker reports ${expectedFailure}: ${JSON.stringify(summary.failure_modes)}`,
+		);
 	});
 }
 

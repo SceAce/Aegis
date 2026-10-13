@@ -168,9 +168,13 @@ writeFileSync(
 					request_id: event.payload.request_id,
 					task_id: event.payload.task_id,
 					provider_status: event.payload.provider_status ?? null,
+					stop_reason: event.payload.stop_reason ?? null,
 					commit_status: event.payload.commit_status ?? null,
 					failure_reason: event.payload.failure_reason ?? null,
 				})),
+			failure_modes: events
+				.filter((event) => event.payload?.kind === "campaign.reconciliation.requested")
+				.map((event) => event.payload.failure_mode ?? null),
 			task_unknown: events.filter((event) => event.payload?.kind === "campaign.task.unknown").length,
 			reconciliation_events: events.filter((event) =>
 				String(event.payload?.kind ?? "").startsWith("campaign.reconciliation"),
