@@ -1,6 +1,6 @@
 # C4：确定性 Campaign 报告与有界验收包
 
-状态：**下一轮可委派任务，本轮仅布置**。
+状态：**accepted_with_recorded_limits，本轮审查/授权修复完成**。实际追加证据与限制见 `C4_EXTERNAL_REVIEW.md`；以下为本轮冻结范围历史，下一任务是 `C4A_OBSERVATION_TASK.md`，不要重复启动 C4。
 前置 C3 本轮审查/修复结论见 `C3_EXTERNAL_REVIEW.md`；C1/C2 不重开，F16 后置。
 遵守开发规范 §3.1，冻结本文件核心目标，不将 UI、缓存优化或类型清库增加为门槛。
 

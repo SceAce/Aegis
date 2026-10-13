@@ -28,6 +28,7 @@ import { projectQueueFromEvents } from "./projection.mjs";
 import {
 	buildAcceptanceBundle,
 	buildCampaignReport,
+	redactSecrets,
 	renderCampaignReportMarkdown,
 	renderReviewerPrompt,
 } from "./report.mjs";
@@ -76,7 +77,7 @@ export function reconstructArtifactIndex(events = []) {
 		}
 		if (
 			(event?.event_type === "outcome.recorded" || payload.kind === "campaign.oracle.result") &&
-			trusted(sourceKind)
+			["oracle", "human"].includes(sourceKind)
 		) {
 			const outcome = payload.outcome ?? payload;
 			for (const ref of Array.isArray(outcome?.evidence_refs) ? outcome.evidence_refs : []) {
@@ -100,7 +101,9 @@ export function reconstructArtifactIndex(events = []) {
 function mergeArtifacts(committed, supplied) {
 	const merged = {};
 	for (const [refId, entry] of committed) merged[refId] = entry;
-	for (const [refId, entry] of Object.entries(supplied ?? {})) merged[refId] = entry;
+	for (const [refId, entry] of Object.entries(supplied ?? {})) {
+		if (!Object.hasOwn(merged, refId)) merged[refId] = entry;
+	}
 	return merged;
 }
 
@@ -137,6 +140,9 @@ function collectOutcomes(projection) {
 export function countCommitted(events = []) {
 	const requested = new Set();
 	const completed = new Set();
+	const executed = new Set();
+	const sessionIds = new Set();
+	const seenEvents = new Set();
 	const rejectedActions = new Set();
 	const transportFailures = new Set();
 	const actionRefs = new Map(); // action_id -> action_ref
@@ -149,6 +155,9 @@ export function countCommitted(events = []) {
 	const taskCompletions = new Set();
 
 	for (const event of events) {
+		if (!["runtime", "oracle", "human"].includes(event?.source?.kind)) continue;
+		if (event.event_id && seenEvents.has(event.event_id)) continue;
+		if (event.event_id) seenEvents.add(event.event_id);
 		const payload = event?.payload ?? {};
 		if (event?.episode_id) episodes.add(event.episode_id);
 		switch (event?.event_type) {
@@ -164,6 +173,7 @@ export function countCommitted(events = []) {
 				const id = payload.action_id;
 				if (typeof id === "string") {
 					completed.add(id);
+					if (payload.status !== "rejected") executed.add(id);
 					if (typeof payload.action_ref === "string") actionRefs.set(id, payload.action_ref);
 				}
 				if (payload.status === "rejected") rejectedActions.add(id);
@@ -176,10 +186,14 @@ export function countCommitted(events = []) {
 			case "outcome.recorded":
 				outcomeRecords += 1;
 				break;
+			case "session.started":
+				if (typeof payload.session_id === "string") sessionIds.add(payload.session_id);
+				break;
 			case "handoff.requested":
 				if (typeof payload.request_id === "string") handoffRequests.add(payload.request_id);
 				break;
 			case "handoff.completed":
+				if (typeof payload.to_session === "string") sessionIds.add(payload.to_session);
 				if (typeof payload.request_id === "string") handoffCompleted.add(payload.request_id);
 				break;
 			default:
@@ -200,7 +214,8 @@ export function countCommitted(events = []) {
 	return {
 		actions: {
 			requested: requested.size,
-			executed: completed.size,
+			completed: completed.size,
+			executed: executed.size,
 			pending: pending.length,
 			rejected: rejectedActions.size,
 			transport_failures: transportFailures.size,
@@ -211,6 +226,7 @@ export function countCommitted(events = []) {
 		sessions: {
 			// A committed rotation is one session GENERATION; it is NOT a new
 			// independent Episode.
+			observed_session_ids: sessionIds.size,
 			handoffs_requested: handoffRequests.size,
 			rotations_committed: handoffCompleted.size,
 		},
@@ -239,14 +255,18 @@ export function buildReportInputs(
 ) {
 	if (!manifest || typeof manifest !== "object") throw new Error("buildReportInputs requires a validated manifest");
 	const manifestDigestValue = manifestDigest ?? canonicalManifestDigest(manifest);
+	const integrity = deriveIntegrity(events);
+	// Invalid input cannot become trusted evidence merely because the reducer
+	// accepts its JSON structure. Preserve integrity diagnostics, reduce no rows.
+	const verifiedEvents = integrity.event_chain_ok ? events : [];
 	// Evidence must be resolvable from TRUSTED committed records even when the
 	// caller supplies no index (e.g. after deleting derived artifacts). A supplied
 	// index may ADD bounded refs but never overrides committed truth.
-	const resolvedArtifacts = mergeArtifacts(reconstructArtifactIndex(events), artifacts);
+	const resolvedArtifacts = mergeArtifacts(reconstructArtifactIndex(verifiedEvents), artifacts);
 	const projection = projectQueueFromEvents({
 		campaign_id: manifest.campaign_id,
 		tasks: manifest.tasks ?? [],
-		events,
+		events: verifiedEvents,
 		revision: manifest.revision ?? 0,
 		manifest,
 		artifacts: resolvedArtifacts,
@@ -334,9 +354,9 @@ export function buildReportInputs(
 	}
 
 	const outcomes = collectOutcomes(projection);
-	const independence = independenceOf(outcomes);
+	const independence = { ...independenceOf(outcomes), independent_episode_count: null }; // root/group counts do not prove Episode independence
 	const effective = effectiveOutcomes(outcomes);
-	const counts = countCommitted(events);
+	const counts = countCommitted(verifiedEvents);
 	const faults = projection.rejected.map((r) => ({
 		kind: "event_rejected",
 		detail: r.reason,
@@ -357,6 +377,17 @@ export function buildReportInputs(
 		budgetUsed: projection.budget.consumed,
 	});
 	campaignAggregate.manifest_digest = manifestDigestValue;
+	campaignAggregate.budget.used.session_count = counts.sessions.rotations_committed;
+	campaignAggregate.budget.used.tokens = null;
+	campaignAggregate.budget.used.currency = null;
+	campaignAggregate.budget.measurement = {
+		dispatch_cost: verifiedEvents.some(
+			(event) => event.payload?.kind === "campaign.budget.consumed" && event.payload?.consumed?.synthetic === true,
+		)
+			? "synthetic"
+			: "committed_ledger",
+		session_count: "committed_rotations_only",
+	};
 	// The real session usage vs the independent-Episode evidence count are both
 	// explicit; Session generations are NOT an Episode count.
 	campaignAggregate.counts.sessions = counts.sessions.rotations_committed;
@@ -375,7 +406,7 @@ export function buildReportInputs(
 		faults,
 		campaignAggregate,
 		manifestDigest: manifestDigestValue,
-		integrity: deriveIntegrity(events),
+		integrity,
 		runtimeDigests,
 	};
 }
@@ -416,7 +447,9 @@ function scanSecrets(value, path, reasons) {
  */
 export function validateAcceptanceBundle(bundle, { report = null, limits = DEFAULT_LIMITS } = {}) {
 	const reasons = [];
-	if (!bundle || typeof bundle !== "object") return { ok: false, reasons: ["bundle must be an object"] };
+	if (!bundle || typeof bundle !== "object" || Array.isArray(bundle))
+		return { ok: false, reasons: ["bundle must be an object"] };
+	limits = { ...DEFAULT_LIMITS, ...limits };
 	for (const field of [
 		"schema_version",
 		"generator",
@@ -425,26 +458,48 @@ export function validateAcceptanceBundle(bundle, { report = null, limits = DEFAU
 		"tasks",
 		"stages",
 		"outcomes",
+		"integrity",
+		"authorization",
+		"campaign_id",
 	]) {
 		if (!(field in bundle)) reasons.push(`bundle is missing required field ${field}`);
 	}
 	if (!Array.isArray(bundle.tasks)) reasons.push("bundle.tasks must be an array");
 	if (!Array.isArray(bundle.stages)) reasons.push("bundle.stages must be an array");
 	if (!Array.isArray(bundle.outcomes)) reasons.push("bundle.outcomes must be an array");
+	if (!bundle.integrity || typeof bundle.integrity !== "object" || Array.isArray(bundle.integrity))
+		reasons.push("bundle.integrity must be an object");
+	for (const field of ["report_digest", "bundle_digest"]) {
+		if (typeof bundle[field] !== "string" || !bundle[field]) reasons.push(`bundle.${field} must be a nonempty digest`);
+	}
+	if (report) {
+		if (report.report_digest !== digest(withoutReportDigest(report)))
+			reasons.push("report.report_digest does not cover report contents");
+		if (Buffer.byteLength(`${JSON.stringify(report, null, 2)}\n`, "utf8") > limits.max_report_bytes)
+			reasons.push(`report size exceeds max_report_bytes ${limits.max_report_bytes}`);
+	}
 	if (!bundle.external_reviewer || bundle.external_reviewer.invoked_by_aegis !== false) {
 		reasons.push("bundle.external_reviewer.invoked_by_aegis must be false");
 	}
-	// Outcome refs must be structured with a ref id AND/OR a digest, and never raw.
-	for (const [index, outcome] of (bundle.outcomes ?? []).entries()) {
+	// Outcome refs carry both a binding id and a digest, never raw artifacts.
+	for (const [index, outcome] of (Array.isArray(bundle.outcomes) ? bundle.outcomes : []).entries()) {
 		if (!outcome || typeof outcome !== "object") {
 			reasons.push(`outcome[${index}] is not an object`);
 			continue;
 		}
 		if (!outcome.outcome_id) reasons.push(`outcome[${index}] has no outcome_id`);
+		if (report && Array.isArray(report.outcomes)) {
+			const original = report.outcomes.find((entry) => entry.outcome_id === outcome.outcome_id);
+			if (!original || digest(original) !== digest(outcome))
+				reasons.push(`outcome[${index}] contradicts the report outcome/reference`);
+		}
+		if (!Array.isArray(outcome.evidence_refs)) reasons.push(`outcome[${index}].evidence_refs must be an array`);
+		if ((outcome.evidence_refs?.length ?? 0) > limits.max_evidence_refs_per_outcome)
+			reasons.push(`outcome[${index}] exceeds max_evidence_refs_per_outcome`);
 		for (const ref of Array.isArray(outcome.evidence_refs) ? outcome.evidence_refs : []) {
 			if (!ref || typeof ref !== "object") reasons.push(`outcome[${index}] has a non-object evidence ref`);
-			else if (!ref.ref_id && !ref.digest)
-				reasons.push(`outcome[${index}] has an evidence ref with neither ref_id nor digest`);
+			else if (!ref.ref_id || !ref.digest)
+				reasons.push(`outcome[${index}] has an evidence ref with neither ref_id nor digest, or one binding is missing`);
 		}
 	}
 	// report_digest coverage: when a report is supplied, the bundle's report_digest
@@ -465,12 +520,15 @@ export function validateAcceptanceBundle(bundle, { report = null, limits = DEFAU
 	if (Array.isArray(bundle.tasks) && bundle.tasks.length > limits.max_tasks) {
 		reasons.push(`bundle.tasks (${bundle.tasks.length}) exceeds max_tasks ${limits.max_tasks}`);
 	}
-	const serialized = JSON.stringify(bundle);
-	if (serialized.length > limits.max_bundle_bytes) {
-		reasons.push(`bundle size (${serialized.length}) exceeds max_bundle_bytes ${limits.max_bundle_bytes}`);
+	if (Array.isArray(bundle.faults) && bundle.faults.length > limits.max_faults)
+		reasons.push(`bundle.faults exceeds max_faults ${limits.max_faults}`);
+	const serializedBytes = Buffer.byteLength(`${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+	if (serializedBytes > limits.max_bundle_bytes) {
+		reasons.push(`bundle size (${serializedBytes}) exceeds max_bundle_bytes ${limits.max_bundle_bytes}`);
 	}
 	// Secret scan (defense in depth).
 	scanSecrets(bundle, "bundle", reasons);
+	if (report) scanSecrets(report, "report", reasons);
 	const secretReasons = reasons.filter((r) => /possible secret/.test(r));
 	return { ok: reasons.length === 0, reasons, secret_findings: secretReasons };
 }
@@ -510,7 +568,7 @@ export function generateCampaignArtifacts(
 	} = /** @type {any} */ ({}),
 ) {
 	const inputs = buildReportInputs({ manifest, manifestDigest, events, artifacts, runtimeDigests });
-	const report = buildCampaignReport({
+	let report = buildCampaignReport({
 		manifest,
 		manifestDigest: inputs.manifestDigest,
 		campaignAggregate: inputs.campaignAggregate,
@@ -540,6 +598,16 @@ export function generateCampaignArtifacts(
 		reconciliation_state: t.reconciliation_state,
 		is_dynamic: t.is_dynamic,
 	}));
+	report.campaign_control = inputs.projection.control;
+	report.dynamic_proposals = [...inputs.projection.proposals.entries()].map(([id, entry]) => ({
+		id,
+		digest: entry.digest,
+		offset: entry.offset,
+	}));
+	// Additional projection fields must go through the same value-level filter.
+	const credentialPolicy = report.authorization?.credentials;
+	report = redactSecrets(report);
+	if (report.authorization) report.authorization.credentials = credentialPolicy;
 	report.report_digest = digest(withoutReportDigest(report));
 
 	const bundle = buildAcceptanceBundle({ report, runtimeDigests });
@@ -563,6 +631,8 @@ export function generateCampaignArtifacts(
 
 function unsupportedClaims(inputs) {
 	const claims = [];
+	if (inputs.integrity?.event_chain_ok !== true)
+		claims.push("event chain integrity failed; no task success is established from these rows");
 	if (inputs.counts?.episodes?.independent_episode_count === null) {
 		claims.push("independent Episode count for evidence is not asserted by the export");
 	}

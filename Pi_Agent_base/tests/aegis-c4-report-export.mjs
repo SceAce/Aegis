@@ -18,6 +18,7 @@ import { validateManifest } from "../memory/campaign/manifest.mjs";
 import { buildAcceptanceBundle, buildCampaignReport, withoutBundleDigest } from "../memory/campaign/report.mjs";
 import { buildReportInputs, countCommitted, generateCampaignArtifacts } from "../memory/campaign/report-export.mjs";
 import { digest } from "../memory/fixture/contracts.mjs";
+import { EventLog } from "../memory/runtime/events.mjs";
 import { readEvents, runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
 const ENTRY = fileURLToPath(new URL("../memory/campaign/report-entry.mjs", import.meta.url));
@@ -105,53 +106,60 @@ test("C4-2a: a task left unknown by a delayed Oracle is not reported as success"
 
 test("C4-2b: a cancelled campaign is reported as cancelled, never success", async () => {
 	const src = await runFixtureCampaign();
-	// Append a durable cancel to the committed stream (a trusted runtime event).
-	const rows = await readEvents(src.eventsPath);
-	rows.push({
-		schema_version: "1.1",
-		event_id: "cancel-1",
-		event_type: "runtime.note",
-		episode_id: null,
-		sequence: null,
-		occurred_at: "2026-01-01T00:00:00Z",
-		recorded_at: "2026-01-01T00:00:00Z",
-		source: { kind: "runtime", actor_id: "test", adapter: "c4", version: "1" },
-		payload: { kind: "campaign.campaign.cancelled", campaign_id: src.manifest.campaign_id, reason: "user_cancelled" },
-		prev_event_digest: rows[rows.length - 1]?.event_digest,
-	});
-	rows[rows.length - 1].event_digest = digest({ ...rows[rows.length - 1], event_digest: undefined });
-	await writeFile(src.eventsPath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`, "utf8");
+	// Use the actual durable writer so this test cannot pass on a corrupt chain.
+	const log = new EventLog(src.eventsPath);
+	assert.equal((await log.open()).ok, true);
+	try {
+		assert.equal(
+			(
+				await log.append({
+					event_type: "runtime.note",
+					source: { kind: "runtime", actor_id: "test", adapter: "c4", version: "1" },
+					payload: {
+						kind: "campaign.campaign.cancelled",
+						campaign_id: src.manifest.campaign_id,
+						reason: "user_cancelled",
+					},
+				})
+			).ok,
+			true,
+		);
+	} finally {
+		await log.close();
+	}
 	const out = join(src.dir, "report-cancel");
 	const r = spawnSync(
 		process.execPath,
 		[ENTRY, "--manifest", join(src.dir, "manifest.json"), "--events", src.eventsPath, "--out", out],
 		{ encoding: "utf8" },
 	);
-	// The hand-written cancel may fail chain verification; either way the report
-	// must not show a guessed success. If the chain is intact, control=cancelled.
-	if (r.status === 0) {
-		const report = JSON.parse(await readFile(join(out, "campaign-report.json"), "utf8"));
-		assert.notEqual(report.campaign?.counts?.pending, undefined);
-	}
-	assert.ok(true);
+	assert.equal(r.status, 0, r.stderr);
+	const report = JSON.parse(await readFile(join(out, "campaign-report.json"), "utf8"));
+	const bundle = JSON.parse(await readFile(join(out, "acceptance-bundle.json"), "utf8"));
+	assert.equal(report.campaign_control.state, "cancelled");
+	assert.equal(bundle.campaign_control.state, "cancelled");
+	assert.equal(report.integrity.event_chain_ok, true);
 });
 
 test("C4-2b2: a rejected action is counted as rejected, not executed-as-success", async () => {
 	const events = [
 		{
 			event_type: "action.requested",
-			source: { kind: "runtime" },
+			event_id: "c4-rejected-request",
+			source: { kind: "runtime", actor_id: "c4-test", adapter: "c4-test", version: "1" },
 			payload: { action_id: "a1", action_ref: "fixture.state.set" },
 		},
 		{
 			event_type: "action.completed",
-			source: { kind: "runtime" },
+			event_id: "c4-rejected-completed",
+			source: { kind: "runtime", actor_id: "c4-test", adapter: "c4-test", version: "1" },
 			payload: { action_id: "a1", action_ref: "fixture.state.set", status: "rejected" },
 		},
 	];
 	const counts = countCommitted(events);
 	assert.equal(counts.actions.requested, 1);
-	assert.equal(counts.actions.executed, 1);
+	assert.equal(counts.actions.completed, 1, "a rejection has a completion record");
+	assert.equal(counts.actions.executed, 0, "a rejected action performed no effect");
 	assert.equal(counts.actions.rejected, 1);
 });
 

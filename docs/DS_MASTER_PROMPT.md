@@ -1,19 +1,17 @@
-# Aegis 阶段入口：C3 本轮审查修复完成，下一轮 C4
+# Aegis 阶段入口：C4 收尾完成，下一轮 C4a
 
-状态：**C1/C2 保持已验收；C3 accepted_with_recorded_limits；C4 下一轮待委派**。
-本轮审查和直接授权修复见 [`C3_EXTERNAL_REVIEW.md`](C3_EXTERNAL_REVIEW.md)。
-原 C3 交付有有效产品链，但当前核心反例已由本会话集中修复，不再让 DS 反复补同一轮。
+状态：C1-C3 保持已验收；**C4 accepted_with_recorded_limits**，见
+[`C4_EXTERNAL_REVIEW.md`](C4_EXTERNAL_REVIEW.md)。当前授权审查已集中补测试并修复只读/完整性/
+隐私/计数/validator/界限问题，不再委派重复的 C4 修复轮次。
 
-下一任务书：[`C4_REPORT_TASK.md`](C4_REPORT_TASK.md)。
-给 DS 的提示词：[`C4_REPORT_DS_PROMPT.md`](C4_REPORT_DS_PROMPT.md)。
-C4 只做基于权威事件的确定性 report/bundle/validator/reviewer prompt，UI 留 C4a。
-本轮已布置文档，不在当前会话实施 C4；用户将提示词交 DS 后开始。
+下一轮任务书：[`C4A_OBSERVATION_TASK.md`](C4A_OBSERVATION_TASK.md)。
+完整 DS 提示词：[`C4A_OBSERVATION_DS_PROMPT.md`](C4A_OBSERVATION_DS_PROMPT.md)。
+用户将该提示词交 DS 后实施；本次只布置，不实现 UI。
 
-遵守开发规范 §3.1，冻结阶段核心目标与 required/deferred，不重开已完成阶段。
-F16 cache、旧类型导入诊断、任意平台/多 Worker/真实模型或目标网络后置。
-C3 CLI 默认为离线 fixture，可信脚本/Oracle/Session 使用 programmatic Host 装配；
-下一阶段报告要如实显示这些限制，不能夸大 CLI 自动调度/模型能力。
+C4a 只做 loopback 只读观察面与 Pi 查看命令，复用同一 committed 投影/脱敏白名单。
+C5 整体集成和真实能力实验仍在后面，不把它们提前变成本阶段门槛。
+遵守开发规范 §3.1：冻结 required，非阻塞/后置记录责任后继续主线。
+F16 cache/旧类型导入诊断继续后置，不重开已完成阶段。
 
-按 Git 规范本地任务分支、明确路径暂存、审查、逐里程碑提交，不 push/改写历史。
-不修改 Pi 核心/凭据/模型/锁文件、不自动调用验收模型。
-C4 内部通过后一次限定验收，不自动进入 C4a/C5。
+按 Git 规范明确路径暂存、审查、本地里程碑提交，不 push/改写历史、不改 Pi 核心/凭据/
+模型/锁文件，不用真实模型或目标网络、不自动调用验收模型。内部完成后一次限定 C4a 验收。

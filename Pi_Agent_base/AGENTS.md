@@ -13,7 +13,8 @@ Read these before Campaign development:
 - `../docs/C2_EXTERNAL_ACCEPTANCE.md`
 - `../docs/CAMPAIGN_NEXT_PHASES.md`
 - `../docs/C3_EXTERNAL_REVIEW.md`
-- `../docs/C4_REPORT_TASK.md` (when delegated C4 implementation)
+- `../docs/C4_EXTERNAL_REVIEW.md`
+- `../docs/C4A_OBSERVATION_TASK.md` (when delegated C4a implementation)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
 - `../docs/CAMPAIGN_CONTRACT_BASELINE.md`
 - `../docs/C1_INTEGRATION_CLOSURE_TASK.md`
@@ -63,10 +64,9 @@ Runtime/test artifacts stay in ignored private directories. Reports contain
 bounded evidence references, never credentials, flags or unrestricted raw
 transcripts. Record exact commands, exit codes and limitations.
 
-Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1/C2 remain accepted;
-C3 review and user-authorized fixes are complete with recorded limitations.
-Next assignment is `../docs/C4_REPORT_TASK.md` and its DS prompt: deterministic
-read-only report/bundle generation from committed truth. Do not re-run C3 repair
-assignments. Keep deferred F16/type baselines visible; no UI, real-target/network
-experiments or cache optimization as C4 gates. Review/fix evidence and runtime
-assembly limitations are in `../docs/C3_EXTERNAL_REVIEW.md`.
+Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C3 remain accepted;
+C4 review and user-authorized fixes are complete with recorded limitations.
+Next delegated assignment is `../docs/C4A_OBSERVATION_TASK.md`: loopback read-only
+observation and Pi view commands over the same committed projection. Do not
+re-run C4 repair assignments or expand into C5/real-model experiments. Preserve
+deferred F16/type limits, source immutability, privacy and bounded output.

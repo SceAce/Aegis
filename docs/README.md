@@ -10,7 +10,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态：**C1/C2 保持已验收；C3 本轮审查和授权修复完成，下一轮 C4**。C3 实际结果与限制见 [`C3_EXTERNAL_REVIEW.md`](C3_EXTERNAL_REVIEW.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`C4_REPORT_TASK.md`](C4_REPORT_TASK.md)，完整提示词 [`C4_REPORT_DS_PROMPT.md`](C4_REPORT_DS_PROMPT.md)，只做确定性报告/验收包，不提前做 UI。F16 和旧类型导入诊断继续后置，不重开 C1/C2。CLI 默认离线 fixture；可信脚本、Oracle、SDK Session 配置使用已验证的 Host assembly，不能夸大任意模型自动调度能力。
+当前状态：**C1-C3 保持已验收；C4 本轮审查/授权修复完成，下一轮 C4a**。C4 追加测试和使用限制见 [`C4_EXTERNAL_REVIEW.md`](C4_EXTERNAL_REVIEW.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`C4A_OBSERVATION_TASK.md`](C4A_OBSERVATION_TASK.md)，提示词 [`C4A_OBSERVATION_DS_PROMPT.md`](C4A_OBSERVATION_DS_PROMPT.md)，只做本地只读观察面和 Pi 查看命令。F16/旧类型基线后置，不重开已完成阶段；C5 整体集成和真实能力实验仍在后面。
 
 开发依据：
 

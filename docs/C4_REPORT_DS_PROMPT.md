@@ -1,5 +1,8 @@
 # 给主 DS：C4 报告与验收包
 
+历史任务已由 DS 交付并经本轮审查/授权修复，见 `C4_EXTERNAL_REVIEW.md`。
+当前下一任务为 `C4A_OBSERVATION_DS_PROMPT.md`，不要重复执行下文重开 C4。
+
 下一轮任务只做 C4，不重开已验收 C1/C2/C3，不进入 UI/C5/真实能力实验。
 先完整读 Agent 入口、开发规范 §3.1、测试/Git 规范、`docs/C3_EXTERNAL_REVIEW.md`、
 `docs/C4_REPORT_TASK.md`，以及架构的 reporting/bundle 章节。

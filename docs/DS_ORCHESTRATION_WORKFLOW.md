@@ -1,6 +1,6 @@
 # 主 DS 拆分、委派、测试与审查流程
 
-状态：用户确认一次总委派、主 DS自行拆小任务，以及开发规范 §3.1 的范围冻结规则。C1/C2 保持已验收；C3 本轮审查/授权修复完成，见 `C3_EXTERNAL_REVIEW.md`。下一轮为 `C4_REPORT_TASK.md`/`C4_REPORT_DS_PROMPT.md` 的报告与验收包，内部里程碑自主推进，只交一次阶段验收。F16/旧类型基线后置，不重开阶段。Git 管理遵守 `GIT_STANDARD.md`。
+状态：用户确认一次总委派、主 DS自行拆小任务，以及开发规范 §3.1 的范围冻结规则。C1-C3 保持已验收；C4 本轮审查/授权修复完成，见 `C4_EXTERNAL_REVIEW.md`。下一轮为 `C4A_OBSERVATION_TASK.md`/`C4A_OBSERVATION_DS_PROMPT.md` 的只读观察面，内部里程碑自主推进，只交一次阶段验收。F16/旧类型基线后置，不重开阶段。Git 管理遵守 `GIT_STANDARD.md`。
 
 ## 1. 一次总委派的含义
 

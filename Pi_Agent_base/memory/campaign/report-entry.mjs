@@ -9,7 +9,7 @@
 // The source files are opened read-only and never written. No Worker/Broker/
 // Oracle/session/model/network call is made.
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,7 +43,45 @@ export async function runReportExport(
 	const reasons = [];
 	if (!manifestPath || !existsSync(manifestPath)) reasons.push(`manifest not found: ${String(manifestPath)}`);
 	if (!eventsPath || !existsSync(eventsPath)) reasons.push(`events not found: ${String(eventsPath)}`);
+	if (!outDir || typeof outDir !== "string") reasons.push("outDir is required");
+	for (const path of [artifactsPath, runtimePath]) {
+		if (path && !existsSync(path)) reasons.push(`optional source not found: ${path}`);
+	}
 	if (reasons.length > 0) return { ok: false, reasons };
+	limits = { ...DEFAULT_LIMITS, ...limits };
+
+	// Reject aliases before any output is opened: post-write digest checks are
+	// too late when --out or an existing symlink/hardlink points at an input.
+	const inputs = [manifestPath, eventsPath, artifactsPath, runtimePath].filter(Boolean);
+	const destinations = [
+		"campaign-report.json",
+		"campaign-report.md",
+		"acceptance-bundle.json",
+		"reviewer-prompt.md",
+	].map((name) => join(outDir, name));
+	for (const destination of destinations) {
+		if (inputs.some((input) => resolve(input) === resolve(destination)))
+			reasons.push("output path aliases a source file");
+		let outputStat;
+		try {
+			outputStat = lstatSync(destination);
+		} catch {
+			/* absent output */
+		}
+		if (outputStat?.isSymbolicLink()) reasons.push("output file must not be a symlink");
+		if (
+			outputStat &&
+			inputs.some((input) => {
+				const sourceStat = statSync(input);
+				return (
+					realpathSync(input) === realpathSync(destination) ||
+					(sourceStat.dev === outputStat.dev && sourceStat.ino === outputStat.ino)
+				);
+			})
+		)
+			reasons.push("output file aliases source inode");
+	}
+	if (reasons.length) return { ok: false, reasons };
 
 	// Record source digests BEFORE reading so we can prove the export did not
 	// mutate them.
@@ -70,6 +108,8 @@ export async function runReportExport(
 		};
 	}
 	const chain = verifyChain(rows);
+	if (!chain.ok)
+		return { ok: false, reasons: chain.errors, integrity: { event_chain_ok: false }, verdict_hint: "inconclusive" };
 	let artifacts = {};
 	if (artifactsPath) {
 		if (!existsSync(artifactsPath)) return { ok: false, reasons: [`artifacts index not found: ${artifactsPath}`] };
@@ -89,6 +129,13 @@ export async function runReportExport(
 		}
 	}
 
+	for (const [label, value] of [
+		["artifacts", artifacts],
+		["runtime", runtimeDigests],
+	]) {
+		if (!value || typeof value !== "object" || Array.isArray(value))
+			return { ok: false, reasons: [`${label} input must be an object`] };
+	}
 	const generated = generateCampaignArtifacts({
 		manifest: loaded.manifest,
 		events: rows,
@@ -97,29 +144,8 @@ export async function runReportExport(
 		limits,
 		generatedAt: new Date().toISOString(),
 	});
-	// Integrity is an explicit field, not a guess.
-	generated.report.integrity = {
-		event_chain_ok: chain.ok,
-		event_chain_errors: chain.errors.slice(0, 5),
-		event_count: rows.length,
-		last_committed_digest: rows.length > 0 ? (rows[rows.length - 1]?.event_digest ?? null) : null,
-		checkpoint_ok: null,
-	};
-	// Recompute the report_digest so the integrity field is covered (integrity is
-	// semantic), then the bundle so it covers the new report_digest.
-	generated.report.report_digest = digest(withoutReportDigest(generated.report));
-	generated.bundle.report_digest = generated.report.report_digest;
-	generated.bundle.bundle_digest = digest(withoutBundleDigest(generated.bundle));
-	// The reviewer prompt is rendered from the final bundle.
-	const { renderReviewerPrompt, renderCampaignReportMarkdown } = await import("./report.mjs");
-	generated.reviewerPrompt = renderReviewerPrompt(generated.bundle);
-	generated.digests = {
-		report_digest: generated.report.report_digest,
-		bundle_digest: generated.bundle.bundle_digest,
-		semantic_digest: generated.digests.semantic_digest,
-	};
-	// Re-render markdown so it carries the final digests.
-	generated.markdown = `${renderCampaignReportMarkdown(generated.report)}\n${renderReviewerPromptNote(generated)}`;
+	// Use the same redacted, digest-covered report and Markdown as the pure API.
+	generated.markdown += renderReviewerPromptNote(generated);
 
 	const validation = validateAcceptanceBundle(generated.bundle, { report: generated.report, limits });
 	if (!validation.ok) {
@@ -130,6 +156,13 @@ export async function runReportExport(
 			integrity: generated.report.integrity,
 			verdict_hint: integrityFailed ? "inconclusive" : "needs_more_evidence",
 		};
+	}
+
+	if (
+		Buffer.byteLength(`${JSON.stringify(generated.report, null, 2)}\n`, "utf8") > limits.max_report_bytes ||
+		Buffer.byteLength(generated.markdown, "utf8") > limits.max_report_bytes
+	) {
+		return { ok: false, reasons: [`report size exceeds max_report_bytes ${limits.max_report_bytes}`] };
 	}
 
 	// Write ONLY to outDir.
@@ -172,17 +205,6 @@ function renderReviewerPromptNote(generated) {
 		`- bundle_digest: \`${generated.bundle.bundle_digest}\``,
 		"",
 	].join("\n");
-}
-
-function withoutReportDigest(value) {
-	const clone = { ...value };
-	delete clone.report_digest;
-	return clone;
-}
-function withoutBundleDigest(value) {
-	const clone = { ...value };
-	delete clone.bundle_digest;
-	return clone;
 }
 
 function artifactByteSizes(outDir) {
