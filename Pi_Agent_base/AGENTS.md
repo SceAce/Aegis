@@ -20,7 +20,8 @@ Read these before Campaign development:
 - `../docs/C6_AGENT_PRODUCT_TASK.md` (frozen overall development scope)
 - `../docs/C6_EXTERNAL_REVIEW.md`
 - `../docs/C6_REPAIR_DS_PROMPT.md` (historical first repair)
-- `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md` (current remaining repair assignment)
+- `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md` (historical five-group recheck repair)
+- `../docs/C6_REQUEST_LIFECYCLE_CONVERGENCE_DS_PROMPT.md` (current lifecycle convergence assignment)
 - `../docs/AEGIS_PRODUCT_ROADMAP.md`
 - `../docs/SDK_LAUNCHER_TASK.md` (C6-A lifecycle requirements; no longer a separate assignment)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
@@ -81,7 +82,14 @@ The provider-bound request gate was then re-planned and repaired
 (`../docs/C6_PROVIDER_GATE_PLAN.md`): R12 final durable commit before any
 Broker dispatch, R13 Campaign+Task joint pre-call admission, R14 the actual
 provider transcript/tool-schema window. The focused suite is now 23 cases /
-23 pass; the five repaired groups are not reopened. Campaign type diagnostics
+23 pass; the five repaired groups are not reopened. A request-lifecycle
+convergence round then unified live/durable/replay settlement in
+`../memory/campaign/c6-request-lifecycle.mjs`: a partial in-memory commit is
+never a durable success, a provider error keeps a recoverable hold and a
+durable reconciliation, per-Task pending is isolated, and a partial/mismatched
+`committed` record never settles a joint request. New focused checks:
+`aegis-c6-lifecycle-convergence.mjs` (17) and `aegis-c6-lifecycle-restart.mjs`
+(real subprocess SIGKILL + restart). Campaign type diagnostics
 remain 0 (196 legacy diagnostics remain). Real-model pilots and learning
 efficacy experiments remain separate after engineering acceptance. Do not call
 real providers/targets or read real credentials. Preserve deferred F16 and

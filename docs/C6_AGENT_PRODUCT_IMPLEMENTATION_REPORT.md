@@ -277,3 +277,83 @@ c9959ec fix: C6 provider gate joint admission, actual transcript window, final f
 ```
 
 状态：**internally_verified / awaiting_external_review**。
+
+## 14. 请求生命周期收敛轮（本轮，基线 `17e1728`）
+
+本轮把交付单位定为“一次 provider 请求从准入、调用、结算、异常收尾到重启恢复的完整生命周期”。
+四项已复现缺陷及关联的 reconciliation 语义已闭合；live、durable、replay 共用同一套规则。
+
+### 14.1 根因与实现位置
+
+| 缺陷/语义 | 根本原因 | 实现 | 测试 |
+| --- | --- | --- | --- |
+| A 内存 commit 失败被 durable success 掩盖 | `message_end` 回调先算 `commitFailed`，但 durable 回调成功或 `persistRequest` 存在时以 durable 结果决定放行 | `c6-model-worker.mjs` 统一 `finalizeRequest`：两层内存 commit（`safeCommit` 包抛异常）任一失败→写 `reconciliation_required`（不写 joint-success）、`pendingCommit` 置失败、返回 accounting_failure；durable `committed` 失败也尝试写 reconciliation | LC-A1/A2/A3 |
+| B provider error 未进入可恢复 reconciliation | `prompt()` 抛错时提前 `return transport_failure`，绕过统一 flush/reconciliation | `c6-model-worker.mjs` `catch` 只记录 `promptError`，所有路径汇入统一收尾；`gate.outstanding` 未清→保留 hold、写 `reconciliation_required`、`pendingCommit` 失败；合成 error message 分类为 `provider_error` 并标 `provider_status=error` | LC-B1/B2/B3/B4/B5 |
+| C Task pending 未按 Task 隔离 | `c6-entry.mjs` 生成一个全局 `taskBaseReserved`，每个 Task ledger 复用 | `c6-request-lifecycle.mjs` `reservedSeedForTask(taskPending, taskCommittedByTask, taskId)`；`c6-entry.mjs` `ledgerFactory` 每 Task 只注入自身 pending/committed；Campaign ledger 保留聚合 | LC-C1/C2 |
+| D 部分 committed 被当联合提交 | `summarizeRequestLedger` 接受单侧 reservation id 并删除 pending | `c6-request-lifecycle.mjs` `validateCommittedRecord`：必须 request + 两侧 reservation 且与原 reserved 的 Campaign/Task/reservation 一致；`countedRequests` 防重复计费；`reconciliation_required` 保持未决 | LC-D1…D7 |
+
+### 14.2 统一契约与 live/durable/replay 一致性
+
+新纯模块 `Pi_Agent_base/memory/campaign/c6-request-lifecycle.mjs` 导出
+`REQUEST_PHASE`、`validateReservation`、`validateCommittedRecord`、`summarizeRequestLedger`、
+`reservedSeedForTask`。`c6-entry.mjs` 从该模块导入并**重新导出** `summarizeRequestLedger`，
+使 live gate、entry `persistRequest`、restart/measure 重建遵循同一套状态/关联/结算判断。
+
+持久 payload 新增（`runtime.note` / `payload.kind=c6.request`，schema 1.1）：
+`provider_started`、`provider_status`（`ok|error|unknown`）、`stop_reason`、`commit_status`
+（`{task,campaign}` 的 `committed|failed`）、`failure_reason`。`reconciliation_required` 写入完整关联
+（campaign/task/request、两侧 reservation、input 估算、usage 来源、提交状态、失败原因）。
+
+重启防线：`c6-entry.mjs` 从 committed stream 重建 `unresolved` 与 `diagnostics`，
+构成 `reconciliationGuard`；`c6-model-worker.mjs` 在 `run()` 入口与每请求 gate 前拒绝
+provider/Broker dispatch（含 `direct` 路由），并保留预算 hold。无确认结算的 reserved 不会被当作安全可重发。
+
+### 14.3 具体数值与证据
+
+| 场景 | 观测 |
+| --- | --- |
+| 正常两任务（external `normal`） | 每请求 reserved→committed；Campaign consumed 与 provider 请求数一致；Campaign/Task 各计一次 |
+| Task 内存 commit 失败（LC-A1） | provider 1；`ok:false`/accounting_failure；durable 无 committed、有 reconciliation_required；Task pending 1、Campaign consumed 1 |
+| Campaign 内存 commit 失败（LC-A2） | provider 1；Campaign pending 1、Task consumed 1；无 committed |
+| provider 抛错无 completion（LC-B1） | provider 1；两层 pending 1/1；durable reconciliation_required(provider_status=unknown)；committed 0 |
+| 合成 error message（LC-B2） | provider 1；committed(provider_status=error)；两层 consumed 1/1；决策不返回 |
+| SIGKILL after reserved（LC-R1/R2） | durable reserved 含两侧 id；重启 provider 0；`pending_reservations`≥1；reconciliation unresolved≥1/blocked；Broker 0；stream verify |
+| provider error 结算（LC-R3/R4） | committed(provider_status=error)、consumed=1；task unknown；重启不自动重试（provider 0、Broker 0） |
+| 单侧 committed（LC-D1/D2） | consumed 0；两侧 pending 保留；invalid_committed 诊断 |
+| 重复 committed（LC-D4） | consumed.model_requests=1（不双计） |
+
+私有日志（ignored `Pi_Agent_base/runtime/dev/c6-lifecycle-run1/`）：`red-baseline.log`、
+`restart-red-baseline.log`、`final2/results.json`、`final-regress2/results.json`、
+`tsc-before.log`、`tsc-final.log`、`biome-final.log`、`mutations.log`。
+
+### 14.4 exact argv / exit
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs                 # 23/23 pass, exit 0
+node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs                # 22/22 pass, exit 0
+node --test Pi_Agent_base/tests/aegis-c6-lifecycle-convergence.mjs              # 17/17 pass, exit 0
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-lifecycle-restart.mjs                           # all checks passed, exit 0
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-product-chain.mjs                               # all checks passed, exit 0
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-learning-closure.mjs                            # all checks passed, exit 0
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs <out> <17 C6 scripts>      # 17 scripts, 0 failed
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs <out> <26 regressions>     # 26 scripts, 0 failed
+./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json  # exit 1, 196 → 196, modified 0
+./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json <modified paths>  # exit 0
+```
+
+类型：改前 `tsc-before.log` 196 条、改后 `tsc-final.log` 196 条，诊断集合逐条相同，
+修改/新增文件 0 条；未关闭 `checkJs`、未排除新模块、未用 blanket any/ts-ignore。
+
+### 14.5 未实测限制（本轮）
+
+- live gate 仍以 faux + 受控 `streamFunction` 替身与本轮新增真实子进程 SIGKILL 验证；真实
+  provider 的计费/失败模式未实测。
+- `measureProviderInput` 仍是字符估算，非精确 tokenizer；backend token/currency 保持 unknown/null。
+- workspace 不是 OS sandbox。
+- 重启防线保留未决请求并阻断盲目重发；未建设自动退款或人工结算平台（超出本轮范围）。
+
+状态：**internally_verified / awaiting_external_review**（DS 内部工程验证完成，非用户接受、
+非真实模型能力验证）。

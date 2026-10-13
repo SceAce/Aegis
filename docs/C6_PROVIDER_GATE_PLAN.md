@@ -5,6 +5,11 @@
 `docs/C6_RECHECK_REPAIR_DS_PROMPT.md`。产品修复基线 `22d075c`，red 测试 `85b1d1d`。
 主 DS 无可用子 Agent 能力，TEST → IMPLEMENT → REVIEW 串行执行并如实记录。
 
+> 后续收敛（见 `C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md` §14）：请求生命周期统一到
+> `c6-request-lifecycle.mjs`；本文 §4 的 durable 字段列表已扩展 `provider_started`、
+> `provider_status`、`stop_reason`、`commit_status`、`failure_reason`；`reconciliation_required`
+> 表示未决而非取消；重建要求 committed 含两侧 reservation 且与原 reserved 一致。
+
 ## 0. BASE：实际环境（PG-0 实测）
 
 | 项目 | 实测 |

@@ -170,3 +170,60 @@ C1 `eventlog-durability`/`integration-recovery`。
 | 仅首请求窗口 | R15 | FAIL ✓ |
 | pending 不计入 remaining | C6-X1 | FAIL ✓ |
 | 重复 commit 非幂等 | C6-X1 duplicate | FAIL ✓ |
+
+## C6 请求生命周期收敛轮（本轮，基线 `17e1728`）
+
+新增脚本：`aegis-c6-lifecycle-convergence.mjs`（17 例，`node --test`）、
+`aegis-c6-lifecycle-restart.mjs`（真实子进程 SIGKILL + 重启，非 node:test）。
+expected 来自冻结契约（联合成功定义、单侧 reservation 不合法、reconciliation 未决），
+不由实现返回值倒推。red 基线在 `runtime/dev/c6-lifecycle-run1/red-baseline.log` 与
+`restart-red-baseline.log`。
+
+| case_id | requirement | 入口 | 预期行为 | 脚本 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| LC-A1 | Task 内存 commit 失败 | `createModelWorker` | `ok:false`/accounting_failure；durable 无 committed；Task pending 保留；Campaign 已提交侧只计一次 | convergence | pass |
+| LC-A2 | Campaign 内存 commit 失败 | 同上 | 同上（Campaign pending 保留、Task 已提交侧计一次） | convergence | pass |
+| LC-A3 | commit 抛异常 | 同上 | 同上（异常归为失败，不归为成功） | convergence | pass |
+| LC-B1 | provider 抛错、无 completion | 同上 | provider 真实 1 次；两层 pending 保留；durable reconciliation_required；无 committed；gate 还原 | convergence | pass |
+| LC-B2 | SDK 合成 error message | 同上 | 分类 provider_error；committed 标 `provider_status=error`；各计一次；不返回决策 | convergence | pass |
+| LC-B3 | 拒绝前合成错误 | 同上 | provider 0 次；不写任何 reserved/committed；不计费 | convergence | pass |
+| LC-B4 | 未决 provider 错误 + Composite | `createCompositeWorker` | Broker effect 0 次 | convergence | pass |
+| LC-B5 | reserved + reconciliation 重启 | summarize + seed + `createModelWorker` | 未决保持；provider 0 次；guard 拒绝 dispatch | convergence | pass |
+| LC-C1 | 每 Task 只注入自身 pending/committed | `summarizeRequestLedger` + `reservedSeedForTask` | A/B 各自 pending；C committed 不泄漏；Campaign 聚合 A+B | convergence | pass |
+| LC-C2 | 重建后每 Task 只计自身 hold | `createToolLedger` | remaining 各减 1；pending 只有自身 | convergence | pass |
+| LC-D1 | 仅 Task 侧 committed | `summarizeRequestLedger` | 不结算；两侧 pending 保留；invalid_committed 诊断 | convergence | pass |
+| LC-D2 | 仅 Campaign 侧 committed | 同上 | 同上 | convergence | pass |
+| LC-D3 | reservation 错配 | 同上 | 不结算；pending 保留；task_reservation_mismatch 诊断 | convergence | pass |
+| LC-D4 | 重复合法 committed | 同上 | 只计一次（model_requests/tool_calls/input_chars） | convergence | pass |
+| LC-D5 | reconciliation_required | 同上 | 保持 pending/unresolved，不释放 | convergence | pass |
+| LC-D6 | committed 后 released | 同上 | 已发生计费不被抹除；release_after_settlement 诊断 | convergence | pass |
+| LC-D7 | 调用前合法 release | 同上 | 取消 hold、不计费 | convergence | pass |
+| LC-R1 | SIGKILL 后保留 durable reserved | 真实子进程 + 产品入口 | reserved 含 request/两侧 reservation；无 committed | restart | pass |
+| LC-R2 | reserved-only 重启 | 产品入口 | provider 0 次；预算 hold 保留；reconciliation/unresolved 可见；Broker effect 0；stream verify | restart | pass |
+| LC-R3 | provider 错误结算一次 | 产品入口 | committed(provider_status=error)；consumed=1；task unknown；Broker 0 | restart | pass |
+| LC-R4 | unknown task 重启不自动重试 | 产品入口 | provider 0 次；Broker effect 0 | restart | pass |
+
+### 本轮 red → green
+
+| 阶段 | 命令 | 结果 |
+| --- | --- | --- |
+| red（HEAD `17e1728`） | `node --test …/aegis-c6-lifecycle-convergence.mjs` | 16 tests / **1 pass / 15 fail**, exit 1 |
+| green（本轮） | 同上 | **17 pass / 0 fail**, exit 0 |
+| red（重启） | `node --import <resolver> …/aegis-c6-lifecycle-restart.mjs` | **2 fail**（guard 缺失、provider_status 未标） |
+| green（重启） | 同上 | **all checks passed** |
+
+### 本轮有限 mutation（行为 FAIL 证明）
+
+| mutation | 目标 case | 实际 |
+| --- | --- | --- |
+| 忽略 Campaign 侧内存 commit 失败 | LC-A2 | FAIL ✓ |
+| 无 completion 仍放行（outstanding 当成功） | LC-B4 | FAIL ✓ |
+| provider error 不保留未决（release） | LC-B1 | FAIL ✓ |
+| reconciliation_required 当 release | LC-D5 | FAIL ✓ |
+| `reservedSeedForTask` 退回全局 pending | LC-C1 | FAIL ✓ |
+| 部分 reservation id 被当完整 commit | LC-D1 | FAIL ✓ |
+| 去除重复 committed 幂等 | LC-D4 | FAIL ✓ |
+
+日志：`Pi_Agent_base/runtime/dev/c6-lifecycle-run1/mutations.log`（7/7 killed），
+`final2/results.json`（17 C6 脚本 0 failed），`final-regress2/results.json`（26 回归 0 failed），
+`tsc-before.log`/`tsc-final.log`（196 → 196，modified files 0），`biome-final.log`（exit 0）。

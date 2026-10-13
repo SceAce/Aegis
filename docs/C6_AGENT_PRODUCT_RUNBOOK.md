@@ -216,7 +216,56 @@ node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/c
   aegis-c6-recheck-boundaries
 ```
 
-证据/日志：`Pi_Agent_base/runtime/dev/c6-recheck-2/`（ignored）。
+evidence/logs：`Pi_Agent_base/runtime/dev/c6-recheck-2/`（ignored）。
 注意：非 SDK 测试不要加载 source resolver（纯 node 测试加载它会引入无关的
 FileHandle GC finalizer 错误）。`c6-suite-runner.mjs` 按测试是否 import
 `@earendil-works/pi-` 自动选择启动方式。
+
+## 13. 请求生命周期与重启防线（本轮收敛）
+
+每个 provider 请求在调用前预留两层（Campaign + Task）额度，并写 durable
+`runtime.note kind=c6.request, phase=reserved`；provider 返回后两层各自 commit，再写
+`phase=committed`（含 `provider_status`/`commit_status`），才允许决策进入 Broker。
+
+- `provider_status=error`（SDK 合成错误消息）：请求仍计费一次，任务转 unknown，决策不执行。
+- provider 已启动但无 completion（进程崩溃 / 传输中断）：保留 pending hold 不退款，
+  写 `phase=reconciliation_required`，运行停止。
+- 重启时若存在未决 reserved/reconciliation 或 invalid/conflicting 校准记录，入口重建
+  `reconciliationGuard`，拒绝新的 provider/Broker dispatch（含 direct 路由）并保留预算责任。
+  只有明确确认的结算/释放才降低预算责任。
+
+可复现命令：
+
+```bash
+# 聚焦行为（内存 commit/reconciliation/每 Task 隔离/部分 commit）
+node --test Pi_Agent_base/tests/aegis-c6-lifecycle-convergence.mjs
+
+# 真实子进程 SIGKILL + 重启（保留 durable reserved、重启阻断）
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-lifecycle-restart.mjs
+```
+
+## 14. 有限真实任务 pilot 输入清单（下一阶段；本轮不启动、不写真实配置）
+
+只有用户另行授权后才运行真实 provider/target。所需输入（复用现有接口，不新增实验框架）：
+
+| 类别 | 必填项 | 说明 |
+| --- | --- | --- |
+| provider | `provider.kind` / `model` / `base_url?` / `credential_ref` | `credential_ref` 仅引用环境变量名/文件路径，不写值、不打印；local 只接受 loopback |
+| 目录 | `workspace_root` / `work_dir` / `manifest_path` | workspace 非 OS sandbox；`work_dir` 写权威 events.jsonl |
+| 授权 | Manifest `tasks[].target_ref`、`stages[].criteria`、`mode`、动作/工具 grant | 模型不能提供/改变身份或授权；未注册 action/criterion 由 Broker/Oracle 拒绝 |
+| 预算 | `manifest.budget` + 每 task `task_budget`（model_requests/tool_calls/wall_time_ms）、`session.*`、`context.max_total_input_chars`/`output_reserve_chars` | hard gate；超限在 provider 调用前拒绝 |
+| Oracle | `task_family`（fixture-state/structured-data-repair/code-repair）、`registered_test`（code-repair）、`oracle.kind` | 外部只读测试/独立 judge；unknown 不当作 success |
+| 学习 | `learning.policy`（off/shadow/explicit）、`proof_ids`、`replay_adapter`、`environment` | 默认 off；`promote_experience` 必须 false；模型不能晋升 |
+| 停止条件 | 预算/窗口耗尽、`reconciliation_required`、`pause`/`cancel`、SIGTERM drain、reconciliation 未决 | 未决请求不自动退款/重发 |
+
+启动前确认：不读取真实凭据以外的方式（凭据由环境/文件引用注入）；使用干净 `work_dir`；
+用 `status`/`measure` 核对 committed 重建；任何 `reconciliation_required` 必须先人工核对后
+才能继续。模型选择与实际实验预算由用户下一阶段确定；本轮未启动真实 provider，也未开始
+真实任务/效果实验。
+
+### 14.1 尚未实测限制
+
+- 未对接真实 provider 计费/错误模式；`provider_status`/usage 依赖后端可观测性。
+- `measureProviderInput` 是字符估算而非精确 tokenizer；backend token/currency 保持 unknown。
+- workspace 不是 OS sandbox；进程崩溃恢复已验证“保留/阻断”，未建自动结算平台。

@@ -129,3 +129,50 @@ settings/lockfile；真实 provider/外部目标调用；自动验收模型。
 - 只通过 faux provider 与 SDK create seam 替身验证 provider 参数传递；
   具体真实 provider（如某本地 OpenAI 兼容 endpoint）未实测。
 - 不读取真实凭据、不请求真实模型。
+
+## 8. C6 请求生命周期收敛轮（本轮，基线 `17e1728`）
+
+状态：`internally_verified / awaiting_external_review`（DS 内部工程验证，非外部审查）。
+本轮把交付单位定为“一次 provider 请求从准入、调用、结算、异常收尾到重启恢复的完整生命周期”；
+四项已复现缺陷是切入点，不是四个独立补丁。
+
+### 8.1 根因与统一契约
+
+| 缺陷 | 根因 | 统一后的规则 |
+| --- | --- | --- |
+| A 内存 commit 失败被 durable success 掩盖 | 先算 `commitFailed`，但存在 durable writer 时以 durable 成功决定放行 | 联合成功 = **两层内存 commit + durable commit + 无 outstanding**；任一内存提交失败即写 `reconciliation_required`，不得写 joint-success，durable 成功不得覆盖 |
+| B provider error 未进入可恢复 reconciliation | `prompt()` 抛错时提前 return，绕过统一收尾 | `catch` 不再提前返回；provider 已启动但无 completion 时保留 hold、写 reconciliation、阻断后续 dispatch |
+| C Task pending 未按 Task 隔离 | 入口生成一个全局 `taskBaseReserved`，各 Task 复用 | 每个 Task ledger 只注入自身 pending/committed 身份；Campaign ledger 保留聚合责任 |
+| D 部分 committed 被当联合提交 | `summarizeRequestLedger` 接受单侧 reservation id 并删除 pending | committed 必须含 request + 两侧 reservation 且与原 reserved 一致；`reconciliation_required` 表示未决，不表示释放 |
+
+共享契约落在新纯模块 `Pi_Agent_base/memory/campaign/c6-request-lifecycle.mjs`
+（`validateReservation`/`validateCommittedRecord`/`summarizeRequestLedger`/`reservedSeedForTask`），
+由 live gate、`c6-entry.mjs` 持久化与 restart/measure 共用，避免两套互相矛盾的规则。
+
+### 8.2 状态与收尾
+
+```text
+created -> admitted -> reserved_durable -> provider_started
+        -> provider_finished -> committed_in_memory -> committed_durable -> settled
+拒绝（调用前）：rejected / reservation_persist_failed            provider 0
+未确认结束：provider_started -> reconciliation_required          保留 hold，阻断后续
+provider 错误（有可信结束）：committed(provider_status=error)    计费一次，返回失败
+```
+
+关键不变量：
+
+- 调用前拒绝只补偿“确定未 dispatch”的占用；调用后不确定不退款、不换 request id 重试。
+- 重启遇到未决 reserved/reconciliation 或 invalid/conflicting 重建记录时，走运行停止/阻断路径
+  （`reconciliationGuard` + 每请求 pending 检查），仅在 report 显示 unknown 不算。
+- Task ledger 只操作自身 reservation；同一 ledger object 只 reserve/commit 一次。
+- `checkpoint`/`report`/`measurement` 不覆盖权威请求状态。
+
+### 8.3 本轮范围
+
+允许修改：`c6-request-lifecycle.mjs`（新）、`c6-model-worker.mjs`、`c6-entry.mjs`、
+`index.mjs`、`tsconfig.aegis-campaign.json`、两个新测试脚本与一个 child harness、C6 文档。
+不允许：第二套预算/事务/调度平台、改 Pi 核心/凭据/lockfile、真实 provider/目标、
+全仓历史类型清理、把任务扩大为历史 warning 清理。
+
+required 检查与真实结果见 `C6_AGENT_PRODUCT_TEST_MATRIX.md` / `C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md`
+本轮收敛段；私有日志 `Pi_Agent_base/runtime/dev/c6-lifecycle-run1/`（ignored）。
