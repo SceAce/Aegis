@@ -8,6 +8,9 @@
 下一轮任务书：[`SDK_LAUNCHER_TASK.md`](SDK_LAUNCHER_TASK.md)。
 完整提示词：[`SDK_LAUNCHER_DS_PROMPT.md`](SDK_LAUNCHER_DS_PROMPT.md)。
 用户将提示词交 DS 后实施；本轮只布置，不实现 launcher。
+后续完整路线：[`AEGIS_PRODUCT_ROADMAP.md`](AEGIS_PRODUCT_ROADMAP.md)，
+R1 launcher → R2 模型 Worker/任务族 → R3 Campaign 经验闭环 → R4 provider/本地模型 →
+R5 效果对照 → R6 第二任务族/日常试用。路线不授权一次实施全部阶段。
 
 目标为真实 SDK + faux 的显式离线启动、同一 Host/gate/writer、实际 Task/Episode 绑定、
 安全自动轮换/跨 Task 预算、生命周期/恢复和常驻只读观察。真实模型/目标/能力实验须之后

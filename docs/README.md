@@ -12,6 +12,10 @@
 
 当前状态：**C1-C4a 保持已交付；C5 本轮审查/授权修复完成，下一轮离线 SDK launcher**。最新证据 [`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md)，操作说明 [`C5_INTEGRATION_RUNBOOK.md`](C5_INTEGRATION_RUNBOOK.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。下一任务书 [`SDK_LAUNCHER_TASK.md`](SDK_LAUNCHER_TASK.md)，提示词 [`SDK_LAUNCHER_DS_PROMPT.md`](SDK_LAUNCHER_DS_PROMPT.md)。C5 接收离线入口与 caller-provided SDK 路径；自动 SDK 启动、Task/Episode 绑定/策略与常驻观察待部署补齐。F16/74 条旧类型诊断后置；真实能力实验须之后具体授权。
 
+后续产品与验证规划见 [`AEGIS_PRODUCT_ROADMAP.md`](AEGIS_PRODUCT_ROADMAP.md)：
+离线 SDK 启动 → 模型 Worker/任务族 → Campaign 经验闭环 → 真实 provider/本地模型 →
+经验及短上下文效果对照 → 第二任务族与日常试用。SDK 接线、产品可用与学习收益分别验收。
+
 开发依据：
 
 - [`AGENT_DEVELOPMENT_STANDARD.md`](AGENT_DEVELOPMENT_STANDARD.md)：仓库规范、输入/证据/副作用边界、检查和完成标准；§3.1 为用户确认的阶段范围冻结、阻塞/后置分类与推进规则，适用于后续所有阶段。
