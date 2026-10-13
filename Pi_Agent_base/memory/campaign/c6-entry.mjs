@@ -201,13 +201,19 @@ export async function runC6FromConfig(
 	for (const d of [cwd, agentDir, sessionDir]) mkdirSync(d, { recursive: true });
 
 	const eventLogPath = join(config.work_dir, "events.jsonl");
+	// Read-only scenarios project the committed stream only: they never create an
+	// SDK runtime, never dispatch a task and never append an event.
+	const READ_ONLY = ["status", "export", "observe", "measure"].includes(scenario);
 
 	// Provider model. For the offline default we register the faux provider.
 	let modelRuntime;
 	let model;
 	let faux = null;
 	try {
-		if (providerCheck.provider.kind === "faux") {
+		if (READ_ONLY) {
+			modelRuntime = null;
+			model = null;
+		} else if (providerCheck.provider.kind === "faux") {
 			const fauxFactory = fauxProviderFactory ?? (await importFauxFactory());
 			faux = fauxFactory({ provider: "faux", models: [{ id: providerCheck.provider.model }] });
 			model = faux.getModel();
@@ -263,37 +269,40 @@ export async function runC6FromConfig(
 		buffer,
 	};
 
-	// The real SDK runtime (or an injected seam for tests).
-	let sdkRuntime;
-	try {
-		sdkRuntime = createSeam
-			? await createSeam({
-					provider: providerCheck.provider,
-					model,
-					modelRuntime,
-					gate,
-					cwd,
-					agentDir,
-					sessionDir,
-					sdk: sdkImpl,
-					decisionCapture,
-				})
-			: await createCampaignSdkRuntime({
-					provider: providerCheck.provider,
-					model,
-					modelRuntime,
-					gate,
-					cwd,
-					agentDir,
-					sessionDir,
-					sdk: sdkImpl,
-					decisionCapture,
-				});
-	} catch (error) {
-		return { ok: false, reasons: [`SDK runtime creation failed: ${String(error)}`], stage: "sdk" };
-	}
-	if (!sdkRuntime || typeof sdkRuntime.session !== "function") {
-		return { ok: false, reasons: ["SDK runtime seam did not return a runtime handle"], stage: "sdk" };
+	// The real SDK runtime (or an injected seam for tests). Read-only scenarios do
+	// not create one.
+	let sdkRuntime = null;
+	if (!READ_ONLY) {
+		try {
+			sdkRuntime = createSeam
+				? await createSeam({
+						provider: providerCheck.provider,
+						model,
+						modelRuntime,
+						gate,
+						cwd,
+						agentDir,
+						sessionDir,
+						sdk: sdkImpl,
+						decisionCapture,
+					})
+				: await createCampaignSdkRuntime({
+						provider: providerCheck.provider,
+						model,
+						modelRuntime,
+						gate,
+						cwd,
+						agentDir,
+						sessionDir,
+						sdk: sdkImpl,
+						decisionCapture,
+					});
+		} catch (error) {
+			return { ok: false, reasons: [`SDK runtime creation failed: ${String(error)}`], stage: "sdk" };
+		}
+		if (!sdkRuntime || typeof sdkRuntime.session !== "function") {
+			return { ok: false, reasons: ["SDK runtime seam did not return a runtime handle"], stage: "sdk" };
+		}
 	}
 
 	let server = null;
@@ -341,6 +350,16 @@ export async function runC6FromConfig(
 	}
 
 	function buildSessionController() {
+		if (!sdkRuntime) {
+			// Read-only scenarios have no SDK runtime: rotation is refused, never faked.
+			return {
+				committedRotations: () =>
+					readEventsSafe(eventLogPath).filter((e) => e.event_type === "handoff.completed").length,
+				canRotate: () => ({ allowed: false, reason: "read-only scenario has no SDK runtime" }),
+				rotate: async () => ({ applied: false, reason: "read-only scenario has no SDK runtime" }),
+				recoverInterrupted: () => ({ recovered: false, reason: "read-only scenario" }),
+			};
+		}
 		// Reuse the accepted C2 supervisor through the SDK runtime's newSession seam.
 		// The Host stages a handoff decision into the shared handoff file, then the
 		// supervisor applies it through the REAL SDK and verifies that exactly one
@@ -413,7 +432,7 @@ export async function runC6FromConfig(
 			sessionController: buildSessionController(),
 			wrapWorker: (brokerWorker) => {
 				modelWorker = createModelWorker({
-					session: () => sdkRuntime.session(),
+					session: () => sdkRuntime?.session() ?? null,
 					ledger,
 					romPath: join(resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."), "agent", "ROM.md"),
 					context: config.context ?? { max_total_input_chars: 24000, output_reserve_chars: 2000 },
@@ -645,7 +664,7 @@ export async function runC6FromConfig(
 			if (server) await server.close();
 		} finally {
 			try {
-				await sdkRuntime.dispose?.();
+				await sdkRuntime?.dispose?.();
 			} finally {
 				try {
 					if (sink.close) await sink.close();
