@@ -416,6 +416,17 @@ export async function runC6FromConfig(
 		const { createStructuredDataAdapter, createDataRepairJudge } = await import("./structured-data-adapter.mjs");
 		extraContracts = [createStructuredDataAdapter({ workspaceRoot: config.workspace_root })];
 		judgeFactory = ({ workspaceRoot }) => createDataRepairJudge({ workspaceRoot });
+	} else if (config.task_family === "code-repair") {
+		const { createCodeRepairAdapter, createCodeRepairJudge } = await import("./code-repair-adapter.mjs");
+		const { runRegisteredTest } = await import("./registered-test.mjs");
+		extraContracts = [createCodeRepairAdapter({ workspaceRoot: config.workspace_root })];
+		// The test procedure is HOST code (a registered, read-only external test),
+		// never model code. The model cannot modify the test to manufacture success.
+		judgeFactory = ({ workspaceRoot }) =>
+			createCodeRepairJudge({
+				workspaceRoot,
+				runTests: (root) => runRegisteredTest({ workspaceRoot: root, testFile: config.registered_test ?? "check.mjs" }),
+			});
 	}
 	try {
 		// Build the model ledger/plan worker wiring. The composite worker is
