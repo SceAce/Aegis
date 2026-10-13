@@ -17,6 +17,8 @@ Branch: `feat/c5-integration` (created from `feat/c4a-observation` @ `bd378ca`).
   - `551523a` test: C5 unified-entry product scenarios, SDK rotation, export/
     observation and runbook (C5-C/D)
   - `c1101f7` test: add C5 config-validator negative cases (C5-A1b)
+  - `ef7fb6e` fix: compare workspace/grant paths by real location (C5 integration)
+  - `d7ac4e8` test: cover symlinked workspace prefix in the C5 config validator (C5-A1c)
   - (this commit) docs: C5 implementation report
 - Environment note: hash-looking text printed to stdout is masked by the sandbox,
   but digest VALUES are real and compared in-process; tests never assert on
@@ -52,7 +54,7 @@ registered kind (`fixture`).
 
 | case | command | exit | evidence |
 | --- | --- | --- | --- |
-| C5-N1/D1/C1/R1/A1/A1b | `node Pi_Agent_base/tests/aegis-c5-integration.mjs` | 0 | 6 tests / 6 pass |
+| C5-N1/D1/C1/R1/A1/A1b/A1c | `node Pi_Agent_base/tests/aegis-c5-integration.mjs` | 0 | 7 tests / 7 pass |
 | C5-S1 | `node --import .../source-resolver.ts Pi_Agent_base/tests/aegis-c5-session-sdk.mjs` | 0 | 12 checks / pass |
 | C5-E1 | `node Pi_Agent_base/tests/aegis-c5-export-observation.mjs` | 0 | 2 tests / 2 pass |
 | C5-O1 | `node Pi_Agent_base/tests/aegis-c5-runbook.mjs` | 0 | 1 test / pass |
@@ -103,9 +105,13 @@ Static:
 - **crash/restart (C5-R1)**: a real child is SIGKILLed after the durable
   intent+effect; restart through the entry reconciles the stranded task from the
   real artifact without a blind re-effect.
-- **auth/audit (C5-A1/A1b)**: `normal` mode without approval produces no effect;
+- **auth/audit (C5-A1/A1b/A1c)**: `normal` mode without approval produces no effect;
   the config validator refuses unknown keys, a widened workspace grant, a
-  non-loopback host and an unknown oracle kind.
+  non-loopback host and an unknown oracle kind. A symlinked workspace prefix
+  (macOS `/tmp` -> `/private/tmp`) is accepted by REAL-path comparison while a
+  genuinely different root is refused; the same real-path comparison is used by
+  the C3 assembly and the broker-worker grant check (integration fix `ef7fb6e`,
+  found by the runbook demo on a `/tmp` workspace).
 - **export/observation (C5-E1)**: the C4 artifacts and the C4a observation view
   agree with the committed stream and stay read-only; a UI failure is not an
   execution dependency.
