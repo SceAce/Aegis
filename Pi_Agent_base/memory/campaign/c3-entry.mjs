@@ -15,7 +15,7 @@
 //   * fixture effects are synthetic local files;
 //   * token/currency usage is `unknown` (not measured), published in the ledger.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -222,10 +222,21 @@ export async function assembleCampaignHost(
 	const checked = validateManifest(manifest);
 	if (!checked.ok) throw new Error(`manifest invalid: ${checked.reasons.join("; ")}`);
 	manifest = checked.manifest;
-	if (resolve(workspaceRoot) !== resolve(manifest.authorization.workspace_root)) {
+	// The workspace must equal the authorized root. The comparison uses REAL paths
+	// (after creating the directory) so a symlinked prefix such as macOS
+	// /tmp -> /private/tmp does not cause a false mismatch, while a genuinely
+	// different root is still refused.
+	mkdirSync(workspaceRoot, { recursive: true });
+	const workspaceReal = realpathSync(workspaceRoot);
+	let authorizedReal = null;
+	try {
+		authorizedReal = realpathSync(manifest.authorization.workspace_root);
+	} catch {
+		authorizedReal = resolve(manifest.authorization.workspace_root);
+	}
+	if (workspaceReal !== authorizedReal) {
 		throw new Error("workspaceRoot differs from Manifest authorization");
 	}
-	mkdirSync(workspaceRoot, { recursive: true });
 	mkdirSync(workDir, { recursive: true });
 	const sink = sinkImpl ?? createProductSink({ eventLogPath });
 	if (sink.open) {

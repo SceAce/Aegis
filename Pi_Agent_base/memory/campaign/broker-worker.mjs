@@ -17,10 +17,25 @@
 // The worker returns the transport fact only. The independent Oracle decides
 // the criterion.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { digest } from "../fixture/contracts.mjs";
+
+/**
+ * Compare two paths by their REAL location when they exist, falling back to a
+ * lexical resolve. Keeps the grant boundary strict (a genuinely different root
+ * is refused) while tolerating a symlinked prefix (e.g. macOS /tmp ->
+ * /private/tmp).
+ */
+function samePath(a, b) {
+	if (typeof a !== "string" || typeof b !== "string") return false;
+	try {
+		return realpathSync(a) === realpathSync(b);
+	} catch {
+		return resolve(a) === resolve(b);
+	}
+}
 
 /**
  * @typedef {{step_id: string, stage_id: string|null, action_ref: string,
@@ -66,7 +81,7 @@ export function createBrokerWorker(
 		const contract = broker.registry?.get(step.action_ref);
 		if (!contract) return { ok: false, reason: `unknown action: ${String(step.action_ref)}` };
 		const auth = campaignManifest.authorization;
-		if (resolve(auth.workspace_root) !== resolve(workspaceRoot))
+		if (!samePath(auth.workspace_root, workspaceRoot))
 			return { ok: false, reason: "workspace differs from Manifest grant" };
 		const target =
 			typeof targetPathFor === "function"

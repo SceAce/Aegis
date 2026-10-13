@@ -13,7 +13,7 @@
 //   * a `normal` mode without approval is refused at run time by authorization,
 //     not silently promoted here.
 
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import { validateManifest } from "./manifest.mjs";
@@ -152,9 +152,17 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	if (!loaded.ok)
 		return { ok: false, reasons: [`manifest invalid: ${loaded.reasons.join("; ")}`], config: null, manifest: null };
 	const manifest = loaded.manifest;
-	if (manifest.authorization?.workspace_root !== workspaceRoot) {
+	// Compare REAL paths so a symlinked prefix (e.g. macOS /tmp -> /private/tmp)
+	// does not cause a false mismatch, while a genuinely different (widened) root
+	// is still refused.
+	const authorizedRoot = manifest.authorization?.workspace_root;
+	const sameRoot =
+		typeof authorizedRoot === "string" &&
+		realPathOf(authorizedRoot) !== null &&
+		realPathOf(authorizedRoot) === realPathOf(workspaceRoot);
+	if (!sameRoot) {
 		reasons.push(
-			`config.workspace_root (${workspaceRoot}) must equal the Manifest authorization.workspace_root (${manifest.authorization?.workspace_root})`,
+			`config.workspace_root (${workspaceRoot}) must equal the Manifest authorization.workspace_root (${String(authorizedRoot)})`,
 		);
 	}
 	if (manifest.authorization?.workspace_is_sandbox !== false) {
@@ -188,5 +196,15 @@ function loadManifestSync(path) {
 		return validateManifest(parsed);
 	} catch (error) {
 		return { ok: false, reasons: [`manifest is not readable/valid JSON: ${String(error)}`] };
+	}
+}
+
+/** Resolve a real path for comparison; null when it does not exist. */
+function realPathOf(path) {
+	if (typeof path !== "string" || path.length === 0) return null;
+	try {
+		return realpathSync(path);
+	} catch {
+		return null;
 	}
 }
