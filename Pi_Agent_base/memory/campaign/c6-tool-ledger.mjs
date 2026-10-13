@@ -37,6 +37,7 @@ function zeroDims() {
  * @param {{
  *   limit: LedgerDims,
  *   baseConsumed?: LedgerDims,
+ *   baseReserved?: {model_requests?: number, tool_calls?: number, input_chars?: number, wall_time_ms?: number, pending?: Array<{reservation_id: string, inputChars: number, kind: string}>, committed?: string[]}|null,
  *   clock?: () => number,
  *   onEvent?: (record: object) => void,
  *   persist?: ((record: object) => void)|null,
@@ -46,6 +47,7 @@ export function createToolLedger(
 	{
 		limit,
 		baseConsumed = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 },
+		baseReserved = null,
 		clock = () => Date.now(),
 		onEvent = null,
 		persist = null,
@@ -55,12 +57,16 @@ export function createToolLedger(
 	const consumed = { ...zeroDims(), ...(baseConsumed ?? {}) };
 	// `reserved` is the outstanding, not-yet-committed hold. It ALWAYS counts
 	// against remaining so a pending admission cannot be oversubscribed.
-	const reserved = zeroDims();
+	const reserved = { ...zeroDims(), ...(baseReserved ?? {}) };
 	const startedAt = clock();
 	const records = [];
 	/** @type {Map<string, {inputChars: number, kind: string}>} */
-	const pending = new Map();
-	const committed = new Set();
+	const pending = new Map(
+		Array.isArray(baseReserved?.pending)
+			? baseReserved.pending.map((p) => [p.reservation_id, { inputChars: p.inputChars, kind: p.kind }])
+			: [],
+	);
+	const committed = new Set(Array.isArray(baseReserved?.committed) ? baseReserved.committed : []);
 
 	function elapsedWall() {
 		return Math.max(0, clock() - startedAt);

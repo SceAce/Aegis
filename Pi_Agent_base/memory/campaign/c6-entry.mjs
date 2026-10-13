@@ -325,20 +325,61 @@ export async function runC6FromConfig(
 	// per-request window is enforced in the worker against `context.max_total_input_chars`.
 	const contextWindowChars = config.context?.max_total_input_chars ?? 24000;
 	// The cumulative ledger is rebuilt from the committed stream so a restart/measure
-	// never resets it (X4). We persist each committed request as a runtime.note.
+	// never resets it (X4). We persist each request RESERVATION and COMMIT as a
+	// durable runtime.note. `consumed` is rebuilt from commits; a reservation with
+	// no matching commit is a durable PENDING hold that still counts against
+	// remaining (so a restart never forgets an in-flight request).
 	const persistedLedgerRecords = [];
 	const persistedUsage = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
+	const persistedByTask = new Map();
+	const reservedNotes = new Map();
+	const committedReservations = new Set();
 	for (const event of readEventsSafe(eventLogPath)) {
-		if (event?.event_type === "runtime.note" && event.payload?.kind === "c6.request" && event.payload.usage) {
+		if (event?.event_type !== "runtime.note" || event.payload?.kind !== "c6.request") continue;
+		const payload = event.payload;
+		if (payload.phase === "reserved" && typeof payload.reservation_id === "string") {
+			reservedNotes.set(payload.reservation_id, {
+				reservation_id: payload.reservation_id,
+				inputChars: Number.isFinite(payload.input_chars) ? payload.input_chars : 0,
+				kind: payload.request_kind ?? "provider_bound",
+				task_id: payload.task_id ?? null,
+			});
+			continue;
+		}
+		// A commit note (with usage) is a real provider request that happened.
+		if (payload.phase === "committed" || payload.usage !== undefined) {
 			persistedUsage.model_requests += 1;
-			persistedUsage.tool_calls += Number.isInteger(event.payload.tool_calls) ? event.payload.tool_calls : 0;
-			persistedUsage.input_chars += Number.isFinite(event.payload.input_chars) ? event.payload.input_chars : 0;
-			persistedUsage.wall_time_ms = Number.isFinite(event.payload.wall_time_ms)
-				? event.payload.wall_time_ms
-				: persistedUsage.wall_time_ms;
-			persistedLedgerRecords.push(event.payload);
+			persistedUsage.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
+			persistedUsage.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
+			// `wall_time_ms` is measured as ELAPSED time by the live ledger; a persisted
+			// note carries an absolute timestamp, so it must not be copied into the
+			// accumulated elapsed budget.
+			persistedUsage.wall_time_ms = 0;
+			if (payload.task_id) {
+				const byTask = persistedByTask.get(payload.task_id) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
+				byTask.model_requests += 1;
+				byTask.tool_calls += Number.isInteger(payload.tool_calls) ? payload.tool_calls : 0;
+				byTask.input_chars += Number.isFinite(payload.input_chars) ? payload.input_chars : 0;
+				persistedByTask.set(payload.task_id, byTask);
+			}
+			if (typeof payload.reservation_id === "string") {
+				committedReservations.add(payload.reservation_id);
+				reservedNotes.delete(payload.reservation_id);
+			}
+			persistedLedgerRecords.push(payload);
 		}
 	}
+	const pendingReservations = [...reservedNotes.values()].filter(
+		(note) => !committedReservations.has(note.reservation_id),
+	);
+	const baseReserved = {
+		model_requests: pendingReservations.length,
+		tool_calls: 0,
+		input_chars: pendingReservations.reduce((sum, note) => sum + note.inputChars, 0),
+		wall_time_ms: 0,
+		pending: pendingReservations,
+		committed: [...committedReservations],
+	};
 	const ledger = createToolLedger({
 		limit: {
 			model_requests: manifest.budget.model_requests,
@@ -349,6 +390,7 @@ export async function runC6FromConfig(
 			wall_time_ms: manifest.budget.wall_time_ms,
 		},
 		baseConsumed: persistedUsage,
+		baseReserved,
 		onEvent: (/** @type {any} */ record) => {
 			// Count REAL provider requests (including the automatic tool loop) so a
 			// declared requests-per-session threshold can trigger a safe rotation.
@@ -368,6 +410,9 @@ export async function runC6FromConfig(
 	// still enforce the current task's tool/request allocation.
 	const ledgerHolder = { ledger: null };
 	const decisionState = { budget_terminated: false };
+	// The ACTUAL current Task binding, so the observation read grant follows the
+	// task the Host is running (never the union of every Manifest target).
+	const currentTaskRef = { task: null };
 	const decisionCapture = {
 		tool: createDecisionCaptureTool({
 			sdk: sdkImpl,
@@ -387,7 +432,15 @@ export async function runC6FromConfig(
 				sdk: sdkImpl,
 				type: TypeSchema,
 				workspaceRoot: config.workspace_root,
-				allowedTargets: [...new Set((manifest.tasks ?? []).map((task) => task.target_ref).filter(Boolean))],
+				// X5/X11: the read grant is the CURRENT task's own target(s), resolved
+				// against the real workspace location. The whole-Manifest target set is
+				// NOT used as a fallback, so task A cannot read task B's file.
+				grantProvider: () => ({
+					task_id: currentTaskRef.task?.task_id ?? null,
+					targets: currentTaskRef.task
+						? [currentTaskRef.task.target_ref, currentTaskRef.task.definition?.target_ref].filter(Boolean)
+						: [],
+				}),
 			})
 		: null;
 	const extraTools = observationTool ? [observationTool] : [];
@@ -618,7 +671,9 @@ export async function runC6FromConfig(
 				let currentTaskLedger = null;
 				const ledgerFactory = (task) => {
 					currentTaskId = task?.task_id ?? currentTaskId;
+					currentTaskRef.task = task ?? currentTaskRef.task;
 					const alloc = task?.task_budget ?? {};
+					const taskBase = persistedByTask.get(currentTaskId) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
 					currentTaskLedger = createToolLedger({
 						limit: {
 							model_requests: Number.isInteger(alloc.model_requests)
@@ -628,6 +683,7 @@ export async function runC6FromConfig(
 							input_chars: 0,
 							wall_time_ms: Number.isInteger(alloc.wall_time_ms) ? alloc.wall_time_ms : manifest.budget.wall_time_ms,
 						},
+						baseConsumed: taskBase,
 						onEvent: (/** @type {any} */ record) => {
 							if (record.kind === "tool.admitted") pendingToolAdmissions.push(record);
 						},
@@ -660,30 +716,38 @@ export async function runC6FromConfig(
 					// Host task before its prompt.
 					setTaskBinding: (task) => {
 						currentTaskId = task?.task_id ?? currentTaskId;
+						currentTaskRef.task = task ?? currentTaskRef.task;
 						bindObserverEnv(currentTaskId);
 					},
-					// X4: persist each committed request as a durable runtime.note so the
-					// cumulative ledger rebuilds after restart/measure.
-					onRequestCommitted: (/** @type {any} */ record) => {
-						const usage = record?.usage ?? null;
-						sinkRef
-							?.append?.({
-								event_type: "runtime.note",
-								episode_id: `ep-${currentTaskId}`,
-								payload: {
-									kind: "c6.request",
-									task_id: currentTaskId,
-									input_chars: record?.input_chars_estimated ?? 0,
-									tool_calls: pendingToolAdmissions.length,
-									wall_time_ms: Date.now(),
-									usage,
-									usage_source: usage?.source ?? "unknown",
-								},
-								source: { kind: "runtime", actor_id: "c6-ledger", adapter: "c6-entry", version: C6_ENTRY_VERSION },
-								schema_version: "1.1",
-							})
-							?.catch?.(() => undefined);
-						pendingToolAdmissions.length = 0;
+					// X4: persist each request RESERVATION and COMMIT as a durable runtime.note
+					// so the cumulative ledger (and any in-flight pending hold) rebuild after
+					// restart/measure. The provider gate AWAITS this before calling the
+					// provider; a failed reservation write means the provider is not called.
+					persistRequest: async (/** @type {any} */ request) => {
+						if (!sinkRef || typeof sinkRef.append !== "function") return { ok: true };
+						const usage = request?.usage ?? null;
+						const toolCalls = request?.phase === "committed" ? pendingToolAdmissions.length : undefined;
+						const written = await sinkRef.append({
+							event_type: "runtime.note",
+							episode_id: `ep-${currentTaskId}`,
+							payload: {
+								kind: "c6.request",
+								phase: request?.phase ?? "committed",
+								task_id: request?.task_id ?? currentTaskId,
+								reservation_id: request?.reservation_id ?? null,
+								input_chars: request?.input_chars ?? 0,
+								...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+								wall_time_ms: Date.now(),
+								...(request?.phase === "committed"
+									? { usage, usage_source: request?.usage_source ?? usage?.source ?? "unknown" }
+									: {}),
+							},
+							source: { kind: "runtime", actor_id: "c6-ledger", adapter: "c6-entry", version: C6_ENTRY_VERSION },
+							schema_version: "1.1",
+						});
+						if (request?.phase === "committed") pendingToolAdmissions.length = 0;
+						if (written?.ok === true) return { ok: true };
+						return { ok: false, error: written?.error ?? "durable append failed" };
 					},
 					decisionBuffer: buffer,
 					decisionState,
@@ -691,15 +755,15 @@ export async function runC6FromConfig(
 						config.learning?.policy === "off"
 							? null
 							: async ({ task: routedTask }) => {
-									// Route BEFORE the model plans. Build the bridge from the CURRENT
-									// committed stream (never a cached old bridge), and derive a VERIFIED
-									// current-state ref for this task's target so `when` is decidable.
-									const bridge = buildLearningBridgeFromStream() ?? (await ensureLearningBridge());
-									if (!bridge) return { route: "deliberate", planning_requests: 1 };
+									// Route BEFORE the model plans. FIRST observe the real current state and
+									// commit it, so the router's resolver sees the JUST-COMMITTED
+									// current-state ref (a stale resolver reports `when` as unknown).
 									if (!learningStoreRef) learningStoreRef = createCampaignLearningStore(config.work_dir);
 									const { state: currentState, currentStateRef } = await observeCurrentState({
 										task: routedTask,
 									});
+									const bridge = buildLearningBridgeFromStream() ?? (await ensureLearningBridge());
+									if (!bridge) return { route: "deliberate", planning_requests: 1 };
 									const experiences = await loadAuthoritativeExperiences({
 										store: learningStoreRef,
 										events: readEventsSafe(eventLogPath),
