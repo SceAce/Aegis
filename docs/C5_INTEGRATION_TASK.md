@@ -1,7 +1,10 @@
 # C5：单一入口与完整 Campaign 集成
 
-状态：下一轮待委派，当前仅布置。C1-C4a 已按冻结范围交付，最新记录见 `C4A_EXTERNAL_REVIEW.md`。
-不重开已完成阶段，F16/旧类型诊断后置；本阶段只处理实际集成所需接线。
+状态：**C5 accepted_with_recorded_limits**，本轮审查与授权修复见 `C5_EXTERNAL_REVIEW.md`。
+接受范围为离线配置入口 + caller-provided SDK 路径；CLI 自动 SDK 创建、实际 Task/Episode
+绑定/请求阈值策略、常驻观察留到下一部署任务 `SDK_LAUNCHER_TASK.md`。
+以下保留历史冻结目标；使用时以审查记录的实际证据和限制为准。
+C1-C4a 不重开，F16/74 条旧类型诊断后置，不自动启动真实能力实验。
 
 ## 冻结交付
 

@@ -20,9 +20,9 @@
 // same file from separate OS processes are NOT coordinated; each run/task MUST
 // use its own log path.
 
-import { mkdir, open, readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { mkdir, open, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
 /**
  * Random, unique event/correlation id.
@@ -68,7 +68,9 @@ export function isKnownSchemaVersion(version) {
  * the trusted projection writer and `llm` is an untrusted model proposal. A
  * kind outside this table is refused at the append boundary.
  */
-export const SOURCE_KINDS = Object.freeze(new Set(["agent", "environment", "observer", "oracle", "replay", "human", "runtime", "llm"]));
+export const SOURCE_KINDS = Object.freeze(
+	new Set(["agent", "environment", "observer", "oracle", "replay", "human", "runtime", "llm"]),
+);
 
 export function isKnownSourceKind(kind) {
 	return typeof kind === "string" && SOURCE_KINDS.has(kind);
@@ -216,6 +218,26 @@ export function verifyChain(rows) {
 	return { ok: errors.length === 0, errors, lastDigest, sequences, ids };
 }
 
+// In-process Host ownership seam. An SDK Observer may borrow the Host's exact
+// writer, never create a competing append chain. Removal restores standalone Pi.
+/** @type {Map<string, EventLog>} */
+const hostLogs = new Map();
+/** @param {string} path */
+const hostLogKey = (path) => resolve(path);
+/** @param {string} path @returns {EventLog|null} */
+export function hostEventLog(path) {
+	return hostLogs.get(hostLogKey(path)) ?? null;
+}
+/** @param {string} path @param {EventLog} log @returns {() => void} */
+export function bindHostEventLog(path, log) {
+	path = hostLogKey(path);
+	if (hostLogs.has(path) && hostLogs.get(path) !== log) throw new Error("EventLog already owned by another Host");
+	hostLogs.set(path, log);
+	return () => {
+		if (hostLogs.get(path) === log) hostLogs.delete(path);
+	};
+}
+
 export class EventLog {
 	/**
 	 * @param {string} path append-only JSONL path
@@ -293,7 +315,10 @@ export class EventLog {
 		if (this.handle) return { ok: true, handle: this.handle };
 		try {
 			await mkdir(dirname(this.path), { recursive: true });
-			const existed = await readFile(this.path, "utf8").then(() => true, (error) => (error && error.code === "ENOENT" ? false : true));
+			const existed = await readFile(this.path, "utf8").then(
+				() => true,
+				(error) => (error && error.code === "ENOENT" ? false : true),
+			);
 			const handle = await open(this.path, "a");
 			this.handle = handle;
 			this.dirSynced = existed;
@@ -318,7 +343,10 @@ export class EventLog {
 			// Directory fsync is not supported on every platform/filesystem. That is a
 			// weaker guarantee for the very first append only; report it explicitly so
 			// callers are not told a durability level that was not achieved.
-			return { ok: false, error: `event log directory could not be fsynced at ${dirname(this.path)}: ${String(error)}` };
+			return {
+				ok: false,
+				error: `event log directory could not be fsynced at ${dirname(this.path)}: ${String(error)}`,
+			};
 		} finally {
 			if (dirHandle) await dirHandle.close().catch(() => undefined);
 		}
@@ -367,7 +395,10 @@ export class EventLog {
 			return { ok: false, error: `unknown schema_version "${schema_version}"; this build cannot write it` };
 		}
 		if (source && !isKnownSourceKind(source.kind)) {
-			return { ok: false, error: `unknown source.kind "${String(source?.kind)}"; register it explicitly before writing` };
+			return {
+				ok: false,
+				error: `unknown source.kind "${String(source?.kind)}"; register it explicitly before writing`,
+			};
 		}
 		const effectiveSchema = schema_version ?? knownSchema;
 		const run = this.queue.then(async () => {
@@ -380,7 +411,7 @@ export class EventLog {
 				event_id: eventId(),
 				event_type,
 				episode_id: episode_id || null,
-				sequence: episode_id ? this.sequences.get(episode_id) ?? 0 : null,
+				sequence: episode_id ? (this.sequences.get(episode_id) ?? 0) : null,
 				occurred_at: occurred_at || now,
 				recorded_at: now,
 				source,

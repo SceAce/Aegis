@@ -1,7 +1,8 @@
 # C5 Integration — Test Matrix
 
-Status: frozen with `C5_INTEGRATION_WORK_PLAN.md`. `required` = C5 gate;
-`deferred` = recorded, not a C5 gate.
+Status: C5 accepted_with_recorded_limits after bounded review and repairs; see
+`C5_EXTERNAL_REVIEW.md`. The original matrix is preserved below with the review
+addendum. `required` = C5 gate; `deferred` = recorded, not a C5 gate.
 
 Scripts:
 
@@ -47,14 +48,39 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 | C5-REG-3 | aegis-c4a-observation-http.mjs, aegis-c4a-external-boundaries.mjs | unchanged pass |
 | C5-REG-4 | aegis-c2-budget-sdk.mjs, aegis-c2-supervisor-boundaries.mjs (resolver) | unchanged pass |
 | C5-REG-5 | Biome on C5 files | exit 0 |
-| C5-REG-6 | tsc -p tsconfig.aegis-campaign.json | 65 legacy diagnostics, 0 in C5 files, reported honestly |
+| C5-REG-6 | tsc -p tsconfig.aegis-campaign.json | exit 1, 74 legacy diagnostics, 0 in C5 files, reported honestly |
 
 ## deferred (NOT a C5 gate)
 
 | case_id | item | ownership phase | reason |
 |---|---|---|---|
 | C5-D2 | F16 checkpoint cache incrementality | F16 | performance; deferred |
-| C5-D3 | legacy 65 tsc import diagnostics | lib changes | recorded baseline |
+| C5-D3 | legacy 74 tsc import diagnostics | lib changes | recorded baseline |
 | C5-D4 | container / remote platform / multi-worker | later | not requested |
 | C5-D5 | UI styling / remote sharing | later | not a gate |
 | C5-D6 | real model / network / target capability experiment | user-started later | requires explicit authorization |
+| C5-D7 | automatic SDK creation / actual Task binding / policy / persistent observation | SDK launcher | caller runtime/beforeRun and per-call server are current limits |
+
+## Review addendum: required repairs
+
+All rows are product/integration checks using trusted config + real local EventLog;
+SDK rows use real SDK/faux. Final results in ignored
+`Pi_Agent_base/runtime/dev/c5-external/resume-results.json` (argv/exit/log).
+
+| case | requirement / input -> expected | script / evidence | result |
+| --- | --- | --- | --- |
+| CONTROL | ordinary configured run -> both tasks completed | external-boundaries; task states | pass, exit 0 |
+| C5-X1 | fresh export/observe -> no action.requested, export fails without source | external-boundaries; committed events | 2 cases pass |
+| C5-X2 | occupied loopback port -> Host still completes; preparation throw -> registry released, next run succeeds | external-boundaries; actual listener/state/registry | 2 cases pass |
+| C5-X3 | malformed/unknown nested config -> rejection; default Session budget bounded, explicit widening refused | external-boundaries; load result/limit | 2 cases pass |
+| C5-X4 | corrupt completed stream -> non-ok status without completed | external-boundaries; source tamper/state | pass |
+| C5-X5 | old Episode rotation exhausts Campaign limit -> new runtime not created | external-boundaries; actual committed rotation/runtime call count | pass |
+| C5-X6 | missing CLI values/invalid port -> bad args; port 0 legal | external-boundaries; parsed arguments | pass |
+| C5-S1-chain | SDK rotation + Host actions, then standalone SDK activity -> both complete chains verify | session-sdk; verifyChain/event bytes | 2 added check blocks pass |
+
+External-boundaries command: `node --test Pi_Agent_base/tests/aegis-c5-external-boundaries.mjs`,
+10/10 Node tests. Session SDK command above now has 14 custom check blocks, exit 0.
+Old code red: original boundary group 1 pass/6 fail; isolated old SDK 2 chain failures;
+resume-config-red failed observation.host numeric acceptance before its final fix.
+SDK current test still uses caller runtime/trusted beforeRun and an explicitly staged Pi Episode;
+actual automatic scheduler Task binding is SDK launcher scope, not proven by the test's name.

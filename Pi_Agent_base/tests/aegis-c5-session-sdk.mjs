@@ -30,6 +30,7 @@ import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
 import { runCampaignFromConfig } from "../memory/campaign/c5-entry.mjs";
 import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
 import { validateManifest } from "../memory/campaign/manifest.mjs";
+import { verifyChain } from "../memory/runtime/events.mjs";
 import { committedRotations } from "../memory/runtime/session-supervisor.mjs";
 import { projectState } from "../memory/runtime/state.mjs";
 
@@ -215,6 +216,11 @@ try {
 	);
 
 	const events = readEvents(eventLogPath);
+	check(
+		"Observer rotation and Campaign actions share one verified append chain",
+		verifyChain(events).ok,
+		JSON.stringify(verifyChain(events).errors),
+	);
 	const completions = events.filter((e) => e.event_type === "handoff.completed");
 	check("handoff.completed was committed exactly once", completions.length === 1, `count=${completions.length}`);
 	check("the same Pi episode survived", Object.keys(projectState(events).episodes).length === 1);
@@ -241,6 +247,10 @@ try {
 		gate.deactivate();
 	}
 	check("the rotated Session blocks a direct write (same gate loaded)", !existsSync(deniedPath));
+	check(
+		"standalone SDK activity after Host return preserves the same verified chain",
+		verifyChain(readEvents(eventLogPath)).ok,
+	);
 } finally {
 	if (runtime) await runtime.dispose().catch?.(() => undefined);
 	rmSync(base, { recursive: true, force: true });

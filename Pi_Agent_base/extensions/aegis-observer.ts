@@ -64,7 +64,7 @@ import {
 import { projectBoard, summarizeBoard } from "../memory/runtime/board.mjs";
 import { appendContestOutcome, readContestResults, resolveContestOutcome } from "../memory/runtime/contest-bridge.mjs";
 import { contributionPayload, recordStageContribution } from "../memory/runtime/contribution.mjs";
-import { digest, EventLog, eventId, schemaForEventType } from "../memory/runtime/events.mjs";
+import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../memory/runtime/events.mjs";
 import { normalizeExperienceDecision } from "../memory/runtime/experience.mjs";
 import { evaluateHandoff } from "../memory/runtime/handoff.mjs";
 import { createLearningBridge } from "../memory/runtime/learning-bridge.mjs";
@@ -214,6 +214,7 @@ function summarizeToolInput(toolName: string, input: unknown) {
 
 export default function aegisRuntime(pi: ExtensionAPI): void {
 	let log: EventLog | null = null;
+	let borrowedHostLog = false;
 	let board: ReturnType<typeof projectBoard> = projectBoard([]);
 	let state = projectState([]);
 	let sessionId = "unknown-session";
@@ -293,6 +294,17 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	}
 
 	async function ensureLog(ctx: ExtensionContext): Promise<EventLog> {
+		const owned = hostEventLog(eventLogPath());
+		if (owned && log !== owned) {
+			await log?.close();
+			log = owned;
+			borrowedHostLog = true;
+		} else if (!owned && borrowedHostLog) {
+			// Host run ended: discard the borrowed snapshot and reopen standalone
+			// state from disk before the next SDK prompt.
+			log = null;
+			borrowedHostLog = false;
+		}
 		if (log) return log;
 		log = new EventLog(eventLogPath(), {
 			onError: (message) => {
@@ -806,7 +818,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			// ignore: the bus may already be torn down
 		}
 		unsubscribeDecision = undefined;
-		await log?.close().catch(() => undefined);
+		if (!borrowedHostLog) await log?.close().catch(() => undefined);
 		log = null;
 	});
 

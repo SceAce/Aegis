@@ -1,6 +1,10 @@
 # C5 Integration — Implementation Report
 
-Status: **internally_verified / awaiting_external_review**.
+Historical DS status: **internally_verified / awaiting_external_review**.
+Subsequent bounded review and user-authorized repairs completed:
+[`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md), accepted_with_recorded_limits.
+The original claims/results below are retained as historical delivery evidence;
+the review corrects writer/SDK binding and observation lifecycle limits.
 Phase: C5 (single reproducible entry + full offline Campaign assembly). Scope
 frozen in `C5_INTEGRATION_TASK.md` / `C5_INTEGRATION_DS_PROMPT.md`, plan/matrix/
 runbook in `C5_INTEGRATION_WORK_PLAN.md` / `C5_INTEGRATION_TEST_MATRIX.md` /

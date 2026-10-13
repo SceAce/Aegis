@@ -109,8 +109,27 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 			reasons.push(`script_config_path not found: ${scriptConfigPath}`);
 	}
 
-	// Session budget/rotation config.
+	// Nested objects are configuration, not implicit permissions or defaults.
+	for (const [name, keys] of Object.entries({
+		session: ["session_count", "max_requests_per_session", "budget_ledger"],
+		observation: ["enabled", "host", "port"],
+		oracle: ["kind"],
+	})) {
+		if (raw[name] !== undefined && !isPlainObject(raw[name])) reasons.push(`config.${name} must be an object`);
+		else
+			for (const key of Object.keys(raw[name] ?? {}))
+				if (!keys.includes(key)) reasons.push(`unknown config.${name} key ${key}`);
+	}
 	const session = isPlainObject(raw.session) ? raw.session : {};
+	for (const field of ["session_count", "max_requests_per_session"]) {
+		if (
+			session[field] !== undefined &&
+			(!Number.isSafeInteger(session[field]) || session[field] < (field === "session_count" ? 0 : 1))
+		)
+			reasons.push(`config.session.${field} is invalid`);
+	}
+	if (session.budget_ledger !== undefined && !isPlainObject(session.budget_ledger))
+		reasons.push("session.budget_ledger must be an object");
 	const sessionConfig = {
 		session_count: Number.isInteger(session.session_count) && session.session_count >= 0 ? session.session_count : 0,
 		max_requests_per_session:
@@ -119,7 +138,6 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 				: 10,
 		budget_ledger: isPlainObject(session.budget_ledger) ? session.budget_ledger : null,
 	};
-	if (session && !isPlainObject(session)) reasons.push("config.session must be an object");
 
 	const observation = isPlainObject(raw.observation) ? raw.observation : {};
 	const observationConfig = {
@@ -127,6 +145,15 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 		host: typeof observation.host === "string" ? observation.host : "127.0.0.1",
 		port: Number.isInteger(observation.port) && observation.port >= 0 ? observation.port : 0,
 	};
+	if (
+		observation.port !== undefined &&
+		(!Number.isInteger(observation.port) || observation.port < 0 || observation.port > 65535)
+	)
+		reasons.push("observation.port is invalid");
+	if (observation.enabled !== undefined && typeof observation.enabled !== "boolean")
+		reasons.push("observation.enabled must be boolean");
+	if (observation.host !== undefined && typeof observation.host !== "string")
+		reasons.push("observation.host must be a string");
 	if (
 		observationConfig.host !== "127.0.0.1" &&
 		observationConfig.host !== "localhost" &&
@@ -137,6 +164,7 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 
 	const oracle = isPlainObject(raw.oracle) ? raw.oracle : { kind: "fixture" };
 	const oracleConfig = { kind: typeof oracle.kind === "string" ? oracle.kind : "fixture" };
+	if (oracle.kind !== undefined && typeof oracle.kind !== "string") reasons.push("oracle.kind must be a string");
 	if (!ORACLE_KINDS.includes(oracleConfig.kind)) {
 		reasons.push(
 			`config.oracle.kind must be one of ${ORACLE_KINDS.join(", ")} (registered oracles are out of C5 scope)`,
@@ -170,6 +198,37 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	}
 	if (reasons.length > 0) return { ok: false, reasons, config: null, manifest: null };
 
+	const sessionLimit = session.session_count ?? manifest.budget.session_count;
+	if (sessionLimit > manifest.budget.session_count) reasons.push("session_count exceeds Manifest budget");
+	const ledger = sessionConfig.budget_ledger ?? {
+		limit: { session_count: sessionLimit },
+		consumed: { session_count: 0 },
+		reserved: { session_count: 0 },
+	};
+	for (const key of Object.keys(ledger)) {
+		if (!["limit", "consumed", "reserved"].includes(key)) reasons.push(`unknown budget_ledger key ${key}`);
+	}
+	for (const section of ["limit", "consumed", "reserved"]) {
+		if (!isPlainObject(ledger[section] ?? {})) {
+			reasons.push(`budget_ledger.${section} must be an object`);
+			continue;
+		}
+		for (const [key, value] of Object.entries(ledger[section] ?? {})) {
+			if (
+				!["wall_time_ms", "model_requests", "tool_calls", "session_count"].includes(key) ||
+				!Number.isSafeInteger(value) ||
+				value < 0
+			)
+				reasons.push(`invalid budget_ledger.${section}.${key}`);
+			if (section === "limit" && value > (manifest.budget[key] ?? 0))
+				reasons.push(`budget_ledger limit ${key} exceeds Manifest`);
+		}
+	}
+	if (!Number.isSafeInteger(ledger.limit?.session_count) || ledger.limit.session_count > sessionLimit)
+		reasons.push("Session ledger limit exceeds configured grant or is missing");
+	if (reasons.length) return { ok: false, reasons, config: null, manifest: null };
+	sessionConfig.session_count = sessionLimit;
+	sessionConfig.budget_ledger = ledger;
 	const config = {
 		schema_version: CONFIG_SCHEMA_VERSION,
 		config_path: absoluteConfig,
