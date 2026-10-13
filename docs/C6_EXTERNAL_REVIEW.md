@@ -1,8 +1,8 @@
 # C6 限定工程审查：changes_required
 
 状态：**changes_required；暂不进入实际环境实验**。
-修复基线 `35b053a` 的最新复验见第4节；初轮内容保留为历史证据。原21边界已通过，
-补测仍复现预算/Oracle/读取边界问题，状态保持 changes_required。
+最新修复基线 `22d075c` 的复验见第5节；初轮及35b053a复验保留为历史证据。
+五组修复原有用例与真实第三任务复用均已通过，provider gate仍有3个同路径遗漏，状态保持changes_required。
 审查基线 `7b7e92d` / `feat/c6-agent-product`，开始工作树干净；内嵌 Pi `42a3497d0` 干净。
 本轮按用户要求复核 DS 交付并补其他测试，未修改产品代码、未运行真实模型/外部目标。
 正常 SDK/faux + 本地 Broker 效果已成立，但以下缺陷和缺失接线违反原 C6 冻结承诺。
@@ -133,13 +133,52 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 并非真实执行前观测；正例还需证明独立任务真实reset与前态，不能给声明标签赋验证身份。
 这些是原X2/X4/X8要求的遗漏，复验不另加性能/容器等目标。
 
-## 5. 收敛处理与下一步
+## 5. 22d075c 最终聚焦复验：五组修复认可，请求门仍有三处遗漏
 
-本轮提交正常red测试与审查报告，**不修改产品代码**，便于DS以可复现证据修复。
-当前剩余项提示词见 [C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)，
-复用现C6 plan/matrix/report。历史初轮C6_REPAIR_DS_PROMPT.md不再次整轮委派。
-只处理第4节的五组遗漏和受影响回归，然后交一次限定复验。
-无新增通用框架/无限缓存/性能/样式门槛。
+起点22d075c，工作树干净、分支feat/c6-agent-product；本次未修改产品代码、不调用真实provider。
+
+**已认可的结果**：
+
+- 全部15个C6脚本独立运行exit0，其中external-boundaries为22/22，recheck为13/13。
+- registered-test正常assert模块/真实错误/提前exit/伪造帧用例通过，symlink与当前Task grant用例通过。
+- runner缺initializer明确拒绝，真实初始化与失败隔离通过。
+- 学习训练两次真实前态/独立reset与Replay→active→未调度的task-003，确实有NEW intent/effect/Oracle success，
+  provider规划请求0；不同声明值未替代实际pre_state。此前终态任务无dispatch的测试漏洞已经修正。
+- Biome对14个DS修改代码/测试文件exit0，无warnings；tsc exit1仍196条旧诊断，Campaign文件0条。
+- 不重复DS mutation或26个回归声明为本次独立运行。原15suite exact argv/exit/log见
+  ignored `runtime/dev/c6-final-review/results.json`，静态检查见static-results.json。
+
+**仅针对新provider gate同一路径补3项断言**，保留原13例，最终16 tests/13 pass/3 fail，exit1：
+
+| case / 严重度 | 直接复现 | 根因与原C6承诺 |
+| --- | --- | --- |
+| C6-R12 / P0 | 最后一次请求commit回调返回ok:false，模型有有效决策、无下一请求；worker.run仍ok:true，可进入CompositeWorker的Broker执行 | gate.pendingCommit只在下一次streamFunction前等待，成功返回前不flush；原X2/X4 effect前durable与审计故障停止 |
+| C6-R13 / P1 | Campaign ledger请求余额0、Task ledger余额5，provider仍被调用4次 | installProviderGate仅activeLedger.admitRequest，Campaign ledger只在message_end无reservation地事后commit；原Task+Campaign envelope调用前准入 |
+| C6-R14 / P1 | window=2000，实际llmContext.messages含10000字符，provider仍被调用1次 | gate不使用llmContext，只重算cached prompt/catalog/RAM；historyCharsProvider默认0且entry未传；原每请求总输入含实际history/tools |
+
+代码位置为c6-model-worker.mjs的installProviderGate、message_end与run尾部，及c6-entry.mjs ledger接线。
+没有新增OS sandbox、真实计费、性能或实验门槛；它们在原已承诺的调用前预算/窗口/持久故障范围。
+同SDK内部边界的受控测试不依赖网络，provider是否被调用由计数明确观测；正常/其他失败原13例全部保留。
+
+执行：
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs
+```
+
+完整失败：ignored `runtime/dev/c6-final-review/final-guards.log`，退出统计remaining-results.json。
+修复应在run返回/每provider准入前统一处理，不能删断言或只保护有下一请求的分支。
+Task/Campaign reservation必须同一个实际request身份、失败时保守处理pending与已发生成本；
+先检查/预留再durable记录，避免拒绝前写null reservation给重启伪造状态。
+实际provider transcript/schema按SDK格式计量，估计仍明确标注，窗口限制不只针对初始prompt。
+
+## 6. 收敛处理与下一步
+
+本轮提交3个正常red断言与审查更新，**不修改产品代码**，便于DS以明确证据小修。
+当前提示词见 [C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)，复用现C6材料。
+第4节五组及初轮已闭环内容不再次整体委派，仅修第5节请求门三处遗漏及相关回归。
+这三项通过后即可对本轮冻结目标做最终限定判定，再由用户确定有界本地provider pilot参数。
+无新增框架/缓存/性能/样式要求。
 
 F16、旧库类型清库、复杂检索/任意经验组合、多Worker/容器、真实模型pilot/效果/迁移仍后置。
 DS 完成后交当前会话复验；只有冻结工程目标通过，才讨论真实环境实验具体模型、授权与预算。

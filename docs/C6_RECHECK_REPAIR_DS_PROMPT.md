@@ -1,10 +1,11 @@
 # 给主 DS：C6 修复复验剩余项
 
-本次复验基线35b053a，原14个C6脚本均exit0，原21外部边界全通过；类型检查196条旧诊断、
-Campaign0条新增，认可上述修复。新增聚焦反例仍失败，C6暂不进入真实环境测试。
+当前基线22d075c。原15个C6脚本、原22外部边界、学习closure和recheck既有13项均通过；
+新增3个同provider gate路径反例仍失败，C6暂不进入真实环境测试。35b053a/旧X1-X12已闭环，不重复委派。
+类型检查196条旧诊断、Campaign0条新增。
 完整依据 docs/C6_EXTERNAL_REVIEW.md 第4节，旧 X1-X12 列表为历史，不重做已闭环项。
 
-先完整读Agent入口、开发规范§3.1、测试/Git规范、原C6任务及本次审查。
+先完整读Agent入口、开发规范§3.1、测试/Git规范、原C6任务及本次审查，尤其 C6_EXTERNAL_REVIEW.md 第5节。
 继续feat/c6-agent-product，复用现plan/matrix/report/runbook，按依赖自主完成以下五组，
 不逐helper请示，最后一次限定复验，不引入缓存/并行/容器/真实模型新门槛。
 

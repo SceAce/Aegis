@@ -225,6 +225,97 @@ test("C6-R6: a failed durable commit stops the NEXT provider request", async (_t
 	assert.ok(result.reconciliation, "reconciliation state must be retained after the failure");
 });
 
+test("C6-R12: a final request commit failure prevents returning an executable decision", async () => {
+	const { session, listeners } = fakeSession();
+	session.agent.streamFunction = async () => ({ ok: true });
+	session.prompt = async () => {
+		await session.agent.streamFunction({}, { messages: [] });
+		for (const listener of [...listeners])
+			listener({ type: "message_end", message: { role: "assistant", content: [] } });
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+		decisionBuffer: {
+			list: () => [
+				{ action_ref: "data.record.set", arguments: { target: "dataset.json", field: "status", value: "active" } },
+			],
+		},
+		persistRequest: async ({ phase }) =>
+			phase === "reserved" ? { ok: true } : { ok: false, error: "last commit fsync failure" },
+	});
+	const result = await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(
+		result.ok,
+		false,
+		"no NEXT request exists to flush the final commit; the Worker must await it before Broker dispatch",
+	);
+	assert.equal(result.failure_mode, "accounting_failure");
+});
+
+test("C6-R13: provider admission checks the Campaign limit as well as the Task limit", async () => {
+	const { session } = fakeSession();
+	let calls = 0;
+	session.agent.streamFunction = async () => {
+		calls += 1;
+		return { ok: true };
+	};
+	const campaignLedger = createToolLedger({
+		limit: { model_requests: 0, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const taskLedger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaignLedger,
+		ledgerFactory: () => taskLedger,
+		context: { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(calls, 0, "a Task allocation is not permission to bypass exhausted Campaign consumed/pending budget");
+});
+
+test("C6-R14: the provider window includes actual continuation messages", async () => {
+	const { session } = fakeSession();
+	let calls = 0;
+	session.agent.streamFunction = async () => {
+		calls += 1;
+		return { ok: true };
+	};
+	session.prompt = async () => {
+		try {
+			await session.agent.streamFunction({}, { messages: [{ role: "user", content: "x".repeat(10000) }] });
+		} catch {
+			/* SDK converts gate refusal into a stop */
+		}
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 2000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(
+		calls,
+		0,
+		"the actual provider transcript is larger than the window even if cached prompt/RAM estimate fits",
+	);
+});
+
 test("C6-R7: the observation read grant is the CURRENT task, not the whole manifest", async (t) => {
 	const { workspace } = setup(t);
 	writeFileSync(join(workspace, "task-a.txt"), "A-data");

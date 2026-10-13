@@ -1,8 +1,8 @@
-# Aegis 阶段入口：C6 修复后复验仍 changes_required
+# Aegis 阶段入口：C6 最终工程复验前仍 changes_required
 
-C1-C5保持既有验收范围。C6修复基线35b053a：原14个C6脚本独立复跑通过，原21外部边界全绿，
-类型196条旧诊断且Campaign0条新增；这些修复认可。但本轮聚焦补测仍有预算/Oracle/读取/初态/
-学习复用证明遗漏，暂不进入真实环境测试。
+C1-C5保持既有验收范围。C6当前基线22d075c：原15个C6脚本、22外部边界、学习closure与recheck既有13项通过，
+类型196条旧诊断且Campaign0条新增；五组修复认可。但provider gate同路径仍有3个预算/持久窗口遗漏，
+暂不进入真实环境测试。
 
 当前审查：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第4节。
 当前修复提示词：[C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)。
