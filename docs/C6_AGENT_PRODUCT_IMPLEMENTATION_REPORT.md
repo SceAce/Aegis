@@ -323,7 +323,7 @@ provider/Broker dispatch（含 `direct` 路由），并保留预算 hold。无�
 | 重复 committed（LC-D4） | consumed.model_requests=1（不双计） |
 
 私有日志（ignored `Pi_Agent_base/runtime/dev/c6-lifecycle-run1/`）：`red-baseline.log`、
-`restart-red-baseline.log`、`final2/results.json`、`final-regress2/results.json`、
+`restart-red-baseline.log`、`final4/results.json`、`final-regress3/results.json`、
 `tsc-before.log`、`tsc-final.log`、`biome-final.log`、`mutations.log`。
 
 ### 14.4 exact argv / exit

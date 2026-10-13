@@ -227,5 +227,5 @@ expected 来自冻结契约（联合成功定义、单侧 reservation 不合法�
 | 去除重复 committed 幂等 | LC-D4 | FAIL ✓ |
 
 日志：`Pi_Agent_base/runtime/dev/c6-lifecycle-run1/mutations.log`（7/7 killed），
-`final2/results.json`（17 C6 脚本 0 failed），`final-regress2/results.json`（26 回归 0 failed），
+`final4/results.json`（17 C6 脚本 0 failed），`final-regress3/results.json`（26 回归 0 failed），
 `tsc-before.log`/`tsc-final.log`（196 → 196，modified files 0），`biome-final.log`（exit 0）。
