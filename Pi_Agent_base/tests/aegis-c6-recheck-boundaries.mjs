@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { createCompositeWorker, summarizeRequestLedger } from "../memory/campaign/c6-entry.mjs";
 import { createModelWorker, createObservationTool } from "../memory/campaign/c6-model-worker.mjs";
 import { runBoundedAttempts } from "../memory/campaign/c6-runner.mjs";
 import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
@@ -314,6 +315,313 @@ test("C6-R14: the provider window includes actual continuation messages", async 
 		0,
 		"the actual provider transcript is larger than the window even if cached prompt/RAM estimate fits",
 	);
+});
+
+test("C6-R12b: accounting failure cannot enter the Broker effect path", async () => {
+	const { session, listeners } = fakeSession();
+	session.agent.streamFunction = async () => ({ ok: true });
+	session.prompt = async () => {
+		await session.agent.streamFunction({}, { messages: [] });
+		for (const listener of [...listeners])
+			listener({ type: "message_end", message: { role: "assistant", content: [] } });
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const modelWorker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+		decisionBuffer: {
+			list: () => [
+				{ action_ref: "data.record.set", arguments: { target: "dataset.json", field: "status", value: "active" } },
+			],
+		},
+		persistRequest: async ({ phase }) =>
+			phase === "reserved" ? { ok: true } : { ok: false, error: "last commit fsync failure" },
+	});
+	const buffer = { setTask() {} };
+	let brokerEffects = 0;
+	const composite = createCompositeWorker({
+		modelWorker,
+		buffer,
+		brokerWorker: {
+			async run() {
+				brokerEffects += 1;
+				return { ok: true };
+			},
+		},
+	});
+	const result = await composite.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(result.ok, false);
+	assert.equal(result.failure_mode, "accounting_failure");
+	assert.equal(brokerEffects, 0, "a failed final accounting commit must not dispatch a Broker effect");
+});
+
+test("C6-R13b: a campaign refusal does not write a durable reservation without an id", async () => {
+	const { session } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		return { ok: true };
+	};
+	const persisted = [];
+	const campaignLedger = createToolLedger({
+		limit: { model_requests: 0, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const taskLedger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaignLedger,
+		ledgerFactory: () => taskLedger,
+		persistRequest: async (record) => {
+			persisted.push(record);
+			return { ok: true };
+		},
+		context: { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(providerCalls, 0);
+	assert.equal(persisted.length, 0, "budget rejection must not leave a null-id reserved record");
+});
+
+test("C6-R13c: a legal joint admission charges Campaign and Task exactly once", async () => {
+	const { session, listeners } = fakeSession();
+	let providerCalls = 0;
+	let bothReservedBeforeProvider = false;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		bothReservedBeforeProvider =
+			campaignLedger.snapshot().pending_reservations.length === 1 &&
+			taskLedger.snapshot().pending_reservations.length === 1;
+		return { ok: true };
+	};
+	session.prompt = async () => {
+		await session.agent.streamFunction({}, { messages: [] });
+		for (const listener of [...listeners])
+			listener({ type: "message_end", message: { role: "assistant", content: [] } });
+	};
+	const campaignLedger = createToolLedger({
+		limit: { model_requests: 1, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const taskLedger = createToolLedger({
+		limit: { model_requests: 2, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaignLedger,
+		ledgerFactory: () => taskLedger,
+		context: { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(providerCalls, 1);
+	assert.equal(bothReservedBeforeProvider, true, "both ledgers must have a pending hold before provider dispatch");
+	assert.equal(campaignLedger.consumed().model_requests, 1);
+	assert.equal(taskLedger.consumed().model_requests, 1);
+});
+
+test("C6-R14b: actual tool schema and tool-result transcript count toward the window", async () => {
+	const { session } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		return { ok: true };
+	};
+	session.prompt = async () => {
+		try {
+			await session.agent.streamFunction(
+				{},
+				{
+					messages: [{ role: "tool", content: "tool-result-".repeat(1500) }],
+					tools: [{ name: "aegis_read", description: "schema-".repeat(1500), parameters: {} }],
+				},
+			);
+		} catch {
+			/* SDK converts gate refusal into a stop */
+		}
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 2000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(providerCalls, 0, "actual tool schema and result content must not bypass the request window");
+});
+
+test("C6-R14c: a large tool schema alone counts toward the window", async () => {
+	const { session } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		return { ok: true };
+	};
+	session.prompt = async () => {
+		try {
+			await session.agent.streamFunction(
+				{},
+				{
+					// Small messages; ONLY the tool schema is oversized. This isolates the
+					// tool-schema contribution from the message contribution.
+					messages: [{ role: "user", content: "hi" }],
+					tools: [{ name: "aegis_read", description: "schema-".repeat(1500), parameters: {} }],
+				},
+			);
+		} catch {
+			/* SDK converts gate refusal into a stop */
+		}
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 2000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(providerCalls, 0, "an oversized tool schema alone must refuse the request before the provider");
+});
+
+test("C6-R15: a legal first request cannot fund an oversized continuation", async () => {
+	const { session, listeners } = fakeSession();
+	let providerCalls = 0;
+	let iteration = 0;
+	session.agent.streamFunction = async (_model, llmContext) => {
+		providerCalls += 1;
+		iteration += 1;
+		return { ok: true, llmContext };
+	};
+	session.prompt = async () => {
+		// Iteration 1: small, legal. Iteration 2: the continuation transcript has
+		// grown past the window.
+		try {
+			await session.agent.streamFunction({}, { messages: [{ role: "user", content: "hi" }] });
+		} catch {
+			return;
+		}
+		for (const listener of [...listeners])
+			listener({ type: "message_end", message: { role: "assistant", content: [] } });
+		try {
+			await session.agent.streamFunction({}, { messages: [{ role: "user", content: "y".repeat(5000) }] });
+		} catch {
+			return;
+		}
+		for (const listener of [...listeners])
+			listener({ type: "message_end", message: { role: "assistant", content: [] } });
+	};
+	const ledger = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+	});
+	const worker = createModelWorker({
+		session: () => session,
+		ledger,
+		context: { max_total_input_chars: 2000, output_reserve_chars: 0, strategy: "bounded_ram" },
+		taskId: "task-001",
+		goal: "demo",
+	});
+	const result = await worker.run({ task: { task_id: "task-001", goal: { description: "demo" } } });
+	assert.equal(providerCalls, 1, "only the legal first request may reach the provider");
+	assert.equal(iteration, 1);
+	assert.equal(result.failure_mode, "context_window_exceeded");
+	assert.equal(result.provider_requests, 1, "the real request count is retained");
+});
+
+test("C6-R16: the durable request payload rebuilds consumed, pending and reservation ids", () => {
+	const base = {
+		event_type: "runtime.note",
+		payload: { kind: "c6.request", campaign_id: "campaign-x" },
+	};
+	const events = [
+		{
+			...base,
+			payload: {
+				...base.payload,
+				phase: "reserved",
+				task_id: "task-001",
+				request_id: "req-1",
+				task_reservation_id: "task-res-1",
+				campaign_reservation_id: "camp-res-1",
+				input_chars: 100,
+				coverage: ["messages", "tools"],
+				input_source: "estimated",
+			},
+		},
+		{
+			...base,
+			payload: {
+				...base.payload,
+				phase: "committed",
+				task_id: "task-001",
+				request_id: "req-1",
+				task_reservation_id: "task-res-1",
+				campaign_reservation_id: "camp-res-1",
+				input_chars: 100,
+				tool_calls: 2,
+				usage: { input: 10, output: 1 },
+			},
+		},
+		// A pending reservation with no matching commit still holds budget.
+		{
+			...base,
+			payload: {
+				...base.payload,
+				phase: "reserved",
+				task_id: "task-002",
+				request_id: "req-2",
+				task_reservation_id: "task-res-2",
+				campaign_reservation_id: "camp-res-2",
+				input_chars: 40,
+			},
+		},
+		// A null-id committed record is NOT a legal committed request.
+		{
+			...base,
+			payload: { ...base.payload, phase: "committed", task_id: "task-003", request_id: "req-3", usage: {} },
+		},
+	];
+	const summary = summarizeRequestLedger(events);
+	assert.deepEqual(summary.consumed, { model_requests: 1, tool_calls: 2, input_chars: 100, wall_time_ms: 0 });
+	assert.equal(summary.byTask.get("task-001").model_requests, 1);
+	assert.deepEqual(
+		summary.campaignPending.map((p) => p.reservation_id),
+		["camp-res-2"],
+	);
+	assert.deepEqual(
+		summary.taskPending.map((p) => p.reservation_id),
+		["task-res-2"],
+	);
+	assert.equal(summary.committedReservations.has("camp-res-1"), true);
+	assert.equal(summary.committedReservations.has("task-res-1"), true);
+	assert.equal(summary.records.length, 1, "the null-id record is not a legal committed request");
+	// A ledger rebuilt with the pending hold still counts it against remaining.
+	const rebuilt = createToolLedger({
+		limit: { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 },
+		baseConsumed: summary.consumed,
+		baseReserved: {
+			model_requests: summary.campaignPending.length,
+			input_chars: summary.campaignPending.reduce((s, p) => s + p.inputChars, 0),
+			pending: summary.campaignPending,
+			committed: [...summary.committedReservations],
+		},
+	});
+	assert.equal(rebuilt.remaining().model_requests, 3, "1 consumed + 1 pending hold are both accounted");
+	assert.equal(rebuilt.snapshot().pending_reservations.length, 1);
 });
 
 test("C6-R7: the observation read grant is the CURRENT task, not the whole manifest", async (t) => {
