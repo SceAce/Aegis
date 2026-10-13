@@ -1,9 +1,9 @@
 # C6 限定工程审查：changes_required
 
 状态：**changes_required；暂不进入实际环境实验**。
-最新修复基线 `22d075c` 的复验见第5节；初轮及35b053a复验保留为历史证据。
-五组修复原有用例与真实第三任务复用均已通过，provider gate仍有3个同路径遗漏，状态保持changes_required。
-审查基线 `7b7e92d` / `feat/c6-agent-product`，开始工作树干净；内嵌 Pi `42a3497d0` 干净。
+最新独立复验基线 `93d4617`，见第7节；此前复验保留为历史证据。
+原请求门修复及生命周期收敛的已有检查通过；新增组合检查仍发现预算重建与中止后执行两组阻塞问题。
+初轮审查基线 `7b7e92d` / `feat/c6-agent-product`，开始工作树干净；内嵌 Pi `42a3497d0` 干净。
 本轮按用户要求复核 DS 交付并补其他测试，未修改产品代码、未运行真实模型/外部目标。
 正常 SDK/faux + 本地 Broker 效果已成立，但以下缺陷和缺失接线违反原 C6 冻结承诺。
 本报告不增加性能/缓存/并行/容器/任意任务理解门槛，C1-C5 保持原验收范围。
@@ -189,3 +189,169 @@ Task/Campaign reservation必须同一个实际request身份、失败时保守处
 
 F16、旧库类型清库、复杂检索/任意经验组合、多Worker/容器、真实模型pilot/效果/迁移仍后置。
 DS 完成后交当前会话复验；只有冻结工程目标通过，才讨论真实环境实验具体模型、授权与预算。
+
+## 7. 93d4617 架构组合复验：两组核心不变量未闭合
+
+本轮依据用户要求独立核对整体执行链并补测试，初始工作树干净，分支
+`feat/c6-agent-product`。产品基线 `93d4617`，内嵌 Pi 为
+`42a3497d03ad17e308a2299fa824727894f2c0ec`、工作树干净。
+本轮只增加审计测试、扩展测试子进程和更新本报告，产品实现保持该基线。
+真实 SDK/faux、本地临时目录、真实 Host/Broker/Oracle/EventLog；未进行真实 provider pilot。
+
+### 7.1 整体设计与已经成立的行为
+
+Aegis 的主链是目标/授权/预算 → 模型观察与数据决策 → Host/Broker 执行 → 独立
+Oracle → 可信 Episode → Replay/Compiler → 条件经验。事件是权威源，报告、账本投影
+和经验存储由事件重建。模型决策和请求结算不直接构成任务成功。
+
+DS 统一请求生命周期模块的方向成立。原四项缺陷的聚焦检查已经通过：内存失败不会被
+durable success 掩盖，provider 无 completion 会保留未决记录，Task pending 按归属隔离，
+部分 committed 不被接受为联合提交。已有产品链和学习闭环继续通过；本轮新增正常控制
+也证明真实 SDK 提交决策后有真实文件修改、Broker effect、Oracle completed，重启不重复
+provider/effect 且保留累计消费。授权边界、可信验收、独立 Replay 和第三任务复用的已有
+验收不重开。
+
+剩余根因是三个状态仍被混用：**每侧是否已记账、请求是否已联合结清、模型规划是否正常结束**。
+共享文件不自动保证这些状态一致。预算责任守恒与执行许可必须分别从这些事实推导。
+实际接线中，entry/rebuild 引用了共享 lifecycle 模块，live Worker 的 finalizeRequest 和
+provider 结束分类仍在本地定义；“live gate、持久化、重建已经共用同一成功规则”尚未成立。
+导入结构本身不另列阻塞项，修复以以下可复现行为及其不变量为准。
+
+### 7.2 当前阻塞：恢复不能清空预算责任或未决状态
+
+位置：`c6-request-lifecycle.mjs:196`、`:239`，由 `c6-entry.mjs` 在启动时直接使用。
+
+`reconciliation_required` 的某侧状态为 committed 时，reducer 将 reservation 放入
+settled set，从 pending 中移除，但没有把已发生责任加入该侧 consumed。
+如果两侧都 committed，最后按 pending 数量推导 unresolved，结果也变成0。
+
+由实际 Worker 产生、writer 接口故障注入得到的序列：
+
+```text
+provider calls = 1
+Task/Campaign live consumed = 1/1
+durable committed append -> {ok:false}
+durable fallback -> reserved + reconciliation_required
+commit_status = {task:committed, campaign:committed}
+
+rebuild -> Campaign consumed=0, byTask empty
+           Task/Campaign pending=0/0, unresolved=0, diagnostics=[]
+```
+
+单侧成功变体也失败：原预算5，已经发生一请求，成功侧重建后 remaining=5，正确责任应使
+remaining=4。故障侧的 pending 留住了，成功侧的消费却被退掉了。
+
+产品恢复反例进一步使用真实 EventLog：仅在 durable writer 的 committed 操作注入失败，
+随后实际 append/fsync fallback reconciliation，并立即 SIGKILL。两个 Task 相互独立，
+第二个仍 queued，避免终态/依赖阻断掩盖错误。重启从同一配置、同一完整事件链执行：
+
+```text
+provider calls after restart = 2       (应为0)
+Broker effects after restart = 1       (应为0)
+dataset.status = active                (应保持pending)
+reconciliation = {unresolved_requests:0, diagnostics:[], blocked:false}
+Campaign consumed = 2                 (丢失重启前已发生的1次)
+```
+
+完整性验证仍通过。这是语义重建错误。故障注入是 worker/writer 已承诺处理的失败接口；
+没有伪造预期输出或直接编辑权威记录。此例不宣称真实 EventLog 的永久 fsync 故障会自行恢复：
+永久写故障仍停止，只有 reserved 可用时的保守重建正例继续通过。
+
+分类：**current_blocker / P0**。违反原任务书的恢复责任守恒与未决时禁止新 dispatch，
+不是新增基础设施需求。对应 AR-02-task/campaign、AR-03、AR-04、AR-10，共5个失败。
+
+### 7.3 当前阻塞：aborted 被当作正常结束，已有决策仍执行
+
+位置：`c6-model-worker.mjs:1003`、`:1120`。
+
+目前分类是 `stopReason === error ? error : ok`，SDK 的 aborted 被落入 ok。
+真实 Pi agent-loop 对 error/aborted 都会结束运行并跳过该响应的 tool calls；Aegis 在
+prompt 返回后却继续使用前一次工具调用留下的 decision buffer。
+
+真实 SDK/faux 产品反例：第一请求调用 `aegis_task_decision` 缓冲合法动作，第二请求
+返回 SDK 支持的 aborted 响应。不是直接设置 Worker 返回值或直接调用 Broker。
+
+```text
+provider calls = 2
+durable second committed.provider_status = ok
+Broker effects = 1
+dataset.name = Ada                     (初态??；应保持??)
+task-001 = completed                   (规划中止不应完成/执行)
+```
+
+同样流程第二响应为 error 的控制通过：provider2、Broker0、文件不变、Task unknown、
+消费仍为2。正常结束的控制也通过，因此测试没有通过拒绝一切请求来满足负例。
+
+分类：**current_blocker / P0**。中止/取消后继续执行真实写入，直接影响用户可停止性。
+对应 AR-09-aborted_followup。该用例通过 faux 发出真实 SDK aborted 消息，未将 OS 信号
+中止/远程服务取消的全部行为冒充已经测试。
+
+### 7.4 新增覆盖矩阵与独立结果
+
+脚本：`Pi_Agent_base/tests/aegis-c6-architecture-review.mjs`。
+helper：`Pi_Agent_base/tests/helpers/c6-lifecycle-child.mjs`，保留原 restart 场景并增补新场景。
+
+| 用例 | 层级 / 输入来源 | 契约与实际证据 | 结果 |
+| --- | --- | --- | --- |
+| AR-01 | integration / live worker records | 正常两侧消费、剩余预算、Task归属、无未决 | pass |
+| AR-02-task/campaign | recovery / memory commit fault + live records | 两侧 consumed+pending 的责任重建不变，remaining=4 | fail ×2 |
+| AR-03 | recovery / durable fault + live fallback | 已记账不等于联合结清；未决保留，预算不退 | fail |
+| AR-04 | integration / rebuilt guard+ledger | 无 pending 但联合未结清时，独立下一 Task provider0 | fail |
+| AR-05 | recovery / throwing durable writer | 原 reserved 保守重建，预算不退、未决可见 | pass |
+| AR-06 | recovery / duplicate events + explicit full settlement | reconciliation→合法 committed 后只计一次，无悬挂 | pass |
+| AR-07 | recovery / provider throw without completion | 两侧 hold+未决保留，责任不退 | pass |
+| AR-08 | product+recovery / real SDK faux | 正常决策→真实effect→Oracle完成；重启provider0/effect0，消费2 | pass |
+| AR-09-error_followup | product / SDK error response | 已缓冲决策不执行，文件不变，消费2 | pass |
+| AR-09-aborted_followup | product / SDK aborted response | 已缓冲决策不执行，文件不变，中止不能完成 | fail |
+| AR-10 | product+recovery / writer fault+real durable log+SIGKILL | fallback未决不消失，重启独立任务provider0/effect0 | fail |
+
+独立结果（2026-10-14）：
+
+- 原17个 C6脚本有效结果全部 exit0，包括 focused23/23、external22/22、DS convergence19/19、
+  原真实 restart、product-chain、learning-closure；受影响26个回归有效结果全部 exit0。
+- 初次受限执行：C6两脚本、回归四脚本因本机监听 `127.0.0.1 listen EPERM` 失败。
+  仅这些脚本在允许本机监听后复跑，全部 exit0；初次失败日志及 argv/exit 保留，不将环境失败
+  当作产品失败，也不将初次整批 exit1 改写为0。
+- 新增架构脚本 **12 tests / 6 pass / 6 fail，exit1**；失败是行为断言，不是 import/语法失败。
+- 扩展helper后独立复跑原 lifecycle-restart，exit0/all checks passed。
+- Biome 检查 DS修改的产品/测试与本轮测试，共8个文件，exit0。
+- Campaign tsc exit1，196条历史诊断；逐条与DS最终基线完全相同，Campaign诊断0。
+- 本轮没有产品修复，故没有 green 或新的 mutation 结果；DS的历史mutation不是本轮独立证据。
+
+日志根：`Pi_Agent_base/runtime/dev/c6-architecture-review-20261014/`（ignored）。
+`c6-combined-results.json`、`regress-combined-results.json` 分别保留原始结果、监听复跑与
+每脚本最终有效结果；所有批次的 results.json 包含 exact argv/exit/log。
+补测见 `architecture-final.log`，原helper兼容性见 `original-restart-final.log`，
+静态见 `biome-final.log`、`tsc.log`。公开样例只使用构造的临时数据，不含真实凭据。
+
+新检查的精确命令（仓库根目录）：
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c6-architecture-review.mjs
+node Pi_Agent_base/tests/aegis-c6-lifecycle-restart.mjs
+./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json
+./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json Pi_Agent_base/memory/campaign/c6-entry.mjs Pi_Agent_base/memory/campaign/c6-model-worker.mjs Pi_Agent_base/memory/campaign/c6-request-lifecycle.mjs Pi_Agent_base/memory/campaign/index.mjs Pi_Agent_base/tests/aegis-c6-lifecycle-convergence.mjs Pi_Agent_base/tests/aegis-c6-lifecycle-restart.mjs Pi_Agent_base/tests/helpers/c6-lifecycle-child.mjs Pi_Agent_base/tests/aegis-c6-architecture-review.mjs
+```
+
+### 7.5 有界收敛与 pilot 判定
+
+当前保持 **changes_required**。下一步只要求闭合上述两组，不追加一个无边界架构重写阶段：
+
+1. reducer 明确区分每侧预算责任与请求联合结清。reconciliation 中确认的消费按侧幂等恢复，
+   未确认的责任继续保留hold；两侧已记账但无合法联合 durable settlement 仍为未决。
+   后续合法完整 committed 不再双计；request/Task/Campaign关联保持一致。
+2. 按真实 SDK stopReason 定义正常/错误/中止，不把“除error外都算ok”当成功规则。
+   aborted保留已发生请求的费用，拒绝buffered decision进入Broker，并在结果/事件中保留中止事实。
+   不需新增自动退款/重试/人工结算平台。
+3. 保留新增12例，修成green。对这两个规则做有限行为mutation，跑受影响required回归与
+   类型/静态基线；不降低原断言，也不因通过数量自行宣布external acceptance。
+
+退出门槛是两组实际反例消失，正常控制继续有真实effect与可信验收，预算责任重建一致，
+中止/未决不能触发dispatch。通过后可进入**有限真实任务pilot**，实测模型能否观察、规划、
+完成任务以及经验收益。不存在“先做更多架构才能试”的额外要求。
+
+不阻塞该有限pilot的事项：196条既有类型诊断、保守初始context pre-check、token估算精度、
+UI/格式偏好、F16、OS sandbox、多Worker、自动结算平台与复杂经验组合。它们保持既有
+边界和后置记录；真实provider计费、流式故障、模型效果属于pilot的测量目标。
+有限pilot具体选择模型/endpoint、现有任务家族的小目录、授权、预算、独立Oracle和停止条件；
+本次审查通过不应被扩大为任意目标/任意代码可安全无人值守生产运行。

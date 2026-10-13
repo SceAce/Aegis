@@ -21,6 +21,7 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { runC6FromConfig } from "../../memory/campaign/c6-entry.mjs";
 import { validateManifest } from "../../memory/campaign/manifest.mjs";
 import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
+import { EventLog } from "../../memory/runtime/events.mjs";
 
 const sdk = { ...sdkBase, AuthStorage };
 const [workDir, scenario = "recover"] = process.argv.slice(2);
@@ -31,7 +32,11 @@ const datasetPath = join(workspaceRoot, "dataset.json");
 if (!existsSync(datasetPath)) writeFileSync(datasetPath, JSON.stringify({ name: "??", status: "pending" }), "utf8");
 
 const baseManifest = buildDataRepairManifest({ workspaceRoot, campaignId: "campaign-c6-lifecycle" });
-const validated = validateManifest({ ...baseManifest, tasks: [baseManifest.tasks[0]] });
+const independentTasks = ["durable_commit_failure_kill", "recover_independent"].includes(scenario);
+const validated = validateManifest({
+	...baseManifest,
+	tasks: independentTasks ? baseManifest.tasks.map((task) => ({ ...task, depends_on: [] })) : [baseManifest.tasks[0]],
+});
 if (!validated.ok) {
 	process.stderr.write(`manifest invalid: ${validated.reasons.join("; ")}\n`);
 	process.exit(3);
@@ -59,9 +64,10 @@ writeFileSync(
 );
 
 let providerCalls = 0;
+const seen = new Map();
 const factory = (options) => {
 	const faux = registerFauxProvider(options);
-	const response = () => {
+	const response = (context) => {
 		providerCalls += 1;
 		if (scenario === "kill_after_reserved") {
 			// The gate has already persisted the durable reservation and called the
@@ -71,10 +77,26 @@ const factory = (options) => {
 		if (scenario === "provider_error") {
 			throw new Error("injected provider transport failure");
 		}
+		const taskId = [...JSON.stringify(context.messages).matchAll(/TASK (task-\d+)/g)].at(-1)?.[1] ?? "task-001";
+		const count = (seen.get(taskId) ?? 0) + 1;
+		seen.set(taskId, count);
+		if (["normal", "aborted_followup", "error_followup", "recover_independent"].includes(scenario) && count > 1) {
+			if (scenario === "error_followup") throw new Error("injected follow-up transport failure");
+			return fauxAssistantMessage("decision recorded", {
+				stopReason: scenario === "aborted_followup" ? "aborted" : "stop",
+			});
+		}
 		return fauxAssistantMessage([
 			fauxToolCall("aegis_task_decision", {
 				actions: [
-					{ action_ref: "data.record.set", arguments: { target: "dataset.json", field: "name", value: "Ada" } },
+					{
+						action_ref: "data.record.set",
+						arguments: {
+							target: "dataset.json",
+							field: taskId === "task-002" ? "status" : "name",
+							value: taskId === "task-002" ? "active" : "Ada",
+						},
+					},
 				],
 			}),
 		]);
@@ -82,6 +104,24 @@ const factory = (options) => {
 	faux.setResponses(Array.from({ length: 12 }, () => response));
 	return faux;
 };
+
+// Inject only the durable writer failure, keeping the real SDK, worker,
+// reservation, reconciliation payload and hash-chained EventLog unchanged.
+// Kill immediately after the fallback reconciliation is truly written: the
+// second, independent Task remains queued for the recovery entry to examine.
+if (scenario === "durable_commit_failure_kill") {
+	const append = EventLog.prototype.append;
+	EventLog.prototype.append = async function (event) {
+		if (event.payload?.kind === "c6.request" && event.payload.phase === "committed") {
+			return { ok: false, error: "injected transient committed append failure" };
+		}
+		const written = await append.call(this, event);
+		if (written.ok && event.payload?.kind === "c6.request" && event.payload.phase === "reconciliation_required") {
+			process.kill(process.pid, "SIGKILL");
+		}
+		return written;
+	};
+}
 
 let brokerEffects = 0;
 const outcome = await runC6FromConfig({
@@ -119,6 +159,7 @@ writeFileSync(
 			ok: outcome.ok,
 			task_states: outcome.task_states ?? null,
 			ledger: outcome.ledger ?? null,
+			dataset: JSON.parse(readFileSync(datasetPath, "utf8")),
 			reconciliation: outcome.reconciliation ?? null,
 			requests: events
 				.filter((event) => event.payload?.kind === "c6.request")
