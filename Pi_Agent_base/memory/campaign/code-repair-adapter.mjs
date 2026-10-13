@@ -172,18 +172,36 @@ export function createCodeRepairAdapter(
  * The INDEPENDENT Oracle judge for the code-repair family. It runs the
  * REGISTERED, read-only test through a fixed, trusted procedure (the caller
  * passes a `runTests` function that is HOST code, never model code), then
- * compares the real test result to the task criterion. The model can never
- * modify the test: the test file lives outside the writable target and is
+ * compares the REAL, COMPLETE test result to the task criterion. The model can
+ * never modify the test: the test file lives outside the writable target and is
  * re-hashed by the caller before running.
+ *
+ * A passing run is only a `success` for a criterion the Host actually knows how
+ * to judge (`SUPPORTED_CRITERIA`). A declared criterion outside that set is
+ * `unknown` -- one passing test never maps to an arbitrary declared property.
  *
  * @param {{
  *   workspaceRoot: string,
- *   runTests: (workspaceRoot: string) => { ok: boolean, passed?: number, failed?: number, detail?: string },
+ *   runTests: (workspaceRoot: string) => { ok: boolean, complete?: boolean, passed?: number|null, failed?: number|null, assertions?: number|null, detail?: string, test_digest?: string|null },
+ *   testFile?: string,
  * }} args
  */
-export function createCodeRepairJudge({ workspaceRoot, runTests } = /** @type {any} */ ({})) {
+export const SUPPORTED_CRITERIA = Object.freeze(["external test passes"]);
+
+export function createCodeRepairJudge({ workspaceRoot, runTests, testFile = null } = /** @type {any} */ ({})) {
 	if (typeof runTests !== "function") throw new Error("createCodeRepairJudge requires a trusted runTests procedure");
 	return ({ task, onEvidence }) => {
+		// Every declared stage criterion must be one this judge can actually verify;
+		// an unsupported property is unknown, never a success mapped from a test pass.
+		const declared = (task?.stages ?? []).flatMap((stage) => stage.criteria ?? []);
+		const unsupported = declared.filter((criterion) => !SUPPORTED_CRITERIA.includes(String(criterion).trim()));
+		if (unsupported.length > 0) {
+			return {
+				status: "unknown",
+				failure_mode: "unregistered_criterion",
+				detail: `the judge cannot verify declared criterion: ${unsupported.join(", ")}`,
+			};
+		}
 		let result;
 		try {
 			result = runTests(workspaceRoot);
@@ -191,12 +209,20 @@ export function createCodeRepairJudge({ workspaceRoot, runTests } = /** @type {a
 			return { status: "unknown", failure_mode: "harness_error", detail: String(error) };
 		}
 		if (!result || typeof result !== "object") return { status: "unknown", failure_mode: "harness_error" };
-		const allPassed = result.ok === true && (result.failed ?? 0) === 0;
+		// The result must be a COMPLETE trusted run. A transport-only exit code with no
+		// completed assertion set is unknown, not a pass (and not a failure).
+		const complete = result.complete === true;
+		const allPassed = complete && result.ok === true && (result.failed ?? 0) === 0;
 		const stageOverrides = {};
 		for (const stage of task?.stages ?? []) {
 			stageOverrides[stage.stage_id] = {
-				status: allPassed ? "success" : "failure",
-				observed: { passed: result.passed ?? null, failed: result.failed ?? null, detail: result.detail ?? null },
+				status: allPassed ? "success" : complete ? "failure" : "unknown",
+				observed: {
+					passed: result.passed ?? null,
+					failed: result.failed ?? null,
+					assertions: result.assertions ?? null,
+					detail: result.detail ?? null,
+				},
 			};
 		}
 		const targetFile = task?.target_ref ?? "solution.mjs";
@@ -205,15 +231,20 @@ export function createCodeRepairJudge({ workspaceRoot, runTests } = /** @type {a
 			? [{ ref_id: `artifact:${task.task_id}`, digest: digest(readFileSync(absolute, "utf8")), path: absolute }]
 			: [];
 		if (typeof onEvidence === "function" && evidence.length) onEvidence(evidence);
-		// The test RAN (a real exit code + summary) and failed => failure. A harness
-		// error (no exit code / no summary) is unknown, never a failure and never a
-		// success.
-		const testRan = result.exit_code !== null && (result.passed !== null || result.failed !== null);
+		if (!complete) {
+			return {
+				status: "unknown",
+				observed: { passed: result.passed ?? null, failed: result.failed ?? null, detail: result.detail ?? null },
+				failure_mode: "incomplete_test",
+				stage_overrides: stageOverrides,
+				evidence,
+			};
+		}
 		if (!allPassed) {
 			return {
-				status: testRan ? "failure" : "unknown",
+				status: "failure",
 				observed: { passed: result.passed ?? null, failed: result.failed ?? null, detail: result.detail ?? null },
-				failure_mode: testRan ? "test_failed" : "harness_error",
+				failure_mode: "test_failed",
 				stage_overrides: stageOverrides,
 				evidence,
 			};
@@ -221,7 +252,7 @@ export function createCodeRepairJudge({ workspaceRoot, runTests } = /** @type {a
 		for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
 		return {
 			status: "success",
-			observed: { passed: result.passed ?? null, failed: result.failed ?? null },
+			observed: { passed: result.passed ?? null, failed: result.failed ?? null, assertions: result.assertions ?? null },
 			evidence,
 			stage_overrides: stageOverrides,
 		};
