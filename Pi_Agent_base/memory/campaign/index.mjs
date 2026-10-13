@@ -42,8 +42,45 @@ export {
 	createHostSessionController,
 	runCampaignFromConfig,
 } from "./c5-entry.mjs";
+// --- C6 -------------------------------------------------------------------
+export {
+	buildMeasurement,
+	C6_ENTRY_VERSION,
+	createCompositeWorker,
+	createDecisionBuffer,
+	parseC6Args,
+	runC6FromConfig,
+	stageHostHandoff,
+} from "./c6-entry.mjs";
+export {
+	buildCampaignLearningBridge,
+	C6_LEARNING_VERSION,
+	compileExperienceFromProofs,
+	createCampaignLearningStore,
+	loadAuthoritativeExperiences,
+	rebuildExperienceStore,
+	replayCommittedOutcome,
+	routeBeforeModel,
+	runCampaignLearningStep,
+} from "./c6-learning.mjs";
+export {
+	createDecisionCaptureTool,
+	createModelPlan,
+	createModelWorker,
+	MODEL_WORKER_VERSION,
+} from "./c6-model-worker.mjs";
+export { readRunnerManifest, runBoundedAttempts } from "./c6-runner.mjs";
+export {
+	AEGIS_OBSERVER_PATH,
+	buildModelRuntime,
+	createCampaignSdkRuntime,
+	SDK_RUNTIME_VERSION,
+} from "./c6-sdk-runtime.mjs";
+export { createToolLedger, normalizeUsage, TOOL_LEDGER_VERSION } from "./c6-tool-ledger.mjs";
 export {
 	CONFIG_SCHEMA_VERSION,
+	CONFIG_SCHEMA_VERSION_V11,
+	KNOWN_CONFIG_V11_KEYS,
 	loadCampaignConfig,
 } from "./campaign-config.mjs";
 export {
@@ -51,6 +88,12 @@ export {
 	createCampaignActionGate,
 	DIRECT_TOOLS_DENIED,
 } from "./campaign-mode.mjs";
+export {
+	buildCodeRepairManifest,
+	CODE_REPAIR_ACTION_REF,
+	createCodeRepairAdapter,
+	createCodeRepairJudge,
+} from "./code-repair-adapter.mjs";
 export {
 	ADMISSION_STATUSES,
 	admitTaskProposal,
@@ -137,6 +180,13 @@ export {
 	validateDynamicDefinition,
 } from "./projection.mjs";
 export {
+	describeCredentialRef,
+	isLoopbackBaseUrl,
+	KNOWN_PROVIDERS,
+	PROVIDER_CONFIG_VERSION,
+	resolveProviderConfig,
+} from "./provider-config.mjs";
+export {
 	isLegalTransition,
 	isQueueState,
 	legalTransitionsFrom,
@@ -146,6 +196,7 @@ export {
 	TERMINAL_QUEUE_STATES,
 	validateQueueItem,
 } from "./queue.mjs";
+export { REGISTERED_TEST_VERSION, runRegisteredTest } from "./registered-test.mjs";
 export * from "./registries.mjs";
 export {
 	BUNDLE_SCHEMA_VERSION,
@@ -180,3 +231,9 @@ export {
 	workspaceStateFile,
 } from "./script-workspace-adapter.mjs";
 export { buildCommittedStream } from "./stream.mjs";
+export {
+	buildDataRepairManifest,
+	createDataRepairJudge,
+	createStructuredDataAdapter,
+	DATA_REPAIR_ACTION_REF,
+} from "./structured-data-adapter.mjs";

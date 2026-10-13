@@ -243,9 +243,9 @@ export function createCampaignScheduler({
 		 * never becomes a task. The MODEL supplies only data: it can never grant
 		 * privilege or raise the budget.
 		 *
-		 * @param {{proposal: object, commandId?: string, proposalId?: string}} args
+		 * @param {{proposal: any, commandId?: string|null, proposalId?: string|null}} [args]
 		 */
-		async proposeDynamicTask({ proposal, commandId = null, proposalId = null } = {}) {
+		async proposeDynamicTask({ proposal, commandId = null, proposalId = null } = /** @type {any} */ ({})) {
 			const projection = project();
 			const queueState = {
 				tasks: [...staticTasks, ...projection.tasks.map((t) => t.definition).filter(Boolean)],

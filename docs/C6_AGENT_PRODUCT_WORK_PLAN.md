@@ -1,6 +1,6 @@
 # C6 模型 Agent 与经验闭环 — 工作计划
 
-状态：`implementing`（主 DS 自主推进，一次总委派；只交一次限定工程验收）。
+状态：`internally_verified / awaiting_external_review`（主 DS 自主完成 C6-A–F；交一次限定工程验收）。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
 依据：`C6_AGENT_PRODUCT_TASK.md`、`SDK_LAUNCHER_TASK.md`（并入 C6-A）、
 `AGENT_DEVELOPMENT_STANDARD.md` §3.1、`AGENT_TESTING_STANDARD.md`、`GIT_STANDARD.md`、

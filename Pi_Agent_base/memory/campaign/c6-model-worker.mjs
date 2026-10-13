@@ -55,7 +55,7 @@ export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
  * Broker Worker can admit and execute it through the ONE Broker path. The model
  * can never supply an executable, argv, authorization, or a verdict.
  *
- * @param {{ sdk: any, buffer: { push: (decision: any) => void, list: () => any[], reset: () => void } }} args
+ * @param {{ sdk: any, buffer: any, type?: any }} args
  */
 export function createDecisionCaptureTool({ sdk, buffer, type }) {
 	const Type = type ?? sdk.Type;
@@ -125,16 +125,18 @@ export function createDecisionCaptureTool({ sdk, buffer, type }) {
 /**
  * @param {{
  *   session: () => any,
- *   ledger: ReturnType<import("./c6-tool-ledger.mjs").createToolLedger>,
+ *   ledger: any,
  *   romPath?: string|null,
  *   context: { max_total_input_chars: number, output_reserve_chars: number, strategy: string },
  *   taskId: string,
  *   goal: string,
- *   actionCatalog: object|null,
+ *   actionCatalog?: object|null,
+ *   getActionCatalog?: (() => any)|null,
  *   ramProvider?: () => string,
  *   historyCharsProvider?: () => number,
- *   maxTurnsPerTask?: number,
  *   onEvent?: (record: object) => void,
+ *   decisionBuffer?: any,
+ *   router?: any,
  * }} args
  */
 export function createModelWorker(

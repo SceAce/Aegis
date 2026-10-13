@@ -50,6 +50,7 @@ export const SDK_RUNTIME_VERSION = "1.0.0";
  * `createRuntime` seam; the default seam below is the real SDK.
  *
  * @typedef {{
+ *   version: string,
  *   runtime: any,
  *   model: any,
  *   modelRuntime: any,
@@ -73,7 +74,7 @@ const AEGIS_OBSERVER_PATH = resolve(
  * Build the isolated ModelRuntime + model for the configured provider.
  *
  * @param {{provider: ProviderConfig, workDir: string, createSeam?: Function|null, sdk: any}} args
- * @returns {Promise<{ok: boolean, modelRuntime?: any, model?: any, providerId?: string, diagnostics: string[]}>}
+ * @returns {Promise<{ok: boolean, modelRuntime?: any, model?: any, credentials?: any, providerId?: string, diagnostics: string[]}>}
  */
 export async function buildModelRuntime({ provider, workDir, sdk }) {
 	const diagnostics = [];
