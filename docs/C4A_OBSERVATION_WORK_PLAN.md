@@ -1,6 +1,6 @@
 # C4a Observation — Work Plan and Frozen Contract
 
-Status: **frozen before implementation**. Scope follows `C4A_OBSERVATION_TASK.md`
+Status: **frozen before implementation; C4a-A..D completed, internally verified, awaiting one C4a external review**. Scope follows `C4A_OBSERVATION_TASK.md`
 and `C4A_OBSERVATION_DS_PROMPT.md`. This plan does not reopen C1–C4 and does not
 implement C5 or any real model/network/target.
 
