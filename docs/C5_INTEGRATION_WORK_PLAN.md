@@ -1,6 +1,6 @@
 # C5 Integration — Work Plan and Frozen Contract
 
-Status: **frozen before implementation**. Scope follows `C5_INTEGRATION_TASK.md`
+Status: **frozen before implementation; C5-A..D completed, internally verified, awaiting one C5 external review**. Scope follows `C5_INTEGRATION_TASK.md`
 and `C5_INTEGRATION_DS_PROMPT.md`. This plan does not reopen C1–C4a, F16 or the
 type baseline, and does not run real models/targets/network or capability
 experiments.
