@@ -31,8 +31,8 @@
 // and no caller-provided record map. The model must never be able to pass a
 // resolver or a callback (the workflow engine only ever passes this one).
 
-import { verifyChain, digest } from "./events.mjs";
 import { projectBoard } from "./board.mjs";
+import { digest, verifyChain } from "./events.mjs";
 import { projectState } from "./state.mjs";
 
 // Source kinds that may contribute a resolvable record. `llm` is excluded by
@@ -133,15 +133,41 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 	// observed / oracle / expect / evidence_refs straight from the committed log.
 	const outcomes = new Map();
 	for (const event of trustedEvents) {
+		// C6: the Campaign Host commits Oracle verdicts as `runtime.note` with
+		// `kind: campaign.oracle.result` from an `oracle` source. They carry the
+		// SAME bound Outcome contract (id/status/criterion/observed/evidence/pin), so
+		// they are indexed through this one resolver -- there is no second evidence
+		// framework. The nested `payload.outcome` is the authoritative verdict object.
+		if (
+			event.event_type === "runtime.note" &&
+			event.payload?.kind === "campaign.oracle.result" &&
+			OUTCOME_SOURCE_KINDS.has(event.source?.kind)
+		) {
+			const nested = event.payload.outcome && typeof event.payload.outcome === "object" ? event.payload.outcome : null;
+			const payload = nested
+				? { ...event.payload, ...nested, outcome_id: nested.outcome_id ?? event.payload.outcome_id }
+				: event.payload;
+			if (payload?.oracle === undefined && event.payload?.oracle) payload.oracle = event.payload.oracle;
+			indexOutcome({ event, payload, outcomes });
+			continue;
+		}
 		if (event.event_type !== "outcome.recorded") continue;
 		// A verdict is only evidence when an oracle/human RECORDED it. A runtime or
 		// agent oracle-shaped payload is a claim, never proof.
 		if (!OUTCOME_SOURCE_KINDS.has(event.source?.kind)) continue;
-		const payload = event.payload || {};
+		indexOutcome({ event, payload: event.payload || {}, outcomes });
+	}
+
+	function indexOutcome({ event, payload, outcomes }) {
 		const outcomeId = payload.outcome_id;
-		if (typeof outcomeId !== "string" || !outcomeId) continue;
-		if (outcomes.has(outcomeId)) continue; // first occurrence wins
-		const evidenceRefs = Array.isArray(payload.evidence_refs) && payload.evidence_refs.length > 0 ? payload.evidence_refs : Array.isArray(event.evidence_refs) ? event.evidence_refs : [];
+		if (typeof outcomeId !== "string" || !outcomeId) return;
+		if (outcomes.has(outcomeId)) return; // first occurrence wins
+		const evidenceRefs =
+			Array.isArray(payload.evidence_refs) && payload.evidence_refs.length > 0
+				? payload.evidence_refs
+				: Array.isArray(event.evidence_refs)
+					? event.evidence_refs
+					: [];
 		const record = {
 			outcome_id: outcomeId,
 			episode_id: event.episode_id ?? payload.episode_id ?? null,
@@ -168,10 +194,14 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		};
 		// Only a complete, auditable Outcome is indexed: valid status, a criterion,
 		// evidence, and (for a success/failure) a real observed value.
-		if (!OUTCOME_STATUS_VALUES.has(record.status)) continue;
-		if (!record.criterion || typeof record.criterion !== "object") continue;
-		if (record.evidence_refs.length === 0) continue;
-		if ((record.status === "success" || record.status === "failure") && (record.observed === null || record.observed === undefined || record.observed === "")) continue;
+		if (!OUTCOME_STATUS_VALUES.has(record.status)) return;
+		if (!record.criterion || typeof record.criterion !== "object") return;
+		if (record.evidence_refs.length === 0) return;
+		if (
+			(record.status === "success" || record.status === "failure") &&
+			(record.observed === null || record.observed === undefined || record.observed === "")
+		)
+			return;
 		outcomes.set(outcomeId, record);
 	}
 
@@ -195,7 +225,10 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			// RECORDED it — never synthesised from the episode id (a UUID would
 			// satisfy an independence count without proving a reset).
 			isolated_reset: null,
-			independence_group: typeof payload.independence_group === "string" && payload.independence_group ? payload.independence_group : null,
+			independence_group:
+				typeof payload.independence_group === "string" && payload.independence_group
+					? payload.independence_group
+					: null,
 		});
 		// A fixture-shaped episode.started may carry the reset fields directly; but
 		// only a RESET_SOURCE_KIND may supply them (payload is untrusted for a
@@ -203,10 +236,39 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		if (RESET_SOURCE_KINDS.has(event.source?.kind)) {
 			const isolationRef = payload.isolation_ref ?? payload.reset_nonce ?? null;
 			if (typeof isolationRef === "string" && isolationRef) {
-				episodes.get(episodeId).isolated_reset = { isolation_ref: isolationRef, event_id: event.event_id, source_kind: event.source.kind, adapter: payload.adapter ?? null };
+				episodes.get(episodeId).isolated_reset = {
+					isolation_ref: isolationRef,
+					event_id: event.event_id,
+					source_kind: event.source.kind,
+					adapter: payload.adapter ?? null,
+				};
 			}
 		}
 	}
+	// C6: the Campaign Host commits `campaign.task.started` (runtime.note) with the
+	// bound episode at the event level. Index it as an episode so a Campaign
+	// Outcome resolves to a REAL episode (the compiler's independence gate needs
+	// it). It carries no reset proof by itself; a reset must still be recorded by
+	// a trusted source below.
+	for (const event of trustedEvents) {
+		if (event.event_type !== "runtime.note" || event.payload?.kind !== "campaign.task.started") continue;
+		const episodeId = event.episode_id ?? event.payload?.episode_id;
+		if (!episodeId || episodes.has(episodeId)) continue;
+		if (!TRUSTED_SOURCE_KINDS.has(event.source?.kind)) continue;
+		episodes.set(episodeId, {
+			episode_id: episodeId,
+			task_id: event.payload?.task_id ?? episodeId,
+			run_id: null,
+			goal: null,
+			scope: null,
+			source_kind: event.source?.kind ?? "runtime",
+			started_event_id: event.event_id,
+			started_at: event.recorded_at ?? null,
+			isolated_reset: null,
+			independence_group: null,
+		});
+	}
+
 	// Explicit reset notes attach the canonical relation to an episode.
 	for (const event of trustedEvents) {
 		const episodeId = event.episode_id;
@@ -217,8 +279,14 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		const isolationRef = payload.isolation_ref ?? payload.reset_nonce ?? null;
 		if (typeof isolationRef !== "string" || !isolationRef) continue;
 		const record = episodes.get(episodeId);
-		record.isolated_reset = { isolation_ref: isolationRef, event_id: event.event_id, source_kind: event.source.kind, adapter: payload.adapter ?? null };
-		if (typeof payload.independence_group === "string" && payload.independence_group) record.independence_group = payload.independence_group;
+		record.isolated_reset = {
+			isolation_ref: isolationRef,
+			event_id: event.event_id,
+			source_kind: event.source.kind,
+			adapter: payload.adapter ?? null,
+		};
+		if (typeof payload.independence_group === "string" && payload.independence_group)
+			record.independence_group = payload.independence_group;
 		if (typeof payload.run_id === "string" && payload.run_id) record.run_id = payload.run_id;
 	}
 
@@ -285,8 +353,16 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 				continue;
 			}
 			const sameEpisode = record.episode_id === (event.episode_id ?? null);
-			const versionMatches = payload.version === undefined || payload.version === null || record.version === null || payload.version === record.version;
-			const digestMatches = payload.implementation_digest === undefined || payload.implementation_digest === null || record.implementation_digest === null || payload.implementation_digest === record.implementation_digest;
+			const versionMatches =
+				payload.version === undefined ||
+				payload.version === null ||
+				record.version === null ||
+				payload.version === record.version;
+			const digestMatches =
+				payload.implementation_digest === undefined ||
+				payload.implementation_digest === null ||
+				record.implementation_digest === null ||
+				payload.implementation_digest === record.implementation_digest;
 			if (sameEpisode && versionMatches && digestMatches) {
 				if (record.status !== "completed") {
 					record.status = "completed";
@@ -300,10 +376,11 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			}
 		}
 		if (payload.kind === "data.use.bound") {
-			const actionRef = idOf(payload.action_ref) ?? (typeof payload.action_ref === "string" ? payload.action_ref : null);
+			const actionRef =
+				idOf(payload.action_ref) ?? (typeof payload.action_ref === "string" ? payload.action_ref : null);
 			const actionId = idOf(payload.action_id) ?? (typeof payload.action_id === "string" ? payload.action_id : null);
 			const dataRef = payload.data_ref ?? null;
-			const aliasIds = actionRef ? actionAliases.get(actionRef) ?? [] : [];
+			const aliasIds = actionRef ? (actionAliases.get(actionRef) ?? []) : [];
 			const targetId = actionId ?? aliasIds[0] ?? null;
 			const record = targetId ? actions.get(targetId) : null;
 			if (record && dataRef) record.bound_arguments = [...(record.bound_arguments ?? []), dataRef];
@@ -320,7 +397,8 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 	const putArtifact = (artifactId, record) => {
 		if (!artifactId) return;
 		artifacts.set(artifactId, record);
-		if (typeof record.content_digest === "string" && record.content_digest) artifactsByDigest.set(`${artifactId}#${record.content_digest}`, record);
+		if (typeof record.content_digest === "string" && record.content_digest)
+			artifactsByDigest.set(`${artifactId}#${record.content_digest}`, record);
 	};
 	for (const event of trustedEvents) {
 		const payload = event.payload || {};
@@ -339,7 +417,10 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 				// Computed from the committed value; a claimed digest that disagrees is
 				// recorded as a mismatch and can never be resolved as proof.
 				content_digest: contentDigest,
-				digest_mismatch: typeof payload.content_digest === "string" && payload.content_digest.length > 0 && payload.content_digest !== contentDigest,
+				digest_mismatch:
+					typeof payload.content_digest === "string" &&
+					payload.content_digest.length > 0 &&
+					payload.content_digest !== contentDigest,
 				event_id: event.event_id,
 			});
 		}
@@ -353,7 +434,26 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 				kind: payload.artifact_kind ?? "artifact",
 				value,
 				content_digest: contentDigest,
-				digest_mismatch: typeof payload.content_digest === "string" && payload.content_digest.length > 0 && payload.content_digest !== contentDigest,
+				digest_mismatch:
+					typeof payload.content_digest === "string" &&
+					payload.content_digest.length > 0 &&
+					payload.content_digest !== contentDigest,
+				event_id: event.event_id,
+			});
+		}
+		// C6: the Campaign Broker commits the REAL effect artifact on
+		// `action.completed` with a content digest. Index it so a Campaign Outcome's
+		// artifact evidence ref resolves to the same record the Oracle re-read.
+		if (event.event_type === "action.completed" && typeof payload.evidence_ref === "string" && payload.evidence_ref) {
+			const contentDigest = typeof payload.content_digest === "string" ? payload.content_digest : null;
+			putArtifact(payload.evidence_ref, {
+				artifact_id: payload.evidence_ref,
+				episode_id: event.episode_id ?? payload.episode_id ?? null,
+				run_id: null,
+				kind: "action_effect",
+				value: payload.observed ?? null,
+				content_digest: contentDigest,
+				digest_mismatch: false,
 				event_id: event.event_id,
 			});
 		}
@@ -372,7 +472,11 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		if (event.source?.kind !== REPLAY_SOURCE_KIND) continue;
 		if (payload.isolated !== true) continue;
 		if (typeof payload.adapter !== "string" || !payload.adapter) continue;
-		const replayId = payload.replay_id ?? (payload.episode_id || event.episode_id ? `replay:${payload.episode_id ?? event.episode_id}:${payload.outcome_id}` : null);
+		const replayId =
+			payload.replay_id ??
+			(payload.episode_id || event.episode_id
+				? `replay:${payload.episode_id ?? event.episode_id}:${payload.outcome_id}`
+				: null);
 		if (!replayId) continue;
 		replays.set(replayId, {
 			replay_id: replayId,
@@ -402,7 +506,12 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		// The digest is derived from the REAL value when one was committed; a
 		// claimed `content_digest` alone is never echoed back as the record digest.
 		const contentDigest = value === null || value === undefined ? null : committedContentDigest(value);
-		const claimedDigest = typeof payload.content_digest === "string" ? payload.content_digest : typeof dataRef.digest === "string" ? dataRef.digest : null;
+		const claimedDigest =
+			typeof payload.content_digest === "string"
+				? payload.content_digest
+				: typeof dataRef.digest === "string"
+					? dataRef.digest
+					: null;
 		data.set(dataId, {
 			data_id: dataId,
 			episode_id: event.episode_id ?? null,
@@ -433,7 +542,9 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			source_kind: episode.source_kind,
 			status: hasReset ? "canonical" : "candidate",
 			candidate: !hasReset,
-			reason: hasReset ? "trusted isolation reset recorded" : "no trusted isolation/reset proof was recorded; the episode remains a projected candidate and cannot count toward independence",
+			reason: hasReset
+				? "trusted isolation reset recorded"
+				: "no trusted isolation/reset proof was recorded; the episode remains a projected candidate and cannot count toward independence",
 			independence_group: episode.independence_group,
 			isolation_ref: hasReset ? episode.isolated_reset.isolation_ref : null,
 			reset_event_id: hasReset ? episode.isolated_reset.event_id : null,
@@ -470,7 +581,10 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			const record = result.record;
 			// A record retired by a trusted environment change (stale) is not proof.
 			// The board's effective view names stale nodes by node_id (`ev:<event>`).
-			const originEventId = record?.event_id ?? (wantedKind === "action" ? record?.completed_event_id ?? record?.requested_event_id : null) ?? null;
+			const originEventId =
+				record?.event_id ??
+				(wantedKind === "action" ? (record?.completed_event_id ?? record?.requested_event_id) : null) ??
+				null;
 			if (originEventId && staleNodeIds.has(`ev:${originEventId}`)) {
 				return { ok: false, reason: `${wantedKind} record is stale in the current effective view` };
 			}
@@ -480,12 +594,17 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			const recordEpisode = record?.episode_id ?? null;
 			const scopeEpisode = record?.scope_episode_id ?? recordEpisode;
 			if (pinnedEpisode && recordEpisode && pinnedEpisode !== recordEpisode) {
-				return { ok: false, reason: `foreign reference: ref pins episode ${pinnedEpisode} but the record belongs to ${recordEpisode}` };
+				return {
+					ok: false,
+					reason: `foreign reference: ref pins episode ${pinnedEpisode} but the record belongs to ${recordEpisode}`,
+				};
 			}
-			if (!inScope(scopeEpisode)) return { ok: false, reason: "foreign reference: record is outside the bound task scope" };
+			if (!inScope(scopeEpisode))
+				return { ok: false, reason: "foreign reference: record is outside the bound task scope" };
 			if (ref.digest !== undefined && ref.digest !== null) {
 				const contentDigest = result.content_digest ?? record?.content_digest ?? null;
-				if (contentDigest !== ref.digest) return { ok: false, reason: `${wantedKind} content_digest does not match the ref digest` };
+				if (contentDigest !== ref.digest)
+					return { ok: false, reason: `${wantedKind} content_digest does not match the ref digest` };
 			}
 			return result;
 		};
@@ -493,7 +612,8 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		if (wantedKind === "outcome") {
 			const record = outcomes.get(id);
 			if (!record) return { ok: false, reason: `no committed outcome record for ${id}` };
-			if (superseded.has(id)) return { ok: false, reason: `outcome ${id} was superseded in the current effective view` };
+			if (superseded.has(id))
+				return { ok: false, reason: `outcome ${id} was superseded in the current effective view` };
 			return finish({ ok: true, record, content_digest: digest(record.observed) });
 		}
 
@@ -518,25 +638,46 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 		if (wantedKind === "action") {
 			const direct = actions.get(id);
 			if (direct) {
-				if (ref.version !== undefined && ref.version !== null && direct.version !== null && ref.version !== direct.version) {
-					return { ok: false, reason: `action version ${direct.version} does not match the pinned version ${ref.version}` };
+				if (
+					ref.version !== undefined &&
+					ref.version !== null &&
+					direct.version !== null &&
+					ref.version !== direct.version
+				) {
+					return {
+						ok: false,
+						reason: `action version ${direct.version} does not match the pinned version ${ref.version}`,
+					};
 				}
-				return finish({ ok: true, record: direct, content_digest: digest({ action_ref: direct.action_ref, version: direct.version, status: direct.status }) });
+				return finish({
+					ok: true,
+					record: direct,
+					content_digest: digest({ action_ref: direct.action_ref, version: direct.version, status: direct.status }),
+				});
 			}
 			// Resolve an action_ref across its executions. A single execution resolves
 			// directly; multiple executions may only resolve when they agree on the
 			// pinned identity (version/digest). They are never collapsed by `overwrite`.
 			const family = (actionAliases.get(id) ?? []).map((actionId) => actions.get(actionId)).filter(Boolean);
 			if (family.length === 0) return { ok: false, reason: `no committed action record for ${id}` };
-			const scoped = pinnedEpisode ? family.filter((record) => record.episode_id === null || record.episode_id === pinnedEpisode) : family;
-			if (scoped.length === 0) return { ok: false, reason: `no committed action record for ${id} in episode ${pinnedEpisode}` };
+			const scoped = pinnedEpisode
+				? family.filter((record) => record.episode_id === null || record.episode_id === pinnedEpisode)
+				: family;
+			if (scoped.length === 0)
+				return { ok: false, reason: `no committed action record for ${id} in episode ${pinnedEpisode}` };
 			const versions = new Set(scoped.map((record) => record.version));
 			const digests = new Set(scoped.map((record) => record.implementation_digest));
 			if (scoped.length > 1 && (versions.size > 1 || digests.size > 1)) {
-				return { ok: false, reason: `action_ref ${id} is ambiguous across episodes with different version/digest; pin action_id or episode_id` };
+				return {
+					ok: false,
+					reason: `action_ref ${id} is ambiguous across episodes with different version/digest; pin action_id or episode_id`,
+				};
 			}
 			if (!scoped.every((record) => inScope(record.episode_id))) {
-				return { ok: false, reason: "foreign reference: one or more action executions are outside the bound task scope" };
+				return {
+					ok: false,
+					reason: "foreign reference: one or more action executions are outside the bound task scope",
+				};
 			}
 			const aggregate = {
 				action_id: id,
@@ -550,15 +691,37 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 				requested_event_id: scoped.length === 1 ? scoped[0].requested_event_id : null,
 				completed_event_id: scoped.length === 1 ? scoped[0].completed_event_id : null,
 			};
-			if (ref.version !== undefined && ref.version !== null && aggregate.version !== null && ref.version !== aggregate.version) {
-				return { ok: false, reason: `action version ${aggregate.version} does not match the pinned version ${ref.version}` };
+			if (
+				ref.version !== undefined &&
+				ref.version !== null &&
+				aggregate.version !== null &&
+				ref.version !== aggregate.version
+			) {
+				return {
+					ok: false,
+					reason: `action version ${aggregate.version} does not match the pinned version ${ref.version}`,
+				};
 			}
-			return finish({ ok: true, record: aggregate, content_digest: digest({ action_ref: aggregate.action_ref, version: aggregate.version, status: aggregate.status }) });
+			return finish({
+				ok: true,
+				record: aggregate,
+				content_digest: digest({
+					action_ref: aggregate.action_ref,
+					version: aggregate.version,
+					status: aggregate.status,
+				}),
+			});
 		}
 
 		if (wantedKind === "artifact") {
 			const record = ref.digest ? artifactsByDigest.get(`${id}#${ref.digest}`) : artifacts.get(id);
-			if (!record) return { ok: false, reason: ref.digest ? `no committed artifact record for ${id} with the pinned digest` : `no committed artifact record for ${id}` };
+			if (!record)
+				return {
+					ok: false,
+					reason: ref.digest
+						? `no committed artifact record for ${id} with the pinned digest`
+						: `no committed artifact record for ${id}`,
+				};
 			return finish({ ok: true, record, content_digest: record.content_digest });
 		}
 
@@ -578,7 +741,17 @@ export function createEvidenceResolver({ events = [], board = null, state = null
 			const record = eventById.get(id);
 			if (!record) return { ok: false, reason: `no committed event for ${id}` };
 			if (record.source?.kind === "llm") return { ok: false, reason: "an llm event is never evidence" };
-			return finish({ ok: true, record: { event_id: record.event_id, event_type: record.event_type, episode_id: record.episode_id ?? null, source_kind: record.source?.kind ?? null, payload: record.payload ?? null }, content_digest: digest(record.payload ?? null) });
+			return finish({
+				ok: true,
+				record: {
+					event_id: record.event_id,
+					event_type: record.event_type,
+					episode_id: record.episode_id ?? null,
+					source_kind: record.source?.kind ?? null,
+					payload: record.payload ?? null,
+				},
+				content_digest: digest(record.payload ?? null),
+			});
 		}
 
 		return { ok: false, reason: `unsupported ref kind: ${String(wantedKind)}` };
@@ -611,7 +784,10 @@ export function createEvidenceResolver({ events = [], board = null, state = null
  * resolver plus the current effective view. Only verified effective data may be
  * routed — the environment carries no fabricated candidate support.
  */
-export function evidenceEnvironment(resolver, { environment_fingerprint = null, domain = null, permissions, task_types, registry = null } = {}) {
+export function evidenceEnvironment(
+	resolver,
+	{ environment_fingerprint = null, domain = null, permissions, task_types, registry = null } = {},
+) {
 	return {
 		environment_fingerprint,
 		domain,

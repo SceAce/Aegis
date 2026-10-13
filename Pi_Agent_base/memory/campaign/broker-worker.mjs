@@ -347,7 +347,19 @@ export function createBrokerWorker(
 			// A stable outcome_ref: the last recorded artifact ref (or the task id).
 			const last = steps.steps[steps.steps.length - 1];
 			const outcomeRef = last?.evidence_ref ?? `artifact:${task.task_id}`;
-			return { ok: true, outcome_ref: outcomeRef, effects };
+			// The action pin of the LAST executed step: this is what the independent
+			// Oracle outcome must carry so a compiled rule pins the SAME action version
+			// and implementation digest that actually produced the effect.
+			const lastContract = last ? broker.registry?.get(last.action_ref) : null;
+			const actionPin = lastContract
+				? {
+						action_ref: lastContract.id,
+						action_version: lastContract.version ?? null,
+						implementation_digest: lastContract.implementation_digest ?? null,
+						arguments: last.arguments ?? {},
+					}
+				: null;
+			return { ok: true, outcome_ref: outcomeRef, action_pin: actionPin, effects };
 		},
 		/** Expose the artifact index the Host/Oracle share. */
 		artifactIndex,

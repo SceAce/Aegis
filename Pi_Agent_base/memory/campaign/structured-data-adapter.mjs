@@ -329,13 +329,33 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 			{ ref_id: `artifact:${task.task_id}`, digest: digest(readFileSync(absolute, "utf8")), path: absolute },
 		];
 		if (typeof onEvidence === "function") onEvidence(evidence);
+		// `when`/`expect` come from the task's DECLARED scope/criterion, never from a
+		// model: a compiled rule must carry the preconditions that held and the
+		// postcondition that was verified in every supporting episode.
+		const when = Array.isArray(task?.when)
+			? task.when
+			: task?.scope?.environment_fingerprint
+				? [`environment=${task.scope.environment_fingerprint}`]
+				: [];
+		const expect = Array.isArray(task?.stages)
+			? task.stages.flatMap((stage) => (stage.criteria ?? []).map((criterion) => String(criterion)))
+			: [];
 		if (anyUnknown)
-			return { status: "unknown", failure_mode: "unregistered_criterion", stage_overrides: stageOverrides, evidence };
+			return {
+				status: "unknown",
+				failure_mode: "unregistered_criterion",
+				stage_overrides: stageOverrides,
+				evidence,
+				when,
+				expect,
+			};
 		for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
 		return {
 			status: allSuccess ? "success" : "failure",
 			observed: state,
 			evidence,
+			when,
+			expect,
 			stage_overrides: stageOverrides,
 			...(allSuccess ? {} : { failure_mode: "criterion_not_met" }),
 		};

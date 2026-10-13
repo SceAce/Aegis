@@ -708,7 +708,7 @@ export function createCampaignScheduler({
 		// 5. Oracle judgment (the worker's self-report is NOT a result).
 		let judgment;
 		try {
-			judgment = await oracle.judge({ task, outcome_ref: run.outcome_ref });
+			judgment = await oracle.judge({ task, outcome_ref: run.outcome_ref, action_pin: run.action_pin ?? null });
 		} catch (error) {
 			judgment = { status: "unknown", failure_mode: "oracle_unavailable", error: String(error) };
 		}
@@ -784,6 +784,12 @@ function buildJudgmentOutcome({ judgment, task, status, episodeId }) {
 		episode_id: judgment?.episode_id ?? episodeId,
 		task_id: task.task_id,
 		task_oracle: true,
+		// The action pin of the effect that produced this outcome. It lets a later
+		// Compiler proof pin the SAME action version and implementation digest.
+		action_ref: judgment?.action_pin?.action_ref ?? null,
+		action_version: judgment?.action_pin?.action_version ?? null,
+		implementation_digest: judgment?.action_pin?.implementation_digest ?? null,
+		when: Array.isArray(judgment?.when) ? judgment.when : [],
 		criterion: judgment?.criterion ?? {
 			criterion_id: task.goal?.goal_id ?? null,
 			expected: task.goal?.goal_id ?? null,

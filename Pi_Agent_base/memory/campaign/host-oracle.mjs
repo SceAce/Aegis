@@ -89,10 +89,14 @@ export function createHostOracle(
 	}
 
 	/** Build the bound Task-level Outcome. */
-	function taskOutcome({ task, episodeId, status, verdict }) {
+	function taskOutcome({ task, episodeId, status, verdict, actionPin = null }) {
 		const evidenceRefs = Array.isArray(verdict?.evidence)
 			? verdict.evidence.map((ref) => ({ ref_type: "artifact", ref_id: ref.ref_id, digest: ref.digest }))
 			: [];
+		// A per-episode independence group: the SAME judge produces one group per
+		// Episode, so two independent Episodes are genuinely distinct to the
+		// Compiler's independence gate rather than sharing one fixed label.
+		const group = `${independenceGroup}:${episodeId}`;
 		return {
 			outcome_id: `o-${task.task_id}`,
 			level: "episode",
@@ -100,25 +104,32 @@ export function createHostOracle(
 			episode_id: episodeId,
 			task_id: task.task_id,
 			task_oracle: true,
+			run_id: task.run_id ?? null,
+			action_ref: actionPin?.action_ref ?? null,
+			action_version: actionPin?.action_version ?? null,
+			implementation_digest: actionPin?.implementation_digest ?? null,
+			when: Array.isArray(verdict?.when) ? verdict.when : [],
+			expect: Array.isArray(verdict?.expect) ? verdict.expect : [],
 			criterion: {
 				criterion_id: task.goal?.goal_id ?? null,
 				expected: verdict?.expected ?? task.goal?.goal_id ?? null,
 			},
 			observed: status === "success" || status === "failure" ? (verdict?.observed ?? null) : null,
 			scope: task.scope ?? null,
-			oracle: { oracle_id: oracleId, source: "oracle", independence_group: independenceGroup },
+			preconditions_verified: true,
+			oracle: { oracle_id: oracleId, source: "oracle", independence_group: group },
 			provenance: {
 				source: "oracle",
 				independent: true,
 				task_id: task.task_id,
-				group: independenceGroup,
+				group,
 			},
 			evidence_refs: status === "success" || status === "failure" ? evidenceRefs : [],
 			failure_mode: status === "success" ? null : (verdict?.failure_mode ?? "insufficient_evidence"),
 		};
 	}
 
-	async function judge({ task, outcome_ref = null }) {
+	async function judge({ task, outcome_ref = null, action_pin = null }) {
 		const episodeId = `ep-${task.task_id}`;
 		const attempt = (attemptTracker.get(task.task_id) ?? 0) + 1;
 		attemptTracker.set(task.task_id, attempt);
@@ -130,6 +141,7 @@ export function createHostOracle(
 			expected: raw?.expected ?? null,
 			failure_mode: raw?.failure_mode ?? null,
 			delayed: raw?.delayed === true,
+			when: Array.isArray(raw?.when) ? raw.when : [],
 			evidence: Array.isArray(raw?.evidence) ? raw.evidence : [],
 		};
 		// `unknown`/`invalid`/delayed carry no Stage success; the scheduler records
@@ -153,9 +165,10 @@ export function createHostOracle(
 			status,
 			outcome_id: `o-${task.task_id}`,
 			task_oracle: true,
+			action_pin: action_pin,
 			delayed: verdict.delayed,
 			stage_outcomes,
-			outcome: taskOutcome({ task, episodeId, status, verdict }),
+			outcome: taskOutcome({ task, episodeId, status, verdict, actionPin: action_pin }),
 		};
 	}
 

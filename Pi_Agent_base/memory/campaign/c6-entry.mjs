@@ -28,6 +28,15 @@ import { buildRam } from "../runtime/ram.mjs";
 import { createSessionSupervisor } from "../runtime/session-supervisor.mjs";
 import { projectState } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
+import {
+	buildCampaignLearningBridge,
+	compileExperienceFromProofs,
+	createCampaignLearningStore,
+	loadAuthoritativeExperiences,
+	rebuildExperienceStore,
+	routeBeforeModel,
+	runCampaignLearningStep,
+} from "./c6-learning.mjs";
 import { createDecisionCaptureTool, createModelPlan, createModelWorker } from "./c6-model-worker.mjs";
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
 import { createToolLedger } from "./c6-tool-ledger.mjs";
@@ -297,6 +306,9 @@ export async function runC6FromConfig(
 	const dynamicAdmissions = [];
 	let requestsSinceRotation = 0;
 	let hostRef = null;
+	let sinkRef = null;
+	let learningBridgeRef = null;
+	let learningStoreRef = null;
 
 	/** A C2-shaped budget ledger derived from the trusted config (session_count only). */
 	function sessionLedger() {
@@ -304,6 +316,28 @@ export async function runC6FromConfig(
 		const consumed = config.session.budget_ledger?.consumed ?? { session_count: 0 };
 		const reserved = config.session.budget_ledger?.reserved ?? { session_count: 0 };
 		return { limit, consumed, reserved, max_requests_per_session: config.session.max_requests_per_session };
+	}
+
+	/** Build (once) the learning bridge over the assembled registry/broker. */
+	async function ensureLearningBridge() {
+		if (learningBridgeRef) return learningBridgeRef;
+		if (!hostRef) return null;
+		learningStoreRef = createCampaignLearningStore(config.work_dir);
+		const events = readEventsSafe(eventLogPath);
+		learningBridgeRef = buildCampaignLearningBridge({
+			events,
+			registry: assembled?.registry,
+			broker: assembled?.broker,
+			authorization: assembled?.authorization,
+			environment: {
+				environment_fingerprint: config.learning?.environment?.environment_fingerprint ?? "campaign-local",
+				domain: config.learning?.environment?.domain ?? null,
+				permissions: config.learning?.environment?.permissions ?? [],
+				task_types: config.learning?.environment?.task_types ?? [],
+			},
+			sink: sinkRef,
+		});
+		return learningBridgeRef;
 	}
 
 	function buildSessionController() {
@@ -395,6 +429,32 @@ export async function runC6FromConfig(
 						return buildRam({ board, state, episodeId, goal: manifest.objective?.description ?? "" });
 					},
 					decisionBuffer: buffer,
+					router:
+						config.learning?.policy === "off"
+							? null
+							: async ({ task: routedTask }) => {
+									// Route BEFORE the model plans. Active experiences come from the
+									// committed notes + derived store; a candidate never routes.
+									const bridge = await ensureLearningBridge();
+									if (!bridge) return { route: "deliberate", planning_requests: 1 };
+									const experiences = await loadAuthoritativeExperiences({
+										store: learningStoreRef,
+										events: readEventsSafe(eventLogPath),
+									});
+									const decision = routeBeforeModel({
+										bridge,
+										experiences,
+										task: routedTask,
+										episodeId: `ep-${routedTask.task_id}`,
+									});
+									if (decision.route === "direct") {
+										const action = decision.action_ref
+											? [{ action_ref: decision.action_ref, arguments: decision.arguments ?? {}, criterion_id: null }]
+											: [];
+										return { ...decision, actions: action };
+									}
+									return decision;
+								},
 					onEvent: (record) => {
 						if (record.kind === "request.committed") requestsSinceRotation += 1;
 						out(`  [ledger] ${JSON.stringify(record)}`);
@@ -434,6 +494,7 @@ export async function runC6FromConfig(
 	const { host, sink } = assembled;
 	brokerRef = assembled.broker ?? null;
 	hostRef = host;
+	sinkRef = sink;
 
 	try {
 		unbind = bindHostEventLog(eventLogPath, sink.log);
@@ -496,6 +557,32 @@ export async function runC6FromConfig(
 			host.releaseOwnership();
 		}
 
+		// The explicit learning boundary: compile ONLY when the trusted policy is
+		// `explicit` and proof ids are named; otherwise report why nothing ran. The
+		// derived store is rebuilt from the committed notes so it is never a second
+		// truth source.
+		let learningResult = null;
+		if (scenario !== "status" && scenario !== "observe") {
+			try {
+				const bridge = await ensureLearningBridge();
+				if (bridge) {
+					await rebuildExperienceStore({ store: learningStoreRef, events: readEventsSafe(eventLogPath) });
+					if (config.learning?.policy && config.learning.policy !== "off") {
+						learningResult = await compileExperienceFromProofs({
+							policy: config.learning.policy,
+							proofIds: config.learning.proof_ids ?? [],
+							bridge,
+							store: learningStoreRef,
+						});
+					} else {
+						learningResult = await runCampaignLearningStep({ policy: "off" });
+					}
+				}
+			} catch (error) {
+				learningResult = { ok: false, status: "error", reason: String(error) };
+			}
+		}
+
 		if (doExport || scenario === "export") {
 			const target = outDir ?? join(config.work_dir, "report");
 			exportResult = await runReportExport({
@@ -542,6 +629,7 @@ export async function runC6FromConfig(
 			gate: assembled.gate,
 			export_dir: exportResult?.outDir ?? null,
 			measurement: measureResult,
+			learning: learningResult,
 			rotation: rotationResult,
 			rotation_attempts: rotationAttempts,
 			dynamic_admissions: dynamicAdmissions,

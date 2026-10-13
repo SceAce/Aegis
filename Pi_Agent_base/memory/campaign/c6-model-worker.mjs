@@ -151,6 +151,7 @@ export function createModelWorker(
 		historyCharsProvider = () => 0,
 		onEvent = null,
 		decisionBuffer = null,
+		router = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");
@@ -199,6 +200,30 @@ export function createModelWorker(
 			return { ok: false, failure_mode: "no_session", detail: "no bound SDK session for the model worker" };
 		}
 		const effectiveTaskId = task?.task_id ?? taskId;
+
+		// ROUTE BEFORE THE MODEL. `direct` executes the confirmed action with ZERO
+		// provider requests; `habit` still needs the model to fill only the reported
+		// missing parameters. Anything else plans deliberately.
+		if (router) {
+			const decision = await router({ task, session: activeSession });
+			if (onEvent)
+				onEvent({
+					kind: "task.routed",
+					task_id: effectiveTaskId,
+					route: decision?.route ?? "unknown",
+					planning_requests: decision?.planning_requests ?? 1,
+				});
+			if (decision?.route === "direct" && Array.isArray(decision.actions) && decision.actions.length > 0) {
+				for (const action of decision.actions) if (decisionBuffer) decisionBuffer.push(action);
+				return {
+					ok: true,
+					outcome_ref: `artifact:${effectiveTaskId}`,
+					route: "direct",
+					planning_requests: 0,
+					decisions: decision.actions,
+				};
+			}
+		}
 		const prompt = buildPrompt(task);
 		// Tool definitions are part of the total input estimate; the bound session
 		// reports its active tools.
