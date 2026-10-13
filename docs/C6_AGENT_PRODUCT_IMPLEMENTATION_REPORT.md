@@ -1,10 +1,12 @@
 # C6 模型 Agent 与经验闭环 — 实现报告
 
-历史 DS 状态：**internally_verified / awaiting_external_review**。
-随后限定工程审查结论为 **changes_required**，见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)：
-新增21 tests为2 pass/19 fail；当前214条类型诊断，修改Campaign文件18条。
-本地SHA256/UUID控制正常，无证据支持全零桩；active/replay/direct/habit是C6工程目标，不能后置E2。
-以下保留DS原报告作为历史材料，原结论不代表当前验收通过。
+历史 DS 状态：**internally_verified / awaiting_external_review**；随后限定工程审查结论为
+**changes_required**（见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)）。本轮修复后状态：
+**internally_verified / awaiting_external_review**（C6 限定修复）。
+外部边界套件 21 tests：修复前 2 pass/19 fail，修复后 **21/21 pass, exit 0**。
+Campaign tsc：C6-owned 文件新增诊断 **0**（总 196，均为既有 runtime D/C2 文件按实际 import graph 纳入）。
+SHA256/UUID 控制在本次复核正常（撤回旧“全零桩”归因）。
+active/replay/direct/habit 属 C6-P5 工程目标，本轮已完成代码与离线产品证据（见第 7b 节），未移交 E2。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
 本报告是工程交付，不宣称特定模型能力、context 收益或学习效果成立。
 
@@ -125,17 +127,44 @@ C1 `eventlog-durability`/`integration-recovery`。共 25 个脚本 exit 0
 ## 7. 未实测限制（列明）
 
 - 只经 faux provider 与 SDK create seam 替身验证 provider 参数传递；**具体真实 provider
-  （如某本地 OpenAI 兼容 endpoint）未实测**。
+  （如某本地 OpenAI 兼容 endpoint）未实测**。`local-openai` 的创建/参数传递已实现并用离线段验证，
+  但未向该 endpoint 发过真实请求。
 - 不读取真实凭据、不请求真实模型/外部目标。
-- **运行环境限制**：本沙箱把 `crypto.createHash`/`randomUUID` 桩为全零（`sha256:000…`）。
-  因此基于 digest 的篡改检测在本环境不可判定；C6 测试改用不依赖 hash 值的**结构门**
-  （source_outcome_ids 不匹配不权威、foreign episode 不解析）证明独立性。真实环境可恢复 digest 强度。
-- Compiler 达到 `active` 需要 Campaign outcome 携带 pre_state/arguments/run_id 与已提交 isolated replay
-  记录；C6 已提供 run_id/when/expect/每 Episode 独立组与 resolver 索引，显式编译路径与派生重建已落地，
-  但把首族的每个 proof 条件全部闭合以稳定产出 active 属 E2 实验阶段的对照工作。这是 `non_blocking`
-  （默认 `promote_experience:false`，不影响产品链、安全、预算与恢复），责任阶段 E2，重新评估条件：
-  运行前冻结的编译集/留出集需要 active 经验时。
+- **环境更正（撤回旧归因）**：旧报告称本环境把 `crypto.createHash`/`randomUUID` 桩为全零。
+  本次复核未复现该恒定性：`createHash("sha256").update("abc")` 返回标准向量
+  `ba7816bf…`，`a`/`b` 摘要不同，`randomUUID()` 每次不同。旧“全零桩”判断无稳定证据，
+  已**撤回**；digest/body-tamper 完整性断言按正常环境执行（见第 7b 节）。
 - workspace 不是 OS sandbox；loopback 观察不隔离本地恶意进程。
+
+## 7b. 审查问题 X1–X12 修复对应表
+
+背景：外部审查提交 `1512434` 新增 `tests/aegis-c6-external-boundaries.mjs` 为 21 tests / 2 pass /
+19 fail（正常 red）。本轮修复后 **21/21 pass, exit 0**。red 基线在
+`runtime/dev/c6-repair/red-baseline.log`，final 在 `runtime/dev/c6-repair/` 各 `req-*.out`。
+
+| ID | 修复 |
+| --- | --- |
+| X1 | 预算 `admitRequest`/`admitTool` 原子预留，`remaining = limit − consumed − reserved`；同 reservation commit 幂等；wall-time 按实时钟门控 |
+| X2 | 模型 Worker 按 `message_end` 计每次 provider 请求；task 额度按 `task_budget` 建**每任务账本**；决策工具在额度不足时 `terminate` 阻止自动续请求；每 Broker action 经 `admitTool` 受限 |
+| X3 | `context.max_total_input_chars` 作为**每请求窗口**（含 ROM/tool schema/RAM/history/输出预留），不再乘请求预算；累计 input 另计 |
+| X4 | 每次 commit 经 Host writer 持久 `runtime.note kind=c6.request`；`measure`/restart 从 committed 源重建累计账本；`buildMeasurement` 收集 attempt/request 记录 |
+| X5 | 入口在创建 SDK 前把 Observer 的 log/RAM/handoff/Task/ROM 环境**取自可信 config**（覆盖继承 decoy）；`setTaskBinding` 每任务绑定；RAM/episode 按当前 Task；退出恢复 env |
+| X6 | runner 为每 attempt 物化独立 config（`work_dir`/seed），真实在其中运行；拒绝重复 id/path |
+| X7 | `local-openai` 标为 implemented；入口经 SDK 注册 loopback baseUrl 模型与隔离凭据；未实测 endpoint 列明 |
+| X8 | outcome 记录真实 `pre_state`/`arguments`；结构化 `when(path/op/verified_by)`/`expect`/`run_id`；新增可信隔离 Replay adapter；每次 replay 后**刷新 bridge**；active 编译经同一 writer 写 `experience.compiled`；新增相容独立 manifest 使 Compiler 达 active；route-before-model 用已验证 currentState ref → 第三 Task direct 零规划请求 |
+| X9 | `observe` CLI 常驻到 SIGTERM/SIGINT，signal drain await durable 后关闭；bind 失败不阻断 run |
+| X10 | 注册测试经 Host harness 运行：校验 test digest、按**调用帧归因** process.exit、要求**完整**结果；提前退出/缺结果/timeout=unknown；未注册 criterion=unknown |
+| X11 | 新增授权只读 `aegis_read` 工具；prompt 含真实 target、criterion 与 action 参数 schema |
+| X12 | assembly 失败路径对 `sdkRuntime` 做 null-safe dispose，坏源保留结构化拒绝，`status` 不报 completed |
+
+### 测试修正（依据契约，不降低门）
+
+- `aegis-c6-ledger-input.mjs`：输入超过窗口现返回专用 `context_window_exceeded`（窗口门与累计预算分离）；
+  原断言 `budget_exhausted` 与契约不符，修正标签并保留“不 prompt”核心断言。
+- `aegis-c6-sdk-lifecycle.mjs`：原“整个 Campaign 仅 1 个 Episode”断言与 X5 修正后的**每 Task 一个 Episode**
+  契约冲突（原断言因无关标签才成立）；改为断言每真实 Task 一个 Episode 且轮换不新增。
+- `tests/helpers/c6-audit-child.mjs`：原从 `context.tools` 读工具，但真实 Pi SDK 把工具放在**前导 system
+  消息 `toolsAdded`**，契约上不存在 `context.tools`；改为读取正确位置，保留 X11 全部实质断言。
 
 ## 8. F16 / deferred（范围冻结 §3.1）
 

@@ -142,3 +142,52 @@ run measure      # 测量导出
 - workspace 不是 OS sandbox；loopback 观察不隔离本地恶意进程。
 - 开发默认 provider 为 faux；具体真实/本地 provider 未在本轮实测（见 implementation report）。
 - 真实模型 pilot、上下文校准、经验效果对照、迁移与日常试用是后续独立实验。
+
+## 10. 经验闭环运行（C6-C / X8）
+
+学习闭合需要显式配置、明确 proof IDs 和可信隔离 Replay adapter：
+
+```json
+"learning": {
+  "policy": "explicit",
+  "promote_experience": false,
+  "proof_ids": ["o-task-001", "o-task-002"],
+  "replay_adapter": "/abs/path/to/Pi_Agent_base/memory/campaign/isolated-replay-adapter.mjs",
+  "environment": {
+    "environment_fingerprint": "data-repair-env",
+    "domain": "structured-data",
+    "permissions": ["data.record.write"],
+    "task_types": ["verify", "reproduce"]
+  }
+}
+```
+
+- `replay_adapter` 只由可信 config 引用（非模型），作为模块导入，从不 `eval`。
+- 编译前对每个 proof 执行真实隔离 Replay（重建 pre-state、重跑注册动作、重验 criterion）；
+  每次 replay 后从 committed stream 重建 bridge。
+- 达到 active 时经**同一 Host writer** 写权威 `runtime.note kind=experience.compiled`。
+- 删除 `run/experiences/` 后可从 committed note 重建（派生无损）。
+- Router 在模型规划之前运行：`direct`/`habit` 零规划请求；第三 Task 复用同一规则仍由独立 Oracle 判定效果。
+- 正例需**同方法、相容条件**的独立场景（见 `buildDataRepairLearningManifest`）。
+
+## 11. 外部边界与修复回归
+
+修复轮的可复现命令（仓库根目录）：
+
+```bash
+# 外部工程边界套件（X1-X12，真实 SDK/faux + 本地子进程 + loopback）
+node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs
+
+# 学习闭合（真实 Replay → active → direct 零规划）
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-learning-closure.mjs
+
+# 真实 child SIGKILL 恢复（durable intent / 真实 effect 后杀死，重启 reconcile）
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-c6-recovery.mjs
+
+# 类型（C6-owned 新增诊断应为 0）
+./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json
+```
+
+证据/日志：`Pi_Agent_base/runtime/dev/c6-repair/`（ignored）。

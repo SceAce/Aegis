@@ -27,9 +27,9 @@ expected 来自契约与独立标准，不由被测聚合器生成。
 | case_id | requirement | 预期行为 | 脚本 | 状态 |
 | --- | --- | --- | --- | --- |
 | SDK-L1 | 自动启动两任务+动态 | clean temp 用实际 CLI 启动；真实 SDK/faux + 原 Broker 效果；归属匹配；无 caller runtime/beforeRun | `aegis-c6-sdk-lifecycle.mjs` | pass exit 0 |
-| SDK-L2 | 自动轮换 | 小阈值触发 Host 自动轮换一次；真新 AgentSession/context；同 Episode/授权/RAM；completion/账本各一次；轮换后 direct write 无效果 | 同上 | not_run |
-| SDK-L3 | 跨 Task/重启账本 | 旧轮换耗用保留；耗尽拒绝创建；0/1 边界合法控制；pending/未 settled 拒绝；创建/bind 失败无 completion 可重启 | 同上 | not_run |
-| SDK-L4 | 完整链/清理 | 首启→rotation→actions→退出整链 verifyChain；registry/订阅/Session/listener 清理；重启无第二 writer | 同上 | not_run |
+| SDK-L2 | 自动轮换 | 小阈值触发 Host 自动轮换一次；真新 AgentSession/context；同 Episode/授权/RAM；completion/账本各一次；轮换后 direct write 无效果 | `aegis-c6-sdk-lifecycle.mjs` | pass exit 0 |
+| SDK-L3 | 跨 Task/重启账本 | 旧轮换耗用保留；耗尽拒绝创建；0/1 边界合法控制；pending/未 settled 拒绝；创建/bind 失败无 completion 可重启 | `aegis-c6-sdk-lifecycle.mjs` | pass exit 0 |
+| SDK-L4 | 完整链/清理 | 首启→rotation→actions→退出整链 verifyChain；registry/订阅/Session/listener 清理；重启无第二 writer | `aegis-c6-sdk-lifecycle.mjs` | pass exit 0 |
 | SDK-L5 | 常驻 observe | HTTP 可访问、与导出一致、无写路由；source bytes 不变；占端口仍完成；SIGTERM 后可重绑 | `aegis-c6-service-measure.mjs` | pass exit 0 |
 | SDK-L6 | 控制/恢复 | typed pause/cancel + restart 不复活；IPC barrier 后 SIGKILL 恢复核对产物无重复 | `aegis-c6-durability-recovery.mjs` | pass exit 0 |
 | SDK-L7 | 拒绝路径 | 未知/缺 provider、未审查 extension、错误 grant/预算/paths 启动拒绝且无 SDK 创建/效果；临时 in-memory auth；合法配置通过 | `aegis-c6-provider.mjs` | pass exit 0 |
@@ -73,3 +73,41 @@ C1 `eventlog-durability`/`integration-recovery`。
 | 未知 provider 自动回落 faux | C6-P6 | FAIL |
 
 失败仍绿说明测试盲区，先补测试再交付。
+
+
+## C6 修复轮新增：外部边界与真实恢复
+
+审查新增 `aegis-c6-external-boundaries.mjs`（21 node tests）为正常 red 基线
+（修复前 2 pass / 19 fail，exit 1）。修复后全部通过；本表记录 X1-X12 与证据。
+
+| case_id | requirement | 预期行为 | 脚本 | 状态 |
+| --- | --- | --- | --- | --- |
+| C6-X1 | 调用前预算 | pending reservation 扣 remaining；同 reservation commit 幂等；wall-time 耗尽拒绝 | `aegis-c6-external-boundaries.mjs`（C6-X1 ×3） | pass exit 0 |
+| C6-X2 | 真实请求/工具账本 | 计每次 provider 请求；task request=1 拒绝自动续请求且不推进依赖；task tool=1 限制 Broker intent | 同上（C6-X2 ×3） | pass |
+| C6-X3 | 每请求总输入门 | `max_total_input_chars` 为每请求窗口，不乘请求预算 | 同上（C6-X3） | pass |
+| C6-X4 | 持久账本/测量 | measure 从 committed 重建；restart 保留累计 consumption | 同上（C6-X4 ×2） | pass |
+| C6-X5 | writer/真实绑定 | 继承 decoy AEGIS_EVENT_LOG 不生效；RAM/episode 绑定当前 Task | 同上（C6-X5 ×2） | pass |
+| C6-X6 | runner 隔离 | 各 attempt 在自己 work_dir 产生 committed 源 | 同上（C6-X6） | pass |
+| C6-X7 | provider 接口 | loopback `local-openai` 被实现（非 hard-refuse） | 同上（C6-X7） | pass |
+| C6-X8 | 学习证据 | outcome 带结构化 when(path/op/verified_by)/expect/run_id | 同上（C6-X8） | pass |
+| C6-X9 | 常驻 observe | observe CLI listener 常驻到 SIGTERM，直接访问其 URL | 同上（C6-X9） | pass |
+| C6-X10 | 代码 Oracle 假成功 | process.exit(0) 提前退出为 unknown；未注册 criterion unknown | 同上（C6-X10 ×2） | pass |
+| C6-X11 | 观察路径 | provider 收到授权读取工具、target、criterion 与参数 schema | 同上（C6-X11） | pass |
+| C6-X12 | 坏源/清理 | 坏源 status 结构化非成功，不被 null dispose TypeError 覆盖 | 同上（CONTROL corrupted） | pass |
+
+补充产品证据（复用任务书 C6-P5/P4）：
+
+| case_id | 预期行为 | 脚本 | 状态 |
+| --- | --- | --- | --- |
+| C6-P5 closure | 两独立相容 Episode 真实隔离 Replay → Compiler active → 第三 Task direct 零规划请求并产生真实 Oracle 判定的效果 → 删派生重建 | `aegis-c6-learning-closure.mjs` | pass exit 0 |
+| C6-P4 recovery | 真实 child 经 durable intent / 真实 effect 后 SIGKILL，重启 reconcile 无重复 effect，stream verifyChain | `aegis-c6-recovery.mjs` | pass exit 0 |
+
+### 有限 mutation（本次复跑，行为 FAIL 证明）
+
+| mutation | 预期 | 实际 |
+| --- | --- | --- |
+| remaining 忽略 pending reservation | C6-X1 FAIL | FAIL ✓ |
+| decision tool 不再标记 budget 终止 | C6-X2 follow-up FAIL | FAIL ✓ |
+| runner 忽略 per-attempt config | C6-X6 FAIL | FAIL ✓ |
+| compile 前跳过真实 replay | closure FAIL | FAIL ✓ |
+| process.exit 归因设为恒真 | C6-X10 FAIL | FAIL ✓ |
