@@ -1,6 +1,8 @@
 # C6 模型 Agent 与经验闭环 — 测试矩阵
 
-状态：`internally_verified`（工程）。所有 C6-P* required 与 SDK-L* 已实测通过，见 implementation report。case 编号与 `C6_AGENT_PRODUCT_TASK.md` §4 的 C6-P1–P8 对齐，
+当前状态：**changes_required**，外部新增 `aegis-c6-external-boundaries.mjs` 为21 tests/2 pass/19 fail。
+见 `C6_EXTERNAL_REVIEW.md` / `C6_REPAIR_DS_PROMPT.md`；以下DS原矩阵保留为历史声明，
+不能把其pass标签代替实际P5/P6/P7等产品证据。case 编号与 `C6_AGENT_PRODUCT_TASK.md` §4 的 C6-P1–P8 对齐，
 另加 SDK-L1–L8（并入 C6-A）与离线 provider case。
 expected 来自契约与独立标准，不由被测聚合器生成。
 

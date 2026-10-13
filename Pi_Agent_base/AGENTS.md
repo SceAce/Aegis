@@ -17,7 +17,9 @@ Read these before Campaign development:
 - `../docs/C4A_EXTERNAL_REVIEW.md`
 - `../docs/C5_INTEGRATION_TASK.md` (historical C5 scope)
 - `../docs/C5_EXTERNAL_REVIEW.md`
-- `../docs/C6_AGENT_PRODUCT_TASK.md` (current overall development task)
+- `../docs/C6_AGENT_PRODUCT_TASK.md` (frozen overall development scope)
+- `../docs/C6_EXTERNAL_REVIEW.md`
+- `../docs/C6_REPAIR_DS_PROMPT.md` (current bounded repair assignment)
 - `../docs/AEGIS_PRODUCT_ROADMAP.md`
 - `../docs/SDK_LAUNCHER_TASK.md` (C6-A lifecycle requirements; no longer a separate assignment)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
@@ -71,9 +73,12 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-C6 code delivery (C6-A to F) is **internally_verified / awaiting_external_review**;
-see `../docs/C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md` and
-`../docs/C6_AGENT_PRODUCT_RUNBOOK.md`. Real-model pilots, efficacy/transfer
+C6 bounded engineering review is **changes_required**; see
+`../docs/C6_EXTERNAL_REVIEW.md` and the current `../docs/C6_REPAIR_DS_PROMPT.md`.
+Original 11 suites pass, but 21 external boundary cases show 19 current failures.
+Repair the frozen engineering promises without rebuilding frameworks or weakening
+proof/budget/Oracle tests. Active compilation/replay/direct/habit are C6 engineering
+requirements, not deferred efficacy experiments. Real-model pilots, efficacy/transfer
 studies and daily-use experiments remain separate later tasks. C6 does not read
-real credentials or call real providers/targets. Preserve deferred F16 and
-per-config type baselines.
+real credentials or call real providers/targets. Preserve deferred F16 and honest
+per-config type baselines; SHA256/UUID controls pass in the review environment.

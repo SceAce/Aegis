@@ -1,22 +1,18 @@
-# Aegis 阶段入口：C6 代码交付完成，待外部工程验收
+# Aegis 阶段入口：C6 工程审查 changes_required
 
-状态：C1-C4a 保持已交付；C5 **accepted_with_recorded_limits**。
-C6（模型 Agent 与经验闭环代码交付）已 **internally_verified / awaiting_external_review**。
-验收材料见 [C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md](C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md)
-与操作手册 [C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。
-用户已确认：原 R1-R6 的代码工作统一归入 C6，实际模型运行及效果实验以后单独处理。
+C1-C5 保持既有范围交付。C6 DS 内部交付后，本次限定审查复跑原11套件均通过，
+但新增21个边界用例为2 pass/19 fail，当前不能进入实际环境实验。
+审查依据：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)。
 
-总任务书：[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。
-完整提示词：[C6_AGENT_PRODUCT_DS_PROMPT.md](C6_AGENT_PRODUCT_DS_PROMPT.md)。
-产品与实验路线：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md)。
-原 SDK launcher 纳入 C6-A，不再单独委派；本轮仅调整规划，未启动代码实现。
+当前任务提示词：[C6_REPAIR_DS_PROMPT.md](C6_REPAIR_DS_PROMPT.md)。
+原冻结总范围：[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。
+产品与实验划分：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md)。
 
-C6 一次总开发任务已按 A-F 完成 SDK/Task binding/轮换/服务生命周期、模型 Worker/实际账本/
-总输入门、Campaign 经验闭环、provider 配置接口、测量与运行支撑、第二任务族 adapter 和 runbook。
-开发验证为真实 SDK + faux、本地文件/子进程/隔离 Replay/loopback HTTP；provider 接口离线测试。
-已完成一次 C6 限定工程验收材料，交回当前会话独立复核；不逐内部小任务请求批准。
+修复限定于原C6承诺：调用前真实SDK循环/工具预算与持久测量、总输入门、实际Task/Episode/
+shared writer、可观察Worker、代码Oracle无假成功、active/replay/direct/habit经验工程链、
+provider配置接口、runner实际attempt隔离、常驻observe与错误清理。复用C6计划/矩阵/报告，
+主DS自主内部推进、明确路径审查本地提交，最后交一次限定复验，不重复审计已完成阶段。
 
-真实模型 pilot、上下文校准、经验 A/B/C/D 收益、第二任务族迁移及日常试用另立实验任务。
-C6 不调用真实模型/外部目标、不读取真实凭据、不自动验收；工程通过不等于学习效果成立。
-F16/旧类型基线后置，修新增诊断、遵守范围冻结。明确路径暂存、审查与本地里程碑提交，
-不 push/rewrite、不改 Pi 核心/用户凭据与模型设置/lockfile。
+“稳定编译active/真实Replay”是工程required，不能移交E2实验；收益/真实模型pilot另立任务。
+当前SHA256/UUID控制通过，禁止依据无证据crypto全零归因弱化测试；修新增类型诊断，旧库/F16后置。
+不改Pi核心/真实凭据与模型设置/lockfile、不push/rewrite、不调用真实provider/外部目标/验收模型。

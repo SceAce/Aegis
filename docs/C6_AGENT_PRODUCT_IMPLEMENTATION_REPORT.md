@@ -1,6 +1,10 @@
 # C6 模型 Agent 与经验闭环 — 实现报告
 
-状态：**internally_verified / awaiting_external_review**（C6 限定工程验收）。
+历史 DS 状态：**internally_verified / awaiting_external_review**。
+随后限定工程审查结论为 **changes_required**，见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)：
+新增21 tests为2 pass/19 fail；当前214条类型诊断，修改Campaign文件18条。
+本地SHA256/UUID控制正常，无证据支持全零桩；active/replay/direct/habit是C6工程目标，不能后置E2。
+以下保留DS原报告作为历史材料，原结论不代表当前验收通过。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
 本报告是工程交付，不宣称特定模型能力、context 收益或学习效果成立。
 
