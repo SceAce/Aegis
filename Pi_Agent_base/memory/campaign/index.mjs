@@ -37,6 +37,15 @@ export {
 	summarize,
 } from "./c3-entry.mjs";
 export {
+	C5_ENTRY_VERSION,
+	createHostSessionController,
+	runCampaignFromConfig,
+} from "./c5-entry.mjs";
+export {
+	CONFIG_SCHEMA_VERSION,
+	loadCampaignConfig,
+} from "./campaign-config.mjs";
+export {
 	BROKERED_TOOLS,
 	createCampaignActionGate,
 	DIRECT_TOOLS_DENIED,
