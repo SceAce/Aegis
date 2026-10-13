@@ -21,7 +21,9 @@ Read these before Campaign development:
 - `../docs/C6_EXTERNAL_REVIEW.md`
 - `../docs/C6_REPAIR_DS_PROMPT.md` (historical first repair)
 - `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md` (historical five-group recheck repair)
-- `../docs/C6_REQUEST_LIFECYCLE_CONVERGENCE_DS_PROMPT.md` (current lifecycle convergence assignment)
+- `../docs/C6_REQUEST_LIFECYCLE_CONVERGENCE_DS_PROMPT.md` (historical first lifecycle convergence assignment)
+- `../docs/C6_THREE_FACTS_DSV41FLASH_TASK.md` (current bounded repair; supersedes historical defect status)
+- `../docs/C6_AGENT_LIFECYCLE_OPEN_SOURCE_RESEARCH.md` (upstream lifecycle evidence and applicable limits)
 - `../docs/AEGIS_PRODUCT_ROADMAP.md`
 - `../docs/SDK_LAUNCHER_TASK.md` (C6-A lifecycle requirements; no longer a separate assignment)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
@@ -94,3 +96,15 @@ remain 0 (196 legacy diagnostics remain). Real-model pilots and learning
 efficacy experiments remain separate after engineering acceptance. Do not call
 real providers/targets or read real credentials. Preserve deferred F16 and
 honest per-config type baselines.
+
+Current repair supplement (2026-10-14): product baseline `93d4617`, independent
+audit tests in `290313f`, and `../docs/C6_EXTERNAL_REVIEW.md` section 7 supersede
+the historical milestone status above. C6 remains **changes_required** because
+reconciliation rebuild drops confirmed consumption and may erase unresolved
+joint settlement, and SDK `aborted` can still release a buffered decision to
+the Broker. Follow `../docs/C6_THREE_FACTS_DSV41FLASH_TASK.md`: keep per-side
+budget responsibility, joint request settlement and planning termination
+separate; fix the two demonstrated groups with bounded validation. The prior
+four repairs remain recognized. Engineering acceptance permits consideration
+of a limited real-task pilot; unrelated warnings and deferred infrastructure
+do not reopen this repair scope.
