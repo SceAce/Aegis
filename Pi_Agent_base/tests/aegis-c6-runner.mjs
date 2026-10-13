@@ -10,7 +10,7 @@
 //     Pi_Agent_base/tests/aegis-c6-runner.mjs
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,10 +103,18 @@ try {
 		return faux;
 	};
 
+	const applyInitialState = (_attempt, initial) => {
+		// The trusted task-family initializer actually rewrites the shared target to
+		// the declared state and re-reads it, so the attempt starts from a real,
+		// verified pre-state rather than whatever the previous attempt left.
+		writeFileSync(join(workspaceRoot, "dataset.json"), `${JSON.stringify(initial)}\n`, "utf8");
+		return { ok: true, applied: JSON.parse(readFileSync(join(workspaceRoot, "dataset.json"), "utf8")) };
+	};
 	const runner = await runBoundedAttempts({
 		runEntry: runC6FromConfig,
 		configPath,
 		baseDir: join(base, "attempts"),
+		applyInitialState,
 		attempts: [
 			{ id: "attempt-a", seed: 1, initial_state: { name: "??" }, work_dir: join(base, "work-a") },
 			{ id: "attempt-b", seed: 2, initial_state: { name: "??" }, work_dir: join(base, "work-b") },
@@ -123,6 +131,25 @@ try {
 		manifest.attempts[0].seed === 1 && manifest.attempts[1].seed === 2,
 	);
 	check("the manifest records the initial state per attempt", manifest.attempts[0].initial_state?.name === "??");
+	check(
+		"the manifest records the ACTUALLY applied initial state",
+		manifest.attempts.every((a) => a.initial_state_applied === true && a.applied_initial_state?.name === "??"),
+		JSON.stringify(manifest.attempts.map((a) => a.applied_initial_state)),
+	);
+	// A declared initial state with no trusted initializer is refused, not run.
+	const noInitRunner = await runBoundedAttempts({
+		runEntry: async () => {
+			throw new Error("must not run without an initializer");
+		},
+		configPath,
+		baseDir: join(base, "no-init"),
+		attempts: [{ id: "no-init", work_dir: join(base, "work-no-init"), initial_state: { name: "fresh" } }],
+	});
+	check(
+		"an unapplicable initial state is refused, never run",
+		noInitRunner.attempts[0].ok === false && noInitRunner.attempts[0].reasons?.includes("initial_state_not_applicable"),
+		JSON.stringify(noInitRunner.attempts[0]),
+	);
 	check(
 		"backend tokens stay null in every attempt",
 		manifest.attempts.every((a) => a.backend_tokens === null),

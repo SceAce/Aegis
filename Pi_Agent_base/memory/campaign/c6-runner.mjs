@@ -6,13 +6,21 @@
 // measurements. It keeps EVERY attempt (including failures/unknown) and never
 // invents a gain or a statistic. It is NOT a general benchmark platform.
 //
+// Initial state: an attempt's `initial_state` is NOT metadata. The runner only
+// runs an attempt that declares an initial state when a TRUSTED task-family
+// initializer (`applyInitialState`) is supplied; the initializer must actually
+// apply the reset and report the APPLIED state. Without an initializer the
+// runner refuses the attempt (ok:false) and does NOT execute it, so a shared old
+// workspace can never be mistaken for a correctly initialized run. An initializer
+// that throws is kept as THAT attempt's failure and never masks other attempts.
+//
 // A real efficacy experiment is a later, separately-authorized task: this module
 // only provides the deterministic, auditable per-attempt plumbing.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const C6_RUNNER_VERSION = "2.0.0";
+export const C6_RUNNER_VERSION = "3.0.0";
 
 /**
  * Run a bounded attempt list. Each attempt gets its OWN materialized config with
@@ -30,7 +38,7 @@ export const C6_RUNNER_VERSION = "2.0.0";
  *   createSeam?: Function|null,
  *   fauxProviderFactory?: Function|null,
  *   print?: (text: string) => void,
- *   applyInitialState?: ((attempt: any, initial: any) => void)|null,
+ *   applyInitialState?: ((attempt: any, initial: any) => ({ok?: boolean, applied?: any, reason?: string}|void))|null,
  * }} args
  */
 export async function runBoundedAttempts(
@@ -69,6 +77,69 @@ export async function runBoundedAttempts(
 		}
 		seenIds.add(id);
 		seenDirs.add(attemptDir);
+
+		// Apply the initial state BEFORE materializing/running the attempt. The
+		// initializer is trusted Host code; without one, a declared initial state
+		// cannot be applied and the attempt is refused (never silently accepted as
+		// a run over whatever the shared workspace already contained).
+		let appliedInitialState = null;
+		let initError = null;
+		const declaresInitialState = attempt.initial_state !== undefined && attempt.initial_state !== null;
+		if (declaresInitialState) {
+			if (typeof applyInitialState !== "function") {
+				results.push({
+					attempt_id: id,
+					seed: attempt.seed ?? null,
+					initial_state: attempt.initial_state,
+					applied_initial_state: null,
+					work_dir: attemptDir,
+					config_path: null,
+					event_log: null,
+					ok: false,
+					error: "no trusted initializer was supplied for the declared initial_state; refusing to run",
+					reasons: ["initial_state_not_applicable"],
+					task_states: null,
+					ledger: null,
+					usage_sources: null,
+					backend_tokens: null,
+					backend_currency: null,
+				});
+				continue;
+			}
+			try {
+				const applied = applyInitialState(attempt, attempt.initial_state);
+				if (applied && applied.ok === false) {
+					initError = applied.reason ?? "the trusted initializer refused the initial state";
+				} else {
+					// Record the ACTUAL applied state the initializer observed, not the
+					// requested declaration.
+					appliedInitialState = applied && Object.hasOwn(applied, "applied") ? applied.applied : attempt.initial_state;
+				}
+			} catch (caught) {
+				initError = caught instanceof Error ? caught.message : String(caught);
+			}
+			if (initError !== null) {
+				results.push({
+					attempt_id: id,
+					seed: attempt.seed ?? null,
+					initial_state: attempt.initial_state,
+					applied_initial_state: null,
+					work_dir: attemptDir,
+					config_path: null,
+					event_log: null,
+					ok: false,
+					error: `initial state was not applied: ${initError}`,
+					reasons: ["initial_state_failed"],
+					task_states: null,
+					ledger: null,
+					usage_sources: null,
+					backend_tokens: null,
+					backend_currency: null,
+				});
+				continue;
+			}
+		}
+
 		mkdirSync(attemptDir, { recursive: true });
 		// Materialize a per-attempt config so the product entry really runs in this
 		// attempt's work_dir (and writes its own committed source there).
@@ -78,9 +149,6 @@ export async function runBoundedAttempts(
 			`${JSON.stringify({ ...baseConfig, work_dir: attemptDir, seed: attempt.seed ?? baseConfig.seed ?? null }, null, 2)}\n`,
 			"utf8",
 		);
-		if (typeof applyInitialState === "function" && attempt.initial_state !== undefined) {
-			applyInitialState(attempt, attempt.initial_state);
-		}
 		let outcome = null;
 		let error = null;
 		try {
@@ -101,6 +169,8 @@ export async function runBoundedAttempts(
 			attempt_id: id,
 			seed: attempt.seed ?? null,
 			initial_state: attempt.initial_state ?? null,
+			applied_initial_state: appliedInitialState,
+			initial_state_applied: declaresInitialState ? appliedInitialState !== null : null,
 			work_dir: attemptDir,
 			config_path: attemptConfigPath,
 			event_log: join(attemptDir, "events.jsonl"),
