@@ -71,12 +71,9 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-Next delegated assignment is `../docs/C6_AGENT_PRODUCT_TASK.md`: one overall
-code delivery covering SDK lifecycle, model Worker and actual budgets, Campaign
-learning, provider configuration interfaces, measurement/run support and a second
-local task adapter. Progress autonomously through C6-A to F and return for one
-engineering review. SDK launcher requirements are part of C6-A.
-Validate with real SDK/faux and local effects/replay/HTTP; provider interfaces use
-offline substitutes. Real-model pilots, efficacy/transfer studies and daily-use
-experiments are separate later tasks. C6 does not read real credentials or call
-real providers/targets. Preserve deferred F16 and per-config type baselines.
+C6 code delivery (C6-A to F) is **internally_verified / awaiting_external_review**;
+see `../docs/C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md` and
+`../docs/C6_AGENT_PRODUCT_RUNBOOK.md`. Real-model pilots, efficacy/transfer
+studies and daily-use experiments remain separate later tasks. C6 does not read
+real credentials or call real providers/targets. Preserve deferred F16 and
+per-config type baselines.
