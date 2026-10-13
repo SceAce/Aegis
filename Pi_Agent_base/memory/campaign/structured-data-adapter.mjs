@@ -370,6 +370,12 @@ export function createDataRepairJudge({ workspaceRoot, target = "dataset.json" }
 				verified_by: [artifactRef],
 			},
 		];
+		// Also carry the REAL pre-state preconditions (from the declared initial
+		// state) so a reused rule can verify its `when` against a trusted current
+		// state at route time. Only fields the action actually changes are relevant.
+		for (const [field, value] of Object.entries(preState ?? {})) {
+			when.push({ path: field, op: "eq", value, verified_by: [artifactRef] });
+		}
 		const expect = [];
 		for (const stage of task?.stages ?? []) {
 			for (const criterion of stage.criteria ?? []) {

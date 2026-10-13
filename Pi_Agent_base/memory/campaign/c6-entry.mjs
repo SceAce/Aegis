@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { digest } from "../fixture/contracts.mjs";
 import { projectBoard } from "../runtime/board.mjs";
 import { bindHostEventLog, parseJsonl, verifyChain } from "../runtime/events.mjs";
 import { evaluateHandoff } from "../runtime/handoff.mjs";
@@ -460,6 +461,42 @@ export async function runC6FromConfig(
 		return learningBridgeRef;
 	}
 
+	/**
+	 * Read the current target state and commit it as a trusted obtained-data
+	 * record, returning a resolver-verifiable current-state ref. This is a
+	 * read-only observation; it lets the Router decide `direct`/`habit` from a
+	 * VERIFIED current state rather than an unknown one.
+	 */
+	async function observeCurrentState({ task, bridge }) {
+		const target = task?.target_ref ?? task?.definition?.target_ref ?? null;
+		if (!target || typeof target !== "string") return { state: null, currentStateRef: null };
+		let state = null;
+		try {
+			const absolute = resolve(config.workspace_root, target);
+			if (!absolute.startsWith(resolve(config.workspace_root))) return { state: null, currentStateRef: null };
+			state = JSON.parse(readFileSync(absolute, "utf8"));
+		} catch {
+			return { state: null, currentStateRef: null };
+		}
+		if (!state || typeof state !== "object" || Array.isArray(state)) return { state: null, currentStateRef: null };
+		const dataRef = {
+			ref_type: "data",
+			ref_id: `current-state:${task.task_id}:${readEventsSafe(eventLogPath).length}`,
+		};
+		const written = await sinkRef?.append?.({
+			event_type: "runtime.note",
+			episode_id: `ep-${task.task_id}`,
+			payload: { kind: "data.obtained", data_ref: dataRef, value: state, source: "c6-current-state" },
+			source: { kind: "runtime", actor_id: "c6-router", adapter: "c6-entry", version: C6_ENTRY_VERSION },
+			schema_version: "1.1",
+		});
+		if (written?.ok !== true) return { state: null, currentStateRef: null };
+		return {
+			state,
+			currentStateRef: { ...dataRef, digest: digest(state) },
+		};
+	}
+
 	/** Build a fresh bridge over the CURRENT committed stream (never cached). */
 	function buildLearningBridgeFromStream() {
 		if (!hostRef) return null;
@@ -651,10 +688,16 @@ export async function runC6FromConfig(
 						config.learning?.policy === "off"
 							? null
 							: async ({ task: routedTask }) => {
-									// Route BEFORE the model plans. Active experiences come from the
-									// committed notes + derived store; a candidate never routes.
-									const bridge = await ensureLearningBridge();
+									// Route BEFORE the model plans. Build the bridge from the CURRENT
+									// committed stream (never a cached old bridge), and derive a VERIFIED
+									// current-state ref for this task's target so `when` is decidable.
+									const bridge = buildLearningBridgeFromStream() ?? (await ensureLearningBridge());
 									if (!bridge) return { route: "deliberate", planning_requests: 1 };
+									if (!learningStoreRef) learningStoreRef = createCampaignLearningStore(config.work_dir);
+									const { state: currentState, currentStateRef } = await observeCurrentState({
+										task: routedTask,
+										bridge,
+									});
 									const experiences = await loadAuthoritativeExperiences({
 										store: learningStoreRef,
 										events: readEventsSafe(eventLogPath),
@@ -663,13 +706,21 @@ export async function runC6FromConfig(
 										bridge,
 										experiences,
 										task: routedTask,
+										currentState,
+										currentStateRef,
 										episodeId: `ep-${routedTask.task_id}`,
 									});
-									if (decision.route === "direct") {
-										const action = decision.action_ref
-											? [{ action_ref: decision.action_ref, arguments: decision.arguments ?? {}, criterion_id: null }]
-											: [];
-										return { ...decision, actions: action };
+									if (decision.route === "direct" && decision.action_ref) {
+										return {
+											...decision,
+											actions: [
+												{
+													action_ref: decision.action_ref,
+													arguments: decision.arguments ?? {},
+													criterion_id: null,
+												},
+											],
+										};
 									}
 									return decision;
 								},
