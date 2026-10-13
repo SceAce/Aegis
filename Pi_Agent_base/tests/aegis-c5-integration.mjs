@@ -246,3 +246,49 @@ test("C5-A1b: the trusted config validator refuses unknown keys, a widened grant
 		false,
 	);
 });
+
+// ---------------------------------------------------------------------------
+// C5-A1c symlinked path prefix
+// ---------------------------------------------------------------------------
+
+test("C5-A1c: a symlinked workspace prefix is accepted while a genuinely different root is refused", async (t) => {
+	const { symlinkSync, mkdirSync, writeFileSync } = await import("node:fs");
+	const { loadCampaignConfig } = await import("../memory/campaign/campaign-config.mjs");
+	const ctx = await makeConfig();
+	t.after(() => rm(ctx.dir, { recursive: true, force: true }));
+	// A symlink that points at the real workspace directory.
+	const link = join(ctx.dir, "link-workspace");
+	symlinkSync(ctx.workspaceRoot, link, "dir");
+	// The Manifest authorizes the REAL path; the config uses the SYMLINK.
+	const p = join(ctx.dir, "symlink.config.json");
+	writeFileSync(
+		p,
+		`${JSON.stringify(
+			{
+				schema_version: "campaign-config-1.0",
+				manifest_path: ctx.manifestPath,
+				workspace_root: link,
+				work_dir: join(ctx.dir, "run-symlink"),
+				mode: "auto",
+				observation: { enabled: false, host: "127.0.0.1", port: 0 },
+				oracle: { kind: "fixture" },
+			},
+			null,
+			2,
+		)}\n`,
+		"utf8",
+	);
+	const accepted = loadCampaignConfig({ configPath: p });
+	assert.equal(accepted.ok, true, `a symlinked workspace prefix must match the grant: ${accepted.reasons?.join("; ")}`);
+
+	// A genuinely different root is still refused even if it exists.
+	const otherRoot = join(ctx.dir, "other-workspace");
+	mkdirSync(otherRoot, { recursive: true });
+	const p2 = join(ctx.dir, "other.config.json");
+	writeFileSync(
+		p2,
+		`${JSON.stringify({ ...JSON.parse(await import("node:fs/promises").then((m) => m.readFile(p, "utf8"))), workspace_root: otherRoot }, null, 2)}\n`,
+		"utf8",
+	);
+	assert.equal(loadCampaignConfig({ configPath: p2 }).ok, false, "a different root must be refused");
+});
