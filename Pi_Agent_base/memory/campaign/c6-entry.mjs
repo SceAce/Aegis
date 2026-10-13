@@ -67,6 +67,8 @@ function readEventsSafe(path) {
 export function createDecisionBuffer() {
 	let currentTask = null;
 	const byTask = new Map();
+	const taskProposals = [];
+	const proposalKeys = new Set();
 	return {
 		setTask(taskId) {
 			currentTask = taskId;
@@ -77,11 +79,24 @@ export function createDecisionBuffer() {
 			list.push(decision);
 			byTask.set(key, list);
 		},
+		/** Record a bounded dynamic task proposal (deduped by semantic identity). */
+		pushTask(proposal) {
+			const key = `${proposal?.parent_task_id ?? ""}|${proposal?.proposed_task_id ?? ""}|${proposal?.task_type ?? ""}|${proposal?.target_ref ?? ""}`;
+			if (proposalKeys.has(key)) return false;
+			proposalKeys.add(key);
+			taskProposals.push(proposal);
+			return true;
+		},
+		listTasks() {
+			return taskProposals.slice();
+		},
 		list() {
 			return byTask.get(currentTask ?? "unbound") ?? [];
 		},
 		reset() {
 			byTask.clear();
+			taskProposals.length = 0;
+			proposalKeys.clear();
 		},
 		byTask: () => byTask,
 	};
@@ -279,6 +294,7 @@ export async function runC6FromConfig(
 	let exportResult = null;
 	let rotationResult = null;
 	const rotationAttempts = [];
+	const dynamicAdmissions = [];
 	let requestsSinceRotation = 0;
 	let hostRef = null;
 
@@ -338,6 +354,16 @@ export async function runC6FromConfig(
 	let assembled;
 	let modelWorker;
 	let brokerRef = null;
+	// Select the registered adapter + judge for the configured task family. The
+	// fixture-state family keeps the accepted C3 behavior; structured-data-repair
+	// registers the reviewed data adapter and its INDEPENDENT file-recheck judge.
+	let extraContracts = [];
+	let judgeFactory = null;
+	if (config.task_family === "structured-data-repair") {
+		const { createStructuredDataAdapter, createDataRepairJudge } = await import("./structured-data-adapter.mjs");
+		extraContracts = [createStructuredDataAdapter({ workspaceRoot: config.workspace_root })];
+		judgeFactory = ({ workspaceRoot }) => createDataRepairJudge({ workspaceRoot });
+	}
 	try {
 		// Build the model ledger/plan worker wiring. The composite worker is
 		// injected as the Host worker so ONE broker path executes the plan.
@@ -348,6 +374,8 @@ export async function runC6FromConfig(
 			eventLogPath,
 			mode: config.mode,
 			actionGate: gate,
+			extraContracts,
+			judgeFactory,
 			sessionController: buildSessionController(),
 			wrapWorker: (brokerWorker) => {
 				modelWorker = createModelWorker({
@@ -380,6 +408,13 @@ export async function runC6FromConfig(
 					brokerWorker,
 					buffer,
 					onTaskSettled: async () => {
+						// Admit any model-proposed bounded dynamic tasks through the ONE policy.
+						if (hostRef && buffer.listTasks().length > 0) {
+							for (const proposal of buffer.listTasks()) {
+								const admission = await hostRef.proposeDynamicTask({ proposal });
+								dynamicAdmissions.push(admission);
+							}
+						}
 						// A safe settle boundary: rotate only when the declared threshold is
 						// reached, an idle/settled/committed Host exists and budget allows.
 						const threshold = config.session.max_requests_per_session;
@@ -509,6 +544,7 @@ export async function runC6FromConfig(
 			measurement: measureResult,
 			rotation: rotationResult,
 			rotation_attempts: rotationAttempts,
+			dynamic_admissions: dynamicAdmissions,
 			ledger: ledger.snapshot(),
 			chain_ok: verifyChain(events).ok,
 			config,

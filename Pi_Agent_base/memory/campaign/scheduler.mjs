@@ -24,6 +24,7 @@
 //     recovery uses cache+tail when it is a verified prefix, else full replay.
 
 import { digest } from "../fixture/contracts.mjs";
+import { admitTaskProposal } from "./dynamic-policy.mjs";
 import { canonicalManifestDigest } from "./manifest.mjs";
 import { acquireCampaignOwnership, readCheckpoint, releaseCampaignOwnership, writeCheckpoint } from "./ownership.mjs";
 import { canDispatch, parseBudgetStrict, projectQueueFromEvents, remainingBudget } from "./projection.mjs";
@@ -232,6 +233,63 @@ export function createCampaignScheduler({
 	return {
 		get state() {
 			return project().control.state;
+		},
+		/**
+		 * INT-DYNAMIC: admit a bounded dynamic Task proposal through the ONE existing
+		 * policy. It commits `campaign.proposal.submitted` then
+		 * `campaign.proposal.admitted` (both durable) so the Scheduler discovers the
+		 * task from the projection and dispatches it. The proposal is re-validated by
+		 * `admitTaskProposal`; a rejected/blocked proposal is committed honestly and
+		 * never becomes a task. The MODEL supplies only data: it can never grant
+		 * privilege or raise the budget.
+		 *
+		 * @param {{proposal: object, commandId?: string, proposalId?: string}} args
+		 */
+		async proposeDynamicTask({ proposal, commandId = null, proposalId = null } = {}) {
+			const projection = project();
+			const queueState = {
+				tasks: [...staticTasks, ...projection.tasks.map((t) => t.definition).filter(Boolean)],
+			};
+			const parentDepth =
+				(projection.tasks.find((t) => t.task_id === proposal?.parent_task_id)?.parent_chain_depth ?? 0) + 1;
+			const admission = admitTaskProposal({ proposal, manifest, queueState, depth: parentDepth });
+			const pid = proposalId ?? `prop-${manifest.campaign_id}-${clock()}`;
+			const cid = commandId ?? `cmd-${pid}`;
+			const submitted = await commit(
+				"campaign.proposal.submitted",
+				{
+					proposal_id: pid,
+					proposal,
+					proposal_digest: digest(proposal),
+					command_id: cid,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!submitted.ok) return { ok: false, status: "rejected", reason: submitted.error };
+			if (admission.status !== "admitted") {
+				const kind = admission.status === "rejected" ? "campaign.proposal.rejected" : "campaign.proposal.blocked";
+				const recorded = await commit(
+					kind,
+					{ proposal_id: pid, proposal_digest: digest(proposal), reasons: admission.reasons, status: admission.status },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!recorded.ok) return { ok: false, status: admission.status, reason: recorded.error };
+				return { ok: false, status: admission.status, reasons: admission.reasons, admission };
+			}
+			const admitted = await commit(
+				"campaign.proposal.admitted",
+				{
+					proposal_id: pid,
+					proposal_digest: digest(proposal),
+					task_id: proposal.proposed_task_id,
+					command_id: cid,
+					admission,
+					reserved_budget: admission.reserved_budget,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!admitted.ok) return { ok: false, status: "admitted", reason: admitted.error };
+			return { ok: true, status: "admitted", task_id: proposal.proposed_task_id, admission };
 		},
 		lastCheckpointOk() {
 			return lastCheckpoint.ok;

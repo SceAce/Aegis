@@ -215,6 +215,8 @@ export async function assembleCampaignHost(
 		planFactory = null,
 		scriptRegistrationConfig = null,
 		delayedFirstByTask = {},
+		extraContracts = [],
+		judgeFactory = null,
 		wrapWorker = null,
 		actionGate = null,
 	} = /** @type {any} */ ({}),
@@ -245,7 +247,13 @@ export async function assembleCampaignHost(
 	}
 
 	const scripts = createScriptRegistry(scriptRegistrationConfig ?? {});
-	const registry = new ActionRegistry([createFixtureAdapterContract({ workspaceRoot }), ...scriptContracts(scripts)]);
+	// The caller (C6 task family) may register ONE additional reviewed adapter; the
+	// fixture adapter remains for the accepted C3/C5 path.
+	const registry = new ActionRegistry([
+		createFixtureAdapterContract({ workspaceRoot }),
+		...(Array.isArray(extraContracts) ? extraContracts : []),
+		...scriptContracts(scripts),
+	]);
 	const broker = createActionBroker({ registry });
 	const authorization = createAuthorization({
 		mode,
@@ -305,67 +313,71 @@ export async function assembleCampaignHost(
 	const oracle = createHostOracle({
 		workspaceRoot,
 		judgeTask:
-			typeof oracleOverrides?.judgeTask === "function"
-				? oracleOverrides.judgeTask
-				: ({ task, attempt, onEvidence }) => {
-						const target = task.target_ref ?? "door.json";
-						const path = resolveInside(workspaceRoot, target, { mustExist: false });
-						if (!exists(path)) return { status: "unknown", failure_mode: "effect_absent" };
-						const state = JSON.parse(readFileSync(path, "utf8"));
-						// Only the registered local boolean criterion is executable here;
-						// task labels/types never decide whether its postcondition passed.
-						const stageOverrides = Object.fromEntries(
-							(task.stages ?? []).map((stage) => {
-								const criteria = stage.criteria ?? [];
-								const matches = criteria.map((criterion) => /^(?:door|state)\.locked == (true|false)$/.exec(criterion));
-								if (matches.length === 0 || matches.some((match) => !match)) {
-									return [stage.stage_id, { status: "unknown", failure_mode: "unregistered_criterion" }];
-								}
-								const expectedValues = matches.map((match) => match[1] === "true");
-								return [
-									stage.stage_id,
-									{
-										status: expectedValues.every((value) => state.locked === value) ? "success" : "failure",
-										expected: expectedValues[0],
-										observed: { locked: state.locked },
-									},
-								];
-							}),
-						);
-						const required = (task.stages ?? [])
-							.filter((stage) => stage.required !== false)
-							.map((stage) => stageOverrides[stage.stage_id]);
-						const judgedStatus = required.some((stage) => stage.status === "unknown")
-							? "unknown"
-							: required.every((stage) => stage.status === "success")
-								? "success"
-								: "failure";
-						const expected = required[0]?.expected ?? null;
-						const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: stateDigest(path), path }];
-						// The default judge READ the real file, so its digest may be indexed.
-						if (typeof onEvidence === "function") onEvidence(evidence);
-						// A delayed-verification task returns unknown on its first judgment.
-						if (delayedFirstByTask[task.task_id] && attempt === 1) {
-							return { status: "unknown", delayed: true, failure_mode: "delayed_verification", evidence };
-						}
-						for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
-						if (judgedStatus === "success")
+			typeof judgeFactory === "function"
+				? judgeFactory({ workspaceRoot, manifest })
+				: typeof oracleOverrides?.judgeTask === "function"
+					? oracleOverrides.judgeTask
+					: ({ task, attempt, onEvidence }) => {
+							const target = task.target_ref ?? "door.json";
+							const path = resolveInside(workspaceRoot, target, { mustExist: false });
+							if (!exists(path)) return { status: "unknown", failure_mode: "effect_absent" };
+							const state = JSON.parse(readFileSync(path, "utf8"));
+							// Only the registered local boolean criterion is executable here;
+							// task labels/types never decide whether its postcondition passed.
+							const stageOverrides = Object.fromEntries(
+								(task.stages ?? []).map((stage) => {
+									const criteria = stage.criteria ?? [];
+									const matches = criteria.map((criterion) =>
+										/^(?:door|state)\.locked == (true|false)$/.exec(criterion),
+									);
+									if (matches.length === 0 || matches.some((match) => !match)) {
+										return [stage.stage_id, { status: "unknown", failure_mode: "unregistered_criterion" }];
+									}
+									const expectedValues = matches.map((match) => match[1] === "true");
+									return [
+										stage.stage_id,
+										{
+											status: expectedValues.every((value) => state.locked === value) ? "success" : "failure",
+											expected: expectedValues[0],
+											observed: { locked: state.locked },
+										},
+									];
+								}),
+							);
+							const required = (task.stages ?? [])
+								.filter((stage) => stage.required !== false)
+								.map((stage) => stageOverrides[stage.stage_id]);
+							const judgedStatus = required.some((stage) => stage.status === "unknown")
+								? "unknown"
+								: required.every((stage) => stage.status === "success")
+									? "success"
+									: "failure";
+							const expected = required[0]?.expected ?? null;
+							const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: stateDigest(path), path }];
+							// The default judge READ the real file, so its digest may be indexed.
+							if (typeof onEvidence === "function") onEvidence(evidence);
+							// A delayed-verification task returns unknown on its first judgment.
+							if (delayedFirstByTask[task.task_id] && attempt === 1) {
+								return { status: "unknown", delayed: true, failure_mode: "delayed_verification", evidence };
+							}
+							for (const stage of Object.values(stageOverrides)) Object.assign(stage, { evidence });
+							if (judgedStatus === "success")
+								return {
+									status: "success",
+									observed: { locked: state.locked },
+									expected,
+									evidence,
+									stage_overrides: stageOverrides,
+								};
 							return {
-								status: "success",
+								status: judgedStatus,
+								stage_overrides: stageOverrides,
 								observed: { locked: state.locked },
 								expected,
+								failure_mode: "criterion_not_met",
 								evidence,
-								stage_overrides: stageOverrides,
 							};
-						return {
-							status: judgedStatus,
-							stage_overrides: stageOverrides,
-							observed: { locked: state.locked },
-							expected,
-							failure_mode: "criterion_not_met",
-							evidence,
-						};
-					},
+						},
 		reconcileImpl: oracleOverrides?.reconcileImpl ?? null,
 		// Independent Oracle evidence must be resolvable by the projection even
 		// when the Worker is NOT re-run (recovery). Index the real digests here.

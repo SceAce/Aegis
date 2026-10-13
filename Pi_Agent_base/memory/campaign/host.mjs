@@ -239,6 +239,12 @@ export function createCampaignHost({
 		status,
 		guardToolCall,
 		rotateSession,
+		/**
+		 * Admit a bounded dynamic Task proposal from the model through the ONE
+		 * existing policy. The model supplies data only; the Host re-validates and
+		 * commits the admission, and never lets the proposal raise the budget.
+		 */
+		proposeDynamicTask: (input) => scheduler.proposeDynamicTask(input),
 		budgetLedger: currentLedger,
 		async pause(reason) {
 			return scheduler.pause(reason);

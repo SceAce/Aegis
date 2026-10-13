@@ -76,6 +76,30 @@ export function createDecisionCaptureTool({ sdk, buffer, type }) {
 					criterion_id: Type.Optional(Type.String()),
 				}),
 			),
+			propose_task: Type.Optional(
+				Type.Object(
+					{
+						proposed_task_id: Type.String(),
+						parent_task_id: Type.String(),
+						task_type: Type.String({ description: "A registered task type the Campaign policy allows" }),
+						target_ref: Type.String(),
+						goal: Type.Object({
+							description: Type.String(),
+							success_criteria: Type.Array(Type.String()),
+						}),
+						required_capabilities: Type.Array(Type.String()),
+						expected_evidence: Type.Array(Type.String()),
+						stop_condition: Type.String(),
+						priority: Type.Number(),
+						budget_reservation: Type.Object({
+							wall_time_ms: Type.Number(),
+							model_requests: Type.Number(),
+							tool_calls: Type.Number(),
+						}),
+					},
+					{ description: "Optional bounded dynamic task proposal (data only; never a grant)" },
+				),
+			),
 		}),
 		async execute(_toolCallId, params) {
 			const actions = Array.isArray(params?.actions) ? params.actions : [];
@@ -86,6 +110,9 @@ export function createDecisionCaptureTool({ sdk, buffer, type }) {
 					arguments: action.arguments && typeof action.arguments === "object" ? action.arguments : {},
 					criterion_id: typeof action.criterion_id === "string" ? action.criterion_id : null,
 				});
+			}
+			if (params?.propose_task && typeof params.propose_task === "object" && typeof buffer.pushTask === "function") {
+				buffer.pushTask(params.propose_task);
 			}
 			return {
 				content: [{ type: "text", text: `Aegis recorded ${actions.length} task decision(s) for broker admission.` }],
