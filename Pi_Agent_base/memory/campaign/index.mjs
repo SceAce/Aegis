@@ -90,6 +90,21 @@ export {
 	schemaMajor,
 	validateManifest,
 } from "./manifest.mjs";
+export {
+	OBSERVATION_COMMAND_VERSION,
+	observationConfigFromEnv,
+	runObservationCommand,
+} from "./observation-command.mjs";
+export { createObservationServer, OBSERVATION_SERVER_VERSION } from "./observation-server.mjs";
+export {
+	buildObservationView,
+	escapeForScriptJson,
+	escapeHtml,
+	OBSERVATION_LIMITS,
+	OBSERVATION_VIEW_VERSION,
+	renderObservationHtml,
+	summarizeObservationView,
+} from "./observation-view.mjs";
 export { contentDigest, isResolvableRef, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 export {
 	acquireCampaignOwnership,

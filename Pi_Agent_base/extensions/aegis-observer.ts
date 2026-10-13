@@ -52,6 +52,7 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { observationConfigFromEnv, runObservationCommand } from "../memory/campaign/observation-command.mjs";
 import {
 	createObserveActionRuntime,
 	dataUseNote,
@@ -2262,9 +2263,26 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					refreshProjections();
 					return;
 				}
+				case "tasks":
+				case "dashboard":
+				case "boardview":
+				case "url": {
+					// C4a read-only view over the SAME committed projection as the C4
+					// report and the loopback HTTP board. Paths come from the launcher
+					// environment, never the model. No browser is auto-opened.
+					const cfg = observationConfigFromEnv();
+					const viewResult = await runObservationCommand({
+						subcommand: sub === "boardview" ? "dashboard" : sub,
+						manifestPath: cfg.manifestPath,
+						eventsPath: cfg.eventsPath ?? process.env.AEGIS_EVENT_LOG ?? null,
+						observationUrl: cfg.observationUrl,
+					});
+					notify(viewResult.text, viewResult.ok ? "info" : "warning");
+					return;
+				}
 				default:
 					notify(
-						`Aegis: episode=${episodeId ?? "(none)"} audit=${log?.healthy ? "ok" : "DEGRADED"} board=${JSON.stringify(summarizeBoard(board))}. Usage: /aegis status|board|ram|switch|close|outcome <task_id> [session_id]|learn <json>|compile --proof <id>...|route --state-ref <json>|bind --input <path> --out <path>|run --args <json>|replay --outcome <id>`,
+						`Aegis: episode=${episodeId ?? "(none)"} audit=${log?.healthy ? "ok" : "DEGRADED"} board=${JSON.stringify(summarizeBoard(board))}. Usage: /aegis status|board|tasks|dashboard|url|ram|switch|close|outcome <task_id> [session_id]|learn <json>|compile --proof <id>...|route --state-ref <json>|bind --input <path> --out <path>|run --args <json>|replay --outcome <id>`,
 					);
 			}
 		},
