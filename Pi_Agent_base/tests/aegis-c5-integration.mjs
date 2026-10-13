@@ -201,3 +201,48 @@ test("C5-A1: an intent-append failure prevents the effect and a rejected action 
 	assert.equal(auto.ok, true);
 	assert.equal(existsSync(join(ctx.workspaceRoot, "door.json")), true);
 });
+
+// ---------------------------------------------------------------------------
+// C5-A1b config validation (startup)
+// ---------------------------------------------------------------------------
+
+test("C5-A1b: the trusted config validator refuses unknown keys, a widened grant and a non-loopback host", async (t) => {
+	const { writeFileSync } = await import("node:fs");
+	const { loadCampaignConfig } = await import("../memory/campaign/campaign-config.mjs");
+	const ctx = await makeConfig();
+	t.after(() => rm(ctx.dir, { recursive: true, force: true }));
+	const base = {
+		schema_version: "campaign-config-1.0",
+		manifest_path: ctx.manifestPath,
+		workspace_root: ctx.workspaceRoot,
+		work_dir: join(ctx.dir, "run2"),
+		mode: "auto",
+		observation: { enabled: false, host: "127.0.0.1", port: 0 },
+		oracle: { kind: "fixture" },
+	};
+	const write = (obj, name) => {
+		const p = join(ctx.dir, name);
+		writeFileSync(p, `${JSON.stringify(obj, null, 2)}\n`, "utf8");
+		return p;
+	};
+	// Valid baseline.
+	assert.equal(loadCampaignConfig({ configPath: write(base, "ok.json") }).ok, true);
+	// Unknown key refused.
+	assert.equal(loadCampaignConfig({ configPath: write({ ...base, bogus: true }, "unknown.json") }).ok, false);
+	// Widened workspace grant refused.
+	assert.equal(
+		loadCampaignConfig({ configPath: write({ ...base, workspace_root: "/tmp" }, "widened.json") }).ok,
+		false,
+	);
+	// Non-loopback observation host refused.
+	assert.equal(
+		loadCampaignConfig({ configPath: write({ ...base, observation: { enabled: true, host: "0.0.0.0" } }, "host.json") })
+			.ok,
+		false,
+	);
+	// Unknown oracle kind refused.
+	assert.equal(
+		loadCampaignConfig({ configPath: write({ ...base, oracle: { kind: "remote" } }, "oracle.json") }).ok,
+		false,
+	);
+});
