@@ -377,6 +377,7 @@ export function buildReportInputs(
 		budgetUsed: projection.budget.consumed,
 	});
 	campaignAggregate.manifest_digest = manifestDigestValue;
+	campaignAggregate.budget.reserved = projection.budget.reserved;
 	campaignAggregate.budget.used.session_count = counts.sessions.rotations_committed;
 	campaignAggregate.budget.used.tokens = null;
 	campaignAggregate.budget.used.currency = null;

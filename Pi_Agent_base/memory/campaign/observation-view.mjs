@@ -79,14 +79,26 @@ export function buildObservationView(
 	const integrityOk = report.integrity?.event_chain_ok === true;
 	const allTasks = report.task_lifecycle ?? [];
 	const pageLimit =
-		Number.isInteger(page_size) && page_size > 0 ? Math.min(page_size, limits.max_page_size) : limits.max_tasks;
+		Number.isInteger(page_size) && page_size > 0
+			? Math.min(page_size, limits.max_page_size, limits.max_tasks)
+			: Math.min(limits.max_tasks, limits.max_page_size);
 	const offset = Number.isInteger(page) && page > 0 ? page * pageLimit : 0;
 
-	const tasksPage = clampPage({ items: report.tasks ?? [], limit: pageLimit, offset });
+	const lifecycleById = new Map(allTasks.map((task) => [task.task_id, task]));
+	const displayTasks = (report.tasks ?? []).map((task) => ({
+		...task,
+		...lifecycleById.get(task.task_id),
+		status: task.status,
+	}));
+	const tasksPage = clampPage({ items: displayTasks, limit: pageLimit, offset });
 	const lifecyclePage = clampPage({ items: allTasks, limit: pageLimit, offset });
 	const stagesPage = clampPage({ items: report.stages ?? [], limit: limits.max_stages, offset: 0 });
 	const outcomesPage = clampPage({ items: report.outcomes ?? [], limit: limits.max_outcomes, offset: 0 });
-	const proposalsPage = clampPage({ items: report.dynamic_proposals ?? [], limit: limits.max_proposals, offset: 0 });
+	const proposalsPage = clampPage({
+		items: collectProposalRows(integrityOk ? events : [], report),
+		limit: limits.max_proposals,
+		offset: 0,
+	});
 	const faultsPage = clampPage({ items: report.faults ?? [], limit: limits.max_faults, offset: 0 });
 	const missingPage = clampPage({
 		items: report.missing_evidence ?? [],
@@ -97,7 +109,7 @@ export function buildObservationView(
 
 	// Actions: committed counts PLUS a bounded, per-action list derived from the
 	// committed stream (id/ref/status only; never raw stdout/transcript).
-	const actions = collectActionRows(events, limits.max_actions);
+	const actions = collectActionRows(integrityOk ? events : [], limits.max_actions);
 
 	const budget = redactSecrets({
 		limit: report.campaign?.budget?.limit ?? null,
@@ -164,6 +176,7 @@ function collectActionRows(events, limit) {
 	for (const event of events) {
 		const payload = event?.payload ?? {};
 		const sourceKind = event?.source?.kind ?? null;
+		if (!["runtime", "oracle", "human"].includes(sourceKind)) continue;
 		if (event?.event_type === "action.requested" && typeof payload.action_id === "string") {
 			requested.set(payload.action_id, {
 				action_id: payload.action_id,
@@ -213,6 +226,31 @@ function collectActionRows(events, limit) {
 	}
 	const total = rows.length;
 	return { items: rows.slice(0, limit), total, returned: Math.min(rows.length, limit), truncated: rows.length > limit };
+}
+
+function collectProposalRows(events, report) {
+	const rows = new Map((report.dynamic_proposals ?? []).map((entry) => [entry.id, { ...entry, status: "submitted" }]));
+	for (const event of events) {
+		const payload = event.payload ?? {};
+		if (payload.campaign_id !== report.campaign_id || !rows.has(payload.proposal_id)) continue;
+		const row = rows.get(payload.proposal_id);
+		if (payload.kind === "campaign.proposal.submitted") {
+			Object.assign(row, {
+				parent_task_id: payload.proposal?.parent_task_id ?? null,
+				proposed_task_id: payload.proposal?.proposed_task_id ?? null,
+				reason: payload.proposal?.reason ?? null,
+			});
+		} else if (["runtime", "human"].includes(event.source?.kind)) {
+			const statuses = {
+				"campaign.proposal.blocked": "blocked",
+				"campaign.proposal.rejected": "rejected",
+				"campaign.proposal.admitted": "admitted",
+			};
+			if (statuses[payload.kind])
+				Object.assign(row, { status: statuses[payload.kind], reason: payload.reason ?? row.reason });
+		}
+	}
+	return [...rows.values()];
 }
 
 function remainingFromLedger(budget) {
@@ -292,6 +330,24 @@ export function renderObservationHtml(view) {
 		.map((item) => `<li>${escapeHtml(typeof item === "string" ? item : JSON.stringify(item))}</li>`)
 		.join("\n");
 	const claimRows = (view.unsupported_claims ?? []).map((claim) => `<li>${escapeHtml(claim)}</li>`).join("\n");
+	const proposalRows = (view.proposals ?? [])
+		.map(
+			(proposal) =>
+				`<li>${escapeHtml(proposal.id)}: ${escapeHtml(proposal.status)} parent=${escapeHtml(proposal.parent_task_id ?? "unknown")} ${escapeHtml(proposal.reason ?? "")}</li>`,
+		)
+		.join("\n");
+	const actionRows = (view.actions?.items ?? [])
+		.map(
+			(action) =>
+				`<li>${escapeHtml(action.action_id)} ${escapeHtml(action.action_ref ?? "")} ${escapeHtml(action.status)} ${escapeHtml(action.rejection_reason ?? "")}</li>`,
+		)
+		.join("\n");
+	const outcomeRows = (view.outcomes ?? [])
+		.map(
+			(outcome) =>
+				`<li>${escapeHtml(outcome.outcome_id)} ${escapeHtml(outcome.status)} task=${escapeHtml(outcome.task_id ?? "unknown")} stage=${escapeHtml(outcome.stage_id ?? "unknown")}</li>`,
+		)
+		.join("\n");
 	const integrityNote = view.integrity?.stale
 		? `<p class="warn">Integrity: ${escapeHtml(view.integrity.status)} — no completed work is established from these rows.</p>`
 		: `<p>Integrity: ${escapeHtml(view.integrity?.status ?? UNKNOWN)}</p>`;
@@ -312,6 +368,12 @@ ${integrityNote}
 <table><thead><tr><th>task</th><th>evidence</th><th>lifecycle</th><th>stop_reason</th></tr></thead><tbody>
 ${rows}
 </tbody></table>
+<h2>Budget and Sessions</h2>
+<pre>${escapeHtml(JSON.stringify({ budget: view.budget, sessions: view.committed_counts?.sessions }, null, 2))}</pre>
+<h2>Dynamic proposals</h2><ul>${proposalRows}</ul>
+<h2>Actions</h2><ul>${actionRows}</ul>
+<h2>Outcomes</h2><ul>${outcomeRows}</ul>
+<p>Last committed offset: ${escapeHtml(view.integrity?.last_committed_offset ?? UNKNOWN)}; refreshed: ${escapeHtml(view.generated_at ?? UNKNOWN)}.</p>
 <h2>Faults</h2>
 <ul>${faultRows}</ul>
 <h2>Missing evidence</h2>

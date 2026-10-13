@@ -13,6 +13,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseJsonl, verifyChain } from "../runtime/events.mjs";
 import { loadManifest } from "./manifest.mjs";
+import { unavailableView } from "./observation-server.mjs";
 import { buildObservationView, summarizeObservationView } from "./observation-view.mjs";
 
 export const OBSERVATION_COMMAND_VERSION = "1.0.0";
@@ -61,6 +62,11 @@ export async function runObservationCommand(
 	if (!loaded.ok) return { ok: false, url, text: `Aegis observation: manifest invalid: ${loaded.reasons.join("; ")}` };
 	const { rows, errors } = parseJsonl(readFileSync(eventsPath, "utf8"));
 	const chainOk = errors.length === 0 && verifyChain(rows).ok;
+	if (!chainOk) {
+		const view = unavailableView("event chain integrity failed");
+		view.integrity.status = "integrity_failure";
+		return { ok: false, url, text: summarizeObservationView(view), view };
+	}
 	const view = buildObservationView({
 		manifest: loaded.manifest,
 		events: rows,

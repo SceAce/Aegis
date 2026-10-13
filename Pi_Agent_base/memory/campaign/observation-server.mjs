@@ -25,6 +25,7 @@ import {
 	renderObservationHtml,
 	summarizeObservationView,
 } from "./observation-view.mjs";
+import { redactSecrets } from "./report.mjs";
 
 export const OBSERVATION_SERVER_VERSION = "1.0.0";
 
@@ -88,6 +89,12 @@ async function readView({ manifestPath, eventsPath, artifactsPath, runtimePath, 
 			runtimeDigests = {};
 		}
 	}
+	if (!chain.ok) {
+		const view = unavailableView("event chain integrity failed");
+		view.integrity.status = "integrity_failure";
+		view.integrity.errors = redactSecrets(chain.errors.slice(0, 5));
+		return { ok: false, reason: "event chain integrity failed", view };
+	}
 	const view = buildObservationView({
 		manifest: loaded.manifest,
 		// Pass the parsed rows either way: buildReportInputs preserves the integrity
@@ -113,7 +120,7 @@ async function readView({ manifestPath, eventsPath, artifactsPath, runtimePath, 
 	return { ok: chain.ok, reason: chain.ok ? null : "event chain integrity failed", view };
 }
 
-function unavailableView(reason) {
+export function unavailableView(reason) {
 	return {
 		schema_version: OBSERVATION_VIEW_VERSION,
 		generated_at: null,
@@ -164,8 +171,9 @@ export function createObservationServer(
 		limits = OBSERVATION_LIMITS,
 	} = /** @type {any} */ ({}),
 ) {
+	if (!["127.0.0.1", "::1", "localhost"].includes(host)) throw new Error("observation server requires a loopback host");
+	limits = { ...OBSERVATION_LIMITS, ...limits };
 	let closed = false;
-	let current = null; // last successfully built view (for a stale serving on error)
 
 	async function view(params = {}) {
 		const result = await readView({
@@ -177,20 +185,15 @@ export function createObservationServer(
 			page: params.page,
 			pageSize: params.page_size,
 		});
-		if (result.ok || !current) current = result.view;
-		else if (!result.ok && current) {
-			// Keep the last good view but mark it stale; never lose it silently.
-			current = {
-				...current,
-				integrity: { ...current.integrity, stale: true, status: "stale_after_error", errors: [result.reason] },
-			};
-		}
+		// Serve an explicit unavailable view on error; do not retain an unused
+		// cache or claim that stale successful data is being served.
 		return result;
 	}
 
 	const server = createServer((req, res) => {
 		handle(req, res).catch((error) => {
-			json(res, 500, { ok: false, error: String(error) });
+			void error;
+			json(res, 500, { ok: false, error: "observation source unavailable" });
 		});
 	});
 
@@ -217,8 +220,17 @@ export function createObservationServer(
 			page_size: Number.isNaN(pageSize) ? null : pageSize,
 		});
 		const v = result.view;
-		if (path === "/healthz") return json(res, 200, { ok: true, integrity: v.integrity?.status ?? "unknown" });
-		if (path === "/") return html(res, 200, renderObservationHtml(v));
+		if (path === "/healthz") return json(res, 200, { ok: result.ok, integrity: v.integrity?.status ?? "unknown" });
+		if (path === "/") {
+			const page = renderObservationHtml(v);
+			return html(
+				res,
+				200,
+				Buffer.byteLength(page, "utf8") <= limits.max_view_bytes
+					? page
+					: "<!doctype html><p>Observation page exceeds the configured byte limit. Use a bounded API page.</p>",
+			);
+		}
 		if (path === "/api/view") return json(res, 200, bounded(v));
 		if (path === "/api/tasks")
 			return json(res, 200, bounded({ integrity: v.integrity, tasks: v.tasks, pagination: v.pagination?.tasks }));
@@ -251,12 +263,12 @@ export function createObservationServer(
 	}
 
 	function bounded(value) {
-		const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
+		const bytes = Buffer.byteLength(`${JSON.stringify(value, null, 2)}\n`, "utf8");
 		if (bytes <= limits.max_view_bytes) return value;
 		return {
 			truncated: true,
 			reason: `response exceeded max_view_bytes ${limits.max_view_bytes}`,
-			integrity: value.integrity ?? null,
+			integrity: value.integrity ? { status: value.integrity.status, stale: value.integrity.stale } : null,
 		};
 	}
 
@@ -270,7 +282,7 @@ export function createObservationServer(
 		get url() {
 			const address = server.address();
 			const actualPort = address && typeof address === "object" ? address.port : port;
-			return `http://${host}:${actualPort}/`;
+			return `http://${host === "::1" ? "[::1]" : host}:${actualPort}/`;
 		},
 		async listen() {
 			if (closed) throw new Error("observation server is closed");
