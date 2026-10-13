@@ -1,6 +1,8 @@
 # C6 模型 Agent 与经验闭环 — 工作计划
 
-状态：`internally_verified / awaiting_external_review`（主 DS 自主完成 C6-A–F；交一次限定工程验收）。
+状态：`internally_verified / awaiting_external_review`（C6-A–F + 审查修复轮；交一次限定复验）。
+外部审查结论 `changes_required`（`C6_EXTERNAL_REVIEW.md`）已按 `C6_REPAIR_DS_PROMPT.md` 完成 X1–X12 修复：
+外部边界套件从 2/19 恢复到 21/21 pass；新增真实恢复与学习闭合产品证据；C6-owned 类型诊断降至 0。
 分支 `feat/c6-agent-product`，起点 `d3dc28f`（父仓库）/ 内嵌 Pi `42a3497d0`。
 依据：`C6_AGENT_PRODUCT_TASK.md`、`SDK_LAUNCHER_TASK.md`（并入 C6-A）、
 `AGENT_DEVELOPMENT_STANDARD.md` §3.1、`AGENT_TESTING_STANDARD.md`、`GIT_STANDARD.md`、

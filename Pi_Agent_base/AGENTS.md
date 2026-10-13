@@ -73,12 +73,12 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-C6 bounded engineering review is **changes_required**; see
-`../docs/C6_EXTERNAL_REVIEW.md` and the current `../docs/C6_REPAIR_DS_PROMPT.md`.
-Original 11 suites pass, but 21 external boundary cases show 19 current failures.
-Repair the frozen engineering promises without rebuilding frameworks or weakening
-proof/budget/Oracle tests. Active compilation/replay/direct/habit are C6 engineering
-requirements, not deferred efficacy experiments. Real-model pilots, efficacy/transfer
-studies and daily-use experiments remain separate later tasks. C6 does not read
-real credentials or call real providers/targets. Preserve deferred F16 and honest
-per-config type baselines; SHA256/UUID controls pass in the review environment.
+C6 bounded engineering review was **changes_required**; the X1-X12 repair is now
+complete and the delivery is **internally_verified / awaiting_external_review**.
+See `../docs/C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md` and the runbook. The 21
+external boundary cases go from 2/19 to **21/21 pass**; C6-owned type diagnostics
+are 0; active compilation/replay/direct/habit have offline product evidence (not
+deferred). Real-model pilots, efficacy/transfer studies and daily-use experiments
+remain separate later tasks. C6 does not read real credentials or call real
+providers/targets. Preserve deferred F16 and honest per-config type baselines;
+SHA256/UUID controls pass in this environment.
