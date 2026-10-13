@@ -1,12 +1,14 @@
 # C6 限定工程审查：changes_required
 
 状态：**changes_required；暂不进入实际环境实验**。
+修复基线 `35b053a` 的最新复验见第4节；初轮内容保留为历史证据。原21边界已通过，
+补测仍复现预算/Oracle/读取边界问题，状态保持 changes_required。
 审查基线 `7b7e92d` / `feat/c6-agent-product`，开始工作树干净；内嵌 Pi `42a3497d0` 干净。
 本轮按用户要求复核 DS 交付并补其他测试，未修改产品代码、未运行真实模型/外部目标。
 正常 SDK/faux + 本地 Broker 效果已成立，但以下缺陷和缺失接线违反原 C6 冻结承诺。
 本报告不增加性能/缓存/并行/容器/任意任务理解门槛，C1-C5 保持原验收范围。
 
-## 1. 实际验证
+## 1. 初轮实际验证（7b7e92d）
 
 - DS 十个提交存在（4798d82 至 7b7e92d），修改范围为 Aegis-owned 代码/测试/文档/类型配置。
 - 原 **11 个 C6 suite 独立运行均 exit 0**，逐 argv/exit/log：ignored
@@ -40,7 +42,7 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 context 最初只测试极小 10 chars，后来改为 1000，避免零请求预算之外的特殊边界掩盖乘倍问题；
 restart 最初仅断言不重复任务，后来追加实际累计 consumption，避免终态阻止 dispatch 掩盖余额归零。
 
-## 2. 当前必须闭环的问题（冻结目标内）
+## 2. 初轮问题（修复后状态以第4节为准）
 
 | ID / 严重度 | 复现与当前影响 | 位置 / 违反需求 |
 | --- | --- | --- |
@@ -57,7 +59,7 @@ restart 最初仅断言不重复任务，后来追加实际累计 consumption，
 | C6-X11 / P1 | provider工具只有proposal/handoff/decision，无目标读取/观察；prompt未包含准确target/criteria、catalog只列action名字，未给参数schema；faux预知字段/值生成正确动作，真实模型没有observe入口 | c6-sdk-runtime.mjs tools、c6-model-worker.mjs buildPrompt；C6-B/P1 observe→决策→效果 |
 | C6-X12 / P2（当前必修） | 已完成日志篡改后status装配拒绝，但catch访问null sdkRuntime.dispose，TypeError覆盖原结构化完整性拒绝 | c6-entry.mjs assembly catch；既有非执行命令错误语义与清理 |
 
-19 个失败不是19个互相独立架构问题；按上述12组集中修复。X10 明确真实假成功，X2 明确预算越界，
+初轮19个失败按上述12组集中处理；修复后的剩余项见第4节。X10 明确真实假成功，X2 明确预算越界，
 不能因 offline、promote_experience:false 或尚未真实实验就归为非阻塞。
 X7/X8/X9/X11 已在 C6 总任务中冻结，不能缩成“不影响现有fixture”或移交E2来声称完成。
 
@@ -95,12 +97,48 @@ C6-P5 明确要求真实reset/replay、Compiler active、第三Task direct零规
 - report称仅既有info，实际9 warnings；matrix SDK-L2/L3/L4仍not_run却总称全pass。
 - 类型本次214、修改Campaign18条。修新增签名/API解析问题，旧库诊断按配置如实记录，不能归入“旧196”。
 
-## 4. 收敛处理与下一步
+## 4. 修复后复验追加结果
+
+复验基线 `35b053a`，开始干净、未修改产品实现。全部14个C6脚本（含旧外部21例、学习闭环、恢复）
+独立复跑exit0；原21边界已闭环。随后只针对修复调用路径补测：
+
+| 剩余项 | 新复现 / 判定 | 关联原要求 |
+| --- | --- | --- |
+| X2续请求 / P0 | Task model_requests=1，先连续调用aegis_read，实际4次provider调用；message_end事后commit和decision terminate不构成通用调用前门 | C6-P3，各工具/continuation调用前预算 |
+| X10 harness / P0 | 合法answer=42配标准node:assert/strict的assert.equal测试，返回assert.equal is not a function；改Error.prepareStackTrace为伪造check.mjs调用帧后，answer=0并提前退出却ok=true/complete=true | C6-P8，正常验收+提前退出无假成功 |
+| X5新观察 / P1 | grant里的allowed.txt是指向workspace外文件的symlink，aegis_read返回外部测试样本；lexical路径检查不验证真实位置 | C6-B观察授权，不要求抵抗并发OS替换 |
+| X6初始化 / P1 | attempt.initial_state=fresh，但没有applyInitialState时仍执行并报告成功，实际目标保持prior-result；日志目录隔离已修，初态仍仅metadata | 原runner真实初态/结果真实性 |
+| X8复用证明 / P1 | task-003在phase1已completed，phase3零请求没有新Broker intent或trusted outcome；新增3个check块失败，不能据无dispatch称direct复用 | 原C6-P5第三Task真实动作、habit/退场 |
+
+精确结果：
+- 外部suite追加read-budget后 **22 tests / 21 pass / 1 fail**，exit1。
+- 学习闭环保留原检查并追加“复用任务编译前未完成”和phase3新的intent/outcome：**3个新增check块失败**，exit1。
+- 新 `aegis-c6-recheck-boundaries.mjs` **5 tests / 1 pass / 4 fail**，exit1；授权普通文件读取控制通过。
+- Campaign tsc仍exit1，**196条旧诊断、Campaign文件0条**；此次新增类型修复已成立。
+- Biome对DS本轮26个修改代码/测试文件check exit0，无warning；补充测试修改范围亦通过。
+- `runtime/dev/c6-recheck/results.json` 保存原14suite argv/exit/log；external-final2.log、
+  learning-strengthened.log、followup.log 保存新失败；未复跑DS mutation/全回归冒充独立证据。
+
+补测命令：
+
+```bash
+node --test Pi_Agent_base/tests/aegis-c6-recheck-boundaries.mjs
+node --test Pi_Agent_base/tests/aegis-c6-external-boundaries.mjs
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts Pi_Agent_base/tests/aegis-c6-learning-closure.mjs
+```
+
+另外按代码核对，request persistence仍为message_end回调里sink.append不等待、catch丢错误，
+尚无调用前durable预留；补修必须保证持久准入、写故障停止，不能只把事后计数做准。
+学习when所用pre_state来自task.initial_state声明、verified_by指向post-state artifact，
+并非真实执行前观测；正例还需证明独立任务真实reset与前态，不能给声明标签赋验证身份。
+这些是原X2/X4/X8要求的遗漏，复验不另加性能/容器等目标。
+
+## 5. 收敛处理与下一步
 
 本轮提交正常red测试与审查报告，**不修改产品代码**，便于DS以可复现证据修复。
-限定修复提示词见 [C6_REPAIR_DS_PROMPT.md](C6_REPAIR_DS_PROMPT.md)，复用现C6 plan/matrix/report。
-建议依赖顺序：writer/Task绑定 → 请求/tool持久账本与输入 → 观察/Oracle/Worker → 学习复用 →
-provider/runner/常驻服务 → C6真实恢复及回归/静态检查 → 一次限定复验。
+当前剩余项提示词见 [C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)，
+复用现C6 plan/matrix/report。历史初轮C6_REPAIR_DS_PROMPT.md不再次整轮委派。
+只处理第4节的五组遗漏和受影响回归，然后交一次限定复验。
 无新增通用框架/无限缓存/性能/样式门槛。
 
 F16、旧库类型清库、复杂检索/任意经验组合、多Worker/容器、真实模型pilot/效果/迁移仍后置。

@@ -35,7 +35,7 @@ if (scenario === "code-false-success") {
 		'import assert from "node:assert/strict"; import { answer } from "./solution.mjs"; assert.equal(answer, 42); console.log("PASSED=1 FAILED=0");\n',
 	);
 }
-if (scenario === "task-budget") manifest.tasks[0].task_budget.model_requests = 1;
+if (scenario === "task-budget" || scenario === "read-budget") manifest.tasks[0].task_budget.model_requests = 1;
 if (scenario === "restart-budget") {
 	manifest.budget.model_requests = 4;
 	for (const task of manifest.tasks) task.task_budget.model_requests = 2;
@@ -89,7 +89,10 @@ const factory = (options) => {
 		const task = [...text.matchAll(/TASK (task-\d+)/g)].at(-1)?.[1] ?? "task-001";
 		const n = (seen.get(task) ?? 0) + 1;
 		seen.set(task, n);
-		if (n % 2 === 0) return fauxAssistantMessage("done");
+		if (scenario === "read-budget" && task === "task-001") {
+			if (n <= 3) return fauxAssistantMessage([fauxToolCall("aegis_read", { path: "dataset.json" })]);
+			if (n >= 5) return fauxAssistantMessage("done");
+		} else if (n % 2 === 0) return fauxAssistantMessage("done");
 		const action =
 			scenario === "code-false-success"
 				? {

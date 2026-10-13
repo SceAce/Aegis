@@ -1,20 +1,16 @@
-# Aegis 阶段入口：C6 审查修复完成，待限定工程复验
+# Aegis 阶段入口：C6 修复后复验仍 changes_required
 
-C1-C5 保持既有范围交付。C6 经限定工程审查标 `changes_required`（新增 21 边界用例
-2 pass/19 fail）。已按 `C6_REPAIR_DS_PROMPT.md` 完成 X1–X12 修复，当前为
-**internally_verified / awaiting_external_review**（C6 限定复验）。
-外部边界套件从 2/19（正常 red）恢复到 **21/21 pass, exit 0**；新增真实 child SIGKILL
-恢复与学习闭合（真实隔离 Replay → Compiler active → 第三 Task direct 零规划）产品证据；
-C6-owned 类型诊断 **0**；Biome 修改范围 **0 warning**。
-验收材料：[C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md](C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md)
-与 [C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。
+C1-C5保持既有验收范围。C6修复基线35b053a：原14个C6脚本独立复跑通过，原21外部边界全绿，
+类型196条旧诊断且Campaign0条新增；这些修复认可。但本轮聚焦补测仍有预算/Oracle/读取/初态/
+学习复用证明遗漏，暂不进入真实环境测试。
 
-原审查依据：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)。
-修复提示词：[C6_REPAIR_DS_PROMPT.md](C6_REPAIR_DS_PROMPT.md)。
-原冻结总范围：[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。
-产品与实验划分：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md)。
+当前审查：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第4节。
+当前修复提示词：[C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)。
+原冻结范围：[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。
+历史初轮修复提示词C6_REPAIR_DS_PROMPT.md保留，勿重复启动已通过的边界。
 
-active/replay/direct/habit 经验工程链、provider 配置接口、runner attempt 隔离、常驻 observe
-与错误清理已在本轮实现并有离线产品证据，未移交 E2。收益/真实模型 pilot/迁移与日常试用另立任务。
-SHA256/UUID 控制在本次复核正常，撤回旧“无证据 crypto 全零”归因。
-不改 Pi 核心/真实凭据与模型设置/lockfile、不 push/rewrite、不调用真实 provider/外部目标/验收模型。
+剩余五组：每provider请求通用durable预算门（含观察续请求）、可信测试harness正常/防伪完成、
+aegis_read真实路径/当前Task grant、runner实际初态、编译后NEW Task的direct/habit动作与真reset证明。
+主DS复用现C6材料、自主内部里程碑、本地提交，最后一次限定复验；无新增性能/缓存/容器要求。
+不改Pi/真实凭据与模型设置/lockfile，不push/rewrite，不调用真实provider/外部目标/验收模型。
+真实模型pilot、上下文校准、效果与迁移实验仍以后单独处理。

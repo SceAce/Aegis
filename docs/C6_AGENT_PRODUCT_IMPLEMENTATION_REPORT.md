@@ -1,5 +1,9 @@
 # C6 模型 Agent 与经验闭环 — 实现报告
 
+**最新限定复验：changes_required**，见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第4节。
+35b053a的原14suite/21外部例通过、Campaign新增类型0条已认可，但观察续请求预算、test harness、
+symlink读取、runner实际初态和第三任务真复用仍有失败。以下为DS修复交付记录，不代表外部接受。
+
 历史 DS 状态：**internally_verified / awaiting_external_review**；随后限定工程审查结论为
 **changes_required**（见 [C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md)）。本轮修复后状态：
 **internally_verified / awaiting_external_review**（C6 限定修复）。

@@ -83,6 +83,14 @@ test("C6-X2: ledger counts every provider request in the real SDK tool loop", (t
 	assert.ok(r.requests >= 4, "two tasks need decision and follow-up requests");
 	assert.equal(r.outcome.ledger.consumed.model_requests, r.requests, "prompt count is not provider request count");
 });
+test("C6-X2: observation/tool-loop continuations consume the same request budget", (t) => {
+	const r = scenario(t, "read-budget");
+	assert.equal(
+		r.requests,
+		1,
+		"a request allocation of one must stop repeated read continuations before a second provider call",
+	);
+});
 test("C6-X2: per-task request limit 1 refuses SDK automatic follow-up before provider", (t) => {
 	const r = scenario(t, "task-budget");
 	const taskOneStarts = r.events.filter(

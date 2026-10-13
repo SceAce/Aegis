@@ -19,7 +19,8 @@ Read these before Campaign development:
 - `../docs/C5_EXTERNAL_REVIEW.md`
 - `../docs/C6_AGENT_PRODUCT_TASK.md` (frozen overall development scope)
 - `../docs/C6_EXTERNAL_REVIEW.md`
-- `../docs/C6_REPAIR_DS_PROMPT.md` (current bounded repair assignment)
+- `../docs/C6_REPAIR_DS_PROMPT.md` (historical first repair)
+- `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md` (current remaining repair assignment)
 - `../docs/AEGIS_PRODUCT_ROADMAP.md`
 - `../docs/SDK_LAUNCHER_TASK.md` (C6-A lifecycle requirements; no longer a separate assignment)
 - `../docs/DS_ORCHESTRATION_WORKFLOW.md`
@@ -73,12 +74,13 @@ transcripts. Record exact commands, exit codes and limitations.
 
 Current stage entry: `../docs/DS_MASTER_PROMPT.md`. C1-C4a remain accepted;
 C5 review and user-authorized fixes are complete with recorded limitations.
-C6 bounded engineering review was **changes_required**; the X1-X12 repair is now
-complete and the delivery is **internally_verified / awaiting_external_review**.
-See `../docs/C6_AGENT_PRODUCT_IMPLEMENTATION_REPORT.md` and the runbook. The 21
-external boundary cases go from 2/19 to **21/21 pass**; C6-owned type diagnostics
-are 0; active compilation/replay/direct/habit have offline product evidence (not
-deferred). Real-model pilots, efficacy/transfer studies and daily-use experiments
-remain separate later tasks. C6 does not read real credentials or call real
-providers/targets. Preserve deferred F16 and honest per-config type baselines;
-SHA256/UUID controls pass in this environment.
+C6 repair recheck is **changes_required**; see `../docs/C6_EXTERNAL_REVIEW.md`
+section 4 and `../docs/C6_RECHECK_REPAIR_DS_PROMPT.md`. Original 21 boundary cases
+now pass; C6 Campaign type diagnostics are 0 (196 legacy diagnostics remain).
+Focused follow-ups still reproduce observation continuation budget overruns,
+registered-test normal/forged completion errors, symlink reads, unapplied runner
+initial state, and a vacuous third-task reuse test. Repair those existing goals;
+do not reopen completed boundaries or weaken tests. Real-model pilots and
+learning efficacy experiments remain separate after engineering acceptance.
+Do not call real providers/targets or read real credentials. Preserve deferred
+F16 and honest per-config type baselines.

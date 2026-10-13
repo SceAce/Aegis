@@ -12,7 +12,8 @@
 
 当前状态：**C1-C5 按记录范围交付；C6 内部交付后外部工程审查 changes_required**。
 当前审查见 [`C6_EXTERNAL_REVIEW.md`](C6_EXTERNAL_REVIEW.md)，限定修复提示词
-[`C6_REPAIR_DS_PROMPT.md`](C6_REPAIR_DS_PROMPT.md)，修复后复验再讨论实际环境实验。
+[`C6_RECHECK_REPAIR_DS_PROMPT.md`](C6_RECHECK_REPAIR_DS_PROMPT.md)。35b053a修复后原21例已通过，
+聚焦复验仍有预算/Oracle/观察读取等遗漏；完成剩余项后再讨论实际环境实验。
 原C6冻结范围保持。最新证据 [`C5_EXTERNAL_REVIEW.md`](C5_EXTERNAL_REVIEW.md)，操作说明 [`C5_INTEGRATION_RUNBOOK.md`](C5_INTEGRATION_RUNBOOK.md)，入口 [`DS_MASTER_PROMPT.md`](DS_MASTER_PROMPT.md)。总任务书 [`C6_AGENT_PRODUCT_TASK.md`](C6_AGENT_PRODUCT_TASK.md)，完整提示词 [`C6_AGENT_PRODUCT_DS_PROMPT.md`](C6_AGENT_PRODUCT_DS_PROMPT.md)。
 
 用户确认原 R1-R6 的代码统一归入 C6：SDK/模型 Worker/预算/经验闭环/provider 配置接口/

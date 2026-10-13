@@ -139,6 +139,11 @@ try {
 	});
 	check("phase 1 completed both independent tasks", phase1.ok === true, JSON.stringify(phase1.task_states));
 	check("phase 1 did not auto-promote", phase1.learning?.active !== true);
+	check(
+		"the reuse task is not already completed before compilation",
+		phase1.task_states?.["task-003"] !== "completed",
+		JSON.stringify(phase1.task_states),
+	);
 
 	const eventsAfterRun = readEvents(eventLogPath);
 	const proofIds = eventsAfterRun
@@ -222,6 +227,20 @@ try {
 	check("phase 3 completed with the active experience", phase3.ok === true, JSON.stringify(phase3.reasons));
 	check("a direct route issued ZERO planning provider requests", phase3Requests === 0, `requests=${phase3Requests}`);
 	const eventsAfterP3 = readEvents(eventLogPath);
+	const p3NewEvents = eventsAfterP3.slice(events.length);
+	check(
+		"phase 3 commits a NEW Broker intent for task-003",
+		p3NewEvents.some((e) => e.event_type === "action.requested" && e.payload?.task_id === "task-003"),
+	);
+	check(
+		"phase 3 commits a NEW trusted success for task-003",
+		p3NewEvents.some(
+			(e) =>
+				e.payload?.kind === "campaign.oracle.result" &&
+				e.payload.task_id === "task-003" &&
+				e.payload.status === "success",
+		),
+	);
 	check(
 		"task-003 completed via the reused rule",
 		phase3.task_states?.["task-003"] === "completed",
