@@ -83,16 +83,21 @@ export { summarizeRequestLedger };
 
 /**
  * Build a decision buffer shared between the SDK custom tool and the model plan.
- * @returns {{setTask: (taskId: string) => void, push: (d: any) => void, pushTask: (p: any) => boolean, listTasks: () => any[], list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
+ * @returns {{setTask: (taskId: string) => void, push: (d: any) => void, pushTask: (p: any) => boolean, pushPlan: (plan: any) => boolean, listTasks: () => any[], listPlans: () => any[], list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
  */
 export function createDecisionBuffer() {
 	let currentTask = null;
 	const byTask = new Map();
 	const taskProposals = [];
 	const proposalKeys = new Set();
+	const planBatches = [];
 	return {
 		setTask(taskId) {
 			currentTask = taskId;
+			// E1: a plan batch belongs to the planning task only. Clear the plan buffer
+			// when the bound task changes so a business task never re-submits (or sees)
+			// another task's plan.
+			planBatches.length = 0;
 		},
 		push(decision) {
 			const key = currentTask ?? "unbound";
@@ -111,6 +116,14 @@ export function createDecisionBuffer() {
 		listTasks() {
 			return taskProposals.slice();
 		},
+		/** E1: record ONE candidate plan batch (a complete candidate, not yet admitted). */
+		pushPlan(plan) {
+			planBatches.push(plan);
+			return true;
+		},
+		listPlans() {
+			return planBatches.slice();
+		},
 		list() {
 			return byTask.get(currentTask ?? "unbound") ?? [];
 		},
@@ -118,6 +131,7 @@ export function createDecisionBuffer() {
 			byTask.clear();
 			taskProposals.length = 0;
 			proposalKeys.clear();
+			planBatches.length = 0;
 		},
 		byTask: () => byTask,
 	};
@@ -128,7 +142,13 @@ export function createDecisionBuffer() {
  * for a structured decision (driving the SDK + ledger), then executes the
  * admitted plan through the ORIGINAL Broker Worker. One Broker path only.
  */
-export function createCompositeWorker({ modelWorker, brokerWorker, buffer, onTaskSettled = null }) {
+export function createCompositeWorker({
+	modelWorker,
+	brokerWorker,
+	buffer,
+	onTaskSettled = null,
+	onPlanSubmitted = null,
+}) {
 	return {
 		bindCampaign(manifest) {
 			brokerWorker.bindCampaign?.(manifest);
@@ -137,6 +157,13 @@ export function createCompositeWorker({ modelWorker, brokerWorker, buffer, onTas
 			buffer.setTask(task.task_id);
 			const planned = await modelWorker.run({ task });
 			if (!planned.ok) return planned;
+			// E1: a PLANNING task returns a candidate plan (no business decision).
+			// Admission is a SEPARATE Host step; submitting a plan never executes
+			// anything and never means the root goal is complete.
+			if (planned.overview === "plan_submitted" && Array.isArray(planned.plans) && planned.plans.length > 0) {
+				if (typeof onPlanSubmitted === "function") await onPlanSubmitted({ task, plans: planned.plans });
+				return { ok: true, overview: "plan_submitted", plans: planned.plans };
+			}
 			// Execute the model's admitted decision through the existing Broker.
 			const result = await brokerWorker.run({ task });
 			// A safe settle boundary: the caller may rotate the Session here. The
@@ -185,7 +212,17 @@ export async function runC6FromConfig(
 
 	const loaded = loadCampaignConfig({ configPath });
 	if (!loaded.ok) return { ok: false, reasons: loaded.reasons, stage: "config" };
-	const { config, manifest } = loaded;
+	const { config } = loaded;
+	// E1: when planning is enabled the on-disk Manifest already contains ONLY the
+	// Campaign root goal container and the Host planning task (built by the
+	// run-package helper via `buildPlanningManifest`). Business tasks are created
+	// ONLY from an admitted plan batch. This module only tracks the templates.
+	const manifest = loaded.manifest;
+	let planningTemplates = null;
+	if (config.planning?.enabled === true) {
+		const { templatesFromConfig } = await import("./e1-planning.mjs");
+		planningTemplates = templatesFromConfig(config.planning);
+	}
 
 	// Provider must be EXPLICIT and recognized; no silent fallback to faux.
 	const providerCheck = resolveProviderConfig(config.provider);
@@ -490,6 +527,40 @@ export async function runC6FromConfig(
 			})
 		: null;
 	const extraTools = observationTool ? [observationTool] : [];
+	// E1: the structured plan submission tool. It records a candidate plan only;
+	// admission is a separate Host step. Active only when planning is enabled.
+	if (config.planning?.enabled === true && TypeSchema) {
+		const { createPlanSubmitTool } = await import("./c6-model-worker.mjs");
+		const { PLAN_LIMITS } = await import("./e1-plan-contract.mjs");
+		extraTools.push(
+			createPlanSubmitTool({
+				sdk: sdkImpl,
+				buffer,
+				type: TypeSchema,
+				planLimits: PLAN_LIMITS,
+				recordPlan: async (plan) => {
+					if (!sinkRef || typeof sinkRef.append !== "function")
+						return { ok: false, error: "no durable writer is bound" };
+					const written = await sinkRef.append({
+						event_type: "runtime.note",
+						episode_id: `ep-${currentTaskRef.task?.task_id ?? "task-plan"}`,
+						payload: {
+							kind: "campaign.plan.submitted",
+							campaign_id: manifest.campaign_id ?? null,
+							plan_id: plan.plan_id ?? null,
+							plan_digest: digest(plan),
+							plan,
+							planning_task_id: currentTaskRef.task?.task_id ?? "task-plan",
+						},
+						source: { kind: "llm", actor_id: "c6-model", adapter: "c6-entry", version: C6_ENTRY_VERSION },
+						schema_version: "1.1",
+					});
+					if (written?.ok === true) return { ok: true };
+					return { ok: false, error: written?.error ?? "durable append failed" };
+				},
+			}),
+		);
+	}
 
 	// The real SDK runtime (or an injected seam for tests). Read-only scenarios do
 	// not create one.
@@ -889,6 +960,30 @@ export async function runC6FromConfig(
 					modelWorker,
 					brokerWorker,
 					buffer,
+					onPlanSubmitted: async ({ task: planTask, plans }) => {
+						if (!hostRef || config.planning?.enabled !== true) return;
+						const { admitCandidatePlan } = await import("./e1-planning.mjs");
+						const projection = projectQueueFromEvents({
+							campaign_id: manifest.campaign_id,
+							tasks: manifest.tasks ?? [],
+							events: readEventsSafe(eventLogPath),
+							revision: manifest.revision ?? 0,
+							manifest,
+							artifacts: {},
+						});
+						for (const plan of plans) {
+							const admission = await admitCandidatePlan({
+								plan,
+								manifest,
+								host: hostRef,
+								projection,
+								templates: planningTemplates,
+								planningTaskId: planTask?.task_id ?? "task-plan",
+								planningSettled: true,
+							});
+							dynamicAdmissions.push(admission);
+						}
+					},
 					onTaskSettled: async () => {
 						// Admit any model-proposed bounded dynamic tasks through the ONE policy.
 						if (hostRef && buffer.listTasks().length > 0) {

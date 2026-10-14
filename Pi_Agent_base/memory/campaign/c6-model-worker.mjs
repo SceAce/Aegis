@@ -414,6 +414,111 @@ export function createDecisionCaptureTool({
 }
 
 /**
+ * A structured, data-only tool the model uses to submit ONE COMPLETE candidate
+ * plan for the campaign root goal. It performs NO effect and grants NO
+ * authorization: it records the candidate (durably when the caller can) so the
+ * Host can validate the whole graph and admit it as a batch. The return text
+ * never claims the Host admitted the plan or that the root goal is done.
+ *
+ * @param {{sdk: any, buffer: any, type?: any, recordPlan?: ((plan: any) => Promise<{ok: boolean, buffered?: boolean, error?: string}>)|null, planLimits?: any}} args
+ */
+export function createPlanSubmitTool({ sdk, buffer, type, recordPlan = null, planLimits = null }) {
+	const Type = type ?? sdk.Type;
+	if (!Type) throw new Error("createPlanSubmitTool requires a Type schema builder");
+	const limits = planLimits ?? { max_tasks: 24 };
+	return sdk.defineTool({
+		name: "aegis_submit_plan",
+		label: "Aegis: submit a complete candidate task plan",
+		description:
+			"Submit ONE complete candidate plan that splits the campaign root goal into a DAG of tasks. Provide the root goal ref and every task with its parent_task_id, depends_on, goal, task_type, target_ref, capabilities, evidence, stop_condition and budget. This only RECORDS a candidate; the Host validates the whole graph and admits it. It does not execute anything and does not mean the goal is complete.",
+		promptSnippet: "Submit a complete candidate task plan (data-only candidate; the Host admits it)",
+		parameters: Type.Object({
+			plan_id: Type.String({ description: "Stable id for this plan (host-bound to the campaign)" }),
+			root_goal_ref: Type.String({ description: "Reference to the frozen campaign root goal" }),
+			tasks: Type.Array(
+				Type.Object({
+					proposed_task_id: Type.String(),
+					parent_task_id: Type.Optional(Type.String({ description: "Split source; NOT an execution dependency" })),
+					depends_on: Type.Array(Type.String({ description: "Execution prerequisites; order-independent" })),
+					goal: Type.Object({
+						description: Type.String(),
+						success_criteria: Type.Array(Type.String()),
+					}),
+					task_type: Type.String(),
+					target_ref: Type.String(),
+					required_capabilities: Type.Array(Type.String()),
+					expected_evidence: Type.Array(Type.String()),
+					stop_condition: Type.String(),
+					priority: Type.Number(),
+					budget_reservation: Type.Object({
+						wall_time_ms: Type.Number(),
+						model_requests: Type.Number(),
+						tool_calls: Type.Number(),
+					}),
+					rationale: Type.Optional(Type.String({ description: "Short public reason for the split (text only)" })),
+				}),
+			),
+		}),
+		async execute(_toolCallId, params) {
+			const plan = {
+				version: "aegis-plan-1.0",
+				plan_id: typeof params?.plan_id === "string" ? params.plan_id : "",
+				root_goal_ref: typeof params?.root_goal_ref === "string" ? params.root_goal_ref : "",
+				tasks: Array.isArray(params?.tasks) ? params.tasks : [],
+			};
+			if (plan.tasks.length === 0) {
+				return {
+					content: [{ type: "text", text: "Aegis refused an empty plan (no tasks)." }],
+					details: { ok: false, reason: "empty_plan" },
+				};
+			}
+			if (plan.tasks.length > limits.max_tasks) {
+				return {
+					content: [
+						{ type: "text", text: `Aegis refused a plan with ${plan.tasks.length} tasks (max ${limits.max_tasks}).` },
+					],
+					details: { ok: false, reason: "too_many_tasks" },
+				};
+			}
+			// Record the candidate durably when a recorder is supplied; otherwise it is
+			// only buffered (the caller must NOT treat a buffered plan as recoverable).
+			/** @type {{ok: boolean, buffered?: boolean, error?: string}} */
+			let persisted = { ok: true, buffered: true };
+			if (typeof recordPlan === "function") {
+				try {
+					persisted = await recordPlan(plan);
+				} catch (error) {
+					persisted = { ok: false, error: String(error) };
+				}
+			}
+			if (persisted?.ok !== true) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Aegis could not durably record the candidate plan: ${persisted?.error ?? "unknown"}`,
+						},
+					],
+					details: { ok: false, reason: "record_failed" },
+				};
+			}
+			buffer.pushPlan(plan);
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Aegis recorded a candidate plan with ${plan.tasks.length} task(s)${
+							persisted?.buffered ? " (buffered only; not yet durable)" : ""
+						}. The Host validates and admits it; this does not execute anything and does not mean the goal is complete.`,
+					},
+				],
+				details: { recorded: plan.tasks.length, durable: persisted?.buffered !== true },
+			};
+		},
+	});
+}
+
+/**
  * @param {{
  *   session: () => any,
  *   ledger: any,
@@ -1096,6 +1201,7 @@ export function createModelWorker(
 		const commitError = commitOk ? null : (finalCommit?.error ?? "durable commit failed");
 
 		const decisions = decisionBuffer ? decisionBuffer.list() : [];
+		const plans = decisionBuffer?.listPlans ? decisionBuffer.listPlans() : [];
 		const reconciliation = {
 			category: gate.category ?? gate.failure_mode ?? (commitOk ? null : "accounting_commit_failed"),
 			task_id: effectiveTaskId,
@@ -1201,9 +1307,26 @@ export function createModelWorker(
 				task_id: effectiveTaskId,
 				provider_requests: gate.providerRequests,
 				decisions: decisions.length,
+				plans: plans.length,
 				assistant_chars: assistantText.length,
 				usage,
 			});
+		}
+		// E1: a PLANNING task is allowed to submit a complete candidate plan WITHOUT
+		// any business action. A pure plan is a valid transport result; the Host
+		// validates/admits it. No fixture action is fabricated to satisfy
+		// `no_model_decision`.
+		if (plans.length > 0) {
+			return {
+				ok: true,
+				overview: "plan_submitted",
+				outcome_ref: `artifact:${effectiveTaskId}`,
+				assistant_digest: digest(assistantText),
+				provider_requests: gate.providerRequests,
+				stop_reason: stopReason,
+				plans,
+				decisions: [],
+			};
 		}
 		if (decisions.length === 0) {
 			return {

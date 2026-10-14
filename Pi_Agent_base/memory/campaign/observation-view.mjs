@@ -11,6 +11,7 @@
 // Worker/Broker/Oracle, the model or the network, and never mutates the source.
 // A failed UI is a read-only client failure and never blocks the Host.
 
+import { buildE1View } from "./e1-observation.mjs";
 import { redactSecrets } from "./report.mjs";
 import { generateCampaignArtifacts, reconstructArtifactIndex } from "./report-export.mjs";
 
@@ -165,6 +166,19 @@ export function buildObservationView(
 		},
 		limits,
 	};
+	// E1: attach the observable board, task graph, plans and request panels from
+	// the SAME committed inputs. Best-effort: an E1 failure never breaks the base
+	// view (the base panels remain authoritative for their scope).
+	try {
+		const e1 = buildE1View({ manifest, events: integrityOk ? events : [], integrityOk });
+		view.board = e1.board;
+		view.task_graph = e1.task_graph;
+		view.plans = e1.plans;
+		view.requests = e1.requests;
+		view.reconciliation = e1.task_graph.reconciliation;
+	} catch (error) {
+		view.e1_error = String(error instanceof Error ? error.message : error);
+	}
 	// Defense in depth: the whole view goes through the value-level redactor.
 	return redactSecrets(view);
 }
@@ -310,6 +324,79 @@ export function escapeForScriptJson(value) {
 		.replace(/\u2029/g, "\\u2029");
 }
 
+/** Render the E1 board, task graph, plan and request panels (escaped). */
+function renderE1Panels(view) {
+	const graph = view.task_graph ?? {};
+	const root = graph.root ?? null;
+	const nodes = graph.nodes ?? [];
+	const byId = new Map(nodes.map((n) => [n.task_id, n]));
+	const children = graph.children ?? {};
+	const depEdges = (graph.edges ?? []).filter((e) => e.relation === "depends_on");
+	const treeRows = [];
+	const walk = (id, depth) => {
+		const node = byId.get(id);
+		if (!node) return;
+		treeRows.push(
+			`<li>${escapeHtml("  ".repeat(depth) + node.task_id)} — state=${escapeHtml(node.state)} deps=[${escapeHtml(
+				(node.depends_on ?? []).join(", "),
+			)}] oracle=[${escapeHtml((node.oracle_refs ?? []).map((o) => o.ref).join(", "))}] ${node.blocked_reason ? `blocked=${escapeHtml(node.blocked_reason)}` : ""}</li>`,
+		);
+		for (const child of children[id] ?? []) walk(child, depth + 1);
+	};
+	const rootIds = nodes.filter((n) => !n.parent_task_id || !byId.has(n.parent_task_id)).map((n) => n.task_id);
+	for (const id of rootIds) walk(id, 0);
+
+	const boardRows = Object.entries(view.board?.by_type ?? {})
+		.map(([type, count]) => `<li>${escapeHtml(type)}: current=${escapeHtml(count)}</li>`)
+		.join("");
+	const nodeRows = (view.board?.nodes ?? [])
+		.map(
+			(node) =>
+				`<li data-node-id="${escapeHtml(node.node_id)}" data-task="${escapeHtml(node.task_id ?? "")}" data-episode="${escapeHtml(
+					node.episode_id ?? "",
+				)}"><code>${escapeHtml(node.type)}</code> [${escapeHtml(node.effective_status)}] task=${escapeHtml(
+					node.task_id ?? "-",
+				)} episode=${escapeHtml(node.episode_id ?? "-")}: ${escapeHtml(node.text)}${node.downgrade_reason ? ` (downgraded: ${escapeHtml(node.downgrade_reason)})` : ""}${node.superseded_by ? ` (superseded by ${escapeHtml(node.superseded_by)})` : ""}<br><small>evidence=${escapeHtml(
+					(node.evidence_refs ?? []).map((r) => `${r.ref_type}:${r.ref_id}`).join(", ") || "none",
+				)}</small></li>`,
+		)
+		.join("");
+	const depRows = depEdges
+		.map((e) => `<li>${escapeHtml(e.from)} → ${escapeHtml(e.to)} (execution prerequisite)</li>`)
+		.join("");
+	const planRows = [
+		...(view.plans?.admitted ?? []).map(
+			(p) =>
+				`<li>plan ${escapeHtml(p.plan_id)}: admitted ${escapeHtml(p.task_count)} tasks [${escapeHtml((p.task_ids ?? []).join(", "))}]</li>`,
+		),
+		...(view.plans?.candidates ?? []).map(
+			(p) =>
+				`<li>candidate ${escapeHtml(p.plan_id)}: ${escapeHtml(p.status)} ${escapeHtml(p.tasks?.length ?? 0)} tasks</li>`,
+		),
+	].join("");
+	const req = view.requests ?? {};
+	const reqBlock = `<p>consumed=${escapeHtml(req.consumed?.model_requests ?? 0)} campaign_pending=${escapeHtml(
+		(req.campaign_pending ?? []).length,
+	)} task_pending=${escapeHtml((req.task_pending ?? []).length)} unresolved=${escapeHtml(req.unresolved ?? 0)}</p>`;
+
+	return `
+<h2>Campaign root goal</h2>
+<p>${escapeHtml(root?.goal ?? UNKNOWN)} <em>(${escapeHtml(root?.note ?? "root goal container")})</em></p>
+<h2>Task tree (split provenance)</h2>
+<ul>${treeRows.join("") || "<li>(no tasks)</li>"}</ul>
+<h2>Execution dependencies (DAG)</h2>
+<ul>${depRows || "<li>(none)</li>"}</ul>
+<h2>Plans</h2>
+<ul>${planRows || "<li>(no plans)</li>"}</ul>
+<h2>Requests</h2>
+${reqBlock}
+<h2>Whiteboard</h2>
+<ul>${boardRows}</ul>
+<ul>${nodeRows || "<li>(empty board)</li>"}</ul>
+<h2>E1 API</h2>
+<ul><li><a href="/api/board">/api/board</a></li><li><a href="/api/task-graph">/api/task-graph</a></li><li><a href="/api/plans">/api/plans</a></li><li><a href="/api/requests">/api/requests</a></li></ul>`;
+}
+
 /** Render the bounded observation view as a static, escaped HTML page. */
 export function renderObservationHtml(view) {
 	const rows = (view.tasks ?? [])
@@ -364,10 +451,11 @@ ${integrityNote}
 	)} pending=${escapeHtml(view.committed_counts?.actions?.pending ?? UNKNOWN)} rejected=${escapeHtml(
 		view.committed_counts?.actions?.rejected ?? UNKNOWN,
 	)}</p>
-<h2>Tasks</h2>
+	h2>Tasks</h2>
 <table><thead><tr><th>task</th><th>evidence</th><th>lifecycle</th><th>stop_reason</th></tr></thead><tbody>
 ${rows}
 </tbody></table>
+${renderE1Panels(view)}
 <h2>Budget and Sessions</h2>
 <pre>${escapeHtml(JSON.stringify({ budget: view.budget, sessions: view.committed_counts?.sessions }, null, 2))}</pre>
 <h2>Dynamic proposals</h2><ul>${proposalRows}</ul>

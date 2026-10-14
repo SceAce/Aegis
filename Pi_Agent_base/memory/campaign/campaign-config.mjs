@@ -41,6 +41,7 @@ export const KNOWN_CONFIG_V11_KEYS = Object.freeze([
 	"measure",
 	"registered_test",
 	"seed",
+	"planning",
 ]);
 export const KNOWN_CONFIG_KEYS = Object.freeze([
 	"schema_version",
@@ -173,6 +174,54 @@ function validateMeasureKey(measure, reasons) {
 
 function isPlainObject(value) {
 	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Validate the E1 `planning` object. When enabled, the entry prepends a Host
+ * planning Task whose model may submit ONE complete candidate plan; business
+ * tasks come only from admitted plan nodes. `templates` binds each allowed task
+ * type to its trusted oracle/criteria/capabilities.
+ */
+function validatePlanningKey(planning, reasons) {
+	if (planning === undefined) return { enabled: false, templates: [] };
+	if (!isPlainObject(planning)) {
+		reasons.push("config.planning must be an object");
+		return null;
+	}
+	for (const key of Object.keys(planning)) {
+		if (!["enabled", "templates"].includes(key)) reasons.push(`unknown config.planning key ${key}`);
+	}
+	const enabled = planning.enabled === true;
+	const templates = [];
+	if (planning.templates !== undefined) {
+		if (!Array.isArray(planning.templates)) {
+			reasons.push("config.planning.templates must be an array when present");
+		} else {
+			for (const [index, template] of planning.templates.entries()) {
+				if (!isPlainObject(template)) {
+					reasons.push(`config.planning.templates[${index}] must be an object`);
+					continue;
+				}
+				if (typeof template.template_ref !== "string" || !template.template_ref)
+					reasons.push(`config.planning.templates[${index}].template_ref is required`);
+				if (typeof template.oracle_ref !== "string" || !template.oracle_ref)
+					reasons.push(`config.planning.templates[${index}].oracle_ref is required`);
+				templates.push({
+					template_ref: template.template_ref ?? null,
+					task_type: typeof template.task_type === "string" ? template.task_type : template.template_ref,
+					oracle_ref: template.oracle_ref ?? null,
+					required_capabilities: Array.isArray(template.required_capabilities)
+						? template.required_capabilities.filter((c) => typeof c === "string")
+						: [],
+					success_criteria: Array.isArray(template.success_criteria)
+						? template.success_criteria.filter((c) => typeof c === "string")
+						: [],
+					scope: template.scope && typeof template.scope === "object" ? template.scope : null,
+				});
+			}
+		}
+	}
+	return { enabled, templates };
 }
 
 function resolveConfigPath(value, baseDir) {
@@ -373,11 +422,13 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	let learningConfig = null;
 	let taskFamily = null;
 	let measureConfig = null;
+	let planningConfig = null;
 	if (isV11) {
 		providerConfig = validateProviderKey(raw.provider, reasons);
 		contextConfig = validateContextKey(raw.context, reasons);
 		learningConfig = validateLearningKey(raw.learning, reasons);
 		measureConfig = validateMeasureKey(raw.measure, reasons);
+		planningConfig = validatePlanningKey(raw.planning, reasons);
 		if (raw.task_family !== undefined) {
 			if (!TASK_FAMILIES.includes(raw.task_family))
 				reasons.push(`config.task_family must be one of ${TASK_FAMILIES.join(", ")}`);
@@ -407,6 +458,7 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 		learning: learningConfig,
 		task_family: taskFamily,
 		measure: measureConfig,
+		planning: planningConfig,
 		registered_test: typeof raw.registered_test === "string" ? raw.registered_test : null,
 		seed: raw.seed ?? null,
 	};

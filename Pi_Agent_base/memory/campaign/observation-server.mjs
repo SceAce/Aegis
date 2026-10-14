@@ -38,6 +38,10 @@ const READONLY_ROUTES = new Set([
 	"/api/actions",
 	"/api/outcomes",
 	"/api/faults",
+	"/api/board",
+	"/api/task-graph",
+	"/api/plans",
+	"/api/requests",
 ]);
 
 function json(res, status, body) {
@@ -153,6 +157,10 @@ export function unavailableView(reason) {
 		report_refs: { report_digest: null, bundle_digest: null },
 		pagination: {},
 		limits: OBSERVATION_LIMITS,
+		board: { nodes: [], by_type: {}, history_by_type: {}, summary: {}, rejections: [], truncated: false },
+		task_graph: { root: null, nodes: [], edges: [], counts: {}, diagnostics: [] },
+		plans: { admitted: [], candidates: [] },
+		requests: { consumed: {}, by_task: {}, campaign_pending: [], task_pending: [], unresolved: 0, diagnostics: [] },
 	};
 }
 
@@ -259,6 +267,17 @@ export function createObservationServer(
 					pagination: v.pagination?.faults,
 				}),
 			);
+		if (path === "/api/board")
+			return json(res, 200, bounded({ integrity: v.integrity, board: v.board, requests: v.requests }));
+		if (path === "/api/task-graph")
+			return json(
+				res,
+				200,
+				bounded({ integrity: v.integrity, root: v.task_graph?.root ?? null, task_graph: v.task_graph, plans: v.plans }),
+			);
+		if (path === "/api/plans") return json(res, 200, bounded({ integrity: v.integrity, plans: v.plans }));
+		if (path === "/api/requests")
+			return json(res, 200, bounded({ integrity: v.integrity, requests: v.requests, budget: v.budget }));
 		return json(res, 404, { ok: false, error: "not found" });
 	}
 

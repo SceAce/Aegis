@@ -33,6 +33,7 @@ export const CONTROL_TOOLS_ALLOWED = Object.freeze([
 	"aegis_propose",
 	"aegis_switch_session",
 	"aegis_task_decision",
+	"aegis_submit_plan",
 	"aegis_observe",
 	"aegis_execute",
 ]);
