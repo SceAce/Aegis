@@ -515,7 +515,7 @@ digest。保留 A 的规划执行门、B 的模板判据约束和 C6 三事实�
 | 回归 26 | `c6-suite-runner …/final-regress <26 names>` | 0 | `final-regress/results.json` |
 | 受影响 8 | `c6-suite-runner …/final-affected <8 names>` | 0 | `final-affected/results.json` |
 | A gate / 写失败恢复 | 含于 E1 7：`aegis-e1-planning-gate`、`…-audit` | 0 / 0 | `final-e1/results.json` |
-| Campaign tsc | `tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json` | 1；196→196，逐条与 B 基线相同 | `final-tsc.log` |
+| Campaign tsc | `tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json` | 1；196→194，**0 新增**；B 基线的 2 条 board.mjs 既有诊断由显式类型标注消除（无新增诊断） | `final-tsc.log` |
 | Biome 修改范围 | `biome check`（本轮文件） | 0 | 命令 stdout |
 | red 基线 | `c6-suite-runner …/baseline aegis-e1-external-review` | 1，14 pass / 3 fail | `baseline/aegis-e1-external-review.log` |
 | mutation：绕过证据/归属门 | 见 10.4 | C-EVIDENCE-01 行为失败 | `mutation-evidence/…` |
@@ -536,3 +536,4 @@ foreign/llm 反例仍被当作 success。`aegis-e1-observation-repair` 的 C-EVI
 - 未运行真实付费模型或 CTF 靶场；HTTP 为本地 loopback 真实调用，未做浏览器像素级验收。
 - 大图分页/交互、自动补写缺 ready、增量重规划仍后置；截断/未知如实显示。
 - 整体 E1 状态 **internally_verified / awaiting_external_review**，交回独立整体验收。
+- `board.mjs` 在 HEAD 即不满足 Biome 格式（既有格式债）；本轮在该修改文件上运行 `biome check --write` 归一，故 diff 含同文件格式行。
