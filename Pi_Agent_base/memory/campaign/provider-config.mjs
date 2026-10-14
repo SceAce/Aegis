@@ -6,9 +6,9 @@
 // auth/models/settings and NEVER prints a credential value.
 //
 // The development default is the offline `faux` provider. A `local-*` provider
-// is only accepted with a loopback `base_url`. Real providers are listed as
-// known-but-unverified and are refused here (C6 does not call them); a later
-// experiment task wires the concrete endpoint.
+// is only accepted with a loopback `base_url`. E1 adds an explicit HTTPS
+// `remote-openai` endpoint with an env credential reference. Provider selection
+// never makes a request; the user-operated run command starts real inference.
 
 import { isAbsolute, resolve } from "node:path";
 
@@ -19,12 +19,18 @@ export const PROVIDER_CONFIG_VERSION = "1.0";
  *
  * `implemented: true` means C6 can produce the SDK creation arguments for it
  * (model + isolated runtime + endpoint/credential references) without any real
- * network call. `faux` and `local-openai` are implemented; the concrete remote
- * providers are recognized but NOT wired for a real call in C6 and are listed as
- * untested.
+ * network call. Native vendor kinds remain unimplemented; compatible endpoints
+ * use the explicitly selected local-openai or remote-openai path.
  */
 export const KNOWN_PROVIDERS = Object.freeze({
 	faux: { implemented: true, offline: true, requires_base_url: false, loopback_only: false },
+	"remote-openai": {
+		implemented: true,
+		offline: false,
+		requires_base_url: true,
+		loopback_only: false,
+		api: "openai-completions",
+	},
 	"local-openai": {
 		implemented: true,
 		offline: false,
@@ -90,6 +96,21 @@ export function resolveProviderConfig(provider) {
 	if (spec?.requires_base_url && !provider.base_url) reasons.push(`config.provider "${kind}" requires base_url`);
 	if (spec?.loopback_only && provider.base_url && !isLoopbackBaseUrl(provider.base_url))
 		reasons.push(`config.provider "${kind}" base_url must be a loopback http URL`);
+	if (kind === "remote-openai") {
+		try {
+			const url = new URL(provider.base_url);
+			if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
+				reasons.push("remote-openai requires an https base_url without embedded credentials, query or fragment");
+		} catch {
+			reasons.push("remote-openai requires a valid https base_url");
+		}
+		const credential =
+			typeof provider.credential_ref === "string"
+				? describeCredentialRef(provider.credential_ref)
+				: { ok: false, env_name: null };
+		if (!credential.ok || !credential.env_name)
+			reasons.push("remote-openai requires an explicit env:NAME credential_ref");
+	}
 	if (reasons.length > 0) return { ok: false, reasons, provider: null };
 	if (spec && spec.implemented === false) {
 		// Known but not wired in C6: refuse explicitly rather than auto-fallback.

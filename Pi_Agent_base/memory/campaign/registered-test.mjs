@@ -83,6 +83,7 @@ function harnessSource(testAbsolute, resultPath, nonce) {
  *   timeoutMs?: number,
  *   expectedTestDigest?: string|null,
  *   harnessDir?: string|null,
+ *   env?: NodeJS.ProcessEnv,
  * }} args
  * @returns {{
  *   ok: boolean, passed: number|null, failed: number|null, complete: boolean,
@@ -98,6 +99,7 @@ export function runRegisteredTest(
 		timeoutMs = 10000,
 		expectedTestDigest = null,
 		harnessDir = null,
+		env = process.env,
 	} = /** @type {any} */ ({}),
 ) {
 	const unknown = (detail, extra = {}) => ({
@@ -137,6 +139,7 @@ export function runRegisteredTest(
 		rmSync(resultPath, { force: true });
 		const result = spawnSync(nodePath, [harnessPath], {
 			cwd: workspaceRoot,
+			env,
 			timeout: timeoutMs,
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],

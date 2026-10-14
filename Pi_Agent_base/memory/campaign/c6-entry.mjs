@@ -192,6 +192,13 @@ export async function runC6FromConfig(
 	if (!providerCheck.ok) return { ok: false, reasons: providerCheck.reasons, stage: "provider" };
 	const credentialInfo = describeCredentialRef(providerCheck.provider.credential_ref);
 	if (!credentialInfo.ok) return { ok: false, reasons: [credentialInfo.reason], stage: "provider" };
+	const READ_ONLY = ["status", "export", "observe", "measure"].includes(scenario);
+	if (!READ_ONLY && providerCheck.provider.kind === "remote-openai" && !process.env[credentialInfo.env_name]?.trim())
+		return {
+			ok: false,
+			reasons: ["the configured remote provider credential environment variable is empty"],
+			stage: "provider",
+		};
 
 	// The SDK is injected in tests; the real SDK is imported lazily in CLI mode.
 	let sdkImpl = sdk;
@@ -219,7 +226,6 @@ export async function runC6FromConfig(
 	const eventLogPath = join(config.work_dir, "events.jsonl");
 	// Read-only scenarios project the committed stream only: they never create an
 	// SDK runtime, never dispatch a task and never append an event.
-	const READ_ONLY = ["status", "export", "observe", "measure"].includes(scenario);
 
 	// X5: the TRUSTED config decides the SDK/Observer stream, RAM, handoff and Task
 	// binding. The Aegis Observer extension reads these from the environment, so we
@@ -277,15 +283,14 @@ export async function runC6FromConfig(
 				allowModelNetwork: false,
 			});
 			modelRuntime.registerProvider(model.provider, modelDetails(model));
-		} else if (providerCheck.provider.kind === "local-openai") {
-			// X7: an explicit LOCAL endpoint is created through the SDK without any
-			// network call. The model is registered against the loopback base_url with
-			// an isolated credential store; the actual endpoint is never contacted in
-			// C6 (a later experiment does that).
+		} else if (["local-openai", "remote-openai"].includes(providerCheck.provider.kind)) {
+			// Register the explicit endpoint and model in the real SDK with isolated
+			// credentials. Registration makes no request; the Worker gate bounds inference.
 			const authDir = join(config.work_dir, "sdk");
 			mkdirSync(authDir, { recursive: true });
 			const credentials = sdkImpl.AuthStorage.inMemory();
-			const providerId = "local-openai";
+			const providerId = providerCheck.provider.kind;
+			const remote = providerId === "remote-openai";
 			if (credentialInfo.env_name && process.env[credentialInfo.env_name]) {
 				await credentials.modify(providerId, async () => ({
 					type: "api_key",
@@ -306,10 +311,20 @@ export async function runC6FromConfig(
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 128000,
-				maxTokens: 16384,
+				maxTokens: remote ? 4096 : 16384,
 				baseUrl: providerCheck.provider.base_url,
+				...(remote
+					? {
+							compat: {
+								maxTokensField: "max_tokens",
+								supportsStore: false,
+								supportsDeveloperRole: false,
+								supportsReasoningEffort: false,
+							},
+						}
+					: {}),
 			};
-			modelRuntime.registerProvider(providerId, modelDetails(model));
+			modelRuntime.registerProvider(providerId, { api: model.api, baseUrl: model.baseUrl, models: [model] });
 		} else {
 			return {
 				ok: false,
@@ -636,12 +651,19 @@ export async function runC6FromConfig(
 		const { createCodeRepairAdapter, createCodeRepairJudge } = await import("./code-repair-adapter.mjs");
 		const { runRegisteredTest } = await import("./registered-test.mjs");
 		extraContracts = [createCodeRepairAdapter({ workspaceRoot: config.workspace_root })];
+		// Tested target code receives a minimal runtime environment, never provider keys.
+		const testEnv = Object.fromEntries(
+			["PATH", "TMPDIR", "LANG", "LC_ALL", "SystemRoot"]
+				.filter((key) => process.env[key] !== undefined)
+				.map((key) => [key, process.env[key]]),
+		);
 		// The test procedure is HOST code (a registered, read-only external test),
 		// never model code. The model cannot modify the test to manufacture success.
 		judgeFactory = ({ workspaceRoot }) =>
 			createCodeRepairJudge({
 				workspaceRoot,
-				runTests: (root) => runRegisteredTest({ workspaceRoot: root, testFile: config.registered_test ?? "check.mjs" }),
+				runTests: (root) =>
+					runRegisteredTest({ workspaceRoot: root, testFile: config.registered_test ?? "check.mjs", env: testEnv }),
 			});
 	}
 	try {

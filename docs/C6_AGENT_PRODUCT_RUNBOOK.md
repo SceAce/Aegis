@@ -258,6 +258,10 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 尚未启动。现有实现支持faux与loopback local-openai；远程provider需要按选定接口接线，
 local凭据实际使用env:NAME，file:尚未接入读取。
 
+E1执行补充：用户已选max/dsv4.1flash。`remote-openai`现已完成最小HTTPS接线，
+使用明确env凭据引用；用户可按[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)
+生成包并亲自执行。离线SDK/HTTP替身通过不代表真实max已验证。
+
 只有用户另行授权后才运行真实 provider/target。所需输入（复用现有接口，不新增实验框架）：
 
 | 类别 | 必填项 | 说明 |

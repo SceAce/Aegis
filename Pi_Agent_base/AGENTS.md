@@ -123,3 +123,9 @@ the 196-diagnostic type baseline is unchanged. The limited engineering gate is
 passed; the next stage is a bounded real-task pilot with explicitly selected
 provider, scope, budget and Oracle. This review did not run a real provider.
 SIGTERM is Task-boundary drain; do not claim immediate active-Task cancellation.
+
+E1 operator supplement (2026-10-14): the user selected max/deepseek-v4.1-flash
+and will execute real calls themselves. Explicit `remote-openai` SDK wiring and
+`memory/campaign/e1-max-pilot.mjs` preparation/status/run commands are available;
+see `../docs/E1_MAX_OPERATOR_STEPS.md`. Offline intercepted HTTP is verification,
+not a real max result. Do not start a paid experiment on the user's behalf.

@@ -30,6 +30,7 @@
 		"memory/campaign/c3-entry.mjs",
 		"memory/campaign/c5-entry.mjs",
 		"memory/campaign/c6-entry.mjs",
+		"memory/campaign/e1-max-pilot.mjs",
 		"memory/campaign/c6-learning.mjs",
 		"memory/campaign/c6-model-worker.mjs",
 		"memory/campaign/c6-request-lifecycle.mjs",
