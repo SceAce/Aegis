@@ -136,3 +136,13 @@ source config. Explicit `remote-openai` SDK wiring and
 `memory/campaign/e1-max-pilot.mjs` preparation/status/run commands are available;
 see `../docs/E1_MAX_OPERATOR_STEPS.md`. Offline intercepted HTTP is verification,
 not a real max result. Do not start a paid experiment on the user's behalf.
+
+E1 first operator result (2026-10-14): user-run smoke completed with 3 requests,
+Oracle success and zero pending/unresolved; independent status after exit
+agrees. Status sampled from another terminal during inference is a live
+snapshot. Real events exposed a C6 wiring gap: aegis_read was visible but
+blocked by the active Campaign gate. C6 now explicitly admits this read-only
+transport; the tool still checks the current Task grant and real workspace
+path. Provider tests assert the actual read result reaches the continuation,
+and compare the run summary with an independent status subprocess after exit.
+See E1_MAX_OPERATOR_STEPS.md for the code pilot; the smoke did not prove reading.

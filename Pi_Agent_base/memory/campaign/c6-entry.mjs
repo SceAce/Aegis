@@ -375,7 +375,9 @@ export async function runC6FromConfig(
 	// The shared gate + the SDK runtime. The gate object is injected into EVERY
 	// session's resource loader; the Host owns the same object.
 	const { createCampaignActionGate } = await import("./campaign-mode.mjs");
-	const gate = createCampaignActionGate();
+	// C6's read-only tool checks the current Task grant and real workspace path.
+	// Admit that transport explicitly; direct Pi read/write/bash remain denied.
+	const gate = createCampaignActionGate({ allowDirectTools: ["aegis_read"] });
 
 	// X3: the context max is a PER-REQUEST window, not a cumulative budget. The
 	// campaign ledger's `input_chars` is the accumulated sum across requests; the

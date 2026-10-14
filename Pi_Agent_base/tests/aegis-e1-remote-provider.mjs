@@ -122,6 +122,18 @@ try {
 		const stage = (requests.length - 1) % 3;
 		const codeTask = JSON.stringify(body.messages).includes("normalizeName");
 		const target = codeTask ? "solution.mjs" : "dataset.json";
+		if (stage === 1) {
+			const readResult = body.messages.filter((message) => message.role === "tool").at(-1);
+			assert.ok(readResult, "continuation must include the actual read result");
+			assert.ok(
+				readResult.content.includes(`contents of ${target}:\n`),
+				"the active Campaign gate must admit the registered read tool",
+			);
+			assert.ok(
+				readResult.content.includes(codeTask ? "return value.trim();" : '"name":"??"'),
+				"the provider must receive actual initial file contents before proposing a patch",
+			);
+		}
 		const call =
 			stage === 0
 				? { name: "aegis_read", arguments: { path: target } }
@@ -270,6 +282,14 @@ try {
 		assert.equal(summary.task_states["task-001"], "completed");
 		assert.equal(summary.model_requests, 3);
 		assert.equal(summary.oracle_status, "success");
+		const statusChild = spawnSync(process.execPath, [cli, "status", "--dir", cliInputs.root, "--task", task], {
+			encoding: "utf8",
+			timeout: 60000,
+		});
+		assert.equal(statusChild.status, 0, `${statusChild.stdout}\n${statusChild.stderr}`);
+		const replayed = JSON.parse(statusChild.stdout);
+		for (const key of Object.keys(replayed))
+			assert.deepEqual(replayed[key], summary[key], `independent status after process exit agrees on ${key}`);
 	}
 	assert.deepEqual(
 		["models.json", "settings.json", "auth.json", "models-store.json"].map((name) =>

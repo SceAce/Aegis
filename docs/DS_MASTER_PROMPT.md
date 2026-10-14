@@ -8,13 +8,15 @@ C1-C5保持既有验收范围；C6三个事实分离已核验，同一SDK收尾�
 当前规划：[E1_REAL_TASK_PILOT_PLAN.md](E1_REAL_TASK_PILOT_PLAN.md)。
 执行补充：用户已选max中转站dsv4.1flash，并要求直接复用Pi已有模型与鉴权；
 `pi-config`按明确目录复用Pi ModelRuntime和只读凭据，操作者入口已准备，
-由用户亲自执行，见[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。未运行真实调用。
+由用户亲自执行，见[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。
+用户已完成首次真实smoke：3次请求，Oracle success，完成后的独立status无pending/unresolved。
+该次暴露aegis_read门禁接线遗漏，已小修并补模型收到实际内容的断言；8个相关脚本通过。
 工程证据：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第8节。
 运行入口：[C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。
 后续实验：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md) 的E1/E2/E3。
 
-下一步由用户执行max连通任务并交回状态；再选择项目真实任务副本、Oracle和总预算。
-local-openai和显式HTTPS remote-openai均有SDK接线；max仍待真实试跑证据。
+下一步由用户执行已准备的代表性单文件代码任务；再选择项目真实任务副本、Oracle和总预算。
+local-openai、remote-openai及pi-config均有SDK接线；max首次数据任务已通过，代码任务待测。
 小任务直接处理；较大接线工程可编写有界任务交dsv4.1flash，不自动扩大为新平台。
 具体真实运行需要既定用户授权与费用范围，规划不代替运行授权。
 

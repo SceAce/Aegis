@@ -92,6 +92,13 @@ auth文件或完整私有会话。失败时可补充终端脱敏错误。
 
 ## 5. 连通成功后，执行代表性代码修复（可选第二步）
 
+2026-10-14首个真实smoke已由用户运行并核验：3次请求、Task completed、Oracle success、
+pending/unresolved=0、事件链完整，dataset为Ada/pending。另一个终端在请求进行中查看
+status曾看到running、2 consumed+1 pending；退出后再次查看与run结果一致，属于运行中快照。
+该次事件也暴露C6的aegis_read被Campaign门禁拒绝：模型仍可按明确字段值完成数据任务，
+所以此结果证明连通、写入、Oracle和结算，不证明模型读取过文件。现已补上C6读取工具的
+明确放行，保留当前Task/真实路径检查；下一步代码pilot将使用修复版本。
+
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
   Pi_Agent_base/memory/campaign/e1-max-pilot.mjs run --task code --run-real
@@ -116,4 +123,10 @@ Bearer、Pi自定义headers/compat、4096输出上限、工具循环、实际文
 脚本全部exit0，Biome修改范围exit0；Campaign tsc仍exit1、196条历史诊断，与修改前
 逐字相同。当前真实Pi配置经SDK加载，credential_ready=true、network_calls=0。
 本次日志在ignored `Pi_Agent_base/runtime/dev/e1-pi-final/`、`e1-pi-red.log`及
-`e1-pi-tsc-before.log`/`e1-pi-tsc-after.log`。未执行真实max调用。
+`e1-pi-tsc-before.log`/`e1-pi-tsc-after.log`。Pi复用开发检查未执行真实max调用；
+后续首个真实smoke由用户执行，结果见第5节及私有pilot目录。
+
+读取接线补测要求真实SDK continuation收到文件初态，已捕获旧门禁版本的失败并修复；
+另外通过独立status子进程核对run退出后的逐字段结果。针对性检查日志位于
+`Pi_Agent_base/runtime/dev/e1-read-final/`，red/green为`e1-read-red.log`/`e1-read-green.log`。
+本次8个相关脚本exit0，Biome修改范围exit0，Campaign类型基线仍196条、逐字相同。
