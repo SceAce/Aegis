@@ -16,6 +16,7 @@
 // authoritative source and never mutates anything.
 
 import { projectBoard, summarizeBoard } from "../runtime/board.mjs";
+import { artifactIndexFromEvents } from "./c3-entry.mjs";
 import { summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
 import { buildTaskGraph } from "./e1-task-graph.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
@@ -86,7 +87,10 @@ export function buildE1View(
 		events,
 		revision: manifest.revision ?? 0,
 		manifest,
-		artifacts: {},
+		// E1: the SAME trusted artifact-aware replay the authority queue and the
+		// scheduler use. Without it a real Oracle evidence ref never resolves and the
+		// view would drift from the committed truth.
+		artifacts: Object.fromEntries(artifactIndexFromEvents(events)),
 	});
 	const graph = buildTaskGraph({ manifest, projection, reconciliation: null, limits: { max_tasks: limits.max_tasks } });
 

@@ -25,6 +25,7 @@
 
 import { digest } from "../fixture/contracts.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
+import { planDigest } from "./e1-plan-contract.mjs";
 import { canonicalManifestDigest } from "./manifest.mjs";
 import { acquireCampaignOwnership, readCheckpoint, releaseCampaignOwnership, writeCheckpoint } from "./ownership.mjs";
 import { canDispatch, parseBudgetStrict, projectQueueFromEvents, remainingBudget } from "./projection.mjs";
@@ -311,7 +312,10 @@ export function createCampaignScheduler({
 			{ plan, planningTaskId, admission, planId = null, planDigest: planDigestArg = null } = /** @type {any} */ ({}),
 		) {
 			const pid = planId ?? plan.plan_id ?? `plan-${manifest.campaign_id}-${clock()}`;
-			const pd = planDigestArg ?? digest(plan);
+			// The canonical candidate digest: the tool recorder, the admission and the
+			// projection all call the SAME `planDigest`, so a repeated submission of an
+			// identical candidate is idempotent and a changed one is still refused.
+			const pd = planDigestArg ?? planDigest(plan);
 			const submitted = await commit(
 				"campaign.plan.submitted",
 				{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },

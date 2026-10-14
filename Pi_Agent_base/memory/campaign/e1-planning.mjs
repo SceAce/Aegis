@@ -336,4 +336,4 @@ export async function admitCandidatePlan({
 	return { ok: true, status: "admitted", plan_id: recorded.plan_id, admission, digest: planDigest(plan) };
 }
 
-export { buildPlanningContext, buildPlanningPrompt, PLAN_LIMITS } from "./e1-plan-contract.mjs";
+export { buildPlanningContext, buildPlanningPrompt, PLAN_LIMITS, planDigest } from "./e1-plan-contract.mjs";

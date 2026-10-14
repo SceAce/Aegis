@@ -468,9 +468,22 @@ function normalizePlanNode({ node, plan, manifest, templates, planningTaskId }) 
 	return { ...definition, order: (manifest.tasks?.length ?? 0) + 1 };
 }
 
-/** A digest over the COMPLETE candidate batch, used for durable identity. */
+/**
+ * The canonical digest of a model CANDIDATE plan. Coverage: the complete plan
+ * envelope the model submitted (`version`, `plan_id`, `root_goal_ref`) plus the
+ * full `tasks` array EXACTLY as submitted. It intentionally excludes no
+ * candidate field and never substitutes the Host's normalized task definitions
+ * (those have their own per-task `task_digest`). Every producer/consumer
+ * (tool recorder, Host admission, projection, view) must call THIS function so
+ * an identical candidate is idempotent and same-id/different-content is refused.
+ */
 export function planDigest(plan) {
-	return digest({ plan_id: plan?.plan_id ?? null, tasks: plan?.tasks ?? null });
+	return digest({
+		version: plan?.version ?? null,
+		plan_id: plan?.plan_id ?? null,
+		root_goal_ref: plan?.root_goal_ref ?? null,
+		tasks: plan?.tasks ?? null,
+	});
 }
 
 /**

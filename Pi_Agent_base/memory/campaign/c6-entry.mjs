@@ -578,7 +578,7 @@ export async function runC6FromConfig(
 							kind: "campaign.plan.submitted",
 							campaign_id: manifest.campaign_id ?? null,
 							plan_id: plan.plan_id ?? null,
-							plan_digest: digest(plan),
+							plan_digest: e1Planning.planDigest(plan),
 							plan,
 							planning_task_id: currentTaskRef.task?.task_id ?? "task-plan",
 						},

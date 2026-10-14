@@ -60,6 +60,66 @@ export function normalizeRef(ref) {
 	return null;
 }
 
+/** The Campaign event kind that carries a trusted Oracle judgement. */
+export const CAMPAIGN_OUTCOME_KIND = "campaign.oracle.result";
+
+/**
+ * Adapt a committed Campaign `campaign.oracle.result` note into the canonical
+ * `outcome.recorded` shape the board already understands. It NEVER writes a
+ * second event: the original `event_id`, `source`, `task_id`, `step_id`,
+ * `episode_id`, `criterion`, `observed`, `scope` and evidence refs are kept.
+ * The embedded `payload.outcome` is the authoritative judgement; a structural
+ * task/stage/source binding mismatch is carried as an explicit downgrade.
+ *
+ * @returns {any|null} null when the event is not a Campaign oracle result.
+ */
+export function campaignOutcomeAsRecorded(event, taskEpisodes = null) {
+	if (event?.event_type !== "runtime.note" || event?.payload?.kind !== CAMPAIGN_OUTCOME_KIND) return null;
+	const envelope = event.payload ?? {};
+	const rawOutcome = envelope.outcome;
+	const outcome = rawOutcome && typeof rawOutcome === "object" && !Array.isArray(rawOutcome) ? rawOutcome : null;
+	const eventSourceKind = event.source?.kind ?? null;
+	const innerSource = outcome?.provenance?.source ?? outcome?.oracle?.source ?? null;
+	const outerTask = envelope.task_id ?? null;
+	const innerTask = outcome?.task_id ?? outcome?.provenance?.task_id ?? null;
+	const outerStep = envelope.step_id ?? null;
+	const innerStep = outcome?.step_id ?? outcome?.stage_id ?? null;
+	const reasons = [];
+	if (!outcome) reasons.push("campaign outcome has no structured outcome payload");
+	if (outcome && outerTask && innerTask && outerTask !== innerTask)
+		reasons.push("outcome task binding does not match the campaign envelope");
+	if (outcome && outerStep && innerStep && outerStep !== innerStep)
+		reasons.push("outcome stage binding does not match the campaign envelope");
+	if (outcome && eventSourceKind && innerSource && innerSource !== eventSourceKind)
+		reasons.push("outcome provenance source does not match the event source");
+	// Episode binding: the task's own started episode is the trusted binding. A
+	// judgement about a DIFFERENT episode of the same task is foreign evidence.
+	const boundEpisode = outerTask && taskEpisodes?.get ? taskEpisodes.get(outerTask) : null;
+	if (outcome && boundEpisode && outcome.episode_id && outcome.episode_id !== boundEpisode)
+		reasons.push("outcome episode binding does not match the started task episode");
+	const evidenceRefs =
+		Array.isArray(event.evidence_refs) && event.evidence_refs.length > 0
+			? event.evidence_refs
+			: Array.isArray(outcome?.evidence_refs)
+				? outcome.evidence_refs
+				: [];
+	return {
+		...event,
+		event_type: "outcome.recorded",
+		episode_id: event.episode_id ?? outcome?.episode_id ?? null,
+		evidence_refs: evidenceRefs,
+		payload: {
+			...(outcome ?? {}),
+			kind: CAMPAIGN_OUTCOME_KIND,
+			task_id: outerTask ?? innerTask ?? null,
+			step_id: outerStep ?? innerStep ?? null,
+			campaign_outcome: true,
+			campaign_binding_ok: reasons.length === 0,
+			...(reasons.length > 0 ? { campaign_binding_reason: reasons.join("; ") } : {}),
+		},
+	};
+}
+
 /**
  * Decide whether an `outcome.recorded` payload is a complete, auditable
  * Outcome that may create a verified Fact/Refuted node.
@@ -73,6 +133,9 @@ export function normalizeRef(ref) {
  */
 export function classifyOutcome(payload, trusted, evidenceRefs) {
 	const status = payload?.status;
+	if (payload?.campaign_binding_ok === false) {
+		return { kind: "Hint", reason: payload.campaign_binding_reason ?? "campaign outcome binding mismatch" };
+	}
 	if (status !== "success" && status !== "failure") {
 		return { kind: "Hint", reason: `status=${String(status)} is not a verified success/failure` };
 	}
@@ -82,8 +145,17 @@ export function classifyOutcome(payload, trusted, evidenceRefs) {
 	// Provenance is read from the canonical MEMORY_SCHEMA outcome fields; the
 	// additive `provenance` block is only a compatibility view, so an outcome that
 	// only carries the legacy top-level `source`/`independent` still works.
-	const source = typeof payload?.provenance?.source === "string" ? payload.provenance.source : typeof payload?.source === "string" ? payload.source : "";
-	const independent = payload?.provenance?.independent === true || payload?.independent === true || source === "platform" || source === "oracle";
+	const source =
+		typeof payload?.provenance?.source === "string"
+			? payload.provenance.source
+			: typeof payload?.source === "string"
+				? payload.source
+				: "";
+	const independent =
+		payload?.provenance?.independent === true ||
+		payload?.independent === true ||
+		source === "platform" ||
+		source === "oracle";
 	if (!independent) {
 		return { kind: "Hint", reason: "outcome is not from an independent oracle/platform source" };
 	}
@@ -98,10 +170,14 @@ export function classifyOutcome(payload, trusted, evidenceRefs) {
 		}
 	}
 	// A transport timeout/tool error is never a task verdict.
-	if (payload?.transport && (payload.transport.timed_out === true || payload.transport.tool_ok === false) && status !== "unknown") {
+	if (
+		payload?.transport &&
+		(payload.transport.timed_out === true || payload.transport.tool_ok === false) &&
+		status !== "unknown"
+	) {
 		return { kind: "Hint", reason: "transport failure/timeout is not a verified task verdict" };
 	}
-	const refs = (Array.isArray(evidenceRefs) ? evidenceRefs.filter(Boolean) : []);
+	const refs = Array.isArray(evidenceRefs) ? evidenceRefs.filter(Boolean) : [];
 	const embeddedRefs = Array.isArray(payload?.evidence_refs) ? payload.evidence_refs.filter(Boolean) : [];
 	if (refs.length === 0 && embeddedRefs.length === 0) {
 		return { kind: "Hint", reason: "outcome has no evidence_refs" };
@@ -114,10 +190,16 @@ export function classifyOutcome(payload, trusted, evidenceRefs) {
 		// is a stronger, separate claim about the METHOD, not the task).
 		const mode = payload?.failure_mode;
 		if (payload?.preconditions_verified !== true) {
-			return { kind: "Hint", reason: "failure does not refute the method: preconditions were not verified (preconditions_verified != true)" };
+			return {
+				kind: "Hint",
+				reason: "failure does not refute the method: preconditions were not verified (preconditions_verified != true)",
+			};
 		}
 		if (mode !== "postcondition_failed") {
-			return { kind: "Hint", reason: `failure_mode=${String(mode)} does not refute an action (only postcondition_failed does)` };
+			return {
+				kind: "Hint",
+				reason: `failure_mode=${String(mode)} does not refute an action (only postcondition_failed does)`,
+			};
 		}
 		return { kind: "Refuted", reason: "verified postcondition failure after verified preconditions" };
 	}
@@ -139,13 +221,29 @@ export function permittedNodeType(event) {
 			// `{verified:true}` with no value/evidence is downgraded to a Hint and can
 			// never enter the current Fact view.
 			const value = event.payload?.value;
-			const hasValue = value !== null && value !== undefined && !(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0);
-			const hasEvidence = (Array.isArray(event.evidence_refs) && event.evidence_refs.some(Boolean)) || (Array.isArray(event.payload?.evidence_refs) && event.payload.evidence_refs.some(Boolean));
-			const hasRevision = Boolean(event.payload?.target_fingerprint ?? event.payload?.environment_fingerprint ?? value?.target_fingerprint ?? value?.file_digest ?? value?.stdout_digest);
+			const hasValue =
+				value !== null &&
+				value !== undefined &&
+				!(typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0);
+			const hasEvidence =
+				(Array.isArray(event.evidence_refs) && event.evidence_refs.some(Boolean)) ||
+				(Array.isArray(event.payload?.evidence_refs) && event.payload.evidence_refs.some(Boolean));
+			const hasRevision = Boolean(
+				event.payload?.target_fingerprint ??
+					event.payload?.environment_fingerprint ??
+					value?.target_fingerprint ??
+					value?.file_digest ??
+					value?.stdout_digest,
+			);
 			if (event.payload?.verified === true && trusted) {
 				if (!hasValue) return { type: "Hint", downgradedFrom: "Fact", reason: "observation has no observed value" };
 				if (!hasEvidence) return { type: "Hint", downgradedFrom: "Fact", reason: "observation has no evidence_refs" };
-				if (!hasRevision) return { type: "Hint", downgradedFrom: "Fact", reason: "observation has no target revision (digest/fingerprint)" };
+				if (!hasRevision)
+					return {
+						type: "Hint",
+						downgradedFrom: "Fact",
+						reason: "observation has no target revision (digest/fingerprint)",
+					};
 				return { type: "Fact" };
 			}
 			if (event.payload?.verified === true) return { type: "Hint", downgradedFrom: "Fact" };
@@ -154,10 +252,18 @@ export function permittedNodeType(event) {
 			return { type: "Hint" };
 		}
 		case "outcome.recorded": {
-			const verdict = classifyOutcome(event.payload, trusted, event.evidence_refs);
+			const normalizedRefs = (Array.isArray(event.evidence_refs) ? event.evidence_refs : [])
+				.map(normalizeRef)
+				.filter(Boolean);
+			const verdict = classifyOutcome(event.payload, trusted, normalizedRefs);
 			if (verdict.kind === "Fact") return { type: "Fact" };
 			if (verdict.kind === "Refuted") return { type: "Refuted" };
-			return { type: "Hint", downgradedFrom: event.payload?.status === "success" || event.payload?.status === "failure" ? "Outcome" : undefined, reason: verdict.reason };
+			return {
+				type: "Hint",
+				downgradedFrom:
+					event.payload?.status === "success" || event.payload?.status === "failure" ? "Outcome" : undefined,
+				reason: verdict.reason,
+			};
 		}
 		case "proposal.submitted": {
 			const kind = event.payload?.kind;
@@ -212,8 +318,10 @@ function normalizeScopeKey(scope) {
 /** The (criterion_id, expected, task_id) subject that a supersede must match. */
 function outcomeSubject(payload) {
 	const criterion = payload?.criterion;
-	const criterionId = typeof criterion?.criterion_id === "string" && criterion.criterion_id.trim() ? criterion.criterion_id.trim() : null;
-	const expected = criterion && typeof criterion === "object" && "expected" in criterion ? criterion.expected : undefined;
+	const criterionId =
+		typeof criterion?.criterion_id === "string" && criterion.criterion_id.trim() ? criterion.criterion_id.trim() : null;
+	const expected =
+		criterion && typeof criterion === "object" && "expected" in criterion ? criterion.expected : undefined;
 	const taskId = payload?.provenance?.task_id ?? payload?.task_id ?? null;
 	return { criterionId, expected, taskId };
 }
@@ -290,7 +398,7 @@ export function validateSupersede({ priorEvent, priorNode, event, cycle = false 
 /**
  * Resolve the effective supersedes graph from the event history.
  *
- * @returns {{superseded: Map<string, {by: string, event_id: string}>, invalid: object[]}}
+ * @returns {{superseded: Map<string, {by: string, event_id: string}>, invalid: object[], byOutcomeId: Map<string, any>}}
  */
 export function resolveEffective(events, nodes = []) {
 	const outcomeEvents = [];
@@ -342,7 +450,11 @@ export function resolveEffective(events, nodes = []) {
 export function resolveEnvironmentChanges(events, nodes) {
 	const outcomeIndex = new Map();
 	events.forEach((event, index) => {
-		if (event?.event_type === "outcome.recorded" && event.payload?.outcome_id && !outcomeIndex.has(event.payload.outcome_id)) {
+		if (
+			event?.event_type === "outcome.recorded" &&
+			event.payload?.outcome_id &&
+			!outcomeIndex.has(event.payload.outcome_id)
+		) {
 			outcomeIndex.set(event.payload.outcome_id, index);
 		}
 	});
@@ -369,13 +481,22 @@ export function resolveEnvironmentChanges(events, nodes) {
 				if (normalizeScopeKey(node.scope ?? node.environment_fingerprint) !== scopeKey) continue;
 				// Only bindings recorded BEFORE this change are affected. A fact
 				// re-verified after the change is the new current fact, not stale.
-				const nodeIndex = node.outcome_id ? outcomeIndex.get(node.outcome_id) : node.origin_event_id ? eventIndexById.get(node.origin_event_id) : undefined;
+				const nodeIndex = node.outcome_id
+					? outcomeIndex.get(node.outcome_id)
+					: node.origin_event_id
+						? eventIndexById.get(node.origin_event_id)
+						: undefined;
 				if (nodeIndex === undefined || nodeIndex > index) continue;
 				staleNodeIds.add(node.node_id);
 				matched.push(node.node_id);
 			}
 		}
-		changes.push({ event_id: event.event_id, scope: scopeKey, stale_nodes: matched, reason: event.payload?.reason ?? null });
+		changes.push({
+			event_id: event.event_id,
+			scope: scopeKey,
+			stale_nodes: matched,
+			reason: event.payload?.reason ?? null,
+		});
 	});
 	return { staleNodeIds, changes };
 }
@@ -395,12 +516,20 @@ function nodeText(event, type) {
 			const proposition = criterion?.expected ?? criterion?.description;
 			if (proposition) {
 				const observed = payload.observed;
-				const observedText = observed === null || observed === undefined || typeof observed === "object" ? "" : String(observed);
+				const observedText =
+					observed === null || observed === undefined || typeof observed === "object" ? "" : String(observed);
 				const tail = observedText ? ` [observed: ${observedText}]` : "";
 				const oracle = payload.oracle?.oracle_id ? ` (${type.toLowerCase()} by ${payload.oracle.oracle_id})` : "";
 				return `${proposition}${tail}${oracle}`;
 			}
-			return payload.text || payload.claim || payload.statement || (payload.status ? `outcome:${payload.status}${payload.source ? ` (${payload.source})` : ""}` : JSON.stringify(payload));
+			return (
+				payload.text ||
+				payload.claim ||
+				payload.statement ||
+				(payload.status
+					? `outcome:${payload.status}${payload.source ? ` (${payload.source})` : ""}`
+					: JSON.stringify(payload))
+			);
 		}
 		case "Intent":
 			return payload.text || payload.intent || payload.tool_name || "(intent)";
@@ -435,8 +564,26 @@ export function projectBoard(events) {
 	const byType = Object.fromEntries(NODE_TYPES.map((type) => [type, []]));
 	const rejections = [];
 	const byEventId = new Map();
+	// Normalize Campaign `campaign.oracle.result` notes into the canonical Outcome
+	// shape ONCE, so the node loop, supersede resolution and environment changes all
+	// see the SAME trusted outcome semantics (`campaignOutcomeAsRecorded`). The
+	// task -> started-episode index binds each judgement to its OWN task episode.
+	const rawEvents = Array.isArray(events) ? events : [];
+	const taskEpisodes = new Map();
+	for (const event of rawEvents) {
+		const payload = event?.payload ?? {};
+		if (
+			event?.event_type === "runtime.note" &&
+			payload.kind === "campaign.task.started" &&
+			payload.task_id &&
+			payload.episode_id
+		) {
+			if (!taskEpisodes.has(payload.task_id)) taskEpisodes.set(payload.task_id, payload.episode_id);
+		}
+	}
+	const normalizedEvents = rawEvents.map((event) => campaignOutcomeAsRecorded(event, taskEpisodes) ?? event);
 
-	for (const event of events) {
+	for (const event of normalizedEvents) {
 		if (!event || typeof event !== "object") continue;
 		const permitted = permittedNodeType(event);
 		if (event.event_type === "proposal.rejected" || (event.event_type === "proposal.submitted" && !permitted)) {
@@ -448,8 +595,11 @@ export function projectBoard(events) {
 			continue;
 		}
 		if (!permitted) continue;
-		const normalizedRefs = (Array.isArray(event.evidence_refs) ? event.evidence_refs : []).map(normalizeRef).filter(Boolean);
+		const normalizedRefs = (Array.isArray(event.evidence_refs) ? event.evidence_refs : [])
+			.map(normalizeRef)
+			.filter(Boolean);
 		const payload = event.payload || {};
+		/** @type {any} */
 		const node = {
 			node_id: `ev:${event.event_id}`,
 			type: permitted.type,
@@ -463,6 +613,7 @@ export function projectBoard(events) {
 			// text so the effective view is derived from data, not prose.
 			criterion: payload.criterion ?? null,
 			observed: payload.observed ?? null,
+			task_id: payload.task_id ?? payload.provenance?.task_id ?? null,
 			outcome_id: payload.outcome_id ?? null,
 			supersedes: payload.supersedes ?? null,
 			action_id: payload.action_id ?? null,
@@ -501,8 +652,8 @@ export function projectBoard(events) {
 	}
 
 	// Effective view: same-Episode supersedes + trusted environment changes.
-	const { superseded, invalid } = resolveEffective(events, nodes);
-	const { staleNodeIds, changes } = resolveEnvironmentChanges(events, nodes);
+	const { superseded, invalid } = resolveEffective(normalizedEvents, nodes);
+	const { staleNodeIds, changes } = resolveEnvironmentChanges(normalizedEvents, nodes);
 	// Index outcome -> superseding node so a supersede draws an auditable edge.
 	const nodeByOutcomeId = new Map();
 	for (const node of nodes) if (node.outcome_id) nodeByOutcomeId.set(node.outcome_id, node);
@@ -522,7 +673,9 @@ export function projectBoard(events) {
 			node.effective_status = "current";
 		}
 	}
-	const currentByType = Object.fromEntries(NODE_TYPES.map((type) => [type, byType[type].filter((node) => node.effective)]));
+	const currentByType = Object.fromEntries(
+		NODE_TYPES.map((type) => [type, byType[type].filter((node) => node.effective)]),
+	);
 
 	const digestOver = (list) => digest(list.map((n) => ({ id: n.node_id, type: n.type, text: n.text })));
 	return {
