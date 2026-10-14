@@ -537,3 +537,58 @@ foreign/llm 反例仍被当作 success。`aegis-e1-observation-repair` 的 C-EVI
 - 大图分页/交互、自动补写缺 ready、增量重规划仍后置；截断/未知如实显示。
 - 整体 E1 状态 **internally_verified / awaiting_external_review**，交回独立整体验收。
 - `board.mjs` 在 HEAD 即不满足 Biome 格式（既有格式债）；本轮在该修改文件上运行 `biome check --write` 归一，故 diff 含同文件格式行。
+
+## 11. E1 Fail-Closed Repair：Outcome 事实绑定与 Plan Replay 身份链
+
+任务书：`docs/E1_FAIL_CLOSED_REPAIR_TASK.md`（开发规范 `..._DEV_STANDARD.md`）。起点含 C 的
+HEAD `2d166fc`，工作树仅新增三份任务文档。
+
+### 11.1 两个根因与最终 fail-closed 设计
+
+1. **Outcome 事实绑定**（`board.mjs:campaignOutcomeAsRecorded`）：旧逻辑只在字段“同时存在
+   且不一致”时报错，缺失时用 `??` 回退，导致缺 campaign/task/episode/stage/source 的结果
+   仍成 `Fact`。现在要求 Campaign、外层/内层 task、外层/内层 episode 且匹配该 task 的
+   最新 `campaign.task.started`、`provenance.source`（不再用 `oracle.source` 顶替）、
+   `criterion_id` 全部存在并一致；stage 级还要求 step 内外一致且属于该 task 的定义。
+   task/stage 定义索引来自 Manifest 任务定义 + `campaign.plan.admitted` 的 normalized
+   definitions。任一不满足 → `campaign_binding_ok=false` → `Hint` + `campaign_binding_reason`，
+   仍保留原 event_id/source/evidence。不写第二份事件。
+2. **Plan replay 身份链**（`projection.mjs`）：`applyPlanSubmitted` 要求声明的
+   `plan_digest` 存在且 `=== planDigest(plan)`；`applyPlanAdmitted` 要求同 plan_id 的先前
+   submitted 候选存在，plan_id/planning_task_id/campaign 一致，`declared === candidate.digest`
+   且 `=== planDigest(candidate.plan)`，并在全部校验通过后才写 dynamic tasks/budget/plan。
+   孤立/错 digest/缺 plan → `rejected`，不产生任何前缀；相同重复幂等。
+
+live/durable/replay 调用点：`c6-entry` live RAM 与 `e1-observation:buildE1View` 以
+`projectBoard(events, {manifest})` 传入可信索引；Scheduler/report 继续用同一
+`artifactIndexFromEvents` 与 `planDigest`。
+
+### 11.2 red → green 与 mutation
+
+- red：`aegis-e1-fail-closed-repair` 旧实现 **7 pass / 10 fail**（FC-O-02..07、FC-P-02..05）。
+- green：修复后 **17/17**（`final-aegis-e1-fail-closed-repair.log`）。
+- M1（Outcome guard）：把 `campaign_binding_ok` 强制为 `true` → FC-O-02..07 **6 项行为失败**
+  （`mutation1-outcome.log`），恢复逐字节一致。
+- M2（Plan guard）：短路 prior/status/plan/digest/planning/campaign 校验 → FC-P-02..05
+  **4 项行为失败**（`mutation2-plan.log`），恢复逐字节一致。
+
+### 11.3 验收（ignored `Pi_Agent_base/runtime/dev/e1-fail-closed-repair/`）
+
+| 套件 | argv | exit | 结果 |
+| --- | --- | --- | --- |
+| E1 required 7 | `c6-suite-runner …/final-e1 <7 names>` | 0 | 7/7；`aegis-e1-external-review` **17/17**，gate 7/7，audit 2/2 |
+| C6 required 18 | `c6-suite-runner …/final-c6 <18 names>` | 0 | 18/18 |
+| 回归 required 26 | `c6-suite-runner …/final-regress <26 names>` | 0 | 26/26 |
+| 受影响 required 8 | `c6-suite-runner …/final-affected <8 names>` | 0 | 8/8 |
+| 新增 FC | `node Pi_Agent_base/tests/aegis-e1-fail-closed-repair.mjs` | 0 | 17/17 |
+| C 观察修复 | `node …/aegis-e1-observation-repair.mjs` | 0 | 6/6 |
+| B 规划输入 | `node …/aegis-e1-planner-input.mjs` | 0 | 6/6 |
+| Campaign tsc | `tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json` | 1 | 194→194，逐条与基线相同，**0 新增** |
+| Biome 8 文件 | `biome check`（本轮修改范围） | 0 | pass |
+
+### 11.4 未实测限制与状态
+
+- 未运行真实付费模型、真实 CTF 或靶场；仅本地 SDK+faux 与 loopback 真实进程。
+- HTML 像素级验收、大图分页/交互、自动补写 ready、增量重规划仍后置。
+- 正常链 `rejected=[]`、Facts/图/状态与权威 replay 一致；本任务 DoD 全部满足，状态
+  **internally_verified / awaiting_external_review**，交回独立整体验收。
