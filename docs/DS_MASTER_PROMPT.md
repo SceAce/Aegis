@@ -1,17 +1,20 @@
-# Aegis 阶段入口：C6 最终工程复验前仍 changes_required
+# Aegis 阶段入口：E1 真实任务 pilot 规划
 
-C1-C5保持既有验收范围。C6当前基线22d075c：原15个C6脚本、22外部边界、学习closure与recheck既有13项通过，
-类型196条旧诊断且Campaign0条新增；五组修复认可。但provider gate同路径仍有3个预算/持久窗口遗漏，
-暂不进入真实环境测试。
+最新基线（2026-10-14）：`feat/c6-agent-product` / `32b0e96`。
+C1-C5保持既有验收范围；C6三个事实分离已核验，同一SDK收尾盲区已补修。
+18个C6脚本、26个回归通过；类型196条历史诊断保持，修改文件无诊断。
+通过的是有限真实任务pilot工程门槛，尚未启动真实provider。
 
-当前审查：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第5、6节；red测试提交85b1d1d。
-当前修复提示词：[C6_RECHECK_REPAIR_DS_PROMPT.md](C6_RECHECK_REPAIR_DS_PROMPT.md)。
-原冻结范围：[C6_AGENT_PRODUCT_TASK.md](C6_AGENT_PRODUCT_TASK.md)。
-历史初轮修复提示词C6_REPAIR_DS_PROMPT.md保留，勿重复启动已通过的边界。
+当前规划：[E1_REAL_TASK_PILOT_PLAN.md](E1_REAL_TASK_PILOT_PLAN.md)。
+工程证据：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第8节。
+运行入口：[C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。
+后续实验：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md) 的E1/E2/E3。
 
-仅剩同一provider请求门三项：R12末次durable commit失败时不得放行决策；
-R13 Task与Campaign调用前联合准入；R14实际provider transcript/tools/schema计入每请求窗口。
-聚焦suite当前16例/13通过/3失败，exit1；已通过五组修复不再次整体委派。
-主DS复用现C6材料、自主内部里程碑、本地提交，最后一次限定复验；无新增性能/缓存/容器要求。
-不改Pi/真实凭据与模型设置/lockfile，不push/rewrite，不调用真实provider/外部目标/验收模型。
-真实模型pilot、上下文校准、效果与迁移实验仍以后单独处理。
+下一步选定任务场景、provider/model/endpoint、任务副本、Oracle和总预算，准备可审查运行包。
+local-openai可尝试本地服务；远程provider尚未接线，按用户选择做最小实现。
+小任务直接处理；较大接线工程可编写有界任务交dsv4.1flash，不自动扩大为新平台。
+具体真实运行需要既定用户授权与费用范围，规划不代替运行授权。
+
+先取得无经验真实任务基线，再做经验和短上下文对照。保留失败/unknown，复用既有
+Host/Broker/Oracle/ledger/测量，不重派已闭合的C6修复、不追旧warning。
+本地提交遵守Git规范，不改Pi核心/用户真实配置/lockfile，不push/rewrite。

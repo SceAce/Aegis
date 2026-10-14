@@ -253,6 +253,11 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 
 ## 14. 有限真实任务 pilot 输入清单（下一阶段；本轮不启动、不写真实配置）
 
+当前E1顺序、工具边界、任务说明模板、预算与交回见
+[E1_REAL_TASK_PILOT_PLAN.md](E1_REAL_TASK_PILOT_PLAN.md)。工程门槛已通过，真实调用
+尚未启动。现有实现支持faux与loopback local-openai；远程provider需要按选定接口接线，
+local凭据实际使用env:NAME，file:尚未接入读取。
+
 只有用户另行授权后才运行真实 provider/target。所需输入（复用现有接口，不新增实验框架）：
 
 | 类别 | 必填项 | 说明 |
