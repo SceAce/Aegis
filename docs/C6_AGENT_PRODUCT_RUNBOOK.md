@@ -288,3 +288,42 @@ E1执行补充：用户已选max/dsv4.1flash。`remote-openai`现已完成最小
 - workspace 不是 OS sandbox；进程崩溃恢复已验证“保留/阻断”，未建自动结算平台。
 - SIGTERM/Host持久控制按 Task 调度边界 drain，活动 Task 可能继续完成；不承诺立即撤销
   当前规划或副作用。SDK实际 error/aborted 的动作阻断与硬退出后的保守恢复已验证。
+
+## 15. E1 可观察规划（本轮）
+
+开启规划：config 增加
+
+```json
+"planning": {
+  "enabled": true,
+  "templates": [
+    { "template_ref": "verify", "task_type": "verify", "oracle_ref": "fixture.oracle.v1",
+      "required_capabilities": ["data.record.write"],
+      "scope": { "environment_fingerprint": "data-repair-env", "domain": "structured-data",
+                 "permissions": ["data.record.write"], "task_types": ["verify", "reproduce"] } }
+  ]
+}
+```
+
+Manifest 只含根目标容器与一个 Host 规划 Task（`task-plan`）。模型通过结构化工具
+`aegis_submit_plan` 提交完整候选计划（`parent_task_id` 为拆分来源，`depends_on` 为执行前置）。
+Host 先整图校验，再一次 durable `campaign.plan.admitted` 批量准入；`campaign.plan.ready` 是
+独立的计划完成门，二者都成立后子 Task 才按依赖进入 `ready`。
+
+零请求 prepare / 只读：
+
+```bash
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/memory/campaign/c6-entry.mjs --config <config> observe --port 0     # 只读，零 provider
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/memory/campaign/c6-entry.mjs --config <config> status               # 零 provider
+```
+
+双终端：终端 A 先 `observe`（新包未 run 也显示目标/not_started）；终端 B 用同一配置 `run`（faux
+离线 demo）。真实 pack 由用户确认后运行，本轮不启动。
+
+新增只读 API：`/api/board`、`/api/task-graph`、`/api/plans`、`/api/requests`；首页显示根目标、
+任务树（拆分来源）、执行依赖 DAG、计划状态、请求 consumed/pending/unresolved 及六类白板节点
+内容与证据。所有面板从 Manifest + EventLog 重建，loopback 只读、转义、脱敏、分页。
+
+工程证据：`docs/E1_OBSERVABLE_PLANNING_IMPLEMENTATION_REPORT.md`。

@@ -20,11 +20,15 @@ success，Task completed，独立status无pending/unresolved。独立核验初�
 
 当前编码委派已冻结：[E1_OBSERVABLE_PLANNING_TASK.md](E1_OBSERVABLE_PLANNING_TASK.md)、
 [测试矩阵](E1_OBSERVABLE_PLANNING_TEST_MATRIX.md)及
-[DS总提示词](E1_OBSERVABLE_PLANNING_DS_PROMPT.md)。检查起点`2bf4485`。
-先补白板节点内容/证据、父子树与依赖图、独立LLM规划与Host整图准入/依赖执行，
-用真实SDK+faux和本地Oracle核验；真实付费请求仍由用户之后执行。
-本轮允许这条链必要的加法契约与规划模式，不重开已有C6生命周期，不扩展通用shell/
-CTF攻击平台。完成后交回限定复验，再选题和工具适配；不把faux称真实解题通过。
+[DS总提示词](E1_OBSERVABLE_PLANNING_DS_PROMPT.md)。检查起点`4e1823c`。
+本轮已实现并提交：白板六类节点内容/证据、父子树与执行依赖 DAG、结构化 `aegis_submit_plan`
+规划工具、Host 整图校验与一次 durable 批量准入、`campaign.plan.ready` 独立计划完成门、
+Scheduler 按需要真实 depends_on 执行与重启重建。18 个 C6 脚本、26 个回归、8 个附加受影响、
+4 个 E1 focused 全部 exit 0；类型 196→196、修改文件 0；Biome exit 0；有限 mutation 5/5 被捕获。
+结果见[实现报告](E1_OBSERVABLE_PLANNING_IMPLEMENTATION_REPORT.md)。真实付费请求仍由用户
+之后执行，本轮未运行真实 provider/CTF。
+本轮允许这条链必要的加法契约与规划模式，不重开已有 C6 生命周期，不扩展通用 shell/
+CTF 攻击平台。完成后交回限定复验，再选题和工具适配；不把 faux 称真实解题通过。
 
 随后选择用户项目任务或具体CTF及其副本、Oracle和总预算，再准备新的运行包。
 local-openai、remote-openai及pi-config均有SDK接线；max首次数据/代表性单文件代码任务已通过。

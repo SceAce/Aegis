@@ -1,6 +1,6 @@
 # E1 可观察规划：冻结测试矩阵
 
-状态：**测试规格 / 全部新用例not_run**。关联任务书：
+状态：**internally_verified / awaiting_external_review**（DS 内部验证；含 not_run 项）。实际结果见文末“本轮实际结果”。关联任务书：
 [E1_OBSERVABLE_PLANNING_TASK.md](E1_OBSERVABLE_PLANNING_TASK.md)。
 起点`2bf4485`，日期2026-10-14。本次只制定计划，历史绿色结果不写入本轮actual_status。
 DS编码前补精确script/argv与预期字段，运行后再填log_ref、exit和actual_status；
@@ -158,3 +158,79 @@ script/exact argv/actual_status/exit/log_ref。关键产品链增加原事件ID/
 实际文件和独立Outcome、请求精确数值、退出后只读重建、不完整准入和全完成恢复。
 浏览器若未实际运行则标not_run；HTTP/HTML通过不谎称视觉验收已经完成。
 faux是工程接线证据，真正max计划质量由用户后续实验确认。
+
+---
+
+# 本轮实际结果（DS 内部验证，2026-10-14）
+
+起点 `4e1823c`。新增 focused 脚本：`aegis-e1-plan-contract.mjs`（12 node tests）、
+`aegis-e1-planning-product.mjs`（7 node tests）、`aegis-e1-observation-view.mjs`（7 node tests）、
+`aegis-e1-planning-chain.mjs`（真实 SDK/faux + child `helpers/c6-e1-planning-child.mjs`）。
+私有日志根：`Pi_Agent_base/runtime/dev/e1-observable-run1/`（ignored）。
+
+## Case 结果
+
+| Case | 层级/输入 | 结果 | 证据 |
+| --- | --- | --- | --- |
+| OP-B01 | 纯投影/committed | pass | `E1-BOARD: the six node classes carry real content` |
+| OP-B02 | 信任/model | pass | `E1-BOARD: a model claim cannot become a Fact` |
+| OP-B03 | Oracle 映射/集成 | pass | 产品链 `board exposes board nodes` + C6 external boundaries |
+| OP-B04 | 有效性/committed | pass | `E1-BOARD: a superseded fact shows history` |
+| OP-B05 | 关联/集成 | pass | `E1-BOARD: two tasks and two episodes remain separately filterable` |
+| OP-B06 | 详情/HTTP/model | pass | `E1-BOARD: a bounded view never fabricates a node or a raw transcript` |
+| OP-G01 | 图/契约 | pass | `E1-GRAPH: tree and dependency DAG from the same committed stream` |
+| OP-G02 | 动态依赖/产品 | pass | chain: `the diamond successor started after both prerequisites completed` |
+| OP-G03 | 失败前置/产品 | pass | `E1-PLAN: an unsatisfied prerequisite blocks the successor provider/effect` |
+| OP-G04 | 候选/committed | pass | `plans.candidates` + `campaign.plan.blocked` in chain |
+| OP-G05 | 静态兼容 | pass | 26 回归 + `aegis-campaign-c1-scheduler` exit 0 |
+| OP-P01 | 纯规划/SDK+faux | pass | chain: `plan_submitted`，无伪造 Broker action |
+| OP-P02 | 动态创建/SDK+faux | pass | chain: `the model actually created three dynamic tasks` |
+| OP-P03 | 非写死 | pass | `E1-PLAN: different plans produce different graphs` + illegal scenario |
+| OP-P04 | 工具接线/SDK+faux | pass | chain: `aegis_submit_plan` 实际被调用并 durable 记录 |
+| OP-P05 | 结构/schema | pass | `E1-CONTRACT: transport shape bounds` |
+| OP-P06 | 图校验 | pass | `E1-CONTRACT: parent cycle and dependency cycle`/dangling |
+| OP-P07 | 权限 | pass | `E1-CONTRACT: an unauthorized target/capability/type blocks` + chain illegal |
+| OP-P08 | 验收完整 | pass | `E1-CONTRACT: root criteria must be covered` + 模板 Oracle |
+| OP-P09 | 去重/恢复 | pass | plan 索引幂等（重复提交 digest 冲突诊断） |
+| OP-P10 | 硬限制 | pass | `E1-CONTRACT: depth, fan-out, count and aggregate budget` |
+| OP-A01 | 整图激活 | pass | `E1-PLAN: an illegal node rejects the whole batch` + chain `no legal subset ran` |
+| OP-A02 | 耐久门 | pass（契约层） | 批量 append 失败 → `incomplete`；C6 durability 覆盖真实 writer 失败 |
+| OP-A03 | 生命周期/SDK 故障 | pass | C6 lifecycle-convergence/architecture-review（18 脚本） |
+| OP-A04 | 未决恢复/真实进程 | pass | `aegis-c6-lifecycle-restart` + `aegis-c6-recovery` |
+| OP-A05/A06/A07 | 不完整准入/缺收尾 | pass（契约层） | reducer 应用前整图校验，不暴露合法前缀 |
+| OP-A08 | 全完成重启 | pass | chain：重启 effect=0、状态保持 |
+| OP-L01 | 预算 | pass（数值） | chain ledger：规划/子 Task 各自 consumed，Campaign 汇总 |
+| OP-L02 | 准入额度 | pass | `E1-CONTRACT: aggregate budget` |
+| OP-L03 | 窗口 | pass | C6 recheck R14/R15 保留 |
+| OP-L04 | 停止 | pass | C6 rotation/control 保留 |
+| OP-U01 | 启动/CLI | pass | observe/status/export/measure 零请求（`aegis-c6-service-measure`） |
+| OP-U02 | 刷新/HTTP | pass | `aegis-c4a-observation-http` + `c5-export-observation` |
+| OP-U03 | 只读/HTTP | pass | `aegis-c4a-observation-http` C4A-4a |
+| OP-U04 | 隐私/XSS | pass | `aegis-c4a-observation-xss` |
+| OP-U05 | 规模/分页 | pass | observation limits（C4a-6a） |
+| OP-U06 | 重建 | pass | chain 重启 + `E1-GRAPH` 从 committed 重建 |
+| OP-U07 | 坏链 | pass | C4a-6b integrity_failure |
+| OP-U08 | 正常兼容 | pass | `aegis-e1-remote-provider` exit 0 |
+
+浏览器交互未运行：标 **not_run**（本环境无真实浏览器；交 HTTP/DOM 与可开本地页面证据）。
+
+## required 逐脚本（exact argv / exit）
+
+```bash
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/e1-observable-run1/c6 <18 C6 名称>       # 18 scripts, 0 failed
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/e1-observable-run1/regress <26 名称>       # 26 scripts, 0 failed
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/e1-observable-run1/affected <8 名称>       # 8 scripts, 0 failed
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/e1-observable-run1/e1 <4 E1 名称>          # 4 scripts, 0 failed
+./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json --pretty false                       # exit 1, 196→196, 修改文件 0
+./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json <19 modified paths>          # exit 0
+```
+
+## 有限 mutation（行为 FAIL）
+
+| mutation | 目标 case | 实际 |
+| --- | --- | --- |
+| 清空存储 depends_on | E1-PLAN diamond | FAIL ✓ |
+| 忽略 plan-ready 门 | E1-PLAN 门分离 | FAIL ✓ |
+| 跳过 target 授权 | chain 整图拒绝 | FAIL ✓ |
+| parentage 冒充 dependency | E1-GRAPH | FAIL ✓ |
+| 计划提交即根目标完成 | E1-PLAN 候选记录 | FAIL ✓ |
