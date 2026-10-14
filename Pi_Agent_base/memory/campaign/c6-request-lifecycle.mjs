@@ -59,9 +59,9 @@ export function isRequestId(value) {
 export function classifyStopReason(stopReason) {
 	if (stopReason === "error") return { providerStatus: "error", planningStatus: "error" };
 	if (stopReason === "aborted") return { providerStatus: "aborted", planningStatus: "aborted" };
-	if (stopReason === "pending" || stopReason === undefined || stopReason === null)
-		return { providerStatus: "unknown", planningStatus: "unknown" };
-	return { providerStatus: "ok", planningStatus: "normal" };
+	if (["stop", "length", "toolUse", "deferred"].includes(/** @type {string} */ (stopReason)))
+		return { providerStatus: "ok", planningStatus: "normal" };
+	return { providerStatus: "unknown", planningStatus: "unknown" };
 }
 
 /**

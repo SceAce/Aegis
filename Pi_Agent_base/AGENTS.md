@@ -112,3 +112,14 @@ baseline is unchanged. Status is **internally_verified / awaiting_external_revie
 four repairs remain recognized. Engineering acceptance permits consideration
 of a limited real-task pilot; unrelated warnings and deferred infrastructure
 do not reopen this repair scope.
+
+Latest bounded external review (2026-10-14): see `../docs/C6_EXTERNAL_REVIEW.md`
+section 8. The two DS repair groups are accepted. A real SDK tool-result
+persistence failure exposed a planning error after request settlement; that
+small wiring gap was fixed here. All assistant termination events now update
+planning state independently of outstanding requests. Final architecture tests
+pass 13/13, convergence 26/26, all 18 C6 scripts and 26 regressions pass, and
+the 196-diagnostic type baseline is unchanged. The limited engineering gate is
+passed; the next stage is a bounded real-task pilot with explicitly selected
+provider, scope, budget and Oracle. This review did not run a real provider.
+SIGTERM is Task-boundary drain; do not claim immediate active-Task cancellation.

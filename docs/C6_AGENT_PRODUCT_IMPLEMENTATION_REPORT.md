@@ -409,7 +409,26 @@ committed 缺任一 id/错配 → invalid 诊断、不结算；未知终止 + �
 
 - 终止分类以真实 Pi SDK/faux 的 `stopReason` 验证；真实 provider 的流式故障/远程取消未实测。
 - aborted 结果接入现有 task-unknown + reconciliation 策略，未新增自动退款/重试/人工结算平台。
-- 取消发生在 dispatch 前的检查由既有 Host/Scheduler 控制边界保证；本轮未新增分布式取消机制。
+- Host/Scheduler 的持久控制按 Task 调度边界生效；不能据其推导活动 Task 的即时取消。
+  SIGTERM 为 drain，本轮未新增分布式取消机制（后续限定复验说明见 external review §8）。
 
 状态：**internally_verified / awaiting_external_review**（DS 内部工程验证完成，交限定复验；
 不代表用户接受或真实模型能力已验证）。
+
+## 16. 限定外部复验与 SDK 收尾补修
+
+复验起点 `d1a81c8`。原两组修复和18个 C6/26个回归独立复跑通过；真实 SDK 工具结果
+保存失败时，合成 error 在 provider reservation 清空之后到达，仍释放 buffered decision。
+AR-11 在旧产品上实际失败（provider1/effect1/文件Ada/Task completed）。
+
+本会话按用户的小修授权调整 `c6-model-worker.mjs`：全部 assistant 结束事件推导规划结果，
+仅实际 outstanding 响应提交账务；synthetic SDK failure 使用 `planning_error`/
+`planning_aborted`，请求已结清事实与消费保持不变。raw prompt throw 和最终 unknown 同样
+阻断执行；分类器改为显式正常枚举。新增真实 SDK AR-11、LC-B8三变体、LC-B9并加强LC-T1。
+
+最终AR-11为provider1/consumed1/unresolved0/effect0/文件不变/Task unknown。
+架构13/13、convergence26/26、18个 C6与26个回归0 failed、Biome exit0；tsc exit1，
+196条诊断逐条不变。隔离副本两项终止 mutation 均由行为断言捕获；未改Pi/凭据/config/lockfile。
+证据见 `C6_EXTERNAL_REVIEW.md` §8 和 ignored `runtime/dev/c6-three-facts-external-20261014/`。
+
+当前限定工程门槛通过，可推进有限真实任务 pilot；本轮未运行真实 provider。

@@ -1,11 +1,11 @@
-# C6 限定工程审查：changes_required
+# C6 限定工程审查：通过有限真实任务 pilot 工程门槛
 
-状态：**changes_required；暂不进入实际环境实验**。
-最新独立复验基线 `93d4617`，见第7节；此前复验保留为历史证据。
-原请求门修复及生命周期收敛的已有检查通过；新增组合检查仍发现预算重建与中止后执行两组阻塞问题。
+状态：**限定工程复验通过，可推进有限真实任务 pilot**；真实 provider/任务效果尚未实测。
+最新独立复验以 DS 交回 `d1a81c8` 为起点，并完成一项 SDK 收尾错误的小修复，见第8节。
+第1–7节保留历史基线与失败证据，不能据其旧状态覆盖最新限定结论。
 初轮审查基线 `7b7e92d` / `feat/c6-agent-product`，开始工作树干净；内嵌 Pi `42a3497d0` 干净。
-本轮按用户要求复核 DS 交付并补其他测试，未修改产品代码、未运行真实模型/外部目标。
-正常 SDK/faux + 本地 Broker 效果已成立，但以下缺陷和缺失接线违反原 C6 冻结承诺。
+初轮按用户要求复核 DS 交付并补其他测试；第8节记录本次产品小修复。均未运行真实模型/外部目标。
+正常 SDK/faux + 本地 Broker 效果已成立；以下历史缺陷与修复记录用于追溯原 C6 冻结承诺。
 本报告不增加性能/缓存/并行/容器/任意任务理解门槛，C1-C5 保持原验收范围。
 
 ## 1. 初轮实际验证（7b7e92d）
@@ -355,3 +355,81 @@ UI/格式偏好、F16、OS sandbox、多Worker、自动结算平台与复杂经�
 边界和后置记录；真实provider计费、流式故障、模型效果属于pilot的测量目标。
 有限pilot具体选择模型/endpoint、现有任务家族的小目录、授权、预算、独立Oracle和停止条件；
 本次审查通过不应被扩大为任意目标/任意代码可安全无人值守生产运行。
+
+## 8. d1a81c8 三个事实分离复验与 SDK 收尾补修
+
+日期：2026-10-14。起始分支 `feat/c6-agent-product`，HEAD `d1a81c8`，工作树干净；
+内嵌 Pi `42a3497d03ad17e308a2299fa824727894f2c0ec` 干净。
+DS 的 `6d3f334`、`ca823c1`、`d1a81c8` 三次本地提交与报告一致。
+
+### 8.1 认可原两组修复
+
+逐文件检查本轮 diff、真实 SDK 结束路径、live Worker、入口持久化与重建、Composite→Broker。
+reconciliation 现在按侧恢复 consumed，并独立计算联合 unresolved；Task seed 继续按归属隔离。
+error/aborted 的 provider 结束路径保留类别、消费与失败返回。原第7节两组反例实际复跑全部消失：
+
+- 单侧成功重建 remaining=4；两侧成功但缺联合 durable commit 仍 unresolved=1。
+- 真实 EventLog+SIGKILL 后独立 queued Task provider=0、Broker effect=0、责任=1、链完整。
+- 真实 SDK aborted/error follow-up provider=2、消费=2、Broker effect=0、文件不变、Task unknown。
+- 正常控制仍有真实文件 effect、Oracle completed，重启不重复 provider/effect。
+
+原18个 C6 与26个回归在当前代码独立复跑全部 exit0。初次受限执行的 external C6-X9 因
+本机 `listen EPERM` 失败；单独 listener 探针确认权限原因，获准本机监听后 required 全部通过。
+沙箱失败不算产品失败或 pass；没有用 DS 历史日志替换当前复跑结果。
+DS 私有 results 的18/26数量与退出码、red 日志、5项 mutation 日志已核对；本会话没有把
+DS 的5项 mutation 宣称成独立复跑。
+
+### 8.2 发现并直接修复的同一终止接线盲区
+
+`d1a81c8` 的规划分类仍放在 `if (gate.outstanding)` 内。provider response 已结清之后，
+真实 SDK 保存工具结果或收尾失败，可合成 assistant error；此时没有新 reservation，规划错误
+被忽略，先前的 decision 仍进入 Broker。这是第三个事实与 request outstanding 继续混用。
+
+新增 AR-11 只让真实 SDK `SessionManager.appendMessage(toolResult)` 抛一次错误，其余仍为
+真实 SDK/faux、Worker、Broker、Oracle、EventLog，不直接伪造 Worker/Broker 返回值。
+
+| 同一输入 | `d1a81c8` red | 本次补修 green |
+| --- | --- | --- |
+| SDK 工具结果保存失败 | SDK 合成 error，provider1，已消费1 | 同左 |
+| 请求账务 | 一条合法 committed、unresolved0 | 同左，合成 error 不增加或改写 provider 账务 |
+| 规划/动作 | Broker effect1、文件 name=Ada、Task completed | planning_error、Broker effect0、文件 name=??、Task unknown |
+
+补修：所有 assistant message_end 都更新规划状态，实际有 outstanding 的响应才做请求记账；
+raw prompt throw 也阻断动作；最终未知状态不继承先前 normal；分类器只接受当前 SDK 的显式
+正常枚举，其余保持 unknown。复用现有 Scheduler 的 unknown/reconciliation 事件持久化规划失败，
+不把已结清请求重新变成 pending，不新增平台或改 Pi。
+
+新增聚焦用例 LC-B8-error/aborted/prompt_throw、LC-B9，以及 LC-T1 的未知值断言。
+旧产品上的 AR-11 和最初4个聚焦断言实际为行为 red，日志完整保留。最终架构13/13、
+convergence26/26；原 AR-08/09/10 和生命周期恢复继续通过。
+
+### 8.3 最终独立验证与证据
+
+| 检查 | 本会话最终结果 |
+| --- | --- |
+| explicit required | 18个 C6 + 26个回归，共44个脚本，0 failed |
+| architecture-review | 13/13，含真实 SDK 收尾失败与正常/中止/硬重启控制 |
+| lifecycle-convergence | 26/26 |
+| recheck / external | 23/23、22/22 |
+| lifecycle-restart | all checks passed |
+| Biome | 8个相关代码/测试文件，exit0 |
+| Campaign tsc | exit1，196条历史诊断，与本会话补修前逐条相同；修改文件0条 |
+| 本会话有限 mutation | 隔离副本正常控制pass；终止更新依赖 reservation、unknown沿用normal，2/2因行为断言失败 |
+
+日志根：ignored `Pi_Agent_base/runtime/dev/c6-three-facts-external-20261014/`。
+`required/results.json` 是补修前44个脚本复跑；`final-required/results.json` 是最终44个脚本，
+均包含 exact argv/exit/log。`late-sdk-red.log`、`termination-red.log` 是新增行为失败；
+`external-mutations.json` 与对应日志是隔离 mutation；`static-results.json`、`tsc-final.log`、
+`biome-final.log` 是本次静态/类型结果。未使用真实凭据或调用真实 provider。
+
+### 8.4 限定出口
+
+DS 原两组修复认可，本会话发现的同一规划终止遗漏已补齐。当前冻结工程门槛通过，
+可以推进现有任务家族、小目录、有限预算、独立 Oracle 的真实任务 pilot。
+真实 provider 流式故障/计费/模型效果仍由 pilot 测量；既有196条类型诊断、保守pre-check、
+精确token估算、F16、OS sandbox、多Worker不重开此轮工程范围。
+
+本次证明 SDK error/aborted 后不执行。不要据此声称 SIGTERM 能立即撤销正在运行的 Task：
+当前 Host/Scheduler 的持久控制在 Task 调度边界生效，SIGTERM 为 drain，活动 Task 可能继续
+完成；强制退出后的 unknown 恢复另由 SIGKILL 用例证明。有限 pilot 按这个停止语义运行，
+不把“收到了控制事件”当作所有 provider/工具已即时取消。真实 pilot 本轮未启动。

@@ -230,6 +230,8 @@ FileHandle GC finalizer 错误）。`c6-suite-runner.mjs` 按测试是否 import
 
 - `provider_status=error`/`aborted`（SDK 硬退出）：请求仍计费一次，任务转 unknown，决策不执行。
   `aborted` 不再被当作正常结束；`message_end`/`prompt()` 返回不单独证明正常完成。
+- provider 已结清之后的 SDK 工具结果保存/收尾错误仍使规划失败（`planning_error`/
+  `planning_aborted`）；使用既有 Task unknown/reconciliation 记录，已结清账务不再预留或重复计费。
 - provider 已启动但无 completion（进程崩溃 / 传输中断）：保留 pending hold 不退款，
   写 `phase=reconciliation_required`，运行停止。
 - `reconciliation_required` 确认某侧 committed 时只恢复该侧已发生责任；两侧均确认但无
@@ -273,3 +275,5 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 - 未对接真实 provider 计费/错误模式；`provider_status`/usage 依赖后端可观测性。
 - `measureProviderInput` 是字符估算而非精确 tokenizer；backend token/currency 保持 unknown。
 - workspace 不是 OS sandbox；进程崩溃恢复已验证“保留/阻断”，未建自动结算平台。
+- SIGTERM/Host持久控制按 Task 调度边界 drain，活动 Task 可能继续完成；不承诺立即撤销
+  当前规划或副作用。SDK实际 error/aborted 的动作阻断与硬退出后的保守恢复已验证。

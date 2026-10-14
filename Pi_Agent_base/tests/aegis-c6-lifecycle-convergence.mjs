@@ -535,6 +535,89 @@ test("LC-B7: an aborted SDK response is a hard exit, not an executable decision"
 	assert.equal(committed.stop_reason, "aborted", "the durable record keeps the raw stopReason");
 });
 
+for (const stopReason of ["error", "aborted", "prompt_throw"]) {
+	test(`LC-B8-${stopReason}: a synthetic SDK termination after settlement blocks the buffered decision`, async () => {
+		const { session, listeners } = fakeSession();
+		let providerCalls = 0;
+		session.agent.streamFunction = async () => {
+			providerCalls += 1;
+			return {};
+		};
+		session.prompt = async () => {
+			await session.agent.streamFunction({}, { messages: [] });
+			emitMessageEnd(listeners, { role: "assistant", content: [], stopReason: "stop" });
+			// The SDK can fail after the provider response, without a new reservation.
+			if (stopReason === "prompt_throw") throw new Error("SDK planning failed after response settlement");
+			emitMessageEnd(listeners, { role: "assistant", content: [], stopReason });
+		};
+		const { campaign, task } = makeLedgers();
+		const persisted = [];
+		const guard = { unresolved: 0, diagnostics: 0, runtimeBlocked: false };
+		const worker = createModelWorker({
+			session: () => session,
+			ledger: campaign,
+			ledgerFactory: () => task,
+			context: CONTEXT,
+			taskId: "task-001",
+			goal: "demo",
+			reconciliationGuard: guard,
+			decisionBuffer: { list: () => [{ action_ref: "data.record.set", arguments: {} }] },
+			persistRequest: async (record) => {
+				persisted.push(record);
+				return { ok: true };
+			},
+		});
+		const result = await worker.run({ task: { task_id: "task-001" } });
+		assert.equal(result.ok, false);
+		assert.equal(result.failure_mode, stopReason === "aborted" ? "planning_aborted" : "planning_error");
+		assert.equal(result.reconciliation.planning_status, stopReason === "aborted" ? "aborted" : "error");
+		assert.equal(result.reconciliation.provider_status, "ok", "a synthetic message does not rewrite the provider fact");
+		assert.equal(result.decisions, undefined);
+		assert.equal(guard.runtimeBlocked, true);
+		assert.equal(providerCalls, 1);
+		assert.equal(campaign.consumed().model_requests, 1);
+		assert.equal(task.consumed().model_requests, 1);
+		assert.deepEqual(
+			persisted.map((record) => record.phase),
+			["reserved", "committed"],
+		);
+		assert.equal(summarizeRequestLedger(persisted.map((record) => requestEvent(record))).unresolved, 0);
+	});
+}
+
+test("LC-B9: an unknown final response cannot inherit normal termination from an earlier response", async () => {
+	const { session, listeners } = fakeSession();
+	let providerCalls = 0;
+	session.agent.streamFunction = async () => {
+		providerCalls += 1;
+		return {};
+	};
+	session.prompt = async () => {
+		for (const stopReason of ["toolUse", "pending"]) {
+			await session.agent.streamFunction({}, { messages: [] });
+			emitMessageEnd(listeners, { role: "assistant", content: [], stopReason });
+		}
+	};
+	const { campaign, task } = makeLedgers();
+	const worker = createModelWorker({
+		session: () => session,
+		ledger: campaign,
+		ledgerFactory: () => task,
+		context: CONTEXT,
+		taskId: "task-001",
+		goal: "demo",
+		decisionBuffer: { list: () => [{ action_ref: "data.record.set", arguments: {} }] },
+		persistRequest: async () => ({ ok: true }),
+	});
+	const result = await worker.run({ task: { task_id: "task-001" } });
+	assert.equal(providerCalls, 2);
+	assert.equal(result.ok, false);
+	assert.equal(result.failure_mode, "planning_termination_unknown");
+	assert.equal(result.reconciliation.planning_status, "unknown");
+	assert.equal(campaign.consumed().model_requests, 2);
+	assert.equal(task.consumed().model_requests, 2);
+});
+
 // ---------------------------------------------------------------------------
 // C. Per-Task pending isolation and Campaign aggregation.
 // ---------------------------------------------------------------------------
@@ -1034,4 +1117,5 @@ test("LC-T1: the SDK termination classifier keeps error/aborted distinct from no
 	assert.deepEqual(classifyStopReason("deferred"), { providerStatus: "ok", planningStatus: "normal" });
 	assert.deepEqual(classifyStopReason("pending"), { providerStatus: "unknown", planningStatus: "unknown" });
 	assert.deepEqual(classifyStopReason(undefined), { providerStatus: "unknown", planningStatus: "unknown" });
+	assert.deepEqual(classifyStopReason("unrecognized"), { providerStatus: "unknown", planningStatus: "unknown" });
 });

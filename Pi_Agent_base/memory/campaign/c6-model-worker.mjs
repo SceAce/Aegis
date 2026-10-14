@@ -988,6 +988,14 @@ export function createModelWorker(
 		let assistantText = "";
 		const unsubscribe = activeSession.subscribe((event) => {
 			if (event.type === "message_end" && event.message?.role === "assistant") {
+				// SDK failures can arrive after the provider response was settled (for
+				// example, while saving a tool result). Planning termination belongs to
+				// the whole run, independently of whether a request is outstanding.
+				const classified = classifyStopReason(event.message.stopReason);
+				if (classified.planningStatus === "error" || classified.planningStatus === "aborted")
+					gate.planningStatus = classified.planningStatus;
+				else if (gate.planningStatus !== "error" && gate.planningStatus !== "aborted")
+					gate.planningStatus = classified.planningStatus;
 				const content = Array.isArray(event.message.content) ? event.message.content : [];
 				const text = content
 					.filter((part) => part?.type === "text")
@@ -1002,16 +1010,8 @@ export function createModelWorker(
 					gate.lastRequest = reservation;
 					usage = event.message.usage ?? usage;
 					assistantText = text;
-					// Pi distinguishes a completed response from a hard error/abort. Keep
-					// that distinction instead of mapping "not error" to ok.
-					const classified = classifyStopReason(event.message.stopReason);
 					const providerStatus = classified.providerStatus;
 					gate.providerStatus = providerStatus;
-					if (classified.planningStatus === "error" || classified.planningStatus === "aborted")
-						gate.planningStatus = classified.planningStatus;
-					else if (gate.planningStatus !== "error" && gate.planningStatus !== "aborted")
-						gate.planningStatus =
-							classified.planningStatus === "unknown" ? (gate.planningStatus ?? "unknown") : "normal";
 					const pending = finalizeRequest({
 						reservation,
 						usage,
@@ -1044,6 +1044,7 @@ export function createModelWorker(
 			// raw throw is a transport failure. Either way the unified finalization
 			// below decides the outcome -- there is no early return.
 			promptError = error;
+			if (gate.planningStatus !== "aborted") gate.planningStatus = "error";
 			stopReason = "transport_failure";
 			if (onEvent) onEvent({ kind: "task.error", task_id: effectiveTaskId, error: String(error) });
 		} finally {
@@ -1128,16 +1129,19 @@ export function createModelWorker(
 		} else if (!commitOk) {
 			failureMode = "accounting_failure";
 			failureDetail = reconciliation.commit_error;
+		} else if (promptError) {
+			failureMode = gate.providerStarted ? "planning_error" : "transport_failure";
+			failureDetail = String(promptError);
 		} else if (gate.planningStatus === "error") {
-			failureMode = "provider_error";
-			failureDetail = "the provider request ended with an error; its settlement is retained for reconciliation";
+			failureMode = gate.providerStatus === "error" ? "provider_error" : "planning_error";
+			failureDetail = "the SDK planning ended with an error; occurred request settlements are retained";
 		} else if (gate.planningStatus === "aborted") {
-			failureMode = "provider_aborted";
+			failureMode = gate.providerStatus === "aborted" ? "provider_aborted" : "planning_aborted";
 			failureDetail =
 				"the model planning was aborted; occurred requests stay charged and no decision reaches the Broker";
-		} else if (promptError && !gate.providerStarted) {
-			failureMode = "transport_failure";
-			failureDetail = String(promptError);
+		} else if ((gate.planningStatus === "unknown" || gate.planningStatus === null) && decisions.length > 0) {
+			failureMode = "planning_termination_unknown";
+			failureDetail = "no trustworthy SDK termination evidence; the buffered decision is not executable";
 		}
 		if (failureMode) {
 			reconciliation.category = failureMode;
@@ -1147,7 +1151,15 @@ export function createModelWorker(
 			// certain (provider 0) and does not block independent tasks.
 			if (
 				reconciliationGuard &&
-				["reconciliation_required", "accounting_failure", "provider_error", "provider_aborted"].includes(failureMode)
+				[
+					"reconciliation_required",
+					"accounting_failure",
+					"provider_error",
+					"provider_aborted",
+					"planning_error",
+					"planning_aborted",
+					"planning_termination_unknown",
+				].includes(failureMode)
 			)
 				reconciliationGuard.runtimeBlocked = true;
 			if (onEvent)
@@ -1199,25 +1211,6 @@ export function createModelWorker(
 				failure_mode: "no_model_decision",
 				detail: "the model did not submit a structured task decision",
 				stop_reason: stopReason,
-			};
-		}
-		// A buffered decision is only executable when the planning ended with a
-		// trustworthy termination. Missing/unknown termination evidence is not a
-		// normal end (the real SDK always sets a stopReason; this guards the boundary).
-		if (gate.planningStatus === "unknown" || gate.planningStatus === null) {
-			if (onEvent)
-				onEvent({
-					kind: "task.blocked",
-					task_id: effectiveTaskId,
-					reason: "the model planning has no trustworthy termination evidence",
-					failure_mode: "planning_termination_unknown",
-				});
-			return {
-				ok: false,
-				failure_mode: "planning_termination_unknown",
-				detail: "no trustworthy SDK termination evidence; the buffered decision is not executable",
-				provider_requests: gate.providerRequests,
-				reconciliation,
 			};
 		}
 		// The Worker returns the TRANSPORT fact only, and ONLY after the final

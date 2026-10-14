@@ -23,8 +23,32 @@ import { validateManifest } from "../../memory/campaign/manifest.mjs";
 import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
 import { EventLog } from "../../memory/runtime/events.mjs";
 
-const sdk = { ...sdkBase, AuthStorage };
 const [workDir, scenario = "recover"] = process.argv.slice(2);
+let sdkPersistenceFailures = 0;
+const sdkErrors = [];
+const sdk = {
+	...sdkBase,
+	AuthStorage,
+	async createAgentSessionFromServices(options) {
+		const created = await sdkBase.createAgentSessionFromServices(options);
+		if (scenario === "sdk_result_persist_error") {
+			const manager = created.session.sessionManager;
+			const append = manager.appendMessage.bind(manager);
+			manager.appendMessage = (message) => {
+				if (sdkPersistenceFailures === 0 && message.role === "toolResult") {
+					sdkPersistenceFailures += 1;
+					throw new Error("injected SDK tool-result persistence failure");
+				}
+				return append(message);
+			};
+			created.session.subscribe((event) => {
+				if (event.type === "message_end" && event.message?.role === "assistant" && event.message.stopReason === "error")
+					sdkErrors.push(event.message.errorMessage);
+			});
+		}
+		return created;
+	},
+};
 mkdirSync(workDir, { recursive: true });
 const workspaceRoot = join(workDir, "workspace");
 mkdirSync(workspaceRoot, { recursive: true });
@@ -175,6 +199,8 @@ writeFileSync(
 			failure_modes: events
 				.filter((event) => event.payload?.kind === "campaign.reconciliation.requested")
 				.map((event) => event.payload.failure_mode ?? null),
+			sdk_persistence_failures: sdkPersistenceFailures,
+			sdk_errors: sdkErrors,
 			task_unknown: events.filter((event) => event.payload?.kind === "campaign.task.unknown").length,
 			reconciliation_events: events.filter((event) =>
 				String(event.payload?.kind ?? "").startsWith("campaign.reconciliation"),

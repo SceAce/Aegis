@@ -300,3 +300,18 @@ required：**18 个 C6 脚本 0 failed**（旧15 + lifecycle-convergence + lifec
 **26 个回归 0 failed**；tsc 196→196/修改文件 0；Biome exit 0。
 日志 `Pi_Agent_base/runtime/dev/c6-three-facts-run1/`（ignored）：`architecture-red.log`、
 `mutations.log`、`final/results.json`、`regress/results.json`、`tsc-before.log`、`tsc-after.log`、`biome.log`。
+
+## 限定外部复验：SDK 收尾错误（起点 d1a81c8）
+
+| case | 输入/真实证据 | red → green |
+| --- | --- | --- |
+| AR-11 | 真实 SDK 工具结果 append 单点抛错，SDK合成error；正常provider账务保持已结清 | effect1/文件Ada/completed → effect0/文件不变/unknown；provider和消费均1 |
+| LC-B8-error/aborted | 已结清后无新reservation的合成终止 | 不放行decision；provider状态仍ok、规划error/aborted |
+| LC-B8-prompt_throw | prompt在已结清响应后抛错 | planning_error、无decision、消费保留 |
+| LC-B9 | normal响应后最终unknown | 不继承先前normal、不执行 |
+| LC-T1新增 | 未识别终止值 | unknown不自动正常 |
+
+最终architecture13/13、convergence26/26；18个 C6+26个回归全部exit0；Biome通过；
+tsc196条诊断逐条不变。两项隔离mutation（终止更新仍依赖reservation、unknown继承normal）
+均因行为断言失败。DS原5项mutation日志仅核对，未称独立复跑。
+exact argv/exit/log与范围见 `C6_EXTERNAL_REVIEW.md` §8。

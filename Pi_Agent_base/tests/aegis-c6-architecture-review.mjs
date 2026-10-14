@@ -326,3 +326,34 @@ test("AR-10: SIGKILL after fallback reconciliation cannot erase the charge or un
 	assert.equal(recovered.reconciliation.unresolved_requests, 1);
 	assert.equal(recovered.ledger.consumed.model_requests + recovered.ledger.reserved.model_requests, 1);
 });
+
+test("AR-11: an SDK error after request settlement cannot execute the buffered decision", (t) => {
+	const workDir = productDir(t);
+	const run = child(workDir, "sdk_result_persist_error");
+	assert.equal(run.status, 0, run.stderr);
+	const summary = productSummary(workDir, "sdk_result_persist_error");
+	t.diagnostic(
+		JSON.stringify({
+			providerCalls: summary.providerCalls,
+			brokerEffects: summary.brokerEffects,
+			taskStates: summary.task_states,
+			dataset: summary.dataset,
+			consumed: summary.ledger.consumed.model_requests,
+			sdkErrors: summary.sdk_errors,
+			failureModes: summary.failure_modes,
+		}),
+	);
+	assert.equal(summary.sdk_persistence_failures, 1, "only the actual SDK tool-result append fails");
+	assert.deepEqual(summary.sdk_errors, ["injected SDK tool-result persistence failure"]);
+	assert.equal(summary.providerCalls, 1, "the synthetic SDK error is not a second provider request");
+	assert.equal(summary.ledger.consumed.model_requests, 1);
+	const committed = summary.requests.filter((request) => request.phase === "committed");
+	assert.equal(committed.length, 1);
+	assert.equal(committed[0].provider_status, "ok", "the completed provider response remains a separate fact");
+	assert.equal(summarizeRequestLedger(productEvents(workDir)).unresolved, 0, "request accounting stays settled");
+	assert.equal(summary.brokerEffects, 0, "SDK planning failure cannot reach the Broker after settlement");
+	assert.equal(summary.dataset.name, "??");
+	assert.notEqual(summary.task_states["task-001"], "completed");
+	assert.ok(summary.failure_modes.includes("planning_error"));
+	assert.ok(verifyChain(productEvents(workDir)).ok);
+});
