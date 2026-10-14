@@ -2,8 +2,8 @@
 //
 // The user selects a provider through the TRUSTED config file. This module turns
 // that selection into the exact arguments the SDK's creation seam needs, and
-// refuses anything it does not recognize. It NEVER reads the user's default
-// auth/models/settings and NEVER prints a credential value.
+// refuses anything it does not recognize. Pi config reuse requires an explicit
+// agent directory and provider/model selection; credentials are never printed.
 //
 // The development default is the offline `faux` provider. A `local-*` provider
 // is only accepted with a loopback `base_url`. E1 adds an explicit HTTPS
@@ -24,6 +24,7 @@ export const PROVIDER_CONFIG_VERSION = "1.0";
  */
 export const KNOWN_PROVIDERS = Object.freeze({
 	faux: { implemented: true, offline: true, requires_base_url: false, loopback_only: false },
+	"pi-config": { implemented: true, offline: false, requires_base_url: false, loopback_only: false },
 	"remote-openai": {
 		implemented: true,
 		offline: false,
@@ -74,8 +75,11 @@ export function resolveProviderConfig(provider) {
 	}
 	if (!isPlainObject(provider)) return { ok: false, reasons: ["config.provider must be an object"], provider: null };
 	for (const key of Object.keys(provider)) {
-		if (!["kind", "model", "base_url", "credential_ref"].includes(key))
-			reasons.push(`unknown config.provider key "${key}"`);
+		const allowed =
+			provider.kind === "pi-config"
+				? ["kind", "model", "provider_id", "agent_dir", "max_output_tokens"]
+				: ["kind", "model", "base_url", "credential_ref"];
+		if (!allowed.includes(key)) reasons.push(`unknown config.provider key "${key}"`);
 	}
 	const kind = provider.kind;
 	if (typeof kind !== "string" || kind.length === 0) reasons.push("config.provider.kind is required");
@@ -96,6 +100,17 @@ export function resolveProviderConfig(provider) {
 	if (spec?.requires_base_url && !provider.base_url) reasons.push(`config.provider "${kind}" requires base_url`);
 	if (spec?.loopback_only && provider.base_url && !isLoopbackBaseUrl(provider.base_url))
 		reasons.push(`config.provider "${kind}" base_url must be a loopback http URL`);
+	if (kind === "pi-config") {
+		if (typeof provider.provider_id !== "string" || !provider.provider_id.trim())
+			reasons.push("pi-config requires provider_id");
+		if (typeof provider.agent_dir !== "string" || !isAbsolute(provider.agent_dir))
+			reasons.push("pi-config requires an absolute agent_dir");
+		if (
+			provider.max_output_tokens !== undefined &&
+			(!Number.isSafeInteger(provider.max_output_tokens) || provider.max_output_tokens <= 0)
+		)
+			reasons.push("pi-config max_output_tokens must be a positive safe integer");
+	}
 	if (kind === "remote-openai") {
 		try {
 			const url = new URL(provider.base_url);
@@ -126,6 +141,13 @@ export function resolveProviderConfig(provider) {
 		provider: {
 			kind,
 			model: provider.model,
+			...(kind === "pi-config"
+				? {
+						provider_id: provider.provider_id,
+						agent_dir: resolve(provider.agent_dir),
+						max_output_tokens: provider.max_output_tokens ?? 4096,
+					}
+				: {}),
 			base_url: provider.base_url ?? null,
 			credential_ref: provider.credential_ref ?? null,
 			api: spec?.api ?? null,

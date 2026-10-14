@@ -6,7 +6,8 @@ C1-C5保持既有验收范围；C6三个事实分离已核验，同一SDK收尾�
 通过的是有限真实任务pilot工程门槛，尚未启动真实provider。
 
 当前规划：[E1_REAL_TASK_PILOT_PLAN.md](E1_REAL_TASK_PILOT_PLAN.md)。
-执行补充：用户已选max中转站dsv4.1flash；remote-openai最小接线及操作者入口已准备，
+执行补充：用户已选max中转站dsv4.1flash，并要求直接复用Pi已有模型与鉴权；
+`pi-config`按明确目录复用Pi ModelRuntime和只读凭据，操作者入口已准备，
 由用户亲自执行，见[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。未运行真实调用。
 工程证据：[C6_EXTERNAL_REVIEW.md](C6_EXTERNAL_REVIEW.md) 第8节。
 运行入口：[C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。

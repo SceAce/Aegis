@@ -1,11 +1,11 @@
 // Offline real SDK + intercepted OpenAI transport; never calls max or reads real auth.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as sdkBase from "@earendil-works/pi-coding-agent";
-import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
+import { AuthStorage, ReadOnlyAuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
 import { inspectMaxPilot, prepareMaxPilot } from "../memory/campaign/e1-max-pilot.mjs";
 import { resolveProviderConfig } from "../memory/campaign/provider-config.mjs";
@@ -28,13 +28,53 @@ assert.equal(resolveProviderConfig({ ...selection, credential_ref: null }).ok, f
 assert.equal(resolveProviderConfig({ ...selection, credential_ref: 42 }).ok, false);
 assert.equal(resolveProviderConfig({ ...selection, credential_ref: "file:/tmp/key" }).ok, false);
 assert.equal(resolveProviderConfig({ ...selection, kind: "local-openai" }).ok, false);
+const piSelection = {
+	kind: "pi-config",
+	provider_id: "relay",
+	model: selection.model,
+	agent_dir: join(tmpdir(), "pi-e1-config"),
+	max_output_tokens: 4096,
+};
+assert.equal(resolveProviderConfig(piSelection).ok, true, "explicit Pi configuration must resolve");
+for (const override of [
+	{ provider_id: "" },
+	{ agent_dir: "relative/path" },
+	{ agent_dir: 42 },
+	{ max_output_tokens: 0 },
+	{ max_output_tokens: 1.5 },
+	{ credential_ref: "env:OTHER_KEY" },
+	{ base_url: "https://another.example/v1" },
+])
+	assert.equal(resolveProviderConfig({ ...piSelection, ...override }).ok, false);
 
 const root = mkdtempSync(join(tmpdir(), "aegis-e1-remote-"));
 const originalFetch = globalThis.fetch;
 const oldKey = process.env.AEGIS_E1_TEST_KEY;
 const oldMaxKey = process.env.AEGIS_MAX_API_KEY;
-const sdk = { ...sdkBase, AuthStorage };
+const sdk = { ...sdkBase, AuthStorage, ReadOnlyAuthStorage };
 try {
+	const piDir = join(root, "pi-agent");
+	mkdirSync(piDir);
+	const piModels = {
+		providers: {
+			relay: {
+				api: "openai-completions",
+				baseUrl: selection.base_url,
+				compat: { maxTokensField: "max_completion_tokens", supportsStore: true },
+				models: [{ id: selection.model, contextWindow: 128000, maxTokens: 16384, headers: { "x-pi-fixture": "yes" } }],
+			},
+		},
+	};
+	writeFileSync(join(piDir, "models.json"), JSON.stringify(piModels));
+	writeFileSync(
+		join(piDir, "settings.json"),
+		JSON.stringify({ defaultProvider: "relay", defaultModel: selection.model }),
+	);
+	writeFileSync(join(piDir, "auth.json"), JSON.stringify({ relay: { type: "api_key", key: "offline-test-key" } }));
+	writeFileSync(join(piDir, "models-store.json"), "{}");
+	const piBefore = ["models.json", "settings.json", "auth.json", "models-store.json"].map((name) =>
+		readFileSync(join(piDir, name), "utf8"),
+	);
 	const workspace = join(root, "workspace");
 	mkdirSync(workspace);
 	writeFileSync(join(workspace, "dataset.json"), '{"name":"??"}\n');
@@ -70,8 +110,14 @@ try {
 		assert.equal(request.headers.get("authorization"), "Bearer offline-test-key");
 		const body = await request.json();
 		assert.equal(body.model, selection.model);
-		assert.equal(body.max_tokens, 4096);
-		assert.equal(body.store, undefined);
+		if (request.headers.get("x-pi-fixture") === "yes") {
+			assert.equal(body.max_completion_tokens, 4096, "reuse Pi compatibility and apply pilot output cap");
+			assert.equal(body.max_tokens, undefined);
+			assert.equal(body.store, false);
+		} else {
+			assert.equal(body.max_tokens, 4096);
+			assert.equal(body.store, undefined);
+		}
 		requests.push(body);
 		const stage = (requests.length - 1) % 3;
 		const codeTask = JSON.stringify(body.messages).includes("normalizeName");
@@ -138,11 +184,52 @@ try {
 	const restarted = await runC6FromConfig({ configPath, sdk, print: () => {} });
 	assert.equal(restarted.task_states["task-001"], "completed");
 	assert.equal(requests.length, 3, "completed replay must not call provider again");
-	const prepared = prepareMaxPilot(join(root, "prepared"));
+	const prepared = prepareMaxPilot(join(root, "prepared"), { agentDir: piDir });
+	assert.equal(prepared.provider.kind, "pi-config");
+	assert.equal(prepared.provider.provider_id, "relay");
+	assert.equal(prepared.provider.model, selection.model);
+	assert.equal(prepared.provider.agent_dir, piDir);
+	assert.ok(!JSON.stringify(prepared).includes("offline-test-key"));
 	assert.equal(requests.length, 3, "preparation never requests a provider");
 	assert.throws(() => prepareMaxPilot(prepared.root), /already exists/);
 	assert.equal(inspectMaxPilot(prepared.root).task_states["task-001"], "ready");
-	process.env.AEGIS_MAX_API_KEY = "offline-test-key";
+	const noAuthDir = join(root, "pi-no-auth");
+	mkdirSync(noAuthDir);
+	for (const name of ["models.json", "settings.json"])
+		writeFileSync(join(noAuthDir, name), readFileSync(join(piDir, name)));
+	const noAuthInputs = prepareMaxPilot(join(root, "no-auth-inputs"), { agentDir: noAuthDir });
+	assert.equal(
+		inspectMaxPilot(noAuthInputs.root).task_states["task-001"],
+		"ready",
+		"prepare/status need no credentials",
+	);
+	delete process.env.AEGIS_MAX_API_KEY;
+	delete process.env.AEGIS_E1_TEST_KEY;
+	const smokeConfigPath = prepared.configs.smoke;
+	const smokeConfig = JSON.parse(readFileSync(smokeConfigPath, "utf8"));
+	// An explicit missing model or missing auth must stop before request/Host startup.
+	writeFileSync(
+		smokeConfigPath,
+		JSON.stringify({ ...smokeConfig, provider: { ...smokeConfig.provider, model: "missing" } }),
+	);
+	const missingModel = await runC6FromConfig({ configPath: smokeConfigPath, sdk, print: () => {} });
+	assert.equal(missingModel.ok, false);
+	assert.equal(missingModel.stage, "provider");
+	writeFileSync(smokeConfigPath, JSON.stringify(smokeConfig));
+	writeFileSync(join(piDir, "auth.json"), "{}");
+	const missingAuth = await runC6FromConfig({ configPath: smokeConfigPath, sdk, print: () => {} });
+	assert.equal(missingAuth.ok, false);
+	assert.equal(missingAuth.stage, "provider");
+	writeFileSync(join(piDir, "auth.json"), "malformed-offline-secret-sentinel");
+	const malformedAuth = await runC6FromConfig({ configPath: smokeConfigPath, sdk, print: () => {} });
+	assert.equal(malformedAuth.ok, false);
+	assert.ok(
+		!JSON.stringify(malformedAuth).includes("malformed-offline-secret-sentinel"),
+		"credential parse errors are bounded",
+	);
+	assert.equal(existsSync(join(smokeConfig.work_dir, "events.jsonl")), false, "bad model/auth never starts Host");
+	assert.equal(requests.length, 3);
+	writeFileSync(join(piDir, "auth.json"), piBefore[2]);
 	for (const task of ["smoke", "code"]) {
 		const run = await runC6FromConfig({ configPath: prepared.configs[task], sdk, print: () => {} });
 		assert.equal(run.ok, true, JSON.stringify(run.reasons));
@@ -154,14 +241,23 @@ try {
 		assert.equal(summary.chain_ok, true);
 	}
 	assert.equal(requests.length, 9);
+	const piRestart = await runC6FromConfig({ configPath: smokeConfigPath, sdk, print: () => {} });
+	assert.equal(piRestart.task_states["task-001"], "completed");
+	assert.equal(requests.length, 9, "completed Pi-config attempt never dispatches again");
 	// Exercise the exact operator CLI through the real SDK, with all HTTP replaced.
-	const cliInputs = prepareMaxPilot(join(root, "cli"));
+	const cliRoot = join(root, "cli");
+	const cli = "Pi_Agent_base/memory/campaign/e1-max-pilot.mjs";
+	const prepareChild = spawnSync(process.execPath, [cli, "prepare", "--dir", cliRoot, "--pi-agent-dir", piDir], {
+		encoding: "utf8",
+		timeout: 60000,
+	});
+	assert.equal(prepareChild.status, 0, `${prepareChild.stdout}\n${prepareChild.stderr}`);
+	const cliInputs = JSON.parse(prepareChild.stdout);
 	const preload = join(root, "offline-http.mjs");
 	writeFileSync(
 		preload,
 		`import assert from "node:assert/strict";\nconst selection = ${JSON.stringify(selection)};\nconst requests = [];\nglobalThis.fetch = ${globalThis.fetch.toString()};\n`,
 	);
-	const cli = "Pi_Agent_base/memory/campaign/e1-max-pilot.mjs";
 	const resolver = "./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts";
 	for (const task of ["smoke", "code"]) {
 		const child = spawnSync(
@@ -175,7 +271,16 @@ try {
 		assert.equal(summary.model_requests, 3);
 		assert.equal(summary.oracle_status, "success");
 	}
-	console.log("e1 remote provider: validation, missing auth, real SDK transport/tools/effect/replay passed");
+	assert.deepEqual(
+		["models.json", "settings.json", "auth.json", "models-store.json"].map((name) =>
+			readFileSync(join(piDir, name), "utf8"),
+		),
+		piBefore,
+		"Pi source configuration/credentials/cache remain unchanged",
+	);
+	console.log(
+		"e1 remote/Pi config: selected model/auth/compat, missing auth/model, real SDK effect/replay, CLI and read-only source passed",
+	);
 } finally {
 	globalThis.fetch = originalFetch;
 	if (oldKey === undefined) delete process.env.AEGIS_E1_TEST_KEY;

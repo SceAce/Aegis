@@ -68,8 +68,11 @@ function validateProviderKey(provider, reasons) {
 		return null;
 	}
 	for (const key of Object.keys(provider)) {
-		if (!["kind", "model", "base_url", "credential_ref"].includes(key))
-			reasons.push(`unknown config.provider key ${key}`);
+		const allowed =
+			provider.kind === "pi-config"
+				? ["kind", "model", "provider_id", "agent_dir", "max_output_tokens"]
+				: ["kind", "model", "base_url", "credential_ref"];
+		if (!allowed.includes(key)) reasons.push(`unknown config.provider key ${key}`);
 	}
 	if (typeof provider.kind !== "string" || provider.kind.length === 0) reasons.push("config.provider.kind is required");
 	if (typeof provider.model !== "string" || provider.model.trim().length === 0)

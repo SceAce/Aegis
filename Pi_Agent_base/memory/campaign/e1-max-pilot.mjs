@@ -12,17 +12,13 @@ import { loadCampaignConfig } from "./campaign-config.mjs";
 import { buildCodeRepairManifest } from "./code-repair-adapter.mjs";
 import { validateManifest } from "./manifest.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
+import { resolveProviderConfig } from "./provider-config.mjs";
 import { runRegisteredTest } from "./registered-test.mjs";
 import { buildDataRepairManifest } from "./structured-data-adapter.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const DEFAULT_ROOT = join(REPO, "Pi_Agent_base", "runtime", "pilot", "e1-max-first");
-const PROVIDER = {
-	kind: "remote-openai",
-	model: "deepseek-v4.1-flash",
-	base_url: "https://ai.max66.xyz/v1",
-	credential_ref: "env:AEGIS_MAX_API_KEY",
-};
+const DEFAULT_PI_DIR = join(REPO, "Pi_Agent_base", "config", "agent");
 const SOURCE = "export function normalizeName(value) {\n  return value.trim();\n}\n";
 const TEST = [
 	'import assert from "node:assert/strict";',
@@ -37,11 +33,31 @@ const TEST = [
 	"",
 ].join("\n");
 
-/** Generate two bounded input packages without credentials or provider calls. */
-export function prepareMaxPilot(root = DEFAULT_ROOT) {
+/** Generate two bounded packages using Pi's default selection; no auth read or request.
+ * @param {string} root
+ * @param {{agentDir?: string}} options
+ */
+export function prepareMaxPilot(root = DEFAULT_ROOT, { agentDir = DEFAULT_PI_DIR } = {}) {
 	root = resolve(root);
 	if (existsSync(root))
 		throw new Error("pilot directory already exists; inspect the existing attempt instead of overwriting it");
+	agentDir = resolve(agentDir);
+	let settings;
+	try {
+		settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
+	} catch {
+		throw new Error("Pi settings.json is missing or invalid");
+	}
+	const provider = {
+		kind: "pi-config",
+		provider_id: settings?.defaultProvider,
+		model: settings?.defaultModel,
+		agent_dir: agentDir,
+		max_output_tokens: 4096,
+	};
+	const selected = resolveProviderConfig(provider);
+	if (!selected.ok) throw new Error(selected.reasons.join("; "));
+	if (!existsSync(join(agentDir, "models.json"))) throw new Error("Pi models.json is missing");
 	mkdirSync(root, { recursive: true });
 	const configs = {};
 	for (const family of ["smoke", "code"]) {
@@ -57,7 +73,7 @@ export function prepareMaxPilot(root = DEFAULT_ROOT) {
 		manifest.title = code
 			? "E1 representative code task (not a user-project bug)"
 			: "E1 real-provider connectivity task";
-		manifest.worker = { provider: PROVIDER.kind, model: PROVIDER.model };
+		manifest.worker = { provider: provider.provider_id, model: provider.model };
 		manifest.tasks = [manifest.tasks[0]];
 		manifest.budget = {
 			wall_time_ms: 180000,
@@ -92,7 +108,7 @@ export function prepareMaxPilot(root = DEFAULT_ROOT) {
 					workspace_root: workspace,
 					work_dir: join(base, "run"),
 					mode: "auto",
-					provider: PROVIDER,
+					provider,
 					context: { strategy: "bounded_ram", max_total_input_chars: 50000, output_reserve_chars: 4000 },
 					learning: { policy: "off", promote_experience: false },
 					task_family: code ? "code-repair" : "structured-data-repair",
@@ -123,7 +139,7 @@ export function prepareMaxPilot(root = DEFAULT_ROOT) {
 		);
 		configs[family] = configPath;
 	}
-	return { prepared: true, root, provider: PROVIDER, configs, provider_calls: 0 };
+	return { prepared: true, root, provider, configs, provider_calls: 0 };
 }
 
 /** Read the authoritative local stream; no SDK session or credentials required. */
@@ -182,15 +198,24 @@ export function inspectMaxPilot(root = DEFAULT_ROOT, family = "smoke") {
 async function main() {
 	const args = process.argv.slice(2);
 	const command = args.shift();
-	const options = { root: DEFAULT_ROOT, task: "smoke", runReal: false };
+	const options = { root: DEFAULT_ROOT, task: "smoke", runReal: false, agentDir: DEFAULT_PI_DIR };
 	for (let index = 0; index < args.length; index++) {
 		if (args[index] === "--run-real") options.runReal = true;
-		else if (["--dir", "--task"].includes(args[index]) && args[index + 1] && !args[index + 1].startsWith("--")) {
-			options[args[index] === "--dir" ? "root" : "task"] = args[++index];
-		} else throw new Error("usage: e1-max-pilot.mjs prepare|status|run [--dir PATH] [--task smoke|code] [--run-real]");
+		else if (
+			["--dir", "--task", "--pi-agent-dir"].includes(args[index]) &&
+			args[index + 1] &&
+			!args[index + 1].startsWith("--")
+		) {
+			const key = args[index] === "--dir" ? "root" : args[index] === "--task" ? "task" : "agentDir";
+			options[key] = args[++index];
+		} else
+			throw new Error(
+				"usage: e1-max-pilot.mjs prepare|status|run [--dir PATH] [--task smoke|code] [--pi-agent-dir PATH] [--run-real]",
+			);
 	}
 	if (!["smoke", "code"].includes(options.task)) throw new Error("task must be smoke or code");
-	if (command === "prepare") console.log(JSON.stringify(prepareMaxPilot(options.root), null, 2));
+	if (command === "prepare")
+		console.log(JSON.stringify(prepareMaxPilot(options.root, { agentDir: options.agentDir }), null, 2));
 	else if (command === "status") console.log(JSON.stringify(inspectMaxPilot(options.root, options.task), null, 2));
 	else if (command === "run") {
 		if (!options.runReal) throw new Error("run requires --run-real; this command sends paid provider requests");

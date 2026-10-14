@@ -1,8 +1,11 @@
 # E1 max / dsv4.1flash：操作者步骤
 
 模型已由用户选定：max 中转站，`deepseek-v4.1-flash`。
-沿已有模型元数据使用 `https://ai.max66.xyz/v1` / OpenAI-compatible Chat Completions。
-新增 `remote-openai` 显式接线，真实调用由用户终端执行；本会话只做离线验证。
+直接复用 `Pi_Agent_base/config/agent/` 的现有 Pi 配置：`settings.json` 当前选择
+`relay/deepseek-v4.1-flash`，`models.json` 给出 `https://ai.max66.xyz/v1` /
+OpenAI-compatible Chat Completions，`auth.json` 已有 relay 凭据。
+`pi-config` 使用 Pi 的 ModelRuntime 和只读 AuthStorage；无需再次输入 key。
+真实调用由用户终端执行；本会话只做离线验证与配置检查。
 
 第一步试跑一个数据字段任务（最多4次provider请求）；成功后可跑代表性单文件修复
 （最多8次）。二者合计最多12次，输出上限4096 tokens/request，不自动重试。
@@ -11,6 +14,9 @@
 
 ## 1. 生成运行包（不请求模型）
 
+当前工作区的默认包已在2026-10-14生成，状态ready、请求0；本轮可直接从第3步运行。
+下面prepare命令用于尚未生成包的工作区。
+
 在macOS Terminal的zsh中执行；后续命令保持在同一个终端：
 
 ```bash
@@ -18,22 +24,21 @@ cd /Users/scemac/My_github/Aegis
 node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs prepare
 ```
 
-会输出`prepared: true`和两份config路径。默认目录：
+会输出`prepared: true`、所选provider/model、Pi配置目录和两份config路径。默认目录：
 `Pi_Agent_base/runtime/pilot/e1-max-first/`（ignored）。
 源码初态、冻结测试、Manifest、预算、输入digest都已生成；不会改用户原项目、Pi配置或auth。
 若提示目录已存在，先执行第4步查看旧attempt，不删除或换目录覆盖未决记录。
 
-## 2. 在当前终端注入max密钥
+## 2. 核对自动选择的模型
 
-```zsh
-read -r -s 'AEGIS_MAX_API_KEY?请输入 max API Key（输入隐藏）：'
-echo
-export AEGIS_MAX_API_KEY
-```
-
-按提示粘贴自己的max key并回车。值不写入配置或命令历史，不需要发到聊天。
-这条路径不读取已有`auth.json`；SDK内存凭据仅供该运行使用。
-代码Oracle子进程使用最小环境，不继承provider密钥；workspace仍非OS sandbox。
+prepare输出应包含 `kind: pi-config`、`provider_id: relay`、
+`model: deepseek-v4.1-flash`、`max_output_tokens: 4096`。
+prepare只读取选择信息，不读取凭据、不发送模型请求。run才通过Pi读取已有凭据；
+缺模型或凭据会在Host启动前拒绝，没有faux fallback。
+Pi目录还可在prepare时用 `--pi-agent-dir <绝对目录>` 明确选择。
+预算和工具授权仍来自Aegis运行包；Pi模型参数/endpoint/compat/鉴权来自Pi，输出上限
+取Pi模型上限与4096中较小者。代码Oracle子进程不继承provider密钥；workspace仍非OS sandbox。
+若此前已用旧env方式prepare，不覆盖既有attempt；先查看旧status并交回，再确定迁移方式。
 
 ## 3. 执行第一个真实请求任务
 
@@ -98,21 +103,17 @@ node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs status --task code
 最多8次provider请求，正常完成时Task completed、Oracle success、无未决/诊断。
 本次代表性任务只证明该运行链和行为，不计为用户项目bug修复成果。
 
-完成后清除当前shell密钥：
-
-```bash
-unset AEGIS_MAX_API_KEY
-```
-
 ## 6. 本轮已验证与限制
 
-实现调用同一C6 Worker/Broker/Oracle/request gate，未绕过三个事实分离。远程HTTPS
-必须显式配置env凭据引用，缺值在启动前拒绝；local保持loopback约束。
-离线测试拦截真实SDK生成的HTTP，验证URL/model/Bearer、max_tokens、工具循环、实际
-文件效果、Oracle、已完成重启零新增请求、prepare零请求，以及代码验收不继承凭据。
+实现调用同一C6 Worker/Broker/Oracle/request gate，未绕过三个事实分离。`pi-config`
+明确引用Pi目录与provider/model；只读原auth，不修改models/settings/auth或原catalog缓存。
+原 `remote-openai` env方式仍支持。离线测试拦截真实SDK生成的HTTP，验证URL/model/
+Bearer、Pi自定义headers/compat、4096输出上限、工具循环、实际文件效果、Oracle、
+已完成重启零新增请求、缺模型/缺凭据拒绝、prepare/status无需凭据，以及Oracle环境隔离。
 真实max流式兼容、模型行为和费用仍由本步骤实测；没有把离线替身称为真实max通过。
 
-本轮检查：新增真实SDK/截获HTTP与操作者CLI测试通过，12个相关脚本全部exit0；
-Biome修改范围exit0；Campaign tsc仍exit1、196条历史诊断，与修改前逐字相同。
-日志在ignored `Pi_Agent_base/runtime/dev/e1-max-final/`、`e1-max-final-cli/`及
-`e1-max-tsc-before.log`/`e1-max-tsc-final.log`。未执行真实max调用。
+初次remote接线已通过12个相关脚本。本次Pi配置复用补充有red→green证据；9个相关
+脚本全部exit0，Biome修改范围exit0；Campaign tsc仍exit1、196条历史诊断，与修改前
+逐字相同。当前真实Pi配置经SDK加载，credential_ready=true、network_calls=0。
+本次日志在ignored `Pi_Agent_base/runtime/dev/e1-pi-final/`、`e1-pi-red.log`及
+`e1-pi-tsc-before.log`/`e1-pi-tsc-after.log`。未执行真实max调用。

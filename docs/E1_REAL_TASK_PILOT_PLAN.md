@@ -7,7 +7,8 @@
 provider、任务目录、授权和预算。
 
 执行补充（2026-10-14）：用户已选max中转站的dsv4.1flash，并自行执行。
-已补`remote-openai`接线和零请求prepare/只读status辅助入口；具体命令见
+已补`remote-openai`及用户要求的`pi-config`接线；pilot默认复用Pi现有模型、endpoint
+和只读凭据，prepare零请求/status只读；具体命令见
 [E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。以下启动条件表保留规划形成时
 的基线；remote seam现经离线SDK/截获HTTP验证，尚未真实调用max。
 

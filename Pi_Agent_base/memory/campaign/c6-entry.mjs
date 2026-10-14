@@ -214,6 +214,40 @@ export async function runC6FromConfig(
 			return { ok: false, reasons: [`Pi SDK is unavailable: ${String(error)}`], stage: "sdk" };
 		}
 	}
+	// Explicitly selected Pi config uses Pi's own model composition and auth.
+	// The source auth is read-only; any SDK catalog cache belongs to this attempt.
+	let configuredPi = null;
+	if (!READ_ONLY && providerCheck.provider.kind === "pi-config") {
+		const selected = providerCheck.provider;
+		try {
+			if (!existsSync(join(selected.agent_dir, "models.json")))
+				return { ok: false, reasons: ["the selected Pi models.json is missing"], stage: "provider" };
+			const modelRuntime = await sdkImpl.ModelRuntime.create({
+				credentials: new sdkImpl.ReadOnlyAuthStorage(join(selected.agent_dir, "auth.json")),
+				modelsPath: join(selected.agent_dir, "models.json"),
+				modelsStorePath: join(config.work_dir, "sdk", "models-store.json"),
+				allowModelNetwork: false,
+				refreshOnCreate: false,
+			});
+			if (modelRuntime.getError())
+				return { ok: false, reasons: ["the selected Pi model configuration is invalid"], stage: "provider" };
+			const configured = modelRuntime.getModel(selected.provider_id, selected.model);
+			if (!configured)
+				return {
+					ok: false,
+					reasons: ["the selected provider/model is not present in Pi configuration"],
+					stage: "provider",
+				};
+			if (!(await modelRuntime.getAuth(configured)))
+				return { ok: false, reasons: ["the selected Pi provider has no available credential"], stage: "provider" };
+			configuredPi = {
+				modelRuntime,
+				model: { ...configured, maxTokens: Math.min(configured.maxTokens, selected.max_output_tokens) },
+			};
+		} catch {
+			return { ok: false, reasons: ["unable to load the selected Pi model or credential"], stage: "provider" };
+		}
+	}
 
 	mkdirSync(config.work_dir, { recursive: true });
 	config.session.handoff_path = config.session.handoff_path ?? join(config.work_dir, "runtime", "handoff.json");
@@ -269,6 +303,8 @@ export async function runC6FromConfig(
 		if (READ_ONLY) {
 			modelRuntime = null;
 			model = null;
+		} else if (configuredPi) {
+			({ modelRuntime, model } = configuredPi);
 		} else if (providerCheck.provider.kind === "faux") {
 			const fauxFactory = fauxProviderFactory ?? (await importFauxFactory());
 			faux = fauxFactory({ provider: "faux", models: [{ id: providerCheck.provider.model }] });
@@ -1242,11 +1278,11 @@ async function importSdk() {
 	// `AuthStorage` is not re-exported from the package index; the CLI resolves it
 	// through the documented core module path. Tests may supply their own `sdk`
 	// object with `AuthStorage` attached.
-	if (!mod.AuthStorage) {
+	if (!mod.AuthStorage || !mod.ReadOnlyAuthStorage) {
 		try {
 			const authSpecifier = "@earendil-works/pi-coding-agent/core/auth-storage";
 			const auth = await import(authSpecifier);
-			return { ...mod, AuthStorage: auth.AuthStorage };
+			return { ...mod, AuthStorage: auth.AuthStorage, ReadOnlyAuthStorage: auth.ReadOnlyAuthStorage };
 		} catch {
 			return mod;
 		}

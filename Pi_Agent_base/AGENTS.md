@@ -63,7 +63,9 @@ integrating Pi; SDK tests require the source resolver and faux provider.
 Do not modify embedded Pi core, credentials, model settings or lockfiles;
 do not restore the deleted Python demo or root AGENTS.md; do not commit or
 clean/reset unrelated changes. No real-model/target network experiments in
-this development assignment.
+this development assignment. The separately authorized E1 operator path may
+read the selected Pi config/auth read-only for the user's paid pilot; it must
+never print or modify those source files.
 
 Use local Git for all authorized Aegis-owned implementation, tests and docs.
 Work on a task branch, stage explicit paths, inspect the staged diff, and commit
@@ -93,9 +95,11 @@ durable reconciliation, per-Task pending is isolated, and a partial/mismatched
 `aegis-c6-lifecycle-convergence.mjs` (19) and `aegis-c6-lifecycle-restart.mjs`
 (real subprocess SIGKILL + restart). Campaign type diagnostics
 remain 0 (196 legacy diagnostics remain). Real-model pilots and learning
-efficacy experiments remain separate after engineering acceptance. Do not call
-real providers/targets or read real credentials. Preserve deferred F16 and
-honest per-config type baselines.
+efficacy experiments remain separate after engineering acceptance. Development
+checks do not call real providers or targets; the separately authorized E1
+operator path is the only exception and reads selected Pi credentials without
+printing or modifying them. Preserve deferred F16 and honest per-config type
+baselines.
 
 Current repair supplement (2026-10-14): product baseline `93d4617`, independent
 audit tests in `290313f`, and `../docs/C6_EXTERNAL_REVIEW.md` section 7 defined
@@ -125,7 +129,10 @@ provider, scope, budget and Oracle. This review did not run a real provider.
 SIGTERM is Task-boundary drain; do not claim immediate active-Task cancellation.
 
 E1 operator supplement (2026-10-14): the user selected max/deepseek-v4.1-flash
-and will execute real calls themselves. Explicit `remote-openai` SDK wiring and
+and will execute real calls themselves. The user then authorized reading and
+reusing existing Pi model/auth config. Pilot defaults to explicit `pi-config`
+with Pi ModelRuntime and read-only auth; never print credentials or modify the
+source config. Explicit `remote-openai` SDK wiring and
 `memory/campaign/e1-max-pilot.mjs` preparation/status/run commands are available;
 see `../docs/E1_MAX_OPERATOR_STEPS.md`. Offline intercepted HTTP is verification,
 not a real max result. Do not start a paid experiment on the user's behalf.

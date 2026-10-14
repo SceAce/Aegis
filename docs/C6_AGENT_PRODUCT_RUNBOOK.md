@@ -259,14 +259,16 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 local凭据实际使用env:NAME，file:尚未接入读取。
 
 E1执行补充：用户已选max/dsv4.1flash。`remote-openai`现已完成最小HTTPS接线，
-使用明确env凭据引用；用户可按[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)
+用户随后指定直接复用Pi配置，pilot默认使用`pi-config`，明确引用`agent_dir`、
+`provider_id`、`model`和`max_output_tokens`，使用Pi ModelRuntime及只读auth。
+原remote-openai env方式保留；用户可按[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)
 生成包并亲自执行。离线SDK/HTTP替身通过不代表真实max已验证。
 
 只有用户另行授权后才运行真实 provider/target。所需输入（复用现有接口，不新增实验框架）：
 
 | 类别 | 必填项 | 说明 |
 | --- | --- | --- |
-| provider | `provider.kind` / `model` / `base_url?` / `credential_ref` | `credential_ref` 仅引用环境变量名/文件路径，不写值、不打印；local 只接受 loopback |
+| provider | `provider.kind` / `model` / `base_url?` / `credential_ref`；E1 `pi-config` 另含 `provider_id` / `agent_dir` / `max_output_tokens` | `credential_ref` 仅引用环境变量名/文件路径，不写值、不打印；`pi-config` 只读指定 Pi 配置/auth，local 只接受 loopback |
 | 目录 | `workspace_root` / `work_dir` / `manifest_path` | workspace 非 OS sandbox；`work_dir` 写权威 events.jsonl |
 | 授权 | Manifest `tasks[].target_ref`、`stages[].criteria`、`mode`、动作/工具 grant | 模型不能提供/改变身份或授权；未注册 action/criterion 由 Broker/Oracle 拒绝 |
 | 预算 | `manifest.budget` + 每 task `task_budget`（model_requests/tool_calls/wall_time_ms）、`session.*`、`context.max_total_input_chars`/`output_reserve_chars` | hard gate；超限在 provider 调用前拒绝 |
