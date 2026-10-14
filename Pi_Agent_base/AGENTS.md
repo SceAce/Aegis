@@ -198,3 +198,12 @@ input and Host criterion templates, ER-06/07/13; malformed ER-14 alongside),
 then C (truthful observation/Fact evidence and consistent plan digest,
 ER-09/10/12), in separate bounded sessions. Keep the accepted A/C6 gates;
 no paid planning or CTF run until the integrated acceptance passes.
+
+Bounded DS handoff (2026-10-14): task B is
+`../docs/E1_PLANNER_CONTRACT_REPAIR_DS_TASK.md`; after B is independently checked,
+task C is `../docs/E1_OBSERVATION_REPAIR_DS_TASK.md`. Execute only the task named
+by the operator in the current session, then hand back. Use the explicit
+`../docs/E1_REPAIR_REQUIRED_CHECKS.json` groups; additional task-specific tests
+are recorded separately. B expects ER-06/07/13/14 green while ER-09/10/12 may
+remain red; C requires the integrated external 17/17. These documents preserve
+the accepted A/C6 scope and limit context to the current contract/call sites.
