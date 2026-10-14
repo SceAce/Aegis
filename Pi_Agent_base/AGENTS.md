@@ -146,3 +146,15 @@ transport; the tool still checks the current Task grant and real workspace
 path. Provider tests assert the actual read result reaches the continuation,
 and compare the run summary with an independent status subprocess after exit.
 See E1_MAX_OPERATOR_STEPS.md for the code pilot; the smoke did not prove reading.
+
+E1 code operator result (2026-10-14), product baseline `ac3220c`: user-run code
+completed with 3 requests, Oracle success and zero pending/unresolved; independent
+status agrees. Actual initial source reached the tool-result message, one Broker
+file write produced the repair, and the 40-event chain verifies. Independent
+verification confirms unchanged Manifest/config/frozen-test identities and the
+existing registered-test harness passes with the expected digest and an empty
+environment (exit 0, no new provider calls). Both pilots used 6 real requests.
+Next select a user-project task within the scoped single-file read/write workflow,
+with its own frozen Oracle and budget. Multi-file tooling, generic shell, a model
+test-feedback repair loop and learning efficacy are not established by this sample.
+Keep private attempts unchanged; do not rerun paid samples on the user's behalf.

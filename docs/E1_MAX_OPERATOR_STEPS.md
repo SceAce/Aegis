@@ -14,8 +14,8 @@ OpenAI-compatible Chat Completions，`auth.json` 已有 relay 凭据。
 
 ## 1. 生成运行包（不请求模型）
 
-当前工作区的默认包已在2026-10-14生成，状态ready、请求0；本轮可直接从第3步运行。
-下面prepare命令用于尚未生成包的工作区。
+当前工作区的默认包已在2026-10-14由用户完成smoke和code，两项各3次请求、均已验收；
+证据见第7节。不要覆盖此包。下面prepare命令用于尚未生成包的工作区，既有包用status查看。
 
 在macOS Terminal的zsh中执行；后续命令保持在同一个终端：
 
@@ -97,7 +97,7 @@ pending/unresolved=0、事件链完整，dataset为Ada/pending。另一个终端
 status曾看到running、2 consumed+1 pending；退出后再次查看与run结果一致，属于运行中快照。
 该次事件也暴露C6的aegis_read被Campaign门禁拒绝：模型仍可按明确字段值完成数据任务，
 所以此结果证明连通、写入、Oracle和结算，不证明模型读取过文件。现已补上C6读取工具的
-明确放行，保留当前Task/真实路径检查；下一步代码pilot将使用修复版本。
+明确放行，保留当前Task/真实路径检查；随后代码pilot已使用修复版本通过，见第7节。
 
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
@@ -117,7 +117,8 @@ node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs status --task code
 原 `remote-openai` env方式仍支持。离线测试拦截真实SDK生成的HTTP，验证URL/model/
 Bearer、Pi自定义headers/compat、4096输出上限、工具循环、实际文件效果、Oracle、
 已完成重启零新增请求、缺模型/缺凭据拒绝、prepare/status无需凭据，以及Oracle环境隔离。
-真实max流式兼容、模型行为和费用仍由本步骤实测；没有把离线替身称为真实max通过。
+离线接线证据与真实运行分开：真实max在本次两项正常链上的工具调用与终止已通过，
+见第7节；真实断流/取消尚未实测，费用仍以max账单为准。
 
 初次remote接线已通过12个相关脚本。本次Pi配置复用补充有red→green证据；9个相关
 脚本全部exit0，Biome修改范围exit0；Campaign tsc仍exit1、196条历史诊断，与修改前
@@ -130,3 +131,35 @@ Bearer、Pi自定义headers/compat、4096输出上限、工具循环、实际文
 另外通过独立status子进程核对run退出后的逐字段结果。针对性检查日志位于
 `Pi_Agent_base/runtime/dev/e1-read-final/`，red/green为`e1-read-red.log`/`e1-read-green.log`。
 本次8个相关脚本exit0，Biome修改范围exit0，Campaign类型基线仍196条、逐字相同。
+
+## 7. 用户真实执行结果与独立核验（2026-10-14）
+
+源码基线`ac3220c`，模型`relay/deepseek-v4.1-flash`，learning off。用户按第3、5节
+命令执行，完成后分别运行独立status；两项状态均与各自run-summary一致。
+
+| 项目 | smoke | code |
+| --- | --- | --- |
+| 实际provider请求 | 3（上限4） | 3（上限8） |
+| Task / Oracle | completed / success | completed / success |
+| pending / unresolved | 0 / 0 | 0 / 0 |
+| 请求终止 | 3个ok | 3个ok |
+| 账本/投影诊断 | 空 | 空 |
+| 实际效果 | dataset.name=Ada，status=pending | normalizeName修复落盘 |
+
+code的40条权威事件链校验通过。aegis_read返回原始`return value.trim()`源码，
+随后tool-result消息记录了同一内容；Broker仅执行一次`code.file.write`，before_digest
+对应冻结初态，after_digest对应当前产物。模型补丁为字符串trim并合并内部空白，
+非字符串返回null。三个reserved/committed请求配对，无未决；Stage和Task Oracle均success。
+
+独立核验以`node --input-type=module`运行本地核验脚本，exit0，新增provider请求0：
+重新校验Manifest/config/冻结测试digest，检查事件链、读结果、写入前后digest与请求记录，
+然后以空环境调用现有`runRegisteredTest`，携带原`expectedTestDigest`。结果complete=true、
+ok=true、failed=0、exit_code=0，冻结文件的七条顶层断言完成；不将runner未报告的断言计数
+补写成测量值。私有证据在`code/operator-verification.json`、两项`run-summary.json`及
+`run/events.jsonl`，原attempt保留不改。仅记录证据的文档更新不重跑产品回归。
+
+两项合计6次真实请求。SDK中的cost=0不代表免费，backend_currency仍null。
+已证明此模型下的正常“读取→决策→写入→冻结Oracle→持久化重建”代码链；代码样本是
+预设代表性任务，尚不是用户项目bug，也不证明多文件、通用shell、测试反馈修复循环、
+真实故障恢复或经验收益。下一步选一个符合现有单文件工具范围的真实项目需求，冻结
+副本、验收和预算，再准备新的运行包；不要反复重跑已完成样本当作新能力证据。

@@ -1,16 +1,17 @@
 # E1：真实模型与真实任务 pilot 规划
 
-状态：**规划完成 / 模型、任务来源和费用预算待选 / 未启动真实调用**。
-日期：2026-10-14。工程基线 `32b0e96`，分支 `feat/c6-agent-product`；证据见
+状态：**max真实连通与代表性单文件代码任务通过 / 用户项目任务与后续预算待选**。
+日期：2026-10-14。工程验收基线 `32b0e96`，当前pilot产品基线`ac3220c`，
+分支 `feat/c6-agent-product`；工程证据见
 [C6_EXTERNAL_REVIEW.md 第8节](C6_EXTERNAL_REVIEW.md#8-d1a81c8-三个事实分离复验与-sdk-收尾补修)。
-本文件规划工程验收之后的 E1 实验。当前仅修改文档，具体运行须有用户选定的
-provider、任务目录、授权和预算。
+本文件规划工程验收之后的 E1 实验。具体新增运行须有用户选定的任务目录、授权和预算。
 
 执行补充（2026-10-14）：用户已选max中转站的dsv4.1flash，并自行执行。
 已补`remote-openai`及用户要求的`pi-config`接线；pilot默认复用Pi现有模型、endpoint
 和只读凭据，prepare零请求/status只读；具体命令见
-[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。以下启动条件表保留规划形成时
-的基线；remote seam现经离线SDK/截获HTTP验证，尚未真实调用max。
+[E1_MAX_OPERATOR_STEPS.md](E1_MAX_OPERATOR_STEPS.md)。用户已完成真实smoke和code，各3次
+请求、Oracle success、无未决；code已验证实际源码读取、补丁落盘和冻结测试完成。
+操作步骤第7节记录独立核验。以下启动条件表反映当前接线，后续实验仍按第5节逐步执行。
 
 ## 1. 目的与实验顺序
 
@@ -30,17 +31,17 @@ pilot 样本只用于试运行决策，不用于泛化或统计收益结论。
 | 项目 | 源码现状 | E1 处理 |
 | --- | --- | --- |
 | 产品入口 | `c6-entry.mjs` + 真实 Pi SDK/source resolver | 复用同一 Worker/Broker/Oracle/事件流 |
-| provider | `faux`、`local-openai` 已接线；`openai`/`anthropic` 明确拒绝，其他 kind 未注册 | 本地服务沿现有路径尝试；远程按选定 SDK API 补最小接线 |
-| endpoint | local 仅 loopback `http:` | 不把远程地址伪装成 local，不新增不透明代理绕过配置 |
-| 凭据 | local 实际使用 `env:NAME`；`file:` 只解析引用，未在该路径读取密钥 | 采用明确的环境变量引用、隔离 AuthStorage，不自动加载默认 auth |
-| 模型描述 | local 固定128000 context、16384 maxTokens、reasoning=false、cost=0 | 准备时核对实际服务兼容性；这些值不证明真实窗口或免费 |
+| provider | `faux`、`local-openai`、`remote-openai`、`pi-config` 已接线 | 已选`pi-config`复用Pi的relay/deepseek-v4.1-flash，用户执行真实调用 |
+| endpoint | local仅loopback；remote为显式远程配置；pi-config从指定Pi目录加载 | 本次max走Pi的OpenAI-compatible配置 |
+| 凭据 | env引用或明确指定Pi目录的只读AuthStorage | 复用用户已授权Pi配置，不打印/修改凭据；Oracle使用最小环境 |
+| 模型描述 | pi-config采用Pi ModelRuntime中的模型描述；pilot输出上限4096 | 描述与零价格元数据不证明真实窗口或免费 |
 | 测量 | requests/input/usage已有；顶层 backend tokens/currency仍null | 复用已有记录，收费以 provider 独立账单为准，缺失保持unknown |
 | 任务族 | structured-data-repair / code-repair等 | 默认小型代码修复；数据修复用于连通和轮换 |
 | 环境 | macOS受监督workspace，非OS sandbox | 用无生产数据、无凭据的可丢弃副本；代码Oracle会执行模型补丁 |
 
-工程门槛通过不等于所选远程 provider 已接入。选择远程模型后只实现选定 seam，
-不重开旧 C6 修复或一次接入全部 provider。SDK 的 `allowModelNetwork:false` 要按
-实际用途解释，不凭字段名推断能否进行推理；连通以真正的服务请求为证据。
+本次max的两条正常真实链已通过；其他provider或真实故障兼容性不能据此推断。
+更换模型时只核对选定seam，不重开旧C6修复或一次接入全部provider。SDK的
+`allowModelNetwork:false`要按实际用途解释，不凭字段名推断能否进行推理。
 
 ## 3. 工具与工作方式
 
@@ -78,8 +79,8 @@ Pi_Agent_base/runtime/pilot/e1-<run-id>/   # 私有ignored产物
 
 测试沿现有registered runner放在workspace；“独立验收”指来源和写授权独立，
 不声称OS层隔离。冻结测试digest，模型只获得源码目标。
-代码Oracle会在子进程执行目标模块。准备时核对子进程继承的环境变量，在不含真实API
-密钥的验收子进程环境运行；当前`spawnSync`继承env，必要时只补该边界的小修。
+代码Oracle会在子进程执行目标模块。当前C6入口传入最小验收环境；后续运行包也须保持
+子进程不继承provider凭据。测试身份由Host冻结digest并校验。
 
 当前buildPrompt读取`task.goal.description`、target、stage criteria和action catalog；
 SDK禁用workspace context files。写工作区AGENTS.md不会自动传入任务要求，需求应写进
@@ -192,5 +193,6 @@ E1可用后，E2固定模型/工具/Oracle/预算/初态，先比较无经验与
 | 若选定接线需要较大工程 | 写有界任务交dsv4.1flash：仅该SDK provider seam，离线替身/相关回归/本地提交，不代用户跑付费实验 |
 | 真实执行、归因与交回 | 既定授权和费用内串行执行，保留全部attempt，复核实际结果后决定下一步 |
 
-最少待选输入：**首轮任务场景；provider/model与endpoint类型；总费用和运行时间；
-具体任务副本及验收需求**。当前不新建通用工具平台或任意shell，不重派生命周期架构修复。
+当前待选输入：**用户项目任务/源码副本及验收需求；后续总费用和运行时间**。
+provider已选max的deepseek-v4.1-flash，默认继续复用Pi配置。首个代表性样本不替代
+第5节的真实任务样本和连续性验证；当前不新建通用工具平台或任意shell，不重派生命周期架构修复。
