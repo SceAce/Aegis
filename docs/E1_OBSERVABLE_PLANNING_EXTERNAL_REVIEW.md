@@ -592,3 +592,16 @@ live/durable/replay 调用点：`c6-entry` live RAM 与 `e1-observation:buildE1V
 - HTML 像素级验收、大图分页/交互、自动补写 ready、增量重规划仍后置。
 - 正常链 `rejected=[]`、Facts/图/状态与权威 replay 一致；本任务 DoD 全部满足，状态
   **internally_verified / awaiting_external_review**，交回独立整体验收。
+
+## 12. 当前完成度独立审计（2026-10-15）
+
+对产品基线 `381829a` 的独立复验见
+[`PROJECT_COMPLETION_AUDIT_20261015.md`](PROJECT_COMPLETION_AUDIT_20261015.md)。
+既有 required 59 个脚本及 FC/B/C 修复 3 个脚本全部通过（7 个本地 HTTP 脚本经
+沙箱外复跑）；新增 `tests/aegis-completion-audit.mjs` 为 **12 cases / 3 pass / 9 fail**。
+E1 整体仍为 **changes_required**：Board 对 scope/criterion/不可解析证据及 rejected
+admission 的判断不同于权威队列；Plan replay 缺失 planning identity、候选/normalized
+定义对应及内外 plan id 仍未闭合。缺失 planning identity 的实际 durable ready 前缀
+重启仍 provider=6 / Broker effect=3。产品代码未修改，不据既有测试全绿宣称本轮通过。
+Campaign 类型基线 194（Campaign 模块自身 0），Batch-E 186；两项 tsc 均 exit 1。
+本轮未调用真实 provider/目标，保留既有 A/C6 接受范围及非阻塞后置项。

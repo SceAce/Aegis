@@ -207,3 +207,15 @@ by the operator in the current session, then hand back. Use the explicit
 are recorded separately. B expects ER-06/07/13/14 green while ER-09/10/12 may
 remain red; C requires the integrated external 17/17. These documents preserve
 the accepted A/C6 scope and limit context to the current contract/call sites.
+
+Independent completion audit (2026-10-15), product baseline `381829a`: see
+`../docs/PROJECT_COMPLETION_AUDIT_20261015.md` and E1 external review section 12.
+The required 59 scripts and FC/B/C repair 3 scripts pass; the new independent
+`tests/aegis-completion-audit.mjs` is 3 pass / 9 fail. Overall E1 is
+**changes_required**: Board still promotes outcomes rejected for scope,
+criterion or evidence and indexes rejected admissions; Plan replay still
+accepts missing planning identity and candidate/normalized identity mismatch.
+A real ready-prefix subprocess restart with both planning ids absent produces
+6 faux provider requests and 3 Broker effects. Preserve accepted C6/A gates.
+Campaign tsc has 194 diagnostics (0 in Campaign modules); Batch-E has 186.
+This audit changes tests/docs only and makes no paid provider/target calls.
