@@ -82,6 +82,21 @@ function readEventsSafe(path) {
 export { summarizeRequestLedger };
 
 /**
+ * E1: compose the Host-owned planning Task's judge with the task-family judge.
+ * The planning Task MUST be judged by the independent plan_ready check (never by
+ * a business judge that would read the target file); every business Task keeps
+ * its registered task-family judge. When planning is disabled this is a no-op.
+ *
+ * @param {{baseJudge: Function, e1Planning: any, enabled: boolean, readEvents: () => any[], manifest: any}} args
+ */
+function withPlanReadyJudge({ baseJudge, e1Planning, enabled, readEvents, manifest }) {
+	if (enabled !== true || !e1Planning || typeof e1Planning.createPlanReadyJudge !== "function") return baseJudge;
+	const planningTaskId = e1Planning.PLANNING_TASK_ID ?? "task-plan";
+	const planJudge = e1Planning.createPlanReadyJudge({ readEvents, manifest, planningTaskId });
+	return (args) => (args?.task?.task_id === planningTaskId ? planJudge(args) : baseJudge(args));
+}
+
+/**
  * Build a decision buffer shared between the SDK custom tool and the model plan.
  * @returns {{setTask: (taskId: string) => void, push: (d: any) => void, pushTask: (p: any) => boolean, pushPlan: (plan: any) => boolean, listTasks: () => any[], listPlans: () => any[], list: () => any[], reset: () => void, byTask: () => Map<string, any[]>}}
  */
@@ -159,9 +174,20 @@ export function createCompositeWorker({
 			if (!planned.ok) return planned;
 			// E1: a PLANNING task returns a candidate plan (no business decision).
 			// Admission is a SEPARATE Host step; submitting a plan never executes
-			// anything and never means the root goal is complete.
+			// anything and never means the root goal is complete. A rejected/blocked
+			// admission (or a durable-write failure) is propagated as a failure so the
+			// Scheduler records an unknown/hold and no child Task is ever dispatched.
 			if (planned.overview === "plan_submitted" && Array.isArray(planned.plans) && planned.plans.length > 0) {
-				if (typeof onPlanSubmitted === "function") await onPlanSubmitted({ task, plans: planned.plans });
+				const submitted =
+					typeof onPlanSubmitted === "function" ? await onPlanSubmitted({ task, plans: planned.plans }) : { ok: true };
+				if (submitted?.ok === false) {
+					return {
+						ok: false,
+						failure_mode: submitted.status === "blocked" ? "plan_blocked" : "plan_not_admitted",
+						detail: (submitted.reasons ?? []).join("; ") || submitted.reason || "the candidate plan was not admitted",
+						provider_requests: planned.provider_requests,
+					};
+				}
 				return { ok: true, overview: "plan_submitted", plans: planned.plans };
 			}
 			// Execute the model's admitted decision through the existing Broker.
@@ -219,9 +245,10 @@ export async function runC6FromConfig(
 	// ONLY from an admitted plan batch. This module only tracks the templates.
 	const manifest = loaded.manifest;
 	let planningTemplates = null;
+	let e1Planning = null;
 	if (config.planning?.enabled === true) {
-		const { templatesFromConfig } = await import("./e1-planning.mjs");
-		planningTemplates = templatesFromConfig(config.planning);
+		e1Planning = await import("./e1-planning.mjs");
+		planningTemplates = e1Planning.templatesFromConfig(config.planning);
 	}
 
 	// Provider must be EXPLICIT and recognized; no silent fallback to faux.
@@ -755,7 +782,14 @@ export async function runC6FromConfig(
 	if (config.task_family === "structured-data-repair") {
 		const { createStructuredDataAdapter, createDataRepairJudge } = await import("./structured-data-adapter.mjs");
 		extraContracts = [createStructuredDataAdapter({ workspaceRoot: config.workspace_root })];
-		judgeFactory = ({ workspaceRoot }) => createDataRepairJudge({ workspaceRoot });
+		judgeFactory = ({ workspaceRoot, manifest: judgedManifest }) =>
+			withPlanReadyJudge({
+				baseJudge: createDataRepairJudge({ workspaceRoot }),
+				e1Planning,
+				enabled: config.planning?.enabled === true,
+				readEvents: () => readEventsSafe(eventLogPath),
+				manifest: judgedManifest,
+			});
 	} else if (config.task_family === "code-repair") {
 		const { createCodeRepairAdapter, createCodeRepairJudge } = await import("./code-repair-adapter.mjs");
 		const { runRegisteredTest } = await import("./registered-test.mjs");
@@ -768,11 +802,17 @@ export async function runC6FromConfig(
 		);
 		// The test procedure is HOST code (a registered, read-only external test),
 		// never model code. The model cannot modify the test to manufacture success.
-		judgeFactory = ({ workspaceRoot }) =>
-			createCodeRepairJudge({
-				workspaceRoot,
-				runTests: (root) =>
-					runRegisteredTest({ workspaceRoot: root, testFile: config.registered_test ?? "check.mjs", env: testEnv }),
+		judgeFactory = ({ workspaceRoot, manifest: judgedManifest }) =>
+			withPlanReadyJudge({
+				baseJudge: createCodeRepairJudge({
+					workspaceRoot,
+					runTests: (root) =>
+						runRegisteredTest({ workspaceRoot: root, testFile: config.registered_test ?? "check.mjs", env: testEnv }),
+				}),
+				e1Planning,
+				enabled: config.planning?.enabled === true,
+				readEvents: () => readEventsSafe(eventLogPath),
+				manifest: judgedManifest,
 			});
 	}
 	try {
@@ -961,28 +1001,35 @@ export async function runC6FromConfig(
 					brokerWorker,
 					buffer,
 					onPlanSubmitted: async ({ task: planTask, plans }) => {
-						if (!hostRef || config.planning?.enabled !== true) return;
-						const { admitCandidatePlan } = await import("./e1-planning.mjs");
+						if (!hostRef || config.planning?.enabled !== true || !e1Planning) return { ok: true };
+						const { admitCandidatePlan } = e1Planning;
+						const events = readEventsSafe(eventLogPath);
 						const projection = projectQueueFromEvents({
 							campaign_id: manifest.campaign_id,
 							tasks: manifest.tasks ?? [],
-							events: readEventsSafe(eventLogPath),
+							events,
 							revision: manifest.revision ?? 0,
 							manifest,
-							artifacts: {},
+							artifacts: Object.fromEntries(artifactIndexFromEvents(events)),
 						});
+						// The REAL settlement fact comes from the durable request ledger; the
+						// independent plan_ready judge re-checks termination and settlement
+						// durably before the planning Task can complete.
+						const settlement = summarizeRequestLedger(events);
+						let last = { ok: false, status: "blocked", reasons: ["no candidate plan"] };
 						for (const plan of plans) {
-							const admission = await admitCandidatePlan({
+							last = await admitCandidatePlan({
 								plan,
 								manifest,
 								host: hostRef,
 								projection,
 								templates: planningTemplates,
-								planningTaskId: planTask?.task_id ?? "task-plan",
-								planningSettled: true,
+								planningTaskId: planTask?.task_id ?? e1Planning.PLANNING_TASK_ID,
+								planningSettled: settlement.unresolved === 0,
 							});
-							dynamicAdmissions.push(admission);
+							dynamicAdmissions.push(last);
 						}
+						return last;
 					},
 					onTaskSettled: async () => {
 						// Admit any model-proposed bounded dynamic tasks through the ONE policy.

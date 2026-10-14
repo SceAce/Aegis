@@ -360,12 +360,9 @@ export function createCampaignScheduler({
 		 * @param {{taskId: string, planId?: string|null, outcome?: any}} args
 		 */
 		async completePlanningTask({ taskId, planId = null, outcome = null } = /** @type {any} */ ({})) {
-			const record = await commit(
-				"campaign.plan.ready",
-				{ task_id: taskId, plan_id: planId, outcome },
-				{ kind: "oracle", actor_id: oracle?.id ?? "oracle" },
-			);
-			if (!record.ok) return { ok: false, reason: record.error };
+			const released = await releasePlanGate(taskId, outcome?.outcome_id ?? null, planId);
+			if (released.ok !== true)
+				return { ok: false, reason: released.reason ?? released.error ?? "plan-ready gate failed" };
 			return { ok: true };
 		},
 		lastCheckpointOk() {
@@ -639,6 +636,16 @@ export function createCampaignScheduler({
 	}
 
 	async function reconcileStrandedRunning(projection) {
+		// E1: an admitted plan batch identifies its planning Task. Admission alone is
+		// NOT completion, so a stranded planning Task is never completed by
+		// re-judging the batch: recovery must not activate a batch whose planning
+		// Task never durably completed.
+		const planningTaskIds = new Set(
+			(projection.plans ?? [])
+				.filter((plan) => plan.status === "admitted")
+				.map((plan) => plan.planning_task_id)
+				.filter(Boolean),
+		);
 		for (const row of projection.tasks) {
 			if (row.state !== "running") continue;
 			if (row.task_outcome_status === "success") {
@@ -649,6 +656,21 @@ export function createCampaignScheduler({
 					{ kind: "runtime", actor_id: ownerId },
 				);
 				if (!done.ok) return { ok: false, reason: `could not complete recovered result: ${done.error}` };
+				// E1: only after the planning Task durably completed may the batch release.
+				const gate = await releasePlanGate(row.task_id, row.task_outcome_ref ?? null);
+				if (gate.ok !== true) return { ok: false, reason: `plan-ready gate failed on recovery: ${gate.reason}` };
+				continue;
+			}
+			if (planningTaskIds.has(row.task_id)) {
+				// The batch is durable but the planning Task never completed. Keep the
+				// recovery fail-closed: record an explicit hold rather than guessing that
+				// the planning ended normally.
+				const held = await commit(
+					"campaign.task.unknown",
+					{ task_id: row.task_id, reason: "planning_completion_missing" },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!held.ok) return { ok: false, reason: `could not record planning hold: ${held.error}` };
 				continue;
 			}
 			const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id) ?? null;
@@ -716,6 +738,25 @@ export function createCampaignScheduler({
 				if (!pending.ok) return { ok: false, reason: `could not record reconciliation request: ${pending.error}` };
 			}
 		}
+		return { ok: true };
+	}
+
+	async function releasePlanGate(taskId, outcomeId = null, requestedPlanId = null) {
+		const projection = project();
+		const admitted = (projection.plans ?? []).filter(
+			(plan) => plan.status === "admitted" && (plan.planning_task_id ?? null) === taskId,
+		);
+		// A non-planning task has no batch: nothing to release (not a failure).
+		if (admitted.length === 0) return { ok: true, skipped: true };
+		const plan = admitted[admitted.length - 1];
+		const planId = requestedPlanId ?? plan.id ?? plan.plan?.plan_id ?? null;
+		if (!planId) return { ok: false, reason: `the admitted plan for ${taskId} has no id` };
+		const record = await commit(
+			"campaign.plan.ready",
+			{ task_id: taskId, plan_id: planId, outcome_id: outcomeId },
+			{ kind: "oracle", actor_id: oracle?.id ?? "oracle" },
+		);
+		if (!record.ok) return { ok: false, reason: record.error };
 		return { ok: true };
 	}
 
@@ -838,6 +879,11 @@ export function createCampaignScheduler({
 				{ kind: "runtime", actor_id: ownerId },
 			);
 			if (!done.ok) return { ok: false, reason: `completion commit failed; lifecycle not closed: ${done.error}` };
+			// E1: ONLY after the planning Task durably completed through its own trusted
+			// plan_ready Oracle may the admitted batch be released. The gate is a
+			// separate durable state; admission alone never dispatches a child.
+			const gate = await releasePlanGate(task.task_id, judgment?.outcome_id ?? null);
+			if (gate.ok !== true) return { ok: false, reason: `plan-ready gate failed: ${gate.reason}` };
 		} else if (judgment?.task_oracle === true && (status === "unknown" || judgment?.delayed === true)) {
 			const unknown = await commit(
 				"campaign.task.unknown",

@@ -1245,9 +1245,14 @@ export function createModelWorker(
 			failureMode = gate.providerStatus === "aborted" ? "provider_aborted" : "planning_aborted";
 			failureDetail =
 				"the model planning was aborted; occurred requests stay charged and no decision reaches the Broker";
-		} else if ((gate.planningStatus === "unknown" || gate.planningStatus === null) && decisions.length > 0) {
+		} else if (
+			(gate.planningStatus === "unknown" || gate.planningStatus === null) &&
+			(decisions.length > 0 || plans.length > 0)
+		) {
+			// E1: a candidate PLAN is not executable either. An unknown/missing SDK
+			// termination must retain the candidate without admitting or dispatching it.
 			failureMode = "planning_termination_unknown";
-			failureDetail = "no trustworthy SDK termination evidence; the buffered decision is not executable";
+			failureDetail = "no trustworthy SDK termination evidence; the buffered decision/plan is not executable";
 		}
 		if (failureMode) {
 			reconciliation.category = failureMode;

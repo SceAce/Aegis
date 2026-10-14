@@ -217,3 +217,81 @@ Oracle 门、模板判据和真实证据映射做 mutation。先由用户运行�
 现有实现主要提供受限文件读取与注册的数据/代码动作，未实现通用 shell、CTF HTTP
 交互或专门解题工具；这些不能凭规划 UI 通过就自动宣称已有。
 应只为选定题目添加最小工具适配，不以搭建通用渗透平台作为首次试跑的前置条件。
+
+## 8. 短修复附录（任务 A：规划执行门）
+
+范围：只接通"规划正常终止 + 请求结清 → 完整批量准入 → 独立 plan_ready 检查 → 规划
+Task durable completed → 子任务激活"。B/C 不在本轮。
+
+拟采用的状态顺序与证据来源：
+
+1. 候选：`aegis_submit_plan` 工具写 `campaign.plan.submitted`（候选，无执行权）。
+2. 准入：Host 整图校验后写 `campaign.plan.admitted`（完整定义 durable）。该状态本身
+   仍不放行；子任务 `awaiting_plan_ready=true`。
+3. 终止与结清：`c6.request` 的已 durable `committed` 记录是结清事实；规划请求的
+   `provider_status`/`stop_reason` 是终止事实。未知终止不再进入准入（worker 的
+   `planningStatus===unknown` 守卫同时覆盖 decisions 与 plans）。
+4. 独立验收：规划 Task 走 Scheduler 既有 `oracle.judge` 链；规划 Task 的 judge 复用
+   `evaluatePlanReady`，绑定 Campaign/planning Task/plan id+digest/完整 admitted 批次/
+   终止/结清，产出可信 task+stage Outcome（证据 `artifact:task-plan` = 批次 digest）。
+5. 完成与激活：既有 `campaign.task.completed`（经 required stage 门）之后，Scheduler 才
+   写 `campaign.plan.ready`（带 plan_id、outcome_id）。reducer 校验 planning Task 已
+   completed、task Outcome success、plan 已 admitted 且身份一致；否则拒绝并保持 hold。
+6. replay/restart 复用同一 reducer；`campaign.plan.ready` 缺证据/错配/缺 completed 一律
+   保持 hold。候选与已发生消费保留，不退款、不另起 request。
+
+对应测试：ER-02/03/05/08/17 转绿，保留 ER-01/04/15/16 控制；新增 error/aborted 计划、
+无合法 Outcome/错配身份的 ready、完成门写失败/关键前缀恢复的 focused 反例。
+
+### 8.1 任务 A 实际结果（DS 本地，未 push）
+
+实际行为变化（真实产品链，`normal_plan`）：
+
+```text
+task.started(task-plan) → plan.submitted(候选) → plan.admitted(整批)
+→ oracle.result(task-plan, stage+task success) → task.completed(task-plan)
+→ plan.ready(plan-e1, outcome=o-task-plan) → dyn-a/b/c 按 depends_on 执行
+```
+
+关键数值：
+
+| 场景 | provider | Broker effect | planning Task | 子任务 | dataset |
+| --- | --- | --- | --- | --- | --- |
+| normal | 8 | 3 | completed | a/b/c completed | Ada/active |
+| unknown_plan | 2 | 0 | unknown | 无 | ??/pending |
+| error_plan | 2 | 0 | unknown | 无 | ??/pending |
+| aborted_plan | 2 | 0 | unknown | 无 | ??/pending |
+| admitted 前缀重启 | 0 | 0 | unknown（completion 缺失，保持 hold） | 无 | ??/pending |
+| unknown 前缀重启 | 0 | 0 | unknown | 无 | ??/pending |
+
+unknown/error/aborted 的候选 `plan.submitted` 均保留、无 `plan.admitted`、无业务效果；
+请求消费/未决保持原语义（不退款、不另起 request）。仅到 admitted 的重启不再由批次推断
+规划完成，`planning_completion_missing` 明确 hold。
+
+命令与退出码（日志在 ignored `Pi_Agent_base/runtime/dev/e1-repair-a/`）：
+
+| 套件 | 结果 | 证据 |
+| --- | --- | --- |
+| `aegis-e1-external-review` | 10 pass / 7 fail，exit 1 | `final-e1c/aegis-e1-external-review.log` |
+| E1 focused 6（含新 `aegis-e1-planning-gate`） | 5 pass / 1 fail（仅 external-review） | `final-e1c/results.json` |
+| 原 C6 18 | 0 failed，exit 0 | `final-c6/results.json` |
+| 原回归 26 | 0 failed，exit 0 | `final-regress/results.json` |
+| 受影响 8 | 0 failed，exit 0 | `final-affected/results.json` |
+| Campaign tsc | exit 1；196→196，诊断集合逐条相同 | `tsc-after2.log` vs 审计 `tsc.log` |
+| 修改范围 Biome | exit 0 | `biome.log` |
+| mutation：终止门（plans 移出守卫） | ER-08 行为断言失败（`plan.admitted` 存在） | `mutation1-termination.log` |
+| mutation：独立验收门（去掉 completed 校验） | GATE-06 行为断言失败 | `mutation2-acceptance.log` |
+
+新增 focused 反例 `tests/aegis-e1-planning-gate.mjs`（7/7）：error/aborted 真实 SDK+faux、
+admitted 与 completed-without-ready 前缀保持 hold、错配 Outcome 身份、null/foreign plan id、
+提前 ready、完成门 durable 写失败。ER-11（plan id 身份）因投影输出携带 `id` 顺带转绿，
+不作为 C 已完成声明。
+
+未修 B/C（保持红，逐项报告，不 skip、不降断言）：
+
+- B：ER-06（真实首输缺少冻结业务判据）、ER-07（缺 Host 模板/图限制）、ER-13（未提供判据
+  可被模型附加仍 admitted）。
+- C：ER-09（观察图状态与 artifact-aware replay 不一致）、ER-10（业务 Oracle success 未成
+  board Fact）、ER-12（正常链因工具/Host 两套 digest 出现 rejected plan）、ER-14（malformed
+  criteria 抛 TypeError，非 rejected）。
+- 本会话仅交付规划执行门（任务 A），整体 E1/CTF 未通过。

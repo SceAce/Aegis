@@ -309,7 +309,7 @@ export function projectQueueFromEvents({
 		tasks: [...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
 		budget,
 		proposals,
-		plans: [...plans.values()],
+		plans: [...plans.entries()].map(([id, entry]) => ({ id, ...entry })),
 		dynamic_definitions: [...dynamicDefinitions.entries()].map(([task_id, definition]) => ({ task_id, definition })),
 		outcomes: outcomeIndex,
 		// F12: expose the dedup sets so the scheduler can persist them and a
@@ -604,19 +604,42 @@ function applyEvent({
 		case "campaign.plan.rejected":
 			return { ok: true };
 		case "campaign.plan.ready": {
-			// The planning completion gate: only after a legal, fully-admitted batch does
-			// the planning Task become executable per its own plan_ready criterion. The
-			// batch admission alone never dispatches a child Task.
+			// E1: the plan-ready gate is an ACTIVATION gate, not a second admission.
+			// It is only legal when the planning Task has ALREADY completed through its
+			// own trusted plan_ready Oracle AND the named plan batch is durably admitted
+			// with a matching identity. Missing evidence, a mismatched identity, an
+			// unknown/failure Outcome or a missing completion all keep the children
+			// HELD (the record is rejected with a diagnostic), so a truncated durable
+			// prefix can never release a child Task.
 			const item = byId.get(envelope.task_id);
 			if (!item) return { ok: false, reason: `unknown planning task ${envelope.task_id}` };
-			item.plan_ready = true;
-			item.plan_id = envelope.plan_id ?? item.plan_id ?? null;
+			if (item.state !== "completed")
+				return {
+					ok: false,
+					reason: `plan-ready gate requires the planning task ${envelope.task_id} to be completed, not ${item.state}`,
+				};
+			if (item.task_outcome_status !== "success")
+				return { ok: false, reason: `planning task ${envelope.task_id} has no trusted success Outcome` };
+			if (envelope.outcome_id && item.task_outcome_ref && envelope.outcome_id !== item.task_outcome_ref)
+				return {
+					ok: false,
+					reason: `plan-ready outcome ${envelope.outcome_id} does not match the current planning result ${item.task_outcome_ref}`,
+				};
 			const planId = envelope.plan_id ?? null;
-			// Release the batch children from the plan-ready gate; they now become ready
-			// only when their OWN dependencies are satisfied.
+			if (!planId) return { ok: false, reason: "plan-ready gate requires a plan_id (a null id releases nothing)" };
+			const plan = plans.get(planId);
+			if (!plan || plan.status !== "admitted") return { ok: false, reason: `plan ${planId} is not durably admitted` };
+			if (plan.planning_task_id && plan.planning_task_id !== envelope.task_id)
+				return {
+					ok: false,
+					reason: `plan ${planId} belongs to planning task ${plan.planning_task_id}, not ${envelope.task_id}`,
+				};
+			item.plan_ready = true;
+			item.plan_id = planId;
+			// Release ONLY the children of THIS admitted batch; a null/foreign plan id
+			// never releases an unrelated Task.
 			for (const child of byId.values()) {
-				if (child.awaiting_plan_ready === true && (planId === null || child.plan_id === planId))
-					child.awaiting_plan_ready = false;
+				if (child.awaiting_plan_ready === true && child.plan_id === planId) child.awaiting_plan_ready = false;
 			}
 			promoteReadyTasks(byId);
 			return { ok: true };

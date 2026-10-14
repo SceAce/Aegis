@@ -184,6 +184,8 @@ const factory = (options) => {
 			}
 			const terminal = fauxAssistantMessage("plan recorded");
 			if (scenario === "unknown_plan") delete terminal.stopReason;
+			if (scenario === "error_plan") terminal.stopReason = "error";
+			if (scenario === "aborted_plan") terminal.stopReason = "aborted";
 			return terminal;
 		}
 		// Business tasks: perform the data repair action for dyn-a/dyn-b, and a

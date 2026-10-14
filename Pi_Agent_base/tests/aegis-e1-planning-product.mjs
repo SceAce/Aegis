@@ -229,7 +229,76 @@ function makeHost({ manifest, sink }) {
 			return { ok: true, status: "admitted", plan_id: planId ?? plan.plan_id };
 		},
 		async completePlanningTask({ taskId, planId }) {
-			await commit("campaign.plan.ready", { task_id: taskId, plan_id: planId }, { kind: "oracle", actor_id: "oracle" });
+			// A contract-correct planning completion: the durable dispatch intent, the
+			// independent plan_ready Oracle result (stage + task), the durable Task
+			// completion, and ONLY then the separate plan-ready activation gate.
+			const scope = { ...SCOPE };
+			const evidenceRef = { ref_type: "artifact", ref_id: `artifact:${taskId}`, digest: `sha256:${taskId}` };
+			await commit(
+				"campaign.task.started",
+				{ task_id: taskId, episode_id: `ep-${taskId}` },
+				{ kind: "runtime", actor_id: "host" },
+			);
+			await commit(
+				"campaign.oracle.result",
+				{
+					task_id: taskId,
+					outcome_id: `so-${taskId}-stage-plan`,
+					status: "success",
+					step_id: "stage-plan",
+					episode_id: `ep-${taskId}`,
+					outcome: {
+						outcome_id: `so-${taskId}-stage-plan`,
+						level: "step",
+						step_id: "stage-plan",
+						status: "success",
+						episode_id: `ep-${taskId}`,
+						task_id: taskId,
+						criterion: { criterion_id: "plan_ready", expected: "plan_ready" },
+						observed: { plan_id: planId },
+						scope,
+						oracle: { oracle_id: "fixture.oracle.v1", source: "oracle" },
+						provenance: { source: "oracle", independent: true, task_id: taskId, stage_id: "stage-plan" },
+						evidence_refs: [evidenceRef],
+					},
+				},
+				{ kind: "oracle", actor_id: "oracle" },
+			);
+			await commit(
+				"campaign.oracle.result",
+				{
+					task_id: taskId,
+					outcome_id: `o-${taskId}`,
+					status: "success",
+					task_oracle: true,
+					episode_id: `ep-${taskId}`,
+					outcome: {
+						outcome_id: `o-${taskId}`,
+						level: "episode",
+						status: "success",
+						episode_id: `ep-${taskId}`,
+						task_id: taskId,
+						task_oracle: true,
+						criterion: { criterion_id: "plan_campaign", expected: "plan_ready" },
+						observed: { plan_id: planId },
+						scope,
+						oracle: { oracle_id: "fixture.oracle.v1", source: "oracle" },
+						provenance: { source: "oracle", independent: true, task_id: taskId },
+						evidence_refs: [evidenceRef],
+					},
+				},
+				{ kind: "oracle", actor_id: "oracle" },
+			);
+			await commit(
+				"campaign.task.completed",
+				{ task_id: taskId, outcome_id: `o-${taskId}` },
+				{ kind: "runtime", actor_id: "host" },
+			);
+			await commit(
+				"campaign.plan.ready",
+				{ task_id: taskId, plan_id: planId, outcome_id: `o-${taskId}` },
+				{ kind: "oracle", actor_id: "oracle" },
+			);
 			return { ok: true };
 		},
 	};
@@ -274,11 +343,12 @@ test("E1-PLAN: batch admission creates the DAG and the plan-ready gate is separa
 		planningSettled: true,
 	});
 	assert.equal(admitted.ok, true, JSON.stringify(admitted.reasons));
-	// BEFORE the plan-ready gate the children are queued + gated.
+	// BEFORE any planning completion the children are queued + gated. The batch
+	// admission alone never releases them (frozen contract 4.5).
 	const gated = projectQueueFromEvents({
 		campaign_id: MANIFEST.campaign_id,
 		tasks: MANIFEST.tasks,
-		events: sink.events.slice(0, -1),
+		events: sink.events,
 		revision: 1,
 		manifest: MANIFEST,
 		artifacts: makeArtifacts(["t-a", "t-b", "t-c"]),
@@ -293,20 +363,28 @@ test("E1-PLAN: batch admission creates the DAG and the plan-ready gate is separa
 		"queued",
 		"even a dependency-free child waits for the gate",
 	);
+	// A SEPARATE, trusted planning completion (independent plan_ready Oracle result
+	// plus the durable Task completion) is what releases the batch.
+	const completed = await host.completePlanningTask({ taskId: "task-plan", planId: "plan-1" });
+	assert.equal(completed.ok, true);
 	projection = projectQueueFromEvents({
 		campaign_id: MANIFEST.campaign_id,
 		tasks: MANIFEST.tasks,
 		events: sink.events,
 		revision: 1,
 		manifest: MANIFEST,
-		artifacts: makeArtifacts(["t-a", "t-b", "t-c"]),
+		artifacts: makeArtifacts(["t-a", "t-b", "t-c", "task-plan"]),
 	});
 	const ids = projection.tasks.map((t) => t.task_id).sort();
 	assert.deepEqual(ids, ["t-a", "t-b", "t-c", "task-plan"]);
 	const tc = projection.tasks.find((t) => t.task_id === "t-c");
 	assert.deepEqual(tc.depends_on, ["t-a", "t-b"], "multi-prerequisite dependency preserved in the projection");
-	assert.equal(tc.state, "queued", "batch admission alone does not dispatch");
 	assert.equal(tc.awaiting_plan_ready, false, "the plan-ready gate released the children");
+	assert.equal(
+		projection.tasks.find((t) => t.task_id === "t-b").state,
+		"ready",
+		"a dependency-free child becomes ready after the gate but is not dispatched",
+	);
 	const ta = projection.tasks.find((t) => t.task_id === "t-a");
 	assert.equal(ta.depends_on.length, 0);
 });
@@ -396,7 +474,9 @@ test("E1-PLAN: an unsatisfied prerequisite blocks the successor provider/effect"
 	});
 	const { worker, calls } = makeFixtureWorker();
 	// t-a produces an UNKNOWN result → it does not complete → t-c must not run.
-	const oracle = makeOracle({ "t-a": { status: "unknown" } });
+	// task-plan completes normally so the admission batch is released to the
+	// dependency scheduler; the point is the unsatisfied PREREQUISITE, not the gate.
+	const oracle = makeOracle({ "task-plan": { status: "success" }, "t-a": { status: "unknown" } });
 	const scheduler = createCampaignScheduler({
 		manifest: MANIFEST,
 		ownedTasks: MANIFEST.tasks,
