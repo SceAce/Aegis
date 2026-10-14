@@ -196,3 +196,49 @@ E1可用后，E2固定模型/工具/Oracle/预算/初态，先比较无经验与
 当前待选输入：**用户项目任务/源码副本及验收需求；后续总费用和运行时间**。
 provider已选max的deepseek-v4.1-flash，默认继续复用Pi配置。首个代表性样本不替代
 第5节的真实任务样本和连续性验证；当前不新建通用工具平台或任意shell，不重派生命周期架构修复。
+
+## 9. 下一轮CTF测试的观察与输入要求（用户补充，2026-10-14）
+
+下一轮必须能看见白板内容和任务拆分过程。仅有终端success摘要、单任务状态列表或
+模型用文字画出的计划，不能代替这两项证据。本节冻结要求，尚不宣称CTF接线已经完成。
+
+当前`observation-view.mjs`页面显示Tasks、提案、Actions和Outcomes；未包含运行时白板
+节点内容或任务依赖图。底层`projectBoard(events)`已有Origin/Fact/Refuted/Intent/Hint/
+Artifact，`projectQueueFromEvents`已有父任务、依赖和状态。已完成的smoke/code各一个
+预设Task且关闭动态拆分，未测真实模型分解题目。下一步先把这些已有投影接入同一
+只读页面，再按具体题目补执行工具；复用现有事件与投影，不建立另一套状态。
+
+观察页面须包含：
+
+- 白板：原始目标、模型显式提出的候选假设/计划、实际观测与产物、可信验证结果、
+  被否定或仍未知的事项。显示证据引用和有效/过期状态，不把工具返回成功等同于事实成立。
+- 任务结构：根目标、模型提出的子任务及理由、Host准入/拒绝结果、已接受任务的
+  父子关系与`depends_on`依赖、目标/完成条件、当前状态和Outcome。父子与依赖分别显示，
+  候选提案不冒充已调度Task；没有拆分时如实显示，不伪造完整树。
+- 执行进度：当前Task/Session、动作与返回摘要、请求consumed/pending/unresolved、
+  停止原因及最终独立验收。页面可在运行时更新并在退出后从原stream重建。
+
+真实模型运行仍由用户终端执行；当前会话负责选定题目后的运行包、最小接线、离线检查、
+具体命令和交回核验，不代用户启动计费请求。推荐两个终端：A启动常驻只读observe，
+B启动同一配置的run；这样run退出后页面仍可查看。`run --observe`同进程模式退出会
+关闭观察服务，不作为本次操作默认值。只读observe不dispatch、不调用provider。
+
+初始输入在启动前准备，并通过配置随Host启动加载，无需先启动普通Pi再手工粘贴：
+题面/根目标写入Manifest中实际传给Worker的goal.description，附件放授权workspace，
+靶场/工具/预算/停止条件由可信配置定义，最终判据由独立Oracle或平台给出。
+模型按授权读取附件；仅把路径写进题面不等于授予读取权。不给参考解法或预设完整解题树，
+子任务由模型提出、Host按既有政策校验，体现本轮要观察的拆分行为。普通Pi/contest入口
+是另一路径，不能把它的运行证据称为C6 Host验证。
+
+现有只读页面可先查看已完成code样本（不会重新请求模型）：
+
+```bash
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/memory/campaign/c6-entry.mjs \
+  --config Pi_Agent_base/runtime/pilot/e1-max-first/code/campaign.config.json \
+  observe --port 0
+```
+
+打开终端打印的URL，手动刷新读取最新stream；Ctrl-C关闭观察进程。此命令当前只展示
+上述现有页面，不具备本节要求的完整白板与任务图。CTF真实run命令须待题目、适配与
+运行包完成后交付，不能用当前code配置冒充CTF测试。
