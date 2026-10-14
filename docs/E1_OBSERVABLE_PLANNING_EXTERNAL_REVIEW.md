@@ -469,3 +469,70 @@ ER-10（业务 Oracle success 未成 board Fact）、ER-12（正常链工具/Hos
 rejected plan）。`derived_plan` 仍出现两条 `campaign.plan.submitted`，即 C 的 digest 归一
 问题，本轮不宣称修复。整体 E1 仍 changes_required，状态为 **B internally_verified**，交回
 独立核验；真实模型规划质量与 CTF 能力未测。
+
+## 10. 短修复附录（任务 C：统一观察、白板证据与计划身份）
+
+范围：只统一同一 Manifest/EventLog 的观察状态、可追溯白板 Fact 与 canonical plan
+digest。保留 A 的规划执行门、B 的模板判据约束和 C6 三事实。起点为含 B 的 HEAD
+`beb79c0`；本轮 C red 基线为外部验收 14/17，仅 ER-09/10/12 红。
+
+### 10.1 共享投影输入、Outcome 信任门与 digest 调用点
+
+| 边界 | 单一实现 | 消费点 |
+| --- | --- | --- |
+| artifact-aware replay | `artifactIndexFromEvents`（c3-entry） | `projectQueueFromEvents`：Scheduler、e1-observation、live RAM、report |
+| Campaign Outcome → 白板 | `campaignOutcomeAsRecorded` + `classifyOutcome`（board.mjs） | `projectBoard` → live RAM、`buildE1View`、HTTP `/api/board` |
+| canonical plan digest | `planDigest(plan)`（e1-plan-contract） | `recordPlan`(c6-entry)、`scheduler.admitPlan`、e1-planning、view |
+
+- `campaignOutcomeAsRecorded` 不写第二份事件：保留原 `event_id`、`source`、
+  `task_id`/`step_id`/`episode_id`、`criterion`、`observed`、`scope`、`evidence_refs`；
+  仅把内层 `payload.outcome` 作为权威判断。task/stage/source/episode 绑定错误标记
+  `campaign_binding_ok=false`，由 `classifyOutcome` 降级为 Hint 并给出理由。
+- Fact 门：仅 `oracle`/`human` 来源、`success`、独立 provenance、非空且形状合法的
+  evidence_refs、有 `observed` 才成 Fact；`failure` 仅 `preconditions_verified` +
+  `postcondition_failed` 成 Refuted；unknown/invalid/模型/裸 runtime success 均为 Hint。
+- `planDigest` 覆盖模型候选的 `version`/`plan_id`/`root_goal_ref`/`tasks`，排除 Host
+  normalized 定义（各自有 `task_digest`）；工具录入、Host 准入、投影、view 全调用它。
+
+### 10.2 短契约矩阵（C 新增用例）
+
+| 用例 | 断言（行为） | 反例 |
+| --- | --- | --- |
+| C-STATE-01 | `buildE1View.task_graph` 逐 Task 等于 artifact-aware replay；root 非执行任务 | 固定 artifacts={} |
+| C-FACT-01 | 真实业务 Oracle success 成可追溯 Fact（原 event_id/task/episode/evidence） | runtime 裸 success 成 Fact |
+| C-EVIDENCE-01 | 缺/错证据、llm、foreign task/episode、unknown 均无 Fact、无假 completed、理由可见 | 只查 source.kind |
+| C-IDENTITY-01 | 提交/准入/投影/`planDigest` 一致；重复幂等零 rejected；改内容仍拒绝 | 过滤 rejected 或只改 UI id |
+| C-HOLD-01 | admitted-only 前缀子任务保持 hold，不假 completed | 只测 completed |
+| C-READONLY-01 | 真实 HTTP `/api/task-graph` 与 replay 一致，零新事件/零 Broker effect | 观察触发起新 Oracle |
+
+### 10.3 任务 C 实际结果（DS 本地，未 push）
+
+| 套件 | 命令/argv | 退出 | 证据 |
+| --- | --- | --- | --- |
+| 外部验收 | `c6-suite-runner …/final-e1 <E1 7 names>` | 0，**17/17** | `final-e1/results.json`、`final-e1/aegis-e1-external-review.log` |
+| 新增 C 脚本 | `node Pi_Agent_base/tests/aegis-e1-observation-repair.mjs` | 0，**6/6** | `final-c/aegis-e1-observation-repair.log` |
+| C6 18 | `c6-suite-runner …/final-c6 <18 names>` | 0 | `final-c6/results.json` |
+| 回归 26 | `c6-suite-runner …/final-regress <26 names>` | 0 | `final-regress/results.json` |
+| 受影响 8 | `c6-suite-runner …/final-affected <8 names>` | 0 | `final-affected/results.json` |
+| A gate / 写失败恢复 | 含于 E1 7：`aegis-e1-planning-gate`、`…-audit` | 0 / 0 | `final-e1/results.json` |
+| Campaign tsc | `tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json` | 1；196→196，逐条与 B 基线相同 | `final-tsc.log` |
+| Biome 修改范围 | `biome check`（本轮文件） | 0 | 命令 stdout |
+| red 基线 | `c6-suite-runner …/baseline aegis-e1-external-review` | 1，14 pass / 3 fail | `baseline/aegis-e1-external-review.log` |
+| mutation：绕过证据/归属门 | 见 10.4 | C-EVIDENCE-01 行为失败 | `mutation-evidence/…` |
+
+真实正常链关键数值（`normal_plan`）：provider=8、Broker effect=3、dataset
+`Ada/active`；权威队列与 view 均为 `task-plan completed; dyn-a/b/c completed`；
+业务 Oracle success 9 条，其中 dyn-a/b/c 均有可追溯 Fact；正常链 `rejected=[]`。
+
+### 10.4 针对性 mutation
+
+临时把 `classifyOutcome` 的 `campaign_binding_ok` 与 evidence 要求一并短路，使缺证据/
+foreign/llm 反例仍被当作 success。`aegis-e1-observation-repair` 的 C-EVIDENCE-01 因
+**假 Fact/假状态行为断言**失败、exit 1（非 syntax/import），恢复后逐字节一致。
+证据/归属门 killed。
+
+### 10.5 未实测限制
+
+- 未运行真实付费模型或 CTF 靶场；HTTP 为本地 loopback 真实调用，未做浏览器像素级验收。
+- 大图分页/交互、自动补写缺 ready、增量重规划仍后置；截断/未知如实显示。
+- 整体 E1 状态 **internally_verified / awaiting_external_review**，交回独立整体验收。
