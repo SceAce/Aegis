@@ -63,56 +63,123 @@ export function normalizeRef(ref) {
 /** The Campaign event kind that carries a trusted Oracle judgement. */
 export const CAMPAIGN_OUTCOME_KIND = "campaign.oracle.result";
 
+/** A non-empty trimmed string, or null. */
+function nonEmpty(value) {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 /**
  * Adapt a committed Campaign `campaign.oracle.result` note into the canonical
  * `outcome.recorded` shape the board already understands. It NEVER writes a
  * second event: the original `event_id`, `source`, `task_id`, `step_id`,
  * `episode_id`, `criterion`, `observed`, `scope` and evidence refs are kept.
- * The embedded `payload.outcome` is the authoritative judgement; a structural
- * task/stage/source binding mismatch is carried as an explicit downgrade.
  *
+ * Fail closed: the embedded `payload.outcome` is only trusted when EVERY
+ * durable indices. A missing/foreign/mismatched binding is carried as an
+ * explicit downgrade (`campaign_binding_ok=false`); `outer ?? inner` is never
+ * used to fabricate a complete identity.
+ *
+ * @param {any} event committed row
+ * @param {{campaignId?: string|null, taskDefs?: Map<string, {stages: Set<string>}>|null, episodeByTask?: Map<string, string>|null}|null} indexes
  * @returns {any|null} null when the event is not a Campaign oracle result.
  */
-export function campaignOutcomeAsRecorded(event, taskEpisodes = null) {
+export function campaignOutcomeAsRecorded(event, indexes = null) {
 	if (event?.event_type !== "runtime.note" || event?.payload?.kind !== CAMPAIGN_OUTCOME_KIND) return null;
 	const envelope = event.payload ?? {};
 	const rawOutcome = envelope.outcome;
 	const outcome = rawOutcome && typeof rawOutcome === "object" && !Array.isArray(rawOutcome) ? rawOutcome : null;
-	const eventSourceKind = event.source?.kind ?? null;
-	const innerSource = outcome?.provenance?.source ?? outcome?.oracle?.source ?? null;
-	const outerTask = envelope.task_id ?? null;
-	const innerTask = outcome?.task_id ?? outcome?.provenance?.task_id ?? null;
-	const outerStep = envelope.step_id ?? null;
-	const innerStep = outcome?.step_id ?? outcome?.stage_id ?? null;
+	if (!outcome)
+		return normalizedCampaignEvent(event, envelope, null, ["campaign outcome has no structured outcome payload"]);
 	const reasons = [];
-	if (!outcome) reasons.push("campaign outcome has no structured outcome payload");
-	if (outcome && outerTask && innerTask && outerTask !== innerTask)
+	const campaignId = indexes?.campaignId ?? null;
+	const taskDefs = indexes?.taskDefs ?? null;
+	const episodeByTask = indexes?.episodeByTask ?? null;
+
+	// Campaign identity: the envelope must name a campaign, and it must be the
+	// Campaign this board is projecting when one is known.
+	const envelopeCampaign = nonEmpty(envelope.campaign_id);
+	if (!envelopeCampaign) reasons.push("campaign outcome is missing campaign_id");
+	else if (campaignId && envelopeCampaign !== campaignId)
+		reasons.push(`campaign outcome belongs to campaign ${envelopeCampaign}, not the current campaign ${campaignId}`);
+
+	// Task identity: the envelope and the embedded Outcome must BOTH declare the
+	// same known task. `outer ?? inner` is never allowed to fill a missing side.
+	const outerTask = nonEmpty(envelope.task_id);
+	const innerTaskDirect = nonEmpty(outcome.task_id);
+	const innerTaskProvenance = nonEmpty(outcome.provenance?.task_id);
+	if (innerTaskDirect && innerTaskProvenance && innerTaskDirect !== innerTaskProvenance)
+		reasons.push("outcome task_id and provenance.task_id disagree");
+	const innerTask = innerTaskDirect ?? innerTaskProvenance;
+	if (!outerTask) reasons.push("campaign outcome is missing the envelope task_id");
+	if (!innerTask) reasons.push("campaign outcome is missing its inner task_id");
+	if (outerTask && innerTask && outerTask !== innerTask)
 		reasons.push("outcome task binding does not match the campaign envelope");
-	if (outcome && outerStep && innerStep && outerStep !== innerStep)
-		reasons.push("outcome stage binding does not match the campaign envelope");
-	if (outcome && eventSourceKind && innerSource && innerSource !== eventSourceKind)
-		reasons.push("outcome provenance source does not match the event source");
-	// Episode binding: the task's own started episode is the trusted binding. A
-	// judgement about a DIFFERENT episode of the same task is foreign evidence.
-	const boundEpisode = outerTask && taskEpisodes?.get ? taskEpisodes.get(outerTask) : null;
-	if (outcome && boundEpisode && outcome.episode_id && outcome.episode_id !== boundEpisode)
+	if (outerTask && taskDefs && !taskDefs.has(outerTask))
+		reasons.push(`campaign outcome references unknown task ${outerTask}`);
+
+	// Episode identity: envelope and Outcome must agree, and the task must have a
+	// durable `campaign.task.started` episode to bind to.
+	const outerEpisode = nonEmpty(envelope.episode_id) ?? nonEmpty(event.episode_id);
+	const innerEpisode = nonEmpty(outcome.episode_id);
+	if (!outerEpisode) reasons.push("campaign outcome is missing the envelope episode_id");
+	if (!innerEpisode) reasons.push("campaign outcome is missing its inner episode_id");
+	if (outerEpisode && innerEpisode && outerEpisode !== innerEpisode)
+		reasons.push("outcome episode binding does not match the campaign envelope");
+	const startedEpisode = outerTask && episodeByTask?.get ? episodeByTask.get(outerTask) : null;
+	if (outerTask && !startedEpisode) reasons.push(`task ${outerTask} has no durable started episode to bind`);
+	else if (startedEpisode && innerEpisode && innerEpisode !== startedEpisode)
 		reasons.push("outcome episode binding does not match the started task episode");
+
+	// Source identity: the event kind and the Outcome provenance must agree; a
+	// model-supplied field can never claim oracle trust. The trusted binding is
+	// `provenance.source`; a bare `oracle.source` is never a substitute.
+	const eventSourceKind = nonEmpty(event.source?.kind);
+	const innerSource = nonEmpty(outcome.provenance?.source);
+	if (!eventSourceKind) reasons.push("campaign outcome is missing its event source kind");
+	if (!innerSource) reasons.push("campaign outcome is missing its inner provenance source");
+	if (eventSourceKind && innerSource && innerSource !== eventSourceKind)
+		reasons.push(`outcome provenance source ${innerSource} does not match the event source ${eventSourceKind}`);
+
+	// Criterion identity: a bare status string is not a judgement.
+	if (!nonEmpty(outcome.criterion?.criterion_id)) reasons.push("campaign outcome has no criterion_id");
+
+	// Stage identity: a STAGE-level outcome (not the task-level aggregate) must
+	// name a step both layers agree on AND that the task declares.
+	const isTaskOracle = envelope.task_oracle === true || outcome.task_oracle === true;
+	if (!isTaskOracle) {
+		const outerStep = nonEmpty(envelope.step_id);
+		const innerStep = nonEmpty(outcome.step_id) ?? nonEmpty(outcome.stage_id);
+		if (!outerStep) reasons.push("stage outcome is missing the envelope step_id");
+		if (!innerStep) reasons.push("stage outcome is missing its inner step_id");
+		if (outerStep && innerStep && outerStep !== innerStep)
+			reasons.push("outcome stage binding does not match the campaign envelope");
+		const stages = outerTask && taskDefs?.get ? taskDefs.get(outerTask)?.stages : null;
+		if (outerStep && stages && !stages.has(outerStep))
+			reasons.push(`stage ${outerStep} is not declared by task ${outerTask}`);
+	}
+
+	return normalizedCampaignEvent(event, envelope, outcome, reasons);
+}
+
+/** Build the canonical `outcome.recorded` shape for a Campaign oracle result. */
+function normalizedCampaignEvent(event, envelope, outcome, reasons) {
 	const evidenceRefs =
 		Array.isArray(event.evidence_refs) && event.evidence_refs.length > 0
 			? event.evidence_refs
 			: Array.isArray(outcome?.evidence_refs)
 				? outcome.evidence_refs
 				: [];
+	const outerEpisode = nonEmpty(envelope.episode_id) ?? nonEmpty(event.episode_id);
 	return {
 		...event,
 		event_type: "outcome.recorded",
-		episode_id: event.episode_id ?? outcome?.episode_id ?? null,
+		episode_id: event.episode_id ?? nonEmpty(outcome?.episode_id) ?? outerEpisode ?? null,
 		evidence_refs: evidenceRefs,
 		payload: {
 			...(outcome ?? {}),
 			kind: CAMPAIGN_OUTCOME_KIND,
-			task_id: outerTask ?? innerTask ?? null,
-			step_id: outerStep ?? innerStep ?? null,
+			task_id: nonEmpty(envelope.task_id) ?? nonEmpty(outcome?.task_id) ?? null,
+			step_id: nonEmpty(envelope.step_id) ?? nonEmpty(outcome?.step_id) ?? nonEmpty(outcome?.stage_id) ?? null,
 			campaign_outcome: true,
 			campaign_binding_ok: reasons.length === 0,
 			...(reasons.length > 0 ? { campaign_binding_reason: reasons.join("; ") } : {}),
@@ -558,7 +625,7 @@ function nodeText(event, type) {
  * after supersedes and trusted environment changes. Deterministic: same events
  * -> same board.
  */
-export function projectBoard(events) {
+export function projectBoard(events, { manifest = null } = {}) {
 	const nodes = [];
 	const edges = [];
 	const byType = Object.fromEntries(NODE_TYPES.map((type) => [type, []]));
@@ -567,21 +634,31 @@ export function projectBoard(events) {
 	// Normalize Campaign `campaign.oracle.result` notes into the canonical Outcome
 	// shape ONCE, so the node loop, supersede resolution and environment changes all
 	// see the SAME trusted outcome semantics (`campaignOutcomeAsRecorded`). The
-	// task -> started-episode index binds each judgement to its OWN task episode.
+	// binding indices come from the Manifest task definitions AND the durable
+	// `campaign.plan.admitted` normalized definitions; the task -> started-episode
+	// index binds each judgement to its OWN current task episode.
 	const rawEvents = Array.isArray(events) ? events : [];
-	const taskEpisodes = new Map();
+	const taskDefs = new Map();
+	const indexDefinition = (task) => {
+		if (!task || typeof task.task_id !== "string" || task.task_id.length === 0) return;
+		taskDefs.set(task.task_id, { stages: new Set((task.stages ?? []).map((stage) => stage.stage_id)) });
+	};
+	for (const task of manifest?.tasks ?? []) indexDefinition(task);
+	const episodeByTask = new Map();
 	for (const event of rawEvents) {
 		const payload = event?.payload ?? {};
-		if (
-			event?.event_type === "runtime.note" &&
-			payload.kind === "campaign.task.started" &&
-			payload.task_id &&
-			payload.episode_id
-		) {
-			if (!taskEpisodes.has(payload.task_id)) taskEpisodes.set(payload.task_id, payload.episode_id);
+		if (event?.event_type !== "runtime.note") continue;
+		if (payload.kind === "campaign.plan.admitted" && Array.isArray(payload.plan_tasks)) {
+			for (const definition of payload.plan_tasks) indexDefinition(definition);
+		}
+		if (payload.kind === "campaign.task.started" && payload.task_id && payload.episode_id) {
+			// The latest durable `started` episode wins: a re-started task binds to its
+			// CURRENT episode, not a stale first attempt.
+			episodeByTask.set(payload.task_id, payload.episode_id);
 		}
 	}
-	const normalizedEvents = rawEvents.map((event) => campaignOutcomeAsRecorded(event, taskEpisodes) ?? event);
+	const indexes = { campaignId: manifest?.campaign_id ?? null, taskDefs, episodeByTask };
+	const normalizedEvents = rawEvents.map((event) => campaignOutcomeAsRecorded(event, indexes) ?? event);
 
 	for (const event of normalizedEvents) {
 		if (!event || typeof event !== "object") continue;

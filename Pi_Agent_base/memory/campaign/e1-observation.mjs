@@ -76,7 +76,7 @@ export function buildE1View(
 	{ manifest, events = [], limits = E1_LIMITS, integrityOk = true } = /** @type {any} */ ({}),
 ) {
 	limits = { ...E1_LIMITS, ...limits };
-	const board = projectBoard(events);
+	const board = projectBoard(events, { manifest });
 	const boardNodes = board.nodes.slice(0, limits.max_nodes).map((node) => boardNode(node, limits));
 	const boardDigest = board.digest;
 	const boardEffectiveDigest = board.effective_digest;

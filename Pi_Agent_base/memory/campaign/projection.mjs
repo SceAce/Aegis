@@ -15,6 +15,7 @@
 
 import { digest } from "../fixture/contracts.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
+import { planDigest } from "./e1-plan-contract.mjs";
 import { campaignEventEnvelope, isCampaignEventKind, validateCampaignEvent } from "./event-contract.mjs";
 import { resolveStageOutcome, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 import { isLegalTransition, makeQueueItem } from "./queue.mjs";
@@ -186,6 +187,7 @@ export function projectQueueFromEvents({
 				reasons: p.reasons ?? [],
 				normalized: p.normalized ?? null,
 				planning_task_id: p.planning_task_id ?? null,
+				campaign_id: p.campaign_id ?? null,
 			},
 		]),
 	);
@@ -835,21 +837,38 @@ function applyPlanSubmitted({ envelope, offset, plans }) {
 	if (!envelope.plan || typeof envelope.plan !== "object") {
 		return { ok: false, reason: "submitted plan has no resolvable plan object" };
 	}
+	// FAIL CLOSED: a declared digest is required and must match the canonical
+	// digest of the candidate plan. This stops an untrusted/foreign digest from
+	// ever entering the identity index.
+	const declared = envelope.plan_digest;
+	if (typeof declared !== "string" || declared.length === 0) {
+		return { ok: false, reason: `plan ${planId} submitted without a declared plan_digest` };
+	}
+	const recomputed = planDigest(envelope.plan);
+	if (recomputed !== declared) {
+		return {
+			ok: false,
+			reason: `plan ${planId} declared digest ${declared} does not match planDigest(plan) ${recomputed}`,
+		};
+	}
 	const existing = plans.get(planId);
 	if (existing) {
-		if (existing.digest && envelope.plan_digest && existing.digest !== envelope.plan_digest) {
+		// A repeated identical candidate is idempotent. A conflicting digest is
+		// refused and never overwrites the first legitimate record.
+		if (existing.digest !== declared) {
 			return { ok: false, reason: `plan_id ${planId} already submitted with a different digest` };
 		}
 		return { ok: true };
 	}
 	plans.set(planId, {
-		digest: envelope.plan_digest ?? null,
+		digest: declared,
 		offset,
 		plan: envelope.plan,
 		status: "submitted",
 		reasons: [],
 		normalized: null,
 		planning_task_id: envelope.planning_task_id ?? null,
+		campaign_id: envelope.campaign_id ?? null,
 	});
 	return { ok: true };
 }
@@ -876,13 +895,58 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
 	if (!Array.isArray(definitions) || definitions.length === 0) {
 		return { ok: false, reason: "admitted plan batch carries no task definitions" };
 	}
-	// Idempotent by plan id: a repeated batch with the same digest is a no-op.
+	const declared = envelope.plan_digest;
+	if (typeof declared !== "string" || declared.length === 0) {
+		return { ok: false, reason: `plan ${planId} admitted without a declared plan_digest` };
+	}
 	const prior = plans.get(planId);
+	// Idempotent by plan id: a repeated IDENTICAL batch with the same digest is a
+	// no-op. A conflicting digest is refused and never overwrites the first record.
 	if (prior?.status === "admitted") {
-		if (prior.digest && envelope.plan_digest && prior.digest !== envelope.plan_digest) {
+		if (prior.digest !== declared) {
 			return { ok: false, reason: `plan_id ${planId} already admitted with a different digest` };
 		}
 		return { ok: true };
+	}
+	// FAIL CLOSED: an admission must reference a prior SAME-CAMPAIGN submitted
+	// candidate whose declared digest matches BOTH the admitted digest AND the
+	// independently recomputed planDigest(candidate.plan). No prior candidate, a
+	// conflicting digest, a missing plan, or a planning identity mismatch rejects
+	// the whole batch BEFORE any queue/budget/definition mutation.
+	if (!prior) {
+		return { ok: false, reason: `plan ${planId} was admitted without a prior submitted candidate` };
+	}
+	if (prior.status !== "submitted") {
+		return { ok: false, reason: `plan ${planId} is in state ${prior.status}, not submitted` };
+	}
+	if (!prior.plan || typeof prior.plan !== "object") {
+		return { ok: false, reason: `plan ${planId} candidate has no resolvable plan` };
+	}
+	if (prior.digest !== declared) {
+		return {
+			ok: false,
+			reason: `plan ${planId} admitted digest ${declared} does not match the submitted digest ${prior.digest}`,
+		};
+	}
+	const recomputed = planDigest(prior.plan);
+	if (recomputed !== declared) {
+		return {
+			ok: false,
+			reason: `plan ${planId} admitted digest ${declared} does not match planDigest(submitted.plan) ${recomputed}`,
+		};
+	}
+	const submittedPlanningTask = prior.planning_task_id ?? null;
+	if (envelope.planning_task_id && submittedPlanningTask && envelope.planning_task_id !== submittedPlanningTask) {
+		return {
+			ok: false,
+			reason: `plan ${planId} admitted planning task ${envelope.planning_task_id} does not match the submitted planning task ${submittedPlanningTask}`,
+		};
+	}
+	if (prior.campaign_id && envelope.campaign_id && prior.campaign_id !== envelope.campaign_id) {
+		return {
+			ok: false,
+			reason: `plan ${planId} admitted campaign ${envelope.campaign_id} does not match the submitted campaign ${prior.campaign_id}`,
+		};
 	}
 	// Validate ALL definitions BEFORE any mutation (whole-graph, no legal prefix).
 	const batchIds = new Set();
@@ -935,7 +999,7 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
 	}
 	plans.set(planId, {
 		...prior,
-		digest: envelope.plan_digest ?? prior?.digest ?? null,
+		digest: declared,
 		status: "admitted",
 		reasons: [],
 		normalized: definitions.map((definition) => definition.task_id),

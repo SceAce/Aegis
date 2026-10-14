@@ -881,7 +881,7 @@ export async function runC6FromConfig(
 					// the first episode in the map.
 					ramProvider: () => {
 						const events = readEventsSafe(eventLogPath);
-						const board = projectBoard(events);
+						const board = projectBoard(events, { manifest });
 						const state = projectState(events);
 						const episodeId = `ep-${currentTaskId}`;
 						return buildRam({ board, state, episodeId, goal: manifest.objective?.description ?? "" });
