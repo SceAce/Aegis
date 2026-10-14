@@ -245,10 +245,12 @@ export async function runC6FromConfig(
 	// ONLY from an admitted plan batch. This module only tracks the templates.
 	const manifest = loaded.manifest;
 	let planningTemplates = null;
+	let planningContext = null;
 	let e1Planning = null;
 	if (config.planning?.enabled === true) {
 		e1Planning = await import("./e1-planning.mjs");
 		planningTemplates = e1Planning.templatesFromConfig(config.planning);
+		planningContext = e1Planning.buildPlanningContext({ manifest, templates: planningTemplates });
 	}
 
 	// Provider must be EXPLICIT and recognized; no silent fallback to faux.
@@ -565,6 +567,7 @@ export async function runC6FromConfig(
 				buffer,
 				type: TypeSchema,
 				planLimits: PLAN_LIMITS,
+				planningContext,
 				recordPlan: async (plan) => {
 					if (!sinkRef || typeof sinkRef.append !== "function")
 						return { ok: false, error: "no durable writer is bound" };
@@ -871,6 +874,7 @@ export async function runC6FromConfig(
 					taskId: config.label ?? "campaign-task",
 					campaignId: manifest.campaign_id ?? null,
 					goal: manifest.objective?.description ?? manifest.title ?? "",
+					planning: planningContext ? { context: planningContext } : null,
 					actionCatalog: null,
 					getActionCatalog: () => ({ actions: safeDescribe(brokerRef) }),
 					// X5: the RAM/facts/refs are bound to the CURRENT task's episode, never
@@ -1024,6 +1028,7 @@ export async function runC6FromConfig(
 								host: hostRef,
 								projection,
 								templates: planningTemplates,
+								planningContext,
 								planningTaskId: planTask?.task_id ?? e1Planning.PLANNING_TASK_ID,
 								planningSettled: settlement.unresolved === 0,
 							});

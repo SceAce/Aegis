@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 
 import { digest, resolveInside } from "../fixture/contracts.mjs";
 import { classifyStopReason } from "./c6-request-lifecycle.mjs";
+import { buildPlanningPrompt } from "./e1-plan-contract.mjs";
 
 export const MODEL_WORKER_VERSION = "2.0.0";
 
@@ -420,12 +421,27 @@ export function createDecisionCaptureTool({
  * Host can validate the whole graph and admit it as a batch. The return text
  * never claims the Host admitted the plan or that the root goal is done.
  *
- * @param {{sdk: any, buffer: any, type?: any, recordPlan?: ((plan: any) => Promise<{ok: boolean, buffered?: boolean, error?: string}>)|null, planLimits?: any}} args
+ * @param {{sdk: any, buffer: any, type?: any, recordPlan?: ((plan: any) => Promise<{ok: boolean, buffered?: boolean, error?: string}>)|null, planLimits?: any, planningContext?: any}} args
  */
-export function createPlanSubmitTool({ sdk, buffer, type, recordPlan = null, planLimits = null }) {
+export function createPlanSubmitTool({
+	sdk,
+	buffer,
+	type,
+	recordPlan = null,
+	planLimits = null,
+	planningContext = null,
+}) {
 	const Type = type ?? sdk.Type;
 	if (!Type) throw new Error("createPlanSubmitTool requires a Type schema builder");
 	const limits = planLimits ?? { max_tasks: 24 };
+	const templateSummary = (planningContext?.templates ?? [])
+		.map(
+			(template) =>
+				`${template.template_ref}(task_type=${template.task_type}; oracle=${template.oracle_ref}; criteria=${(template.success_criteria ?? []).join(" | ") || "none"})`,
+		)
+		.join("; ");
+	const rootCriteria = (planningContext?.root_goal?.required_criteria ?? []).join(" | ");
+	const criteriaHint = `Non-empty subset of the chosen template's offered criteria. Required roots: ${rootCriteria || "(none)"}. Templates: ${templateSummary || "(see the planning input)"}`;
 	return sdk.defineTool({
 		name: "aegis_submit_plan",
 		label: "Aegis: submit a complete candidate task plan",
@@ -442,9 +458,16 @@ export function createPlanSubmitTool({ sdk, buffer, type, recordPlan = null, pla
 					depends_on: Type.Array(Type.String({ description: "Execution prerequisites; order-independent" })),
 					goal: Type.Object({
 						description: Type.String(),
-						success_criteria: Type.Array(Type.String()),
+						success_criteria: Type.Array(Type.String({ description: criteriaHint })),
 					}),
-					task_type: Type.String(),
+					task_type: Type.String({
+						description: `Trusted template task_type. ${templateSummary || "See the planning input."}`,
+					}),
+					template_ref: Type.Optional(
+						Type.String({
+							description: `Optional trusted template_ref; must match task_type. ${templateSummary || ""}`,
+						}),
+					),
 					target_ref: Type.String(),
 					required_capabilities: Type.Array(Type.String()),
 					expected_evidence: Type.Array(Type.String()),
@@ -542,6 +565,7 @@ export function createPlanSubmitTool({ sdk, buffer, type, recordPlan = null, pla
  *   clock?: () => number,
  *   campaignId?: string|null,
  *   reconciliationGuard?: {unresolved: number, diagnostics: number, runtimeBlocked?: boolean}|null,
+ *   planning?: {context: any}|null,
  * }} args
  */
 export function createModelWorker(
@@ -568,10 +592,12 @@ export function createModelWorker(
 		clock = () => Date.now(),
 		campaignId = null,
 		reconciliationGuard = null,
+		planning = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");
 	if (!ledger) throw new Error("createModelWorker requires a tool ledger");
+	const planningContext = planning?.context ?? null;
 
 	let rom = "";
 	if (romPath) {
@@ -584,6 +610,11 @@ export function createModelWorker(
 
 	/** The full prompt the model receives for this task (data-only fields). */
 	function buildPrompt(task = null, habit = null) {
+		// E1: a Host planning Task receives the frozen planning contract and the
+		// structured plan tool instruction, never the business-action prompt. An
+		// ordinary business Task keeps the existing prompt unchanged.
+		if (planningContext && (task?.task_id ?? taskId) === (planningContext.planning_task_id ?? "task-plan"))
+			return buildPlanningPrompt(planningContext);
 		const catalog = typeof getActionCatalog === "function" ? getActionCatalog() : actionCatalog;
 		const catalogLines = [];
 		if (catalog && Array.isArray(catalog.actions)) {

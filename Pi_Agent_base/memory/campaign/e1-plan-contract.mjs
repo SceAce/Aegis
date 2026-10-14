@@ -28,6 +28,9 @@ import { isKnownTaskType } from "./registries.mjs";
 export const PLAN_SCHEMA_VERSION = "aegis-plan-1.0";
 export const PLAN_STATUSES = Object.freeze(["admitted", "blocked", "rejected"]);
 
+/** Version of the normalized planning input shared by the provider prompt and admission. */
+export const PLANNING_INPUT_VERSION = "aegis-planning-input-1.0";
+
 /** Hard transport bounds (never a place to widen authorization). */
 export const PLAN_LIMITS = Object.freeze({
 	/** Maximum nodes in ONE candidate plan. */
@@ -86,10 +89,35 @@ export function validatePlanShape(plan) {
 		if (!Array.isArray(task.depends_on)) reasons.push(`${label}.depends_on must be an array when present`);
 		else if (task.depends_on.length > PLAN_LIMITS.max_depends_on)
 			reasons.push(`${label}.depends_on exceeds max_depends_on ${PLAN_LIMITS.max_depends_on}`);
-		if (!task.goal || typeof task.goal !== "object" || !isNonEmptyString(task.goal.description))
+		if (
+			!task.goal ||
+			typeof task.goal !== "object" ||
+			Array.isArray(task.goal) ||
+			!isNonEmptyString(task.goal.description)
+		)
 			reasons.push(`${label}.goal.description is required`);
+		const criteria =
+			task.goal && typeof task.goal === "object" && !Array.isArray(task.goal) ? task.goal.success_criteria : undefined;
+		if (criteria !== undefined && !Array.isArray(criteria))
+			reasons.push(`${label}.goal.success_criteria must be an array`);
+		else if (Array.isArray(criteria))
+			for (const [criterionIndex, criterion] of criteria.entries())
+				if (!isNonEmptyString(criterion))
+					reasons.push(`${label}.goal.success_criteria[${criterionIndex}] must be a non-empty string`);
 		if (!isNonEmptyString(task.task_type)) reasons.push(`${label}.task_type is required`);
+		if (task.template_ref !== undefined && !isNonEmptyString(task.template_ref))
+			reasons.push(`${label}.template_ref must be a non-empty string when present`);
 		if (!isNonEmptyString(task.target_ref)) reasons.push(`${label}.target_ref is required`);
+		for (const key of ["depends_on", "required_capabilities", "expected_evidence"]) {
+			const value = task[key];
+			if (value === undefined) continue;
+			if (!Array.isArray(value)) {
+				reasons.push(`${label}.${key} must be an array when present`);
+				continue;
+			}
+			for (const [elementIndex, element] of value.entries())
+				if (!isNonEmptyString(element)) reasons.push(`${label}.${key}[${elementIndex}] must be a non-empty string`);
+		}
 		if (
 			typeof task.priority !== "number" ||
 			!Number.isInteger(task.priority) ||
@@ -108,7 +136,7 @@ export function validatePlanShape(plan) {
 			task.goal?.description,
 			task.stop_condition,
 			task.rationale,
-			...(task.goal?.success_criteria ?? []),
+			...(Array.isArray(criteria) ? criteria : []),
 		]) {
 			if (typeof text === "string" && text.length > PLAN_LIMITS.max_text)
 				reasons.push(`${label} contains text longer than max_text ${PLAN_LIMITS.max_text}`);
@@ -235,11 +263,32 @@ export function validatePlanGraph({
 			if (!allowedCapabilities.has(cap)) blockReasons.push(`${label}: capability ${cap} is not authorized`);
 
 		// A business task resolves its oracle/criteria from the TRUSTED template, not
-		// by inheriting the planning task's own readiness criterion.
-		const template = templates ? templates.get(node.template_ref ?? node.task_type) : null;
+		// by inheriting the planning task's own readiness criterion. The model may
+		// only select a non-empty SUBSET of the template's offered criteria; it can
+		// never invent a new acceptance definition or a foreign oracle/identity.
+		const templateKey = node.template_ref ?? node.task_type;
+		const template = templates ? templates.get(templateKey) : null;
 		if (templates) {
-			if (!template) blockReasons.push(`${label}: no trusted template for ${node.template_ref ?? node.task_type}`);
+			if (!template) blockReasons.push(`${label}: no trusted template for ${templateKey}`);
 			else {
+				const templateLabel = template.template_ref ?? templateKey;
+				if (node.template_ref && template.template_ref && node.template_ref !== template.template_ref)
+					blockReasons.push(
+						`${label}: template_ref ${node.template_ref} does not match the resolved template ${template.template_ref}`,
+					);
+				if (template.task_type && node.task_type !== template.task_type)
+					blockReasons.push(
+						`${label}: task_type ${node.task_type} does not match template ${templateLabel} (${template.task_type})`,
+					);
+				const offered = new Set(template.success_criteria ?? []);
+				const criteria = Array.isArray(node.goal?.success_criteria) ? node.goal.success_criteria : [];
+				if (offered.size === 0)
+					blockReasons.push(`${label}: trusted template ${templateLabel} offers no success criteria`);
+				if (criteria.length === 0)
+					blockReasons.push(`${label}: select at least one success criterion offered by template ${templateLabel}`);
+				for (const criterion of criteria)
+					if (!offered.has(criterion))
+						blockReasons.push(`${label}: criterion "${criterion}" is not offered by template ${templateLabel}`);
 				const templateCaps = new Set(template.required_capabilities ?? []);
 				for (const cap of node.required_capabilities ?? [])
 					if (!templateCaps.has(cap)) blockReasons.push(`${label}: capability ${cap} is not offered by template`);
@@ -422,6 +471,130 @@ function normalizePlanNode({ node, plan, manifest, templates, planningTaskId }) 
 /** A digest over the COMPLETE candidate batch, used for durable identity. */
 export function planDigest(plan) {
 	return digest({ plan_id: plan?.plan_id ?? null, tasks: plan?.tasks ?? null });
+}
+
+/**
+ * Build the ONE normalized planning contract. Both the provider prompt/tool
+ * schema and the Host admission consume this object (or the same manifest +
+ * template map it is derived from), so the model can only ever choose what the
+ * Host will independently re-check. It is pure and never widens authorization.
+ *
+ * @param {{manifest?: any, templates?: Map<string, any>|null, planningTaskId?: string, planningCriterion?: string}} [args]
+ */
+export function buildPlanningContext({
+	manifest = null,
+	templates = null,
+	planningTaskId = "task-plan",
+	planningCriterion = "plan_ready",
+} = {}) {
+	const policy = manifest?.dynamic_task_policy ?? {};
+	const seenTemplates = new Set();
+	const templateList = [];
+	if (templates && typeof templates.values === "function") {
+		for (const template of templates.values()) {
+			if (!template || typeof template !== "object" || seenTemplates.has(template)) continue;
+			seenTemplates.add(template);
+			templateList.push({
+				template_ref: template.template_ref ?? null,
+				task_type: template.task_type ?? template.template_ref ?? null,
+				oracle_ref: template.oracle_ref ?? null,
+				required_capabilities: [...(template.required_capabilities ?? [])],
+				success_criteria: [...(template.success_criteria ?? [])],
+				scope: template.scope
+					? {
+							domain: template.scope.domain ?? null,
+							task_types: [...(template.scope.task_types ?? [])],
+							permissions: [...(template.scope.permissions ?? [])],
+						}
+					: null,
+			});
+		}
+	}
+	const planningTask = (manifest?.tasks ?? []).find((task) => task.task_id === planningTaskId) ?? null;
+	const requiredCriteria = [...(manifest?.objective?.required_criteria ?? manifest?.objective?.success_criteria ?? [])];
+	return {
+		version: PLANNING_INPUT_VERSION,
+		campaign_id: manifest?.campaign_id ?? null,
+		planning_task_id: planningTaskId,
+		planning_criterion: planningCriterion,
+		root_goal_ref: "campaign-root",
+		root_goal: {
+			description: manifest?.objective?.description ?? manifest?.title ?? "",
+			required_criteria: requiredCriteria,
+			objective_success_criteria: [...(manifest?.objective?.success_criteria ?? [])],
+		},
+		allowed_targets: [...(manifest?.authorization?.allowed_targets ?? [])],
+		allowed_capabilities: [...(manifest?.authorization?.allowed_capabilities ?? [])],
+		existing_tasks: (manifest?.tasks ?? []).map((task) => ({
+			task_id: task.task_id,
+			task_type: task.task_type ?? null,
+			target_ref: task.target_ref ?? null,
+			depends_on: [...(task.depends_on ?? [])],
+		})),
+		templates: templateList,
+		budget: {
+			campaign: { ...(manifest?.budget ?? {}) },
+			planning_task: planningTask?.task_budget ? { ...planningTask.task_budget } : null,
+		},
+		limits: {
+			max_tasks: PLAN_LIMITS.max_tasks,
+			max_depends_on: PLAN_LIMITS.max_depends_on,
+			max_text: PLAN_LIMITS.max_text,
+			max_depth: Number.isInteger(policy.max_depth) ? policy.max_depth : null,
+			max_fan_out: Number.isInteger(policy.max_fan_out) ? policy.max_fan_out : null,
+			max_task_count: Number.isInteger(policy.max_task_count) ? policy.max_task_count : null,
+		},
+	};
+}
+
+/** Render the normalized planning contract as the actual provider prompt. */
+export function buildPlanningPrompt(context) {
+	const c = context ?? {};
+	const root = c.root_goal ?? {};
+	const limits = c.limits ?? {};
+	const lines = [
+		`TASK ${c.planning_task_id ?? "task-plan"} \u2014 CAMPAIGN PLANNING`,
+		`ROOT GOAL (${c.root_goal_ref ?? "campaign-root"}): ${root.description ?? ""}`,
+		"REQUIRED ROOT CRITERIA (the plan must cover ALL of them):",
+	];
+	for (const criterion of root.required_criteria ?? []) lines.push(`  - ${criterion}`);
+	lines.push(`READABLE TARGETS: ${(c.allowed_targets ?? []).join(", ") || "(none)"}`);
+	lines.push(`ALLOWED CAPABILITIES: ${(c.allowed_capabilities ?? []).join(", ") || "(none)"}`);
+	lines.push("EXISTING TASKS:");
+	for (const task of c.existing_tasks ?? [])
+		lines.push(`  - ${task.task_id} (task_type=${task.task_type ?? "?"}, target=${task.target_ref ?? "?"})`);
+	lines.push("TRUSTED TEMPLATES (use one per task; select only its offered success_criteria):");
+	for (const template of c.templates ?? []) {
+		lines.push(
+			`  - template_ref=${template.template_ref} task_type=${template.task_type} oracle=${template.oracle_ref} capabilities=[${(template.required_capabilities ?? []).join(", ")}]`,
+		);
+		lines.push(
+			`      offered success_criteria: ${
+				(template.success_criteria ?? []).map((criterion) => JSON.stringify(criterion)).join(", ") ||
+				"(none \u2014 not usable)"
+			}`,
+		);
+	}
+	lines.push(
+		`BUDGET: campaign=${JSON.stringify(c.budget?.campaign ?? {})}; planning_task=${JSON.stringify(c.budget?.planning_task ?? {})}`,
+	);
+	lines.push(
+		`GRAPH LIMITS: max_depth=${limits.max_depth ?? "unspecified"}, max_fan_out=${limits.max_fan_out ?? "unspecified"}, max_task_count=${limits.max_task_count ?? "unspecified"}, max_tasks=${limits.max_tasks ?? "?"}, max_depends_on=${limits.max_depends_on ?? "?"}, max_text=${limits.max_text ?? "?"}`,
+	);
+	lines.push(
+		"TRANSPORT: submit plan_id, root_goal_ref and tasks[]. Each task needs proposed_task_id, parent_task_id, depends_on[], goal.description, goal.success_criteria[], task_type, target_ref, required_capabilities[], expected_evidence[], stop_condition, priority (integer 0..1000) and budget_reservation{wall_time_ms, model_requests, tool_calls}.",
+	);
+	lines.push(
+		"parent_task_id is the SPLIT SOURCE; depends_on is the EXECUTION prerequisite DAG. Being a child of X does NOT imply a dependency on X.",
+	);
+	lines.push(
+		"Choose the task count, parentage and dependencies yourself. Do not invent success_criteria or oracles: each node's goal.success_criteria must be a non-empty subset of the chosen template's offered criteria, and the union of all nodes must cover every required root criterion. Inspect authorized targets with aegis_read if needed.",
+	);
+	lines.push(
+		"Call aegis_submit_plan ONCE with the complete candidate plan. It records a candidate only; the Host validates and admits the whole graph. It does not execute anything and does not mean the goal is complete.",
+	);
+	lines.push(`PLANNING CONTRACT (authoritative JSON): ${JSON.stringify(c)}`);
+	return lines.join("\n");
 }
 
 /** A bounded, redacted view of a plan for the observation page/API. */

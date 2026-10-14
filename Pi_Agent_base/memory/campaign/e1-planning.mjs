@@ -19,23 +19,26 @@
 
 import { artifactIndexFromEvents } from "./c3-entry.mjs";
 import { summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
-import { planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
+import { buildPlanningContext, planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
 
 /** The Host-owned planning task id (never a business task). */
 export const PLANNING_TASK_ID = "task-plan";
 
-/** Build the trusted template map (task_type -> {oracle_ref, required_capabilities}). */
+/** Build the trusted template map (task_type -> {template_ref, oracle_ref, capabilities, criteria}). */
 export function templatesFromConfig(planningConfig) {
 	const map = new Map();
 	for (const template of planningConfig?.templates ?? []) {
-		map.set(template.template_ref, {
+		const entry = {
+			template_ref: template.template_ref ?? template.task_type ?? null,
+			task_type: template.task_type ?? template.template_ref ?? null,
 			oracle_ref: template.oracle_ref,
 			required_capabilities: template.required_capabilities ?? [],
 			success_criteria: template.success_criteria ?? [],
 			scope: template.scope ?? null,
-		});
-		if (template.task_type) map.set(template.task_type, map.get(template.template_ref));
+		};
+		if (entry.template_ref) map.set(entry.template_ref, entry);
+		if (entry.task_type && entry.task_type !== entry.template_ref) map.set(entry.task_type, entry);
 	}
 	return map;
 }
@@ -274,6 +277,7 @@ export function createPlanReadyJudge(
  *   templates?: Map<string, any>|null,
  *   planningTaskId?: string,
  *   planningSettled?: boolean,
+ *   planningContext?: any|null,
  * }} args
  */
 export async function admitCandidatePlan({
@@ -284,6 +288,7 @@ export async function admitCandidatePlan({
 	templates = null,
 	planningTaskId = PLANNING_TASK_ID,
 	planningSettled = true,
+	planningContext = null,
 }) {
 	if (!planningSettled) {
 		return { ok: false, status: "blocked", reasons: ["the planning request did not settle normally"] };
@@ -293,13 +298,16 @@ export async function admitCandidatePlan({
 		...(projection?.tasks ?? []).map((task) => task.task_id),
 	]);
 	const derived = projection?.budget?.reserved ?? { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	// Consume the SAME normalized contract the provider was given (or rebuild it
+	// from the same manifest + trusted templates). Never a second test-only copy.
+	const context = planningContext ?? buildPlanningContext({ manifest, templates, planningTaskId });
 	const admission = validatePlanGraph({
 		plan,
 		manifest,
 		planningTaskId,
 		existingTaskIds,
 		templates: templates && templates.size > 0 ? templates : null,
-		requiredCriteria: manifest?.objective?.required_criteria ?? manifest?.objective?.success_criteria ?? [],
+		requiredCriteria: context?.root_goal?.required_criteria ?? [],
 		derivedBudget: derived,
 	});
 	if (admission.status !== "admitted") {
@@ -328,4 +336,4 @@ export async function admitCandidatePlan({
 	return { ok: true, status: "admitted", plan_id: recorded.plan_id, admission, digest: planDigest(plan) };
 }
 
-export { PLAN_LIMITS } from "./e1-plan-contract.mjs";
+export { buildPlanningContext, buildPlanningPrompt, PLAN_LIMITS } from "./e1-plan-contract.mjs";

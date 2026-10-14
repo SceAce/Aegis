@@ -221,6 +221,18 @@ function validatePlanningKey(planning, reasons) {
 			}
 		}
 	}
+	// A trusted business template must offer a NON-EMPTY criteria set. Missing or
+	// empty criteria are an explicit config error, never treated as a wildcard.
+	if (enabled) {
+		if (templates.length === 0)
+			reasons.push("config.planning.templates must define at least one trusted template when planning is enabled");
+		for (const [index, template] of templates.entries()) {
+			if (template.success_criteria.length === 0)
+				reasons.push(
+					`config.planning.templates[${index}].success_criteria must be a non-empty string array when planning is enabled`,
+				);
+		}
+	}
 	return { enabled, templates };
 }
 
