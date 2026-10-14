@@ -1,6 +1,6 @@
-# Aegis 阶段入口：E1 真实任务 pilot 规划
+# Aegis 阶段入口：E1 可观察白板与LLM任务规划
 
-最新产品基线（2026-10-14）：`feat/c6-agent-product` / `ac3220c`。
+已验证的真实code产品基线（2026-10-14）：`feat/c6-agent-product` / `ac3220c`。
 C1-C5保持既有验收范围；C6三个事实分离已核验，同一SDK收尾盲区已补修。
 18个C6脚本、26个回归通过；类型196条历史诊断保持，修改文件无诊断。
 有限真实任务pilot工程门槛已通过；用户已执行首个真实数据任务和代表性代码任务。
@@ -18,12 +18,20 @@ success，Task completed，独立status无pending/unresolved。独立核验初�
 运行入口：[C6_AGENT_PRODUCT_RUNBOOK.md](C6_AGENT_PRODUCT_RUNBOOK.md)。
 后续实验：[AEGIS_PRODUCT_ROADMAP.md](AEGIS_PRODUCT_ROADMAP.md) 的E1/E2/E3。
 
-下一步选择用户项目的小型真实任务副本、Oracle和总预算，再准备新的运行包。
+当前编码委派已冻结：[E1_OBSERVABLE_PLANNING_TASK.md](E1_OBSERVABLE_PLANNING_TASK.md)、
+[测试矩阵](E1_OBSERVABLE_PLANNING_TEST_MATRIX.md)及
+[DS总提示词](E1_OBSERVABLE_PLANNING_DS_PROMPT.md)。检查起点`2bf4485`。
+先补白板节点内容/证据、父子树与依赖图、独立LLM规划与Host整图准入/依赖执行，
+用真实SDK+faux和本地Oracle核验；真实付费请求仍由用户之后执行。
+本轮允许这条链必要的加法契约与规划模式，不重开已有C6生命周期，不扩展通用shell/
+CTF攻击平台。完成后交回限定复验，再选题和工具适配；不把faux称真实解题通过。
+
+随后选择用户项目任务或具体CTF及其副本、Oracle和总预算，再准备新的运行包。
 local-openai、remote-openai及pi-config均有SDK接线；max首次数据/代表性单文件代码任务已通过。
 此结果支持继续有界单文件pilot，尚未覆盖多文件、通用shell或模型测试反馈修复循环，
 也不构成用户项目bug成果或E1全部样本/E2经验收益验收。
 小任务直接处理；较大接线工程可编写有界任务交dsv4.1flash，不自动扩大为新平台。
-具体真实运行需要既定用户授权与费用范围，规划不代替运行授权。
+具体真实运行需要既定用户授权与费用范围，工程委派不代替运行授权。
 
 先取得无经验真实任务基线，再做经验和短上下文对照。保留失败/unknown，复用既有
 Host/Broker/Oracle/ledger/测量，不重派已闭合的C6修复、不追旧warning。

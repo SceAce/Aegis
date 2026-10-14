@@ -158,3 +158,15 @@ Next select a user-project task within the scoped single-file read/write workflo
 with its own frozen Oracle and budget. Multi-file tooling, generic shell, a model
 test-feedback repair loop and learning efficacy are not established by this sample.
 Keep private attempts unchanged; do not rerun paid samples on the user's behalf.
+
+Current authorized implementation (2026-10-14):
+`../docs/E1_OBSERVABLE_PLANNING_TASK.md`, its test matrix and DS prompt define
+the next bounded engineering phase. Expose actual Board nodes and evidence plus
+task hierarchy/dependencies in the existing observation view, then wire a
+distinct LLM plan through the same C6 request gate, Host admission and Scheduler.
+The assignment authorizes the small additive planning/config/event contracts
+needed by this path. Preserve the three lifecycle facts, old configs and private
+operator attempts. Use real SDK + faux and local Oracle evidence; paid planning
+and CTF tool/target adaptation remain later user-operated steps. This assignment
+does not authorize Pi-core edits, real credentials/config edits, new dependencies,
+generic shell/attack tooling or real provider/target calls.
