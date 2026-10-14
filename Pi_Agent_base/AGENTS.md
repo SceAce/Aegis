@@ -170,3 +170,15 @@ operator attempts. Use real SDK + faux and local Oracle evidence; paid planning
 and CTF tool/target adaptation remain later user-operated steps. This assignment
 does not authorize Pi-core edits, real credentials/config edits, new dependencies,
 generic shell/attack tooling or real provider/target calls.
+
+E1 external acceptance (2026-10-14), product baseline `c9ed6b4`: see
+`../docs/E1_OBSERVABLE_PLANNING_EXTERNAL_REVIEW.md`. Status is
+**changes_required** for automatic planning/execution. Original 18 C6, 26
+regressions, 8 affected and 4 E1 scripts pass; the new real-product acceptance
+suite `tests/aegis-e1-external-review.mjs` is 4 pass / 13 fail. Repair the
+planning termination/independent Oracle activation gate, frozen planner
+input/template binding, and observation's trusted evidence/state projection.
+Unknown planning can currently dispatch children both live and after restart.
+Keep the accepted C6 request accounting scope; no paid provider or CTF run was
+performed by this audit. These red tests are regression evidence, not a claim
+that implementation passed.

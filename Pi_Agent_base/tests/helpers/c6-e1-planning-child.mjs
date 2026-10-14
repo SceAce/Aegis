@@ -6,7 +6,7 @@
 // the dynamic tasks by dependency.
 //
 // Usage: node c6-e1-planning-child.mjs <workDir> <scenario>
-//   scenario ∈ normal_plan | illegal_plan | restart
+//   scenario ∈ normal_plan | illegal_plan | unknown_plan | restart
 //
 // Files under <workDir>:
 //   events.jsonl                  real EventLog
@@ -175,9 +175,16 @@ const factory = (options) => {
 		seen.set(taskId, count);
 		if (taskId === "task-plan") {
 			if (count === 1) {
+				// External review: capture the actual provider input before the fixture
+				// reveals its hard-coded plan. This is synthetic/offline data only.
+				writeFileSync(join(workDir, "planning-input.json"), JSON.stringify(context), "utf8");
+			}
+			if (count === 1) {
 				return fauxAssistantMessage([fauxToolCall("aegis_submit_plan", candidatePlan(scenario === "illegal_plan"))]);
 			}
-			return fauxAssistantMessage("plan recorded");
+			const terminal = fauxAssistantMessage("plan recorded");
+			if (scenario === "unknown_plan") delete terminal.stopReason;
+			return terminal;
 		}
 		// Business tasks: perform the data repair action for dyn-a/dyn-b, and a
 		// read-only re-verify for dyn-c. A plain terminal message ends the planning
