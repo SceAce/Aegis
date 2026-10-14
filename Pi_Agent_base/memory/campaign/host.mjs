@@ -245,6 +245,8 @@ export function createCampaignHost({
 		 * commits the admission, and never lets the proposal raise the budget.
 		 */
 		proposeDynamicTask: (input) => scheduler.proposeDynamicTask(input),
+		admitPlan: (input) => scheduler.admitPlan(input),
+		completePlanningTask: (input) => scheduler.completePlanningTask(input),
 		budgetLedger: currentLedger,
 		async pause(reason) {
 			return scheduler.pause(reason);

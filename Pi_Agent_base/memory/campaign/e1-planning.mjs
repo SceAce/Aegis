@@ -1,0 +1,206 @@
+// Aegis E1 — planning task bootstrap and whole-graph plan admission.
+//
+// When `config.planning.enabled` is true the product starts from a Manifest that
+// contains ONLY the Campaign root goal and ONE Host-owned planning Task. The
+// model submits a complete candidate plan through the structured
+// `aegis_submit_plan` tool; the Host validates the WHOLE graph and admits it as a
+// single durable batch. No business task tree is pre-seeded.
+//
+// This module owns the deterministic pieces so `c6-entry.mjs` stays wiring:
+//   * `buildPlanningManifest` — root goal + planning task + frozen templates;
+//   * `templatesFromConfig`   — the trusted task-type -> oracle/criteria map;
+//   * `createPlanReadyOracle` — the independent plan_ready check (planning
+//     terminated normally AND a complete, legal batch is durably admitted);
+//   * `admitCandidatePlan`    — validate + admit through the Host, then run the
+//     plan-ready gate. Two DISTINCT durable states.
+//
+// It never grants the planning Task the business oracle, and never lets a
+// business task inherit the planning task's own readiness criterion.
+
+import { planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
+
+/** The Host-owned planning task id (never a business task). */
+export const PLANNING_TASK_ID = "task-plan";
+
+/** Build the trusted template map (task_type -> {oracle_ref, required_capabilities}). */
+export function templatesFromConfig(planningConfig) {
+	const map = new Map();
+	for (const template of planningConfig?.templates ?? []) {
+		map.set(template.template_ref, {
+			oracle_ref: template.oracle_ref,
+			required_capabilities: template.required_capabilities ?? [],
+			success_criteria: template.success_criteria ?? [],
+			scope: template.scope ?? null,
+		});
+		if (template.task_type) map.set(template.task_type, map.get(template.template_ref));
+	}
+	return map;
+}
+
+/**
+ * Turn a base task-family Manifest into a PLANNING manifest:
+ *   * keep the objective, authorization, adapters and budget;
+ *   * REPLACE the preset business tasks with the single planning task;
+ *   * enable dynamic task expansion.
+ *
+ * The planning task carries the Host-owned `plan_ready` criterion. Business tasks
+ * are created ONLY from an admitted plan batch.
+ *
+ * @param {{base: any, planningConfig: any, campaignId?: string|null}} args
+ */
+export function buildPlanningManifest({ base, planningConfig, campaignId = null }) {
+	// The root-goal REQUIRED criteria are the machine-checkable criteria of the
+	// base business tree (what the independent Oracle can actually verify). The
+	// objective prose is kept for display. A plan must cover the machine criteria.
+	const requiredCriteria = [
+		...new Set((base.tasks ?? []).flatMap((task) => (task.stages ?? []).flatMap((stage) => stage.criteria ?? []))),
+	];
+	if (requiredCriteria.length === 0) requiredCriteria.push(...(base.objective?.success_criteria ?? []));
+	const planningTask = {
+		task_id: PLANNING_TASK_ID,
+		order: 1,
+		depends_on: [],
+		target_ref: base.authorization?.allowed_targets?.[0] ?? null,
+		task_type: "observe",
+		scope: { environment_fingerprint: "c6-planning-env", domain: "planning", permissions: [], task_types: [] },
+		goal: {
+			goal_id: "plan_campaign",
+			description: `Plan how to satisfy the campaign root goal: ${base.objective?.description ?? ""}`,
+			success_criteria: [PLAN_READY_CRITERION],
+		},
+		stages: [{ stage_id: "stage-plan", criteria: [PLAN_READY_CRITERION], required: true }],
+		oracle_ref: base.adapters?.oracle ?? "fixture.oracle.v1",
+		task_budget: { wall_time_ms: 120000, model_requests: 8, tool_calls: 24 },
+	};
+	const taskCountBudget = Math.max(base.budget?.task_count ?? 0, 12);
+	return {
+		...base,
+		campaign_id: campaignId ?? base.campaign_id,
+		title: `${base.title} (planning)`,
+		tasks: [planningTask],
+		budget: { ...base.budget, task_count: taskCountBudget },
+		// The root-goal required criteria are frozen so a plan cannot delete them.
+		objective: {
+			...base.objective,
+			success_criteria: [...(base.objective?.success_criteria ?? [])],
+			required_criteria: requiredCriteria,
+		},
+		dynamic_task_policy: {
+			...base.dynamic_task_policy,
+			enabled: true,
+			allowed_task_types: [...new Set((planningConfig?.templates ?? []).map((t) => t.task_type ?? t.template_ref))],
+			// The planning manifest needs room for a real split; keep the base tighter
+			// limit only when it is at least this large.
+			max_depth: Math.max(base.dynamic_task_policy?.max_depth ?? 0, 3),
+			max_fan_out: Math.max(base.dynamic_task_policy?.max_fan_out ?? 0, 6),
+			max_task_count: Math.min(taskCountBudget, Math.max(base.dynamic_task_policy?.max_task_count ?? 0, 12)),
+		},
+	};
+}
+
+/** The Host-owned plan readiness criterion (never a resolvable business claim). */
+export const PLAN_READY_CRITERION = "plan_ready";
+
+/**
+ * The independent planning-Task check. Returns success ONLY when:
+ *   * the planning request settled normally (no outstanding/abort/error), AND
+ *   * a complete candidate plan was durably ADMITTED as a whole batch.
+ * It never inspects child tasks (no circular gate) and never implies the root
+ * goal is complete.
+ *
+ * @param {{projection?: any, planningTaskId?: string, requestedPlanId?: string|null}} [args]
+ */
+export function evaluatePlanReady({ projection, planningTaskId = PLANNING_TASK_ID, requestedPlanId = null } = {}) {
+	const plans = (projection?.plans ?? []).filter((plan) => plan.status === "admitted");
+	const admitted = requestedPlanId ? plans.filter((plan) => plan.id === requestedPlanId) : plans;
+	if (admitted.length === 0) {
+		return {
+			status: "unknown",
+			failure_mode: "no_admitted_plan",
+			reason: "no complete plan batch is durably admitted",
+		};
+	}
+	const plan = admitted[admitted.length - 1];
+	const taskIds = Array.isArray(plan.normalized) ? plan.normalized : [];
+	if (taskIds.length === 0) {
+		return { status: "unknown", failure_mode: "empty_plan", reason: "the admitted plan has no tasks" };
+	}
+	return {
+		status: "success",
+		plan_id: plan.id ?? null,
+		task_count: taskIds.length,
+		criterion: { criterion_id: `${planningTaskId}.plan_ready`, expected: true, description: PLAN_READY_CRITERION },
+		observed: true,
+	};
+}
+
+/**
+ * Validate and admit a candidate plan as ONE durable batch, then run the
+ * plan-ready gate. The plan is validated by the whole graph BEFORE any durable
+ * write, so an illegal node rejects the whole batch and no legal subset runs.
+ *
+ * @param {{
+ *   plan: any,
+ *   manifest: any,
+ *   host: any,
+ *   projection: any,
+ *   templates?: Map<string, any>|null,
+ *   planningTaskId?: string,
+ *   planningSettled?: boolean,
+ * }} args
+ */
+export async function admitCandidatePlan({
+	plan,
+	manifest,
+	host,
+	projection,
+	templates = null,
+	planningTaskId = PLANNING_TASK_ID,
+	planningSettled = true,
+}) {
+	if (!planningSettled) {
+		return { ok: false, status: "blocked", reasons: ["the planning request did not settle normally"] };
+	}
+	const existingTaskIds = new Set([
+		...(manifest.tasks ?? []).map((task) => task.task_id),
+		...(projection?.tasks ?? []).map((task) => task.task_id),
+	]);
+	const derived = projection?.budget?.reserved ?? { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	const admission = validatePlanGraph({
+		plan,
+		manifest,
+		planningTaskId,
+		existingTaskIds,
+		templates: templates && templates.size > 0 ? templates : null,
+		requiredCriteria: manifest?.objective?.required_criteria ?? manifest?.objective?.success_criteria ?? [],
+		derivedBudget: derived,
+	});
+	if (admission.status !== "admitted") {
+		await host.admitPlan({ plan, planningTaskId, admission, planId: plan?.plan_id ?? null });
+		return { ok: false, status: admission.status, reasons: admission.reasons, admission };
+	}
+	const recorded = await host.admitPlan({
+		plan,
+		planningTaskId,
+		admission,
+		planId: plan?.plan_id ?? null,
+		planDigest: planDigest(plan),
+	});
+	if (!recorded.ok) {
+		return {
+			ok: false,
+			status: recorded.status ?? "incomplete",
+			reasons: [recorded.reason ?? "plan admission incomplete"],
+			admission,
+		};
+	}
+	// The plan-ready gate is a SEPARATE durable state: only now may the batch
+	// children become dispatchable (once their own dependencies are satisfied).
+	const ready = await host.completePlanningTask?.({ taskId: planningTaskId, planId: recorded.plan_id });
+	if (!ready?.ok) {
+		return { ok: false, status: "incomplete", reasons: [ready?.reason ?? "plan-ready gate failed"], admission };
+	}
+	return { ok: true, status: "admitted", plan_id: recorded.plan_id, admission, digest: planDigest(plan) };
+}
+
+export { PLAN_LIMITS } from "./e1-plan-contract.mjs";

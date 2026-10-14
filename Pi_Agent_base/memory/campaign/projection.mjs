@@ -128,6 +128,10 @@ export function projectQueueFromEvents({
 			item.reconciliation_reason = row.reconciliation_reason ?? null;
 			item.applied_command_ids = [...(row.applied_command_ids ?? [])];
 			item.applied_command_keys = [...(row.applied_command_keys ?? [])];
+			// E1: preserve the plan gate state across a checkpoint boundary.
+			item.plan_id = row.plan_id ?? null;
+			item.awaiting_plan_ready = row.awaiting_plan_ready === true;
+			item.plan_ready = row.plan_ready === true;
 			byId.set(item.task_id, item);
 		}
 	} else {
@@ -168,6 +172,26 @@ export function projectQueueFromEvents({
 	const proposals = new Map(
 		(priorState?.proposals ?? []).map((p) => [p.id, { digest: p.digest, offset: p.offset, proposal: p.proposal }]),
 	);
+	// E1: the plan index and the batch-admitted dynamic task definitions. A plan is
+	// submitted (candidate), then admitted as ONE durable batch; its normalized task
+	// definitions carry depends_on so the tree AND the DAG survive rebuild.
+	const plans = new Map(
+		(priorState?.plans ?? []).map((p) => [
+			p.id,
+			{
+				digest: p.digest ?? null,
+				offset: p.offset ?? -1,
+				plan: p.plan ?? null,
+				status: p.status ?? "submitted",
+				reasons: p.reasons ?? [],
+				normalized: p.normalized ?? null,
+				planning_task_id: p.planning_task_id ?? null,
+			},
+		]),
+	);
+	const dynamicDefinitions = new Map(
+		(priorState?.dynamic_definitions ?? []).map((entry) => [entry.task_id, entry.definition]),
+	);
 	const outcomeIndex = new Map((priorState?.outcomes ?? []).map((o) => [o.id, o.outcome])); // outcome_id -> canonical outcome
 	const health = emptyHealth();
 	let lastAppliedEventId = null;
@@ -190,6 +214,8 @@ export function projectQueueFromEvents({
 		budget,
 		appliedOutcomes,
 		proposals,
+		plans,
+		dynamicDefinitions,
 		outcomeIndex,
 		manifest,
 		tasks,
@@ -283,6 +309,8 @@ export function projectQueueFromEvents({
 		tasks: [...byId.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
 		budget,
 		proposals,
+		plans: [...plans.values()],
+		dynamic_definitions: [...dynamicDefinitions.entries()].map(([task_id, definition]) => ({ task_id, definition })),
 		outcomes: outcomeIndex,
 		// F12: expose the dedup sets so the scheduler can persist them and a
 		// restored projection can seed them.
@@ -308,6 +336,8 @@ function emptyProjection(campaign_id, revision) {
 		tasks: [],
 		budget: emptyLedger(),
 		proposals: new Map(),
+		plans: [],
+		dynamic_definitions: [],
 		outcomes: new Map(),
 		control: { state: "running", reason: null, offset: -1 },
 		health: emptyHealth(),
@@ -380,6 +410,8 @@ function applyEvent({
 	budget,
 	appliedOutcomes,
 	proposals,
+	plans,
+	dynamicDefinitions,
 	outcomeIndex,
 	manifest,
 	tasks,
@@ -564,6 +596,31 @@ function applyEvent({
 		}
 		case "campaign.proposal.admitted":
 			return applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, tasks, campaign_id });
+		case "campaign.plan.submitted":
+			return applyPlanSubmitted({ envelope, offset, plans });
+		case "campaign.plan.admitted":
+			return applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, campaign_id, dynamicDefinitions });
+		case "campaign.plan.blocked":
+		case "campaign.plan.rejected":
+			return { ok: true };
+		case "campaign.plan.ready": {
+			// The planning completion gate: only after a legal, fully-admitted batch does
+			// the planning Task become executable per its own plan_ready criterion. The
+			// batch admission alone never dispatches a child Task.
+			const item = byId.get(envelope.task_id);
+			if (!item) return { ok: false, reason: `unknown planning task ${envelope.task_id}` };
+			item.plan_ready = true;
+			item.plan_id = envelope.plan_id ?? item.plan_id ?? null;
+			const planId = envelope.plan_id ?? null;
+			// Release the batch children from the plan-ready gate; they now become ready
+			// only when their OWN dependencies are satisfied.
+			for (const child of byId.values()) {
+				if (child.awaiting_plan_ready === true && (planId === null || child.plan_id === planId))
+					child.awaiting_plan_ready = false;
+			}
+			promoteReadyTasks(byId);
+			return { ok: true };
+		}
 		case "campaign.proposal.blocked":
 		case "campaign.proposal.rejected":
 			return { ok: true };
@@ -737,9 +794,131 @@ function promoteReadyTasks(byId) {
 	const anyRunning = [...byId.values()].some((t) => t.state === "running");
 	for (const item of byId.values()) {
 		if (item.state !== "queued") continue;
+		// E1: a batch-admitted child task waits for the SEPARATE plan-ready gate in
+		// addition to its dependencies. Durable definitions alone never dispatch.
+		if (item.awaiting_plan_ready === true) continue;
 		const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
 		if (allSatisfied && !anyRunning) item.state = "ready";
 	}
+}
+
+/**
+ * E1: record a SUBMITTED candidate plan. It is a candidate only: recording it
+ * never admits or dispatches anything.
+ */
+function applyPlanSubmitted({ envelope, offset, plans }) {
+	const planId = envelope.plan_id;
+	if (!planId) return { ok: false, reason: "plan_id is required for a submitted plan" };
+	if (!envelope.plan || typeof envelope.plan !== "object") {
+		return { ok: false, reason: "submitted plan has no resolvable plan object" };
+	}
+	const existing = plans.get(planId);
+	if (existing) {
+		if (existing.digest && envelope.plan_digest && existing.digest !== envelope.plan_digest) {
+			return { ok: false, reason: `plan_id ${planId} already submitted with a different digest` };
+		}
+		return { ok: true };
+	}
+	plans.set(planId, {
+		digest: envelope.plan_digest ?? null,
+		offset,
+		plan: envelope.plan,
+		status: "submitted",
+		reasons: [],
+		normalized: null,
+		planning_task_id: envelope.planning_task_id ?? null,
+	});
+	return { ok: true };
+}
+
+/**
+ * E1: apply ONE durable plan-admission batch. The batch record carries the FULL
+ * normalized task definitions (with depends_on) and the whole-graph admission
+ * result. The reducer REFUSES to expose a legal prefix: if any definition is
+ * already known with a DIFFERENT digest, or a stage id collides, the WHOLE batch
+ * is refused and nothing is created.
+ *
+ * The admission and the planning completion gate are two distinct states:
+ *   * this record establishes `campaign.plan.admitted` (definitions durable);
+ *   * `campaign.plan.ready` (written after the planning Oracle) is the separate
+ *     gate that lets the child tasks become dispatchable.
+ * Child tasks therefore enter `queued` (never `ready`) even though their
+ * definitions are already durable.
+ */
+function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, campaign_id, dynamicDefinitions }) {
+	const planId = envelope.plan_id;
+	if (!planId) return { ok: false, reason: "plan_id is required for an admitted plan" };
+	if (!manifest) return { ok: false, reason: "no validated Manifest available to confirm plan admission" };
+	const definitions = envelope.plan_tasks;
+	if (!Array.isArray(definitions) || definitions.length === 0) {
+		return { ok: false, reason: "admitted plan batch carries no task definitions" };
+	}
+	// Idempotent by plan id: a repeated batch with the same digest is a no-op.
+	const prior = plans.get(planId);
+	if (prior?.status === "admitted") {
+		if (prior.digest && envelope.plan_digest && prior.digest !== envelope.plan_digest) {
+			return { ok: false, reason: `plan_id ${planId} already admitted with a different digest` };
+		}
+		return { ok: true };
+	}
+	// Validate ALL definitions BEFORE any mutation (whole-graph, no legal prefix).
+	const batchIds = new Set();
+	const knownStageIds = new Set();
+	for (const existing of byId.values())
+		for (const sid of existing.definition?.stages ?? []) knownStageIds.add(sid.stage_id);
+	for (const task of tasks) for (const stage of task.stages ?? []) knownStageIds.add(stage.stage_id);
+	for (const definition of definitions) {
+		const validation = validateDynamicDefinition(definition);
+		if (!validation.ok) return { ok: false, reason: `plan task definition invalid: ${validation.reasons.join("; ")}` };
+		if (batchIds.has(definition.task_id))
+			return { ok: false, reason: `duplicate task id ${definition.task_id} in plan batch` };
+		batchIds.add(definition.task_id);
+		if (
+			byId.has(definition.task_id) &&
+			byId.get(definition.task_id).definition?.task_digest !== definition.task_digest
+		) {
+			return { ok: false, reason: `task ${definition.task_id} already exists with a different definition` };
+		}
+		for (const stage of definition.stages ?? []) {
+			if (knownStageIds.has(stage.stage_id))
+				return { ok: false, reason: `stage id ${stage.stage_id} is not unique across the Campaign` };
+			knownStageIds.add(stage.stage_id);
+		}
+	}
+	// Apply the WHOLE batch. Child tasks start `queued` (execution waits for the
+	// plan-ready gate + satisfied dependencies); the planning task is not redefined.
+	for (const definition of definitions) {
+		if (byId.has(definition.task_id)) continue; // idempotent by task id
+		const depends = Array.isArray(definition.depends_on) ? definition.depends_on : [];
+		const item = makeQueueItem({
+			campaign_id,
+			task_id: definition.task_id,
+			state: depends.length === 0 ? "queued" : "queued",
+			depends_on: depends,
+			order: definition.order ?? byId.size + 1,
+		});
+		item.parent_task_id = definition.parent_task_id ?? null;
+		item.stage_ids = (definition.stages ?? []).map((stage) => stage.stage_id);
+		item.applied_command_ids = [];
+		item.is_dynamic = true;
+		item.awaiting_plan_ready = true;
+		item.plan_id = planId;
+		item.definition = definition;
+		const reservation = parseBudgetStrict(definition.budget_reservation);
+		item.reservation = reservation.ok ? reservation.value : zeroBudget();
+		byId.set(definition.task_id, item);
+		dynamicDefinitions.set(definition.task_id, definition);
+		addBudget(budget.reserved, item.reservation);
+	}
+	plans.set(planId, {
+		...prior,
+		digest: envelope.plan_digest ?? prior?.digest ?? null,
+		status: "admitted",
+		reasons: [],
+		normalized: definitions.map((definition) => definition.task_id),
+		planning_task_id: envelope.planning_task_id ?? prior?.planning_task_id ?? null,
+	});
+	return { ok: true };
 }
 
 /**
@@ -989,6 +1168,9 @@ export function projectionSnapshot(projection) {
 				definition: task.definition ?? null,
 				stage_ids: [...(task.stage_ids ?? [])],
 				depends_on: [...(task.depends_on ?? [])],
+				awaiting_plan_ready: task.awaiting_plan_ready === true,
+				plan_ready: task.plan_ready === true,
+				plan_id: task.plan_id ?? null,
 				reservation: task.reservation ?? null,
 				budget_consumed: task.budget_consumed ?? null,
 				task_outcome_status: task.task_outcome_status ?? null,
@@ -1004,6 +1186,12 @@ export function projectionSnapshot(projection) {
 		proposals: [...projection.proposals.entries()]
 			.map(([id, entry]) => ({ id, digest: entry.digest, offset: entry.offset }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
+		plans: (projection.plans ?? [])
+			.map((plan) => ({ id: plan.id, status: plan.status, digest: plan.digest, normalized: plan.normalized }))
+			.sort((a, b) => String(a.id).localeCompare(String(b.id))),
+		dynamic_definitions: (projection.dynamic_definitions ?? [])
+			.map((entry) => ({ task_id: entry.task_id, definition: entry.definition }))
+			.sort((a, b) => a.task_id.localeCompare(b.task_id)),
 		// F8: the outcome index carries the full task AND stage Outcomes.
 		outcomes: [...projection.outcomes.entries()]
 			.map(([id, entry]) => ({ id, outcome: entry }))

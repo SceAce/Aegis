@@ -48,6 +48,9 @@ function projectionDigest(projection) {
 			definition: task.definition ?? null,
 			stage_ids: task.stage_ids ?? [],
 			depends_on: task.depends_on ?? [],
+			awaiting_plan_ready: task.awaiting_plan_ready === true,
+			plan_ready: task.plan_ready === true,
+			plan_id: task.plan_id ?? null,
 			reservation: task.reservation ?? null,
 			budget_consumed: task.budget_consumed ?? null,
 			task_outcome_status: task.task_outcome_status ?? null,
@@ -65,6 +68,9 @@ function projectionDigest(projection) {
 		proposals: [...projection.proposals.entries()]
 			.map(([id, entry]) => ({ id, digest: entry.digest, offset: entry.offset }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
+		plans: (projection.plans ?? [])
+			.map((plan) => ({ id: plan.id, status: plan.status, digest: plan.digest }))
+			.sort((a, b) => String(a.id).localeCompare(String(b.id))),
 		outcomes: [...projection.outcomes.entries()]
 			.map(([id, outcome]) => ({ id, outcome }))
 			.sort((a, b) => a.id.localeCompare(b.id)),
@@ -291,6 +297,77 @@ export function createCampaignScheduler({
 			if (!admitted.ok) return { ok: false, status: "admitted", reason: admitted.error };
 			return { ok: true, status: "admitted", task_id: proposal.proposed_task_id, admission };
 		},
+		/**
+		 * E1: admit ONE complete candidate plan as a whole. The reducer re-validates
+		 * the WHOLE graph BEFORE any mutation, so an illegal node rejects the whole
+		 * batch (no legal subset is executed). The durable record carries the full
+		 * normalized task definitions (with depends_on) plus the whole-graph
+		 * admission. Returns the admission WITHOUT completing the planning task: the
+		 * plan-ready gate is a SEPARATE durable state.
+		 *
+		 * @param {{plan: any, planningTaskId: string, admission: any, planId?: string|null, planDigest?: string|null}} args
+		 */
+		async admitPlan(
+			{ plan, planningTaskId, admission, planId = null, planDigest: planDigestArg = null } = /** @type {any} */ ({}),
+		) {
+			const pid = planId ?? plan.plan_id ?? `plan-${manifest.campaign_id}-${clock()}`;
+			const pd = planDigestArg ?? digest(plan);
+			const submitted = await commit(
+				"campaign.plan.submitted",
+				{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!submitted.ok) return { ok: false, status: "rejected", reason: submitted.error };
+			if (admission.status !== "admitted") {
+				const kind = admission.status === "rejected" ? "campaign.plan.rejected" : "campaign.plan.blocked";
+				const recorded = await commit(
+					kind,
+					{
+						plan_id: pid,
+						plan_digest: pd,
+						planning_task_id: planningTaskId,
+						reasons: admission.reasons,
+						status: admission.status,
+					},
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!recorded.ok) return { ok: false, status: admission.status, reason: recorded.error };
+				return { ok: false, status: admission.status, reasons: admission.reasons, admission };
+			}
+			const admitted = await commit(
+				"campaign.plan.admitted",
+				{
+					plan_id: pid,
+					plan_digest: pd,
+					planning_task_id: planningTaskId,
+					plan_tasks: admission.normalized,
+					reserved_budget: admission.reserved_budget,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!admitted.ok) {
+				// A half-written batch is NOT a legal prefix: the reducer refuses it and
+				// the plan stays unresolved. The caller must not dispatch child tasks.
+				return { ok: false, status: "incomplete", reason: admitted.error, admission };
+			}
+			return { ok: true, status: "admitted", plan_id: pid, admission, plan_digest: pd };
+		},
+		/**
+		 * E1: complete the PLANNING task through its own trusted plan_ready Oracle,
+		 * then release the batch children from the plan-ready gate. This is a SEPARATE
+		 * durable state from the batch admission.
+		 *
+		 * @param {{taskId: string, planId?: string|null, outcome?: any}} args
+		 */
+		async completePlanningTask({ taskId, planId = null, outcome = null } = /** @type {any} */ ({})) {
+			const record = await commit(
+				"campaign.plan.ready",
+				{ task_id: taskId, plan_id: planId, outcome },
+				{ kind: "oracle", actor_id: oracle?.id ?? "oracle" },
+			);
+			if (!record.ok) return { ok: false, reason: record.error };
+			return { ok: true };
+		},
 		lastCheckpointOk() {
 			return lastCheckpoint.ok;
 		},
@@ -363,6 +440,8 @@ export function createCampaignScheduler({
 									budget: cp.budget,
 									control: cp.control,
 									proposals: cp.proposals ?? [],
+									plans: cp.plans ?? [],
+									dynamic_definitions: cp.dynamic_definitions ?? [],
 									outcomes: cp.outcomes ?? [],
 									applied_commands: cp.applied_commands ?? [],
 									applied_outcomes: cp.applied_outcomes ?? [],
