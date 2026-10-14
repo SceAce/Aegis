@@ -208,7 +208,7 @@ test("C-EVIDENCE-01: missing/wrong evidence, llm source, foreign task/episode an
 			"completed",
 			`${label}: view agrees`,
 		);
-		const board = projectBoard(events);
+		const board = projectBoard(events, { manifest: normal.manifest });
 		assert.equal(
 			board.byType.Fact.some((node) => node.origin_event_id === mutatedId),
 			false,
@@ -218,6 +218,16 @@ test("C-EVIDENCE-01: missing/wrong evidence, llm source, foreign task/episode an
 		assert.ok(hint, `${label}: the downgrade is visible as a Hint`);
 		assert.ok(hint.downgrade_reason, `${label}: the downgrade reason is present`);
 	}
+	// Control: the UNMUTATED chain still projects the same event as a Fact, so the
+	// downgrade above is caused by the mutation and not by a blanket fail-closed.
+	const control = projectBoard(normal.events, { manifest: normal.manifest });
+	const dynATask = normal.events.find(
+		(event) =>
+			event.payload?.kind === "campaign.oracle.result" &&
+			event.payload.task_id === "dyn-a" &&
+			event.payload.task_oracle === true,
+	);
+	assert.ok(control.byType.Fact.some((node) => node.origin_event_id === dynATask.event_id));
 });
 
 test("C-IDENTITY-01: one canonical plan digest; repeats idempotent; changed content refused", () => {

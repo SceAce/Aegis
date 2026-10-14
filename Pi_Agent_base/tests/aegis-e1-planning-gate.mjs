@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { artifactIndexFromEvents } from "../memory/campaign/c3-entry.mjs";
+import { planDigest } from "../memory/campaign/e1-plan-contract.mjs";
 import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
 import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
 import { verifyChain } from "../memory/runtime/events.mjs";
@@ -258,8 +259,25 @@ function makePlanningScheduler({ sink, failReady = false }) {
 
 test("GATE-07: a durable failure writing the plan-ready gate stops dispatch and holds children", async () => {
 	const sink = makeSink({ failKinds: ["campaign.plan.ready"] });
-	// Seed the admitted batch directly (the admission is durable; the gate fails).
+	// Seed the durable submitted candidate and its admitted batch (the admission is
+	// durable; the gate write fails). The admitted record MUST reference the
+	// prior candidate digest under the fail-closed replay contract.
+	const submittedEvent = normal.events.find((e) => e.payload?.kind === "campaign.plan.submitted");
+	const candidatePlan = submittedEvent.payload.plan;
+	const canonicalDigest = planDigest(candidatePlan);
 	const planTasks = normal.events.find((e) => e.payload?.kind === "campaign.plan.admitted").payload.plan_tasks;
+	await sink.append({
+		event_type: "runtime.note",
+		source: { kind: "runtime", actor_id: "host" },
+		payload: {
+			kind: "campaign.plan.submitted",
+			campaign_id: normal.manifest.campaign_id,
+			plan_id: "plan-e1",
+			plan_digest: canonicalDigest,
+			plan: candidatePlan,
+			planning_task_id: "task-plan",
+		},
+	});
 	await sink.append({
 		event_type: "runtime.note",
 		source: { kind: "runtime", actor_id: "host" },
@@ -267,7 +285,7 @@ test("GATE-07: a durable failure writing the plan-ready gate stops dispatch and 
 			kind: "campaign.plan.admitted",
 			campaign_id: normal.manifest.campaign_id,
 			plan_id: "plan-e1",
-			plan_digest: "sha256:plan",
+			plan_digest: canonicalDigest,
 			planning_task_id: "task-plan",
 			plan_tasks: planTasks,
 		},
@@ -281,6 +299,10 @@ test("GATE-07: a durable failure writing the plan-ready gate stops dispatch and 
 		"no plan-ready record is durable",
 	);
 	const held = project({ manifest: normal.manifest }, sink.events);
+	assert.ok(
+		held.tasks.some((t) => t.task_id.startsWith("dyn-")),
+		"the admitted batch created the dynamic tasks",
+	);
 	for (const task of held.tasks.filter((t) => t.task_id.startsWith("dyn-"))) {
 		assert.equal(task.awaiting_plan_ready, true, `${task.task_id} must stay gated after the failed gate write`);
 	}

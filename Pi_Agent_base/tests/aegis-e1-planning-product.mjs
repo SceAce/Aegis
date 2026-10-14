@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
+import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
 import { admitCandidatePlan, PLAN_READY_CRITERION, templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
 import { buildTaskGraph } from "../memory/campaign/e1-task-graph.mjs";
 import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
@@ -209,9 +209,10 @@ function makeHost({ manifest, sink }) {
 	return {
 		events,
 		async admitPlan({ plan, planningTaskId, admission, planId }) {
+			const canonicalDigest = planDigest(plan);
 			await commit(
 				"campaign.plan.submitted",
-				{ plan_id: planId ?? plan.plan_id, plan, planning_task_id: planningTaskId },
+				{ plan_id: planId ?? plan.plan_id, plan_digest: canonicalDigest, plan, planning_task_id: planningTaskId },
 				{ kind: "runtime", actor_id: "host" },
 			);
 			if (admission.status !== "admitted") {
@@ -225,7 +226,12 @@ function makeHost({ manifest, sink }) {
 			}
 			await commit(
 				"campaign.plan.admitted",
-				{ plan_id: planId ?? plan.plan_id, plan_tasks: admission.normalized, planning_task_id: planningTaskId },
+				{
+					plan_id: planId ?? plan.plan_id,
+					plan_digest: canonicalDigest,
+					plan_tasks: admission.normalized,
+					planning_task_id: planningTaskId,
+				},
 				{ kind: "runtime", actor_id: "host" },
 			);
 			return { ok: true, status: "admitted", plan_id: planId ?? plan.plan_id };
