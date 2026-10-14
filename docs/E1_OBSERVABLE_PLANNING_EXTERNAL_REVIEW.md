@@ -372,3 +372,100 @@ DS 原 C6 18/回归 26/受影响 8 及两项 mutation 日志已核对，仍作�
 B/C 是当前真实自动规划和完整观察的功能缺口；196 条既有类型诊断、页面美化及已声明
 后置能力不加入本门槛。B/C 合并有限复验通过后，先由用户启动小型真实 LLM 规划试跑；
 再为已选定 CTF 题目绑定附件、最小工具、预算、停止条件和独立 Oracle。
+
+## 9. 短修复附录（任务 B：真实规划输入与 Host 模板判据）
+
+范围：只接通"同一冻结契约 → 实际 provider 规划输入（根目标/业务判据/模板/图与预算
+限制）→ Host 按模板判据整图准入"。保留任务 A/C6 已接受的规划执行门与请求生命周期。
+
+起点：分支 `feat/c6-agent-product`，HEAD `ff0e4d7`，工作树干净；本轮 B 对照外部
+基线 10 pass / 7 fail（ER-06/07/13/14 为本轮目标，ER-09/10/12 属 C）。
+
+### 9.1 上下文来源与调用点
+
+| 字段 | 唯一来源 | provider 可见 | Host 准入 |
+| --- | --- | --- | --- |
+| 根目标/`root_goal_ref` | 已验证 Manifest `objective` + 规划契约常量 | 是 | 覆盖检查 |
+| `required_criteria` | `buildPlanningManifest` 从业务 stage 冻结 | 是（全部） | 覆盖检查 |
+| 可读 target/附件 refs | `manifest.authorization.allowed_targets` | 是 | 逐节点授权 |
+| 既有任务摘要 | `manifest.tasks`（仅 task-plan） | 是 | 现有 id 冲突 |
+| `template_ref`/`task_type`/`oracle_ref`/能力/作用域 | `config.planning.templates`（Host 冻结） | 是 | 模板解析 + 一致性 |
+| 模板可选判据 `success_criteria` | 同上 | 是（逐模板列出） | **子集强制** |
+| 预算 | `manifest.budget` + 规划 Task `task_budget` | 是 | 逐侧剩余额度 |
+| `max_depth`/`max_fan_out`/`max_task_count` | `manifest.dynamic_task_policy` | 是 | 既有图限制 |
+
+同一份纯函数 `buildPlanningContext({manifest, templates})` 产出的规范化契约同时供
+`c6-model-worker.buildPrompt`（规划 Task）与 `admitCandidatePlan`/`validatePlanGraph`
+消费；provider 收到的 JSON 契约块与实际准入使用同一字段。
+
+### 9.2 模板字段与缺失语义
+
+- 模板必须提供非空 `success_criteria`；业务节点只能选对应模板的非空子集。
+- 模板外判据、未知模板、`template_ref`/`task_type` 身份错配、模板未提供的能力：
+  整批 blocked，无合法前缀、无 reservation/admission。
+- 模板缺/空判据：config 阶段 `enabled` 模板校验拒绝（明确 config 错误），准入侧
+  同样 blocked，绝不解释为通配。
+- malformed `success_criteria`（对象/空元素/非字符串）：`validatePlanShape` 返回
+  rejected 并给出理由，不抛 TypeError。
+
+### 9.3 本轮 red 基线（`runtime/dev/e1-repair-b/baseline/`）
+
+| 检查 | 结果 |
+| --- | --- |
+| 外部验收 `aegis-e1-external-review` | 10 pass / 7 fail，exit 1；ER-06/07/09/10/12/13/14 红 |
+| Campaign tsc | exit 1，196 条既有诊断 |
+| 工作树 | clean，HEAD `ff0e4d7` |
+
+### 9.4 短契约矩阵（B 新增用例）
+
+| 用例 | 断言（行为） | 反例 |
+| --- | --- | --- |
+| B-INPUT-01 | 首次 provider 输入含全部 `required_criteria`、模板/oracle、targets、预算、`max_depth/max_fan_out/max_task_count`，且 JSON 契约块可解析；指令指向 `aegis_submit_plan`、不含业务 action 指令 | 仅字段名出现不算 |
+| B-INPUT-02 | 改变可信模板/目标/图限制后，输入与 Host 准入对应变化（旧判据 blocked、新判据 admitted） | 硬编码样例 |
+| B-CHAIN-01 | faux 从实际收到的契约生成候选 → 真实 SDK/Host/Oracle/EventLog，3 effects、dataset Ada/active | 硬编码答案 |
+| B-GUARD-01 | 覆盖根判据但附加模板外判据，实际工具提交后整批 blocked，无 admitted、子任务 provider/effect=0 | 未知模板/type 错配另测 |
+| B-GUARD-02 | 未知模板与模板/type 错配均 blocked | 通配解释 |
+| B-SHAPE-01 | malformed criteria rejected 有理由；缺/空模板判据不默认授权 | 抛异常 |
+
+### 9.5 任务 B 实际结果（DS 本地，未 push）
+
+行为变化：规划 Task 的实际 provider 输入改为 `buildPlanningContext` 产出的冻结契约
+（根目标、全部 `required_criteria`、模板与已登记 Oracle/能力、targets、Campaign 与规划
+Task 预算、`max_depth/max_fan_out/max_task_count`、parent 与 `depends_on` 语义、明确
+`aegis_submit_plan` 候选语义），业务 Task prompt 保持原样。`validatePlanGraph` 强制
+每个业务节点只能选择对应可信模板的**非空判据子集**；模板外判据、未知模板、
+`template_ref`/`task_type` 身份错配、模板未提供能力、模板缺/空判据，统一整批 blocked。
+planning enabled 时 config 拒绝缺/空模板判据；malformed `success_criteria`（对象/空元素）
+返回带理由的 rejected，不再抛异常。
+
+关键数值（真实 SDK/faux 子进程，`submitted-plan` 由实际收到的契约派生）：
+
+| 场景 | provider | Broker effect | plan kinds | 任务终态 | dataset |
+| --- | --- | --- | --- | --- | --- |
+| `derived_plan` | 8 | 3 | submitted, submitted, admitted, ready | dyn-a/b/c completed | Ada/active |
+| `attacker_criterion_plan` | 2 | 0 | submitted, submitted, blocked | 无业务任务 | ??/pending |
+
+实际命令、argv 与退出码（私有日志在 ignored `Pi_Agent_base/runtime/dev/e1-repair-b/`）：
+
+| 套件 | 命令/argv | 退出 | 证据 |
+| --- | --- | --- | --- |
+| E1 required 7 | `c6-suite-runner …/final-e1 <7 names>` | 1（external-review 红） | `final-e1/results.json` |
+| 外部验收 | 同左 | 1，**14 pass / 3 fail** | `final-e1/aegis-e1-external-review.log` |
+| 新增 B 脚本 | `node Pi_Agent_base/tests/aegis-e1-planner-input.mjs` | 0，B-INPUT/CHAIN/GUARD/SHAPE **6/6** | `final-b/aegis-e1-planner-input.log` |
+| C6 18 | `c6-suite-runner …/final-c6 <18 names>` | 0 | `final-c6/results.json` |
+| 回归 26 | `c6-suite-runner …/final-regress <26 names>` | 0 | `final-regress/results.json` |
+| 受影响 8 | `c6-suite-runner …/final-affected <8 names>` | 0 | `final-affected/results.json` |
+| Campaign tsc | `tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json` | 1；196→196，逐条与基线相同 | `final-tsc.log` |
+| Biome 9 文件 | `biome check`（修改范围） | 0 | 实际命令 stdout |
+| red 基线 | `c6-suite-runner …/baseline aegis-e1-external-review` | 1，10 pass / 7 fail | `baseline/aegis-e1-external-review.log` |
+| 基线 tsc | 同 tsc | 1，196 | `baseline/tsc-before.log` |
+
+针对性 mutation：临时把 `validatePlanGraph` 的模板判据成员校验改为 `false && !offered.has(...)`
+（非 syntax/import 失败）。ER-13 与 B-GUARD-01 均因**行为断言**失败、exit 1
+（`mutation-criteria/…`），恢复后 `diff` 与备份逐字节一致。模板判据守卫 killed。
+
+未修 C（逐项如实，不 skip、不降断言）：ER-09（观察图状态与 artifact-aware replay 不一致）、
+ER-10（业务 Oracle success 未成 board Fact）、ER-12（正常链工具/Host 两套 digest 出现
+rejected plan）。`derived_plan` 仍出现两条 `campaign.plan.submitted`，即 C 的 digest 归一
+问题，本轮不宣称修复。整体 E1 仍 changes_required，状态为 **B internally_verified**，交回
+独立核验；真实模型规划质量与 CTF 能力未测。
