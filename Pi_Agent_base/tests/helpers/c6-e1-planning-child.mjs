@@ -68,6 +68,7 @@ const planningConfig = {
 			task_type: "verify",
 			oracle_ref: "fixture.oracle.v1",
 			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.name == Ada", "data.status == active"],
 			scope: {
 				environment_fingerprint: "data-repair-env",
 				domain: "structured-data",
@@ -80,6 +81,7 @@ const planningConfig = {
 			task_type: "reproduce",
 			oracle_ref: "fixture.oracle.v1",
 			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.status == active"],
 			scope: {
 				environment_fingerprint: "data-repair-env",
 				domain: "structured-data",
@@ -116,8 +118,88 @@ writeFileSync(
 let providerCalls = 0;
 const seen = new Map();
 
+/** Collect every string from a provider context (message content parts, etc.). */
+function collectStrings(value, out = []) {
+	if (typeof value === "string") out.push(value);
+	else if (Array.isArray(value)) for (const item of value) collectStrings(item, out);
+	else if (value && typeof value === "object") for (const item of Object.values(value)) collectStrings(item, out);
+	return out;
+}
+
+/** Recover the authoritative planning contract embedded in the actual prompt. */
+function extractPlanningContract(context) {
+	const text = collectStrings(context).join("\n");
+	const marker = "PLANNING CONTRACT (authoritative JSON): ";
+	const at = text.lastIndexOf(marker);
+	if (at < 0) throw new Error("planning contract marker not found in provider input");
+	const jsonStart = text.indexOf("{", at + marker.length);
+	let depth = 0;
+	for (let index = jsonStart; index < text.length; index += 1) {
+		if (text[index] === "{") depth += 1;
+		else if (text[index] === "}") {
+			depth -= 1;
+			if (depth === 0) return JSON.parse(text.slice(jsonStart, index + 1));
+		}
+	}
+	throw new Error("planning contract JSON is not balanced");
+}
+
+/**
+ * Build the candidate plan FROM the contract the provider actually received.
+ * Nothing about the root criteria or the template binding is hardcoded here.
+ */
+function derivePlanFromContext(context) {
+	const contract = extractPlanningContract(context);
+	const required = contract.root_goal?.required_criteria ?? [];
+	const templates = contract.templates ?? [];
+	const tasks = [];
+	required.forEach((criterion, index) => {
+		const template = templates.find((entry) => (entry.success_criteria ?? []).includes(criterion));
+		if (!template) throw new Error(`no trusted template offers criterion ${criterion}`);
+		const id = `dyn-${String.fromCharCode(97 + index)}`;
+		tasks.push({
+			proposed_task_id: id,
+			parent_task_id: contract.planning_task_id ?? "task-plan",
+			depends_on: [],
+			goal: { description: `Satisfy ${criterion}`, success_criteria: [criterion] },
+			task_type: template.task_type,
+			template_ref: template.template_ref,
+			target_ref: (contract.allowed_targets ?? [])[0],
+			required_capabilities: [...(template.required_capabilities ?? [])],
+			expected_evidence: [`artifact:${id}`],
+			stop_condition: "oracle judged",
+			priority: index + 1,
+			budget_reservation: { wall_time_ms: 30000, model_requests: 4, tool_calls: 8 },
+		});
+	});
+	const covering = templates.find((entry) => required.every((c) => (entry.success_criteria ?? []).includes(c)));
+	if (!covering) throw new Error("no trusted template covers every required criterion");
+	const finalId = `dyn-${String.fromCharCode(97 + required.length)}`;
+	tasks.push({
+		proposed_task_id: finalId,
+		parent_task_id: contract.planning_task_id ?? "task-plan",
+		depends_on: tasks.map((task) => task.proposed_task_id),
+		goal: { description: "Re-verify the repaired dataset.", success_criteria: [...required] },
+		task_type: covering.task_type,
+		template_ref: covering.template_ref,
+		target_ref: (contract.allowed_targets ?? [])[0],
+		required_capabilities: [...(covering.required_capabilities ?? [])],
+		expected_evidence: [`artifact:${finalId}`],
+		stop_condition: "dataset re-verified",
+		priority: required.length + 1,
+		budget_reservation: { wall_time_ms: 30000, model_requests: 4, tool_calls: 8 },
+	});
+	return {
+		version: "aegis-plan-1.0",
+		plan_id: "plan-derived",
+		root_goal_ref: contract.root_goal_ref ?? "campaign-root",
+		tasks,
+	};
+}
+
 /** The complete candidate plan the model "decides" to submit (scenario-dependent). */
-function candidatePlan(illegal = false) {
+function candidatePlan(scenario = "normal_plan", context = null) {
+	if (scenario === "derived_plan") return derivePlanFromContext(context);
 	const tasks = [
 		{
 			proposed_task_id: "dyn-a",
@@ -163,13 +245,13 @@ function candidatePlan(illegal = false) {
 			budget_reservation: { wall_time_ms: 30000, model_requests: 4, tool_calls: 8 },
 		},
 	];
-	if (illegal) {
+	if (scenario === "illegal_plan") {
 		// One node references an UNAUTHORIZED target: the WHOLE batch must reject.
 		tasks.push({
 			proposed_task_id: "dyn-bad",
 			parent_task_id: "task-plan",
 			depends_on: [],
-			goal: { description: "Read a forbidden file.", success_criteria: ["dataset.name repaired"] },
+			goal: { description: "Read a forbidden file.", success_criteria: ["data.name == Ada"] },
 			task_type: "verify",
 			target_ref: "forbidden.txt",
 			required_capabilities: ["data.record.write"],
@@ -178,6 +260,11 @@ function candidatePlan(illegal = false) {
 			priority: 4,
 			budget_reservation: { wall_time_ms: 30000, model_requests: 4, tool_calls: 8 },
 		});
+	}
+	if (scenario === "attacker_criterion_plan") {
+		// Keep root-criteria coverage, but attach a criterion the trusted template
+		// never offered. The Host must block the WHOLE batch.
+		tasks[0].goal.success_criteria.push("data.status == attacker_chosen");
 	}
 	// Intentionally out-of-order input: the Host must build the graph by id.
 	return {
@@ -199,11 +286,11 @@ const factory = (options) => {
 		if (taskId === "task-plan") {
 			if (count === 1) {
 				// External review: capture the actual provider input before the fixture
-				// reveals its hard-coded plan. This is synthetic/offline data only.
+				// reveals its plan. This is synthetic/offline data only.
 				writeFileSync(join(workDir, "planning-input.json"), JSON.stringify(context), "utf8");
-			}
-			if (count === 1) {
-				return fauxAssistantMessage([fauxToolCall("aegis_submit_plan", candidatePlan(scenario === "illegal_plan"))]);
+				const plan = candidatePlan(scenario, context);
+				writeFileSync(join(workDir, "submitted-plan.json"), JSON.stringify(plan), "utf8");
+				return fauxAssistantMessage([fauxToolCall("aegis_submit_plan", plan)]);
 			}
 			const terminal = fauxAssistantMessage("plan recorded");
 			if (scenario === "unknown_plan") delete terminal.stopReason;

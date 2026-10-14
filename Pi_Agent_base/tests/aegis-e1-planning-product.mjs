@@ -74,6 +74,7 @@ const TEMPLATES = templatesFromConfig({
 			task_type: "verify",
 			oracle_ref: "fixture.oracle.v1",
 			required_capabilities: ["data.record.write"],
+			success_criteria: ROOT_CRITERIA,
 			scope: SCOPE,
 		},
 		{
@@ -81,6 +82,7 @@ const TEMPLATES = templatesFromConfig({
 			task_type: "reproduce",
 			oracle_ref: "fixture.oracle.v1",
 			required_capabilities: ["data.record.write"],
+			success_criteria: ROOT_CRITERIA,
 			scope: SCOPE,
 		},
 	],

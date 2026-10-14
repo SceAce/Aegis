@@ -28,9 +28,36 @@ const MANIFEST = {
 };
 
 const TEMPLATES = new Map([
-	["verify", { oracle_ref: "fixture.oracle.v1", required_capabilities: ["data.record.write"] }],
-	["reproduce", { oracle_ref: "fixture.oracle.v1", required_capabilities: ["data.record.write"] }],
-	["observe", { oracle_ref: "fixture.oracle.v1", required_capabilities: ["data.record.write"] }],
+	[
+		"verify",
+		{
+			template_ref: "verify",
+			task_type: "verify",
+			oracle_ref: "fixture.oracle.v1",
+			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.status == active"],
+		},
+	],
+	[
+		"reproduce",
+		{
+			template_ref: "reproduce",
+			task_type: "reproduce",
+			oracle_ref: "fixture.oracle.v1",
+			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.status == active"],
+		},
+	],
+	[
+		"observe",
+		{
+			template_ref: "observe",
+			task_type: "observe",
+			oracle_ref: "fixture.oracle.v1",
+			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.status == active"],
+		},
+	],
 ]);
 
 function node(id, extra = {}) {
