@@ -295,3 +295,80 @@ admitted 与 completed-without-ready 前缀保持 hold、错配 Outcome 身份�
   board Fact）、ER-12（正常链因工具/Host 两套 digest 出现 rejected plan）、ER-14（malformed
   criteria 抛 TypeError，非 rejected）。
 - 本会话仅交付规划执行门（任务 A），整体 E1/CTF 未通过。
+
+### 8.2 任务 A 独立核验
+
+产品核验基线：`bc93cca`，分支 `feat/c6-agent-product`；开始时主仓库及 Pi 工作树干净，
+Pi 为 `42a3497d0`。结论：**A 的限定规划执行门接受；整体 E1 仍 changes_required**。
+本轮仅增加审计测试和报告，未修改产品代码，未调用付费 provider 或真实目标。
+
+实际正常链仍为 provider=8、Broker effect=3；planning Task 经真实 Oracle 的 stage/task
+Outcome 后 completed，随后才 ready，三个子任务按依赖完成。unknown/error/aborted
+均保留候选、无 admission/业务效果。原外部验收独立复跑为 **10 pass / 7 fail**：
+ER-02/03/05/08/17 已转绿，ER-01/04/15/16 控制保持，ER-11 也通过。
+
+针对 DS 的 GATE-07 仅为 controlled Scheduler fixture，本轮补充两项真实产品链故障：
+`tests/aegis-e1-planning-gate-audit.mjs` 使用真实 Pi SDK+faux、Host/Broker/Oracle/EventLog，
+只在对应写入边界注入故障；后续新进程从实际留下的事件重启，无合成 Oracle 成功，
+无截取/改写事件前缀。
+
+| 用例 | 故障时证据 | 新进程恢复 |
+| --- | --- | --- |
+| A-AUDIT-01 | SDK 工具结果持久化失败；provider=1，candidate submitted，task-plan unknown，无 admitted，effect=0，consumed=1/unresolved=0 | provider=0、effect=0；候选仍无执行权；consumed=1 |
+| A-AUDIT-02 | Host 的实际 plan.ready append 返回 non-durable；provider=2，真实 Oracle success/task completed 已 durable，entry ok=false，三个子任务 hold，effect=0 | provider=0、effect=0；三个子任务仍 queued/awaiting_plan_ready；consumed=2/unresolved=0 |
+
+上述故障及恢复事件链均 verifyChain ok，dataset 均为 `??/pending`。新增测试 **2/2 pass**；
+DS gate **7/7 pass**。完成但未写 ready 的恢复目前保持 hold，不自动补写 gate；这是保守
+停止下的恢复能力限制，不能称自动恢复完成。本限定验收要求无缺门放行、无盲重试或
+重复效果，故不据此重开 A；若后续要求自动续跑该 durable 前缀，需要另行补恢复操作。
+
+独立命令（根目录）：
+
+```sh
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs \
+  Pi_Agent_base/runtime/dev/e1-repair-a-external/final \
+  aegis-e1-plan-contract aegis-e1-planning-product aegis-e1-observation-view \
+  aegis-e1-planning-chain aegis-e1-planning-gate aegis-e1-planning-gate-audit \
+  aegis-e1-external-review
+
+node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs \
+  Pi_Agent_base/runtime/dev/e1-repair-a-external/c6-focused \
+  aegis-c6-architecture-review aegis-c6-lifecycle-convergence aegis-c6-recheck-boundaries
+
+Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json
+
+Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json \
+  Pi_Agent_base/memory/campaign/c6-entry.mjs \
+  Pi_Agent_base/memory/campaign/c6-model-worker.mjs \
+  Pi_Agent_base/memory/campaign/e1-planning.mjs \
+  Pi_Agent_base/memory/campaign/projection.mjs \
+  Pi_Agent_base/memory/campaign/scheduler.mjs \
+  Pi_Agent_base/tests/aegis-e1-planning-product.mjs \
+  Pi_Agent_base/tests/aegis-e1-planning-gate.mjs \
+  Pi_Agent_base/tests/aegis-e1-planning-gate-audit.mjs \
+  Pi_Agent_base/tests/helpers/c6-e1-planning-child.mjs
+```
+
+| 独立检查 | 实际结果 | 私有证据 |
+| --- | --- | --- |
+| E1 7 脚本 | 6 exit 0；external-review exit 1（10/17） | `e1-repair-a-external/final/results.json` |
+| C6 受影响 3 脚本 | 0 failed，exit 0 | `e1-repair-a-external/c6-focused/results.json` |
+| Campaign tsc | exit 1；196 条与修前审计逐条相同，A 修改产品文件 0 条 | `e1-repair-a-external/static/tsc.log`、`tsc-result.json` |
+| Biome 9 文件 | exit 0 | 实际命令 stdout：Checked 9 files，No fixes applied |
+
+DS 原 C6 18/回归 26/受影响 8 及两项 mutation 日志已核对，仍作为 **DS 自测证据**；
+本轮不将其称为独立全量复跑或独立 mutation。审计未改产品，新增故障测试已覆盖本轮
+具体风险，停止扩充无关检查。
+
+下一步继续两个短任务，**先 B 后 C，分别交付**，不再把全部历史修复混入同一长会话：
+
+- **B（ER-06/07/13）**：同一冻结契约生成实际 provider 规划输入与 Host 模板约束。
+  模型要看到根目标/业务判据、可用模板/工具/目标、预算和图限制；Host 不准入模板外
+  的任意判据。ER-14 的 malformed criteria 在 B 的输入形状处理中收口，单独不阻塞。
+- **C（ER-09/10/12）**：观察复用可信 artifact-aware replay，正常业务 Oracle Outcome
+  生成可追溯 Fact；工具/Host 统一 plan digest，正常产品链零 rejected。保留已通过
+  ER-11，不隐藏 rejected 或从 completed 伪造 Fact。
+
+B/C 是当前真实自动规划和完整观察的功能缺口；196 条既有类型诊断、页面美化及已声明
+后置能力不加入本门槛。B/C 合并有限复验通过后，先由用户启动小型真实 LLM 规划试跑；
+再为已选定 CTF 题目绑定附件、最小工具、预算、停止条件和独立 Oracle。

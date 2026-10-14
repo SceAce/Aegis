@@ -182,3 +182,19 @@ Unknown planning can currently dispatch children both live and after restart.
 Keep the accepted C6 request accounting scope; no paid provider or CTF run was
 performed by this audit. These red tests are regression evidence, not a claim
 that implementation passed.
+
+E1 task-A independent verification (2026-10-14), product baseline `bc93cca`:
+see `../docs/E1_OBSERVABLE_PLANNING_EXTERNAL_REVIEW.md` section 8.2. The bounded
+planning execution gate is accepted: actual planning termination, settlement,
+whole admission, independent Oracle Outcomes and durable completion precede
+ready. Unknown/error/aborted candidates cannot dispatch live or after restart.
+External review is now 10 pass / 7 fail. Additional real-SDK tool-result writer
+and Host EventLog ready-writer faults pass 2/2, including fresh-process restart
+with zero provider calls/effects and preserved consumption. Include
+`tests/aegis-e1-planning-gate-audit.mjs` in subsequent E1 focused checks.
+Completed-without-ready remains held on restart; automatic gate repair is not
+claimed. Overall E1 remains **changes_required**: do B (frozen actual planner
+input and Host criterion templates, ER-06/07/13; malformed ER-14 alongside),
+then C (truthful observation/Fact evidence and consistent plan digest,
+ER-09/10/12), in separate bounded sessions. Keep the accepted A/C6 gates;
+no paid planning or CTF run until the integrated acceptance passes.

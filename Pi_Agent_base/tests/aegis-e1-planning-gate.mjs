@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Aegis E1 — focused negative/recovery checks for the planning EXECUTION gate.
 //
-// These are NOT synthetic success events: they drive the REAL SDK/faux + Host +
-// Broker + Oracle + EventLog for the error/aborted termination cases, and they
-// exercise the REAL reducer over the REAL committed stream for the plan-ready
-// identity/evidence and durable-write-failure cases.
+// Error/aborted cases drive the real SDK/faux + Host/Broker/Oracle/EventLog.
+// Identity/order checks mutate a real stream for reducer tests. GATE-07 uses a
+// controlled Scheduler fixture; aegis-e1-planning-gate-audit.mjs separately
+// faults the actual Host EventLog writer and tests a fresh-process restart.
 //
 // Run:
 //   node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \

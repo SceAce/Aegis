@@ -6,7 +6,9 @@
 // the dynamic tasks by dependency.
 //
 // Usage: node c6-e1-planning-child.mjs <workDir> <scenario>
-//   scenario ∈ normal_plan | illegal_plan | unknown_plan | restart
+//   scenario ∈ normal_plan | illegal_plan | unknown_plan | error_plan |
+//              aborted_plan | sdk_result_persist_error_plan |
+//              plan_ready_persist_error | restart
 //
 // Files under <workDir>:
 //   events.jsonl                  real EventLog
@@ -23,9 +25,30 @@ import { runC6FromConfig } from "../../memory/campaign/c6-entry.mjs";
 import { buildPlanningManifest } from "../../memory/campaign/e1-planning.mjs";
 import { projectQueueFromEvents } from "../../memory/campaign/projection.mjs";
 import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
+import { hostEventLog } from "../../memory/runtime/events.mjs";
 
-const sdk = { ...sdkBase, AuthStorage };
 const [workDir, scenario = "normal_plan"] = process.argv.slice(2);
+let sdkPersistenceFailures = 0;
+let readyPersistenceFailures = 0;
+const sdk = {
+	...sdkBase,
+	AuthStorage,
+	async createAgentSessionFromServices(options) {
+		const created = await sdkBase.createAgentSessionFromServices(options);
+		if (scenario === "sdk_result_persist_error_plan") {
+			const manager = created.session.sessionManager;
+			const append = manager.appendMessage.bind(manager);
+			manager.appendMessage = (message) => {
+				if (sdkPersistenceFailures === 0 && message.role === "toolResult") {
+					sdkPersistenceFailures += 1;
+					throw new Error("injected planning tool-result persistence failure");
+				}
+				return append(message);
+			};
+		}
+		return created;
+	},
+};
 mkdirSync(workDir, { recursive: true });
 const workspaceRoot = join(workDir, "workspace");
 mkdirSync(workspaceRoot, { recursive: true });
@@ -220,6 +243,7 @@ const factory = (options) => {
 };
 
 let brokerEffects = 0;
+const eventsPath = join(workDir, "events.jsonl");
 const outcome = await runC6FromConfig({
 	configPath,
 	scenario: "run",
@@ -227,6 +251,20 @@ const outcome = await runC6FromConfig({
 	fauxProviderFactory: factory,
 	workerSeam: (inner) => ({
 		async run(args) {
+			if (scenario === "plan_ready_persist_error" && args.task.task_id === "task-plan") {
+				// Fault the Host's actual writer; every other event still uses the real
+				// EventLog. No Oracle success or completion is supplied by this seam.
+				const log = hostEventLog(eventsPath);
+				if (!log) throw new Error("missing bound Host EventLog");
+				const append = log.append.bind(log);
+				log.append = async (event) => {
+					if (event.payload?.kind === "campaign.plan.ready" && readyPersistenceFailures === 0) {
+						readyPersistenceFailures += 1;
+						return { ok: false, durable: false, error: "injected planning completion gate write failure" };
+					}
+					return append(event);
+				};
+			}
 			const result = await inner.run(args);
 			brokerEffects += Array.isArray(result.effects)
 				? result.effects.filter((effect) => effect.effect_probe === true).length
@@ -238,7 +276,6 @@ const outcome = await runC6FromConfig({
 });
 
 writeFileSync(effectsPath, JSON.stringify({ effects: readEffects() + brokerEffects }));
-const eventsPath = join(workDir, "events.jsonl");
 const events = existsSync(eventsPath)
 	? readFileSync(eventsPath, "utf8")
 			.trim()
@@ -268,6 +305,7 @@ writeFileSync(
 			provider_calls: providerCalls,
 			broker_effects: brokerEffects,
 			ok: outcome.ok,
+			injected_failures: { sdk_tool_result: sdkPersistenceFailures, plan_ready_append: readyPersistenceFailures },
 			task_states: finalTaskStates,
 			dataset: JSON.parse(readFileSync(datasetPath, "utf8")),
 			ledger: outcome.ledger ?? null,
