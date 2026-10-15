@@ -8,7 +8,8 @@
 // Usage: node c6-e1-planning-child.mjs <workDir> <scenario>
 //   scenario ∈ normal_plan | illegal_plan | unknown_plan | error_plan |
 //              aborted_plan | sdk_result_persist_error_plan |
-//              plan_ready_persist_error | restart
+//              plan_ready_persist_error | task_budget_plan | double_plan |
+//              foreign_root_plan | restart
 //
 // Files under <workDir>:
 //   events.jsonl                  real EventLog
@@ -266,11 +267,18 @@ function candidatePlan(scenario = "normal_plan", context = null) {
 		// never offered. The Host must block the WHOLE batch.
 		tasks[0].goal.success_criteria.push("data.status == attacker_chosen");
 	}
+	if (scenario === "task_budget_plan") {
+		for (const task of tasks) task.budget_reservation.model_requests = 1;
+	}
+	if (scenario === "double_plan") {
+		// Each batch fits the remaining 92 requests; two batches reserve 120.
+		for (const task of tasks) task.budget_reservation.model_requests = 20;
+	}
 	// Intentionally out-of-order input: the Host must build the graph by id.
 	return {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-e1",
-		root_goal_ref: "campaign-root",
+		root_goal_ref: scenario === "foreign_root_plan" ? "foreign-root" : "campaign-root",
 		tasks: [tasks[2], tasks[0], tasks[1], ...tasks.slice(3)],
 	};
 }
@@ -290,6 +298,19 @@ const factory = (options) => {
 				writeFileSync(join(workDir, "planning-input.json"), JSON.stringify(context), "utf8");
 				const plan = candidatePlan(scenario, context);
 				writeFileSync(join(workDir, "submitted-plan.json"), JSON.stringify(plan), "utf8");
+				if (scenario === "double_plan") {
+					const second = structuredClone(plan);
+					second.plan_id = "plan-second";
+					for (const task of second.tasks) {
+						task.proposed_task_id = `alt-${task.proposed_task_id}`;
+						task.depends_on = task.depends_on.map((id) => `alt-${id}`);
+						task.expected_evidence = [`artifact:${task.proposed_task_id}`];
+					}
+					return fauxAssistantMessage([
+						fauxToolCall("aegis_submit_plan", plan),
+						fauxToolCall("aegis_submit_plan", second),
+					]);
+				}
 				return fauxAssistantMessage([fauxToolCall("aegis_submit_plan", plan)]);
 			}
 			const terminal = fauxAssistantMessage("plan recorded");
@@ -302,7 +323,8 @@ const factory = (options) => {
 		// read-only re-verify for dyn-c. A plain terminal message ends the planning
 		// normally after the decision is recorded.
 		if (count > 1) return fauxAssistantMessage("decision recorded");
-		const field = taskId === "dyn-a" ? "name" : taskId === "dyn-b" ? "status" : null;
+		const businessId = taskId.replace(/^alt-/, "");
+		const field = businessId === "dyn-a" ? "name" : businessId === "dyn-b" ? "status" : null;
 		if (field) {
 			return fauxAssistantMessage([
 				fauxToolCall("aegis_task_decision", {
