@@ -233,7 +233,10 @@ test("C-EVIDENCE-01: missing/wrong evidence, llm source, foreign task/episode an
 test("C-IDENTITY-01: one canonical plan digest; repeats idempotent; changed content refused", () => {
 	const submitted = normal.events.filter((event) => event.payload?.kind === "campaign.plan.submitted");
 	const admitted = normal.events.find((event) => event.payload?.kind === "campaign.plan.admitted");
-	assert.ok(submitted.length >= 2, "the tool recorder and the Host both record the candidate");
+	// E1 §6.1 (contract-closure migration): the tool recorder and the Host share ONE
+	// dedup + writer, so a tool-persisted candidate is REUSED by admit_plan instead
+	// of appended twice. Exactly one submitted record is the stronger invariant.
+	assert.equal(submitted.length, 1, "the tool recorder and the Host share one candidate record");
 	assert.equal(new Set(submitted.map((event) => event.payload.plan_digest)).size, 1, "all submitted digests agree");
 	assert.equal(submitted[0].payload.plan_digest, admitted.payload.plan_digest, "submitted and admitted agree");
 	assert.equal(
