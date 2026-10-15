@@ -330,6 +330,14 @@ export function projectQueueFromEvents({
 
 	health.last_applied_event_id = lastAppliedEventId;
 	health.last_applied_offset = lastAppliedOffset;
+	// E1 §7.1: `allocation_total` is the GROSS committed allocation (static Task
+	// budgets + every admitted dynamic definition). It is NOT reduced by actual
+	// consumption or release: gross = outstanding reserved + consumed + released, so
+	// the invariant holds whether a unit is consumed, released or cancelled.
+	budget.allocation_total = zeroBudget();
+	for (const key of BUDGET_KEYS)
+		budget.allocation_total[key] =
+			(budget.reserved[key] ?? 0) + (budget.consumed[key] ?? 0) + (budget.released[key] ?? 0);
 	health.reservation_outstanding = { ...budget.reserved };
 	health.remaining = remainingBudget(limit, budget);
 	health.budget_limit = limit;
@@ -459,7 +467,7 @@ function reduceToolCharge({ raw, toolCharges, campaign_id }) {
 }
 
 function emptyLedger() {
-	return { reserved: zeroBudget(), consumed: zeroBudget(), released: zeroBudget() };
+	return { reserved: zeroBudget(), consumed: zeroBudget(), released: zeroBudget(), allocation_total: zeroBudget() };
 }
 
 function emptyHealth() {
