@@ -594,6 +594,18 @@ export async function runC6FromConfig(
 				planLimits: PLAN_LIMITS,
 				planningContext,
 				recordPlan: async (plan) => {
+					// The tool and the Host share ONE dedup + writer (§6.1). When the Host is
+					// assembled, route through recordPlanCandidate so a later admit reuses this
+					// durable candidate instead of appending a duplicate submitted record.
+					if (hostRef && typeof hostRef.recordPlanCandidate === "function") {
+						const result = await hostRef.recordPlanCandidate({
+							plan,
+							planningTaskId: currentTaskRef.task?.task_id ?? "task-plan",
+						});
+						return result.ok
+							? { ok: true, event_id: result.submitted_event_id ?? null }
+							: { ok: false, error: (result.reasons ?? []).join("; ") || "record refused" };
+					}
 					if (!sinkRef || typeof sinkRef.append !== "function")
 						return { ok: false, error: "no durable writer is bound" };
 					const written = await sinkRef.append({

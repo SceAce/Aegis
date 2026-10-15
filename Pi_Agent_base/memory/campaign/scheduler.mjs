@@ -239,6 +239,50 @@ export function createCampaignScheduler({
 		return { ok: true, durable: true, event: result.event ?? null, error: null };
 	}
 
+	/**
+	 * The exact §6.1 PlanCommandResult shape: every field explicitly present.
+	 * @param {{command: string, ok: boolean, status: string, reasons?: string[], planId?: string|null, planDigest?: string|null, submittedEventId?: string|null, transitionEventId?: string|null, committedPrefix?: any, recordDurable?: boolean, admission?: any}} args
+	 */
+	function commandResult({
+		command,
+		ok,
+		status,
+		reasons = [],
+		planId = null,
+		planDigest: pd = null,
+		submittedEventId = null,
+		transitionEventId = null,
+		committedPrefix: prefix = null,
+		recordDurable = true,
+		admission = null,
+	} = /** @type {any} */ ({})) {
+		const current = project();
+		const active = (current.plans ?? []).find((p) => p.status === "admitted") ?? null;
+		return {
+			command,
+			ok: ok === true,
+			status,
+			buffered: false,
+			record_durable: recordDurable === true,
+			transition_accepted: ok === true && status === "admitted",
+			activated: false,
+			plan_id: planId,
+			plan_digest: pd,
+			active_plan_id: active?.id ?? null,
+			submitted_event_id: submittedEventId,
+			transition_event_id: transitionEventId,
+			committed_prefix: prefix,
+			reasons: [...reasons],
+			admission,
+		};
+	}
+
+	/** The durable committed prefix identity of a plan index entry. */
+	function committedPrefix(entry) {
+		if (!entry) return null;
+		return { offset: entry.offset ?? -1, event_id: entry.event_id ?? null, event_digest: entry.event_digest ?? null };
+	}
+
 	return {
 		get state() {
 			return project().control.state;
@@ -318,12 +362,42 @@ export function createCampaignScheduler({
 			// projection all call the SAME `planDigest`, so a repeated submission of an
 			// identical candidate is idempotent and a changed one is still refused.
 			const pd = planDigestArg ?? planDigest(plan);
-			const submitted = await commit(
-				"campaign.plan.submitted",
-				{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
-				{ kind: "runtime", actor_id: ownerId },
-			);
-			if (!submitted.ok) return { ok: false, status: "rejected", reason: submitted.error };
+			// SHARED DEDUP (§6.1): if the tool (or a prior Host command) already
+			// persisted the SAME id+digest submitted candidate, REUSE it instead of
+			// appending a duplicate record. A same-id/different-digest candidate is a
+			// conflict and never overwrites the first record.
+			const existing = project().plans.find((p) => p.id === pid) ?? null;
+			let submittedEventId = null;
+			const recordDurable = true;
+			if (existing) {
+				if (existing.digest !== pd)
+					return commandResult({
+						command: "admit_plan",
+						ok: false,
+						status: "rejected",
+						planId: pid,
+						planDigest: pd,
+						reasons: [`plan ${pid} was already recorded with a different candidate digest`],
+					});
+				submittedEventId = existing.event_id ?? null;
+			} else {
+				const submitted = await commit(
+					"campaign.plan.submitted",
+					{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
+					{ kind: "runtime", actor_id: ownerId },
+				);
+				if (!submitted.ok)
+					return commandResult({
+						command: "admit_plan",
+						ok: false,
+						status: "incomplete",
+						planId: pid,
+						planDigest: pd,
+						reasons: [submitted.error ?? "submitted append failed"],
+						recordDurable: false,
+					});
+				submittedEventId = submitted.event?.event_id ?? null;
+			}
 			if (admission.status !== "admitted") {
 				const kind = admission.status === "rejected" ? "campaign.plan.rejected" : "campaign.plan.blocked";
 				const recorded = await commit(
@@ -338,7 +412,17 @@ export function createCampaignScheduler({
 					{ kind: "runtime", actor_id: ownerId },
 				);
 				if (!recorded.ok) return { ok: false, status: admission.status, reason: recorded.error };
-				return { ok: false, status: admission.status, reasons: admission.reasons, admission };
+				return commandResult({
+					command: "admit_plan",
+					ok: false,
+					status: admission.status,
+					planId: pid,
+					planDigest: pd,
+					submittedEventId,
+					transitionEventId: recorded.event?.event_id ?? null,
+					reasons: admission.reasons,
+					admission,
+				});
 			}
 			const admitted = await commit(
 				"campaign.plan.admitted",
@@ -354,9 +438,112 @@ export function createCampaignScheduler({
 			if (!admitted.ok) {
 				// A half-written batch is NOT a legal prefix: the reducer refuses it and
 				// the plan stays unresolved. The caller must not dispatch child tasks.
-				return { ok: false, status: "incomplete", reason: admitted.error, admission };
+				return commandResult({
+					command: "admit_plan",
+					ok: false,
+					status: "incomplete",
+					planId: pid,
+					planDigest: pd,
+					submittedEventId,
+					reasons: [admitted.error ?? "admitted append failed"],
+					recordDurable: false,
+					admission,
+				});
 			}
-			return { ok: true, status: "admitted", plan_id: pid, admission, plan_digest: pd };
+			// Verify the reducer ACCEPTED the transition (an append success is not an
+			// accepted admission).
+			const after = project().plans.find((p) => p.id === pid) ?? null;
+			if (after?.status !== "admitted")
+				return commandResult({
+					command: "admit_plan",
+					ok: false,
+					status: "rejected",
+					planId: pid,
+					planDigest: pd,
+					submittedEventId,
+					transitionEventId: admitted.event?.event_id ?? null,
+					reasons: ["the durable admission was not accepted by the reducer"],
+					admission,
+				});
+			return commandResult({
+				command: "admit_plan",
+				ok: true,
+				status: "admitted",
+				planId: pid,
+				planDigest: pd,
+				submittedEventId,
+				transitionEventId: admitted.event?.event_id ?? null,
+				committedPrefix: committedPrefix(after),
+				admission,
+			});
+		},
+		/**
+		 * E1 §6.1: record ONE candidate plan. The tool and the Host share this single
+		 * dedup + writer, so a tool-persisted candidate is REUSED by a later admit and
+		 * an identical re-record is idempotent. A successful record only promises the
+		 * candidate is durable and accepted; it never activates a child.
+		 *
+		 * @param {{plan: any, planningTaskId?: string|null, planId?: string|null}} args
+		 */
+		async recordPlanCandidate({ plan, planningTaskId = null, planId = null } = /** @type {any} */ ({})) {
+			const pid = planId ?? plan?.plan_id ?? `plan-${manifest.campaign_id}-${clock()}`;
+			const pd = planDigest(plan);
+			const existing = project().plans.find((p) => p.id === pid) ?? null;
+			if (existing) {
+				if (existing.digest !== pd)
+					return commandResult({
+						command: "record_candidate",
+						ok: false,
+						status: "rejected",
+						planId: pid,
+						planDigest: pd,
+						reasons: [`plan ${pid} was already recorded with a different candidate digest`],
+					});
+				return commandResult({
+					command: "record_candidate",
+					ok: true,
+					status: "duplicate",
+					planId: pid,
+					planDigest: pd,
+					submittedEventId: existing.event_id ?? null,
+					committedPrefix: committedPrefix(existing),
+				});
+			}
+			const written = await commit(
+				"campaign.plan.submitted",
+				{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!written.ok)
+				return commandResult({
+					command: "record_candidate",
+					ok: false,
+					status: "incomplete",
+					planId: pid,
+					planDigest: pd,
+					recordDurable: false,
+					reasons: [written.error ?? "submitted append failed"],
+				});
+			const accepted = project().plans.find((p) => p.id === pid) ?? null;
+			if (!accepted)
+				return commandResult({
+					command: "record_candidate",
+					ok: false,
+					status: "rejected",
+					planId: pid,
+					planDigest: pd,
+					recordDurable: true,
+					reasons: ["the durable candidate was not accepted by the reducer"],
+				});
+			return commandResult({
+				command: "record_candidate",
+				ok: true,
+				status: "submitted",
+				planId: pid,
+				planDigest: pd,
+				submittedEventId: written.event?.event_id ?? null,
+				committedPrefix: committedPrefix(accepted),
+			});
 		},
 		/**
 		 * E1: complete the PLANNING task through its own trusted plan_ready Oracle,

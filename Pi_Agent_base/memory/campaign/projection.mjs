@@ -275,7 +275,11 @@ export function projectQueueFromEvents({
 			continue;
 		}
 
-		const applied = applyEvent({ envelope, offset, ...context });
+		const applied = applyEvent({
+			envelope: { ...envelope, __event_id: raw.event_id ?? null, __event_digest: raw.event_digest ?? null },
+			offset,
+			...context,
+		});
 		if (!applied.ok) {
 			rejected.push({ offset, event_id: raw.event_id, reason: applied.reason });
 			health.events_rejected += 1;
@@ -913,6 +917,8 @@ function applyPlanSubmitted({ envelope, offset, plans }) {
 	plans.set(planId, {
 		digest: declared,
 		offset,
+		event_id: envelope.__event_id ?? null,
+		event_digest: envelope.__event_digest ?? null,
 		plan: envelope.plan,
 		status: "submitted",
 		reasons: [],
@@ -1070,7 +1076,9 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
 				ok: false,
 				reason: `plan ${planId} admitted ${definitions.length} definitions, recompiled ${recompile.normalized.length}`,
 			};
-		const byIdRecompiled = new Map(/** @type {any[]} */ (recompile.normalized).map((definition) => [definition.task_id, definition]));
+		const byIdRecompiled = new Map(
+			/** @type {any[]} */ (recompile.normalized).map((definition) => [definition.task_id, definition]),
+		);
 		for (const definition of definitions) {
 			const expected = byIdRecompiled.get(definition.task_id);
 			if (!expected) return { ok: false, reason: `plan ${planId} admitted unknown task ${definition.task_id}` };

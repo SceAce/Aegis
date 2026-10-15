@@ -10,8 +10,18 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
+import { templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
+import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
 import { verifyChain } from "../memory/runtime/events.mjs";
-import { evidenceDir, project, providerRequestsByTask, runPlanningScenario } from "./helpers/e1-closure-helpers.mjs";
+import {
+	evidenceDir,
+	project,
+	providerRequestsByTask,
+	runPlanningScenario,
+	TEST_PLANNING_CONFIG,
+	testPlanningManifest,
+} from "./helpers/e1-closure-helpers.mjs";
 
 const out = evidenceDir("admission");
 console.log(`admission closure evidence: ${out}`);
@@ -132,4 +142,105 @@ test("T-A08 / HA-04: a foreign-root candidate is retained but never admitted", (
 		projection.plans.some((p) => p.status === "rejected" || p.status === "blocked") || projection.rejected.length > 0,
 		"the foreign root is refused",
 	);
+});
+
+test("T-A06: record_candidate then admit_plan shares ONE submitted record and reports exact fields", async () => {
+	const manifest = testPlanningManifest({ workDir: out });
+	const events = [];
+	let seq = 0;
+	const sink = {
+		events,
+		async append(event) {
+			const row = { ...event, event_id: `e${seq}`, sequence: seq, event_digest: `sha256:e${seq}` };
+			seq += 1;
+			events.push(row);
+			return { ok: true, event: row, durable: true };
+		},
+	};
+	const scheduler = createCampaignScheduler({
+		manifest,
+		ownedTasks: manifest.tasks,
+		sink,
+		worker: {
+			async run() {
+				return { ok: true, outcome_ref: "artifact:x" };
+			},
+		},
+		oracle: {
+			id: "synthetic.oracle",
+			async judge() {
+				return { status: "unknown" };
+			},
+		},
+		clock: () => 1000,
+		acquireOwnership: false,
+	});
+	const plan = {
+		version: "aegis-plan-1.0",
+		plan_id: "plan-host",
+		root_goal_ref: manifest.planning_contract.root_goal_ref,
+		tasks: [
+			{
+				proposed_task_id: "dyn-x",
+				parent_task_id: "task-plan",
+				depends_on: [],
+				goal: {
+					description: "repair name and status",
+					success_criteria: ["data.name == Ada", "data.status == active"],
+				},
+				task_type: "verify",
+				template_ref: "verify",
+				target_ref: "dataset.json",
+				required_capabilities: ["data.record.write"],
+				expected_evidence: ["artifact:dyn-x"],
+				stop_condition: "done",
+				priority: 1,
+				budget_reservation: { wall_time_ms: 1000, model_requests: 2, tool_calls: 2 },
+			},
+		],
+	};
+	// record_candidate: durable + accepted, submitted only, never activated.
+	const recorded = await scheduler.recordPlanCandidate({ plan, planningTaskId: "task-plan" });
+	assert.equal(recorded.ok, true);
+	assert.equal(recorded.command, "record_candidate");
+	assert.equal(recorded.status, "submitted");
+	assert.equal(recorded.activated, false);
+	assert.equal(recorded.transition_accepted, false);
+	assert.equal(recorded.record_durable, true);
+	assert.equal(typeof recorded.submitted_event_id, "string");
+	const submittedCount = () => events.filter((e) => e.payload?.kind === "campaign.plan.submitted").length;
+	assert.equal(submittedCount(), 1);
+	// Re-record is a duplicate referencing the SAME durable event, adding no record.
+	const again = await scheduler.recordPlanCandidate({ plan, planningTaskId: "task-plan" });
+	assert.equal(again.ok, true);
+	assert.equal(again.status, "duplicate");
+	assert.equal(again.submitted_event_id, recorded.submitted_event_id);
+	assert.equal(submittedCount(), 1, "no duplicate submitted record is appended");
+	// admit_plan REUSES the tool-persisted candidate (no second submitted record).
+	const admission = validatePlanGraph({
+		plan,
+		manifest,
+		planningTaskId: "task-plan",
+		existingTaskIds: new Set(["task-plan"]),
+		templates: templatesFromConfig(TEST_PLANNING_CONFIG),
+		requiredCriteria: manifest.objective.required_criteria,
+		expectedRootGoalRef: manifest.planning_contract.root_goal_ref,
+		derivedBudget: { wall_time_ms: 0, model_requests: 0, tool_calls: 0 },
+	});
+	assert.equal(admission.status, "admitted", JSON.stringify(admission.reasons));
+	const admitted = await scheduler.admitPlan({
+		plan,
+		planningTaskId: "task-plan",
+		admission,
+		planId: "plan-host",
+		planDigest: planDigest(plan),
+	});
+	assert.equal(admitted.ok, true);
+	assert.equal(admitted.status, "admitted");
+	assert.equal(admitted.transition_accepted, true);
+	assert.equal(admitted.activated, false);
+	assert.equal(admitted.active_plan_id, "plan-host");
+	assert.equal(admitted.submitted_event_id, recorded.submitted_event_id, "admit reused the recorded candidate");
+	assert.equal(submittedCount(), 1, "admit_plan did not append a second submitted record");
+	assert.equal(events.filter((e) => e.payload?.kind === "campaign.plan.admitted").length, 1);
 });
