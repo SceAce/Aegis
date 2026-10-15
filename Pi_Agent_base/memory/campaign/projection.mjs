@@ -204,6 +204,10 @@ export function projectQueueFromEvents({
 		(priorState?.dynamic_definitions ?? []).map((entry) => [entry.task_id, entry.definition]),
 	);
 	const outcomeIndex = new Map((priorState?.outcomes ?? []).map((o) => [o.id, o.outcome])); // outcome_id -> canonical outcome
+	// E1 §7.2: the durable TOOL charge index. Keyed by the dedup identity
+	// Campaign/Task/Episode/request_id/tool_call_id/unit_id. Survives a checkpoint
+	// boundary so rebuild/status/live all see the same charged units.
+	const toolCharges = new Map(priorState?.tool_charges ?? []);
 	const health = emptyHealth();
 	let lastAppliedEventId = null;
 	let lastAppliedOffset = priorState?.tail_offset ?? -1;
@@ -246,6 +250,19 @@ export function projectQueueFromEvents({
 		// malformed/unauthorized is rejected. This keeps `events_rejected` an honest
 		// count of campaign-contract violations in a mixed log.
 		const isCampaignRow = raw?.event_type === "runtime.note" && isCampaignEventKind(raw?.payload?.kind);
+		// DURABLE TOOL CHARGE (E1 §7.2 `c6.tool`, version `e1-tool-charge-1.0`). This
+		// is a `runtime.note` that participates in the SAME reducer as live/rebuild/
+		// status, so a repeated unit is deduplicated and never double-charged.
+		const isToolCharge = raw?.event_type === "runtime.note" && raw?.payload?.kind === "c6.tool";
+		if (isToolCharge) {
+			const charge = reduceToolCharge({ raw, toolCharges, campaign_id });
+			if (charge.ok) health.events_applied += 1;
+			else {
+				rejected.push({ offset, event_id: raw?.event_id ?? null, reason: charge.reason });
+				health.events_rejected += 1;
+			}
+			continue;
+		}
 		if (!isCampaignRow) continue;
 		const validation = validateCampaignEvent(raw);
 		if (!validation.ok) {
@@ -350,6 +367,7 @@ export function projectQueueFromEvents({
 		health,
 		rejected,
 		task_count: byId.size,
+		tool_charges: [...toolCharges.entries()].map(([key, value]) => ({ key, ...value })),
 		// Physical tail of the committed stream (last row, even if rejected).
 		tail_offset: events.length - 1,
 		tail_digest: events.length > 0 ? (events[events.length - 1]?.event_digest ?? "") : "",
@@ -369,6 +387,7 @@ function emptyProjection(campaign_id, revision) {
 		plans: [],
 		dynamic_definitions: [],
 		outcomes: new Map(),
+		tool_charges: [],
 		control: { state: "running", reason: null, offset: -1 },
 		health: emptyHealth(),
 		rejected: [],
@@ -380,6 +399,63 @@ function emptyProjection(campaign_id, revision) {
 		revision,
 		campaign_id,
 	};
+}
+
+/**
+ * Reduce ONE durable `c6.tool` charge/finish note into the tool-charge index.
+ * The dedup identity is Campaign/Task/Episode/request_id/tool_call_id/unit_id; a
+ * repeated CHARGED record for the same identity is idempotent (never re-charged),
+ * a FINISHED record only annotates the existing charge. A charge that does not
+ * match the current campaign is ignored.
+ *
+ * @param {{raw: any, toolCharges: Map<string, any>, campaign_id: string}} args
+ */
+function reduceToolCharge({ raw, toolCharges, campaign_id }) {
+	const p = raw?.payload ?? {};
+	if (p.campaign_id && p.campaign_id !== campaign_id)
+		return { ok: false, reason: "tool charge belongs to another campaign" };
+	if (p.version !== "e1-tool-charge-1.0")
+		return { ok: false, reason: `unsupported tool charge version ${String(p.version)}` };
+	if (typeof p.request_id !== "string" || p.request_id.length === 0)
+		return { ok: false, reason: "tool charge requires a request_id" };
+	if (typeof p.tool_call_id !== "string" || p.tool_call_id.length === 0)
+		return { ok: false, reason: "tool charge requires a tool_call_id" };
+	if (typeof p.unit_id !== "string" || p.unit_id.length === 0)
+		return { ok: false, reason: "tool charge requires a unit_id" };
+	const key = [
+		p.campaign_id ?? campaign_id,
+		p.task_id ?? "-",
+		p.episode_id ?? "-",
+		p.request_id,
+		p.tool_call_id,
+		p.unit_id,
+	].join("|");
+	const prior = toolCharges.get(key) ?? null;
+	if (p.phase === "charged") {
+		if (prior?.charged === true) return { ok: true }; // idempotent
+		toolCharges.set(key, {
+			charged: true,
+			finished: prior?.finished === true,
+			task_id: p.task_id ?? null,
+			episode_id: p.episode_id ?? null,
+			request_id: p.request_id,
+			tool_call_id: p.tool_call_id,
+			unit_id: p.unit_id,
+			tool_name: p.tool_name ?? null,
+			arguments_digest: p.arguments_digest ?? null,
+			units: Number.isSafeInteger(p.units) ? p.units : 1,
+			charge_event_id: raw.event_id ?? null,
+		});
+		return { ok: true };
+	}
+	if (p.phase === "finished") {
+		if (!prior?.charged) return { ok: false, reason: `finished charge has no prior charged record for ${key}` };
+		prior.finished = true;
+		prior.result_ref = p.result_ref ?? prior.result_ref ?? null;
+		prior.result_digest = p.result_digest ?? prior.result_digest ?? null;
+		return { ok: true };
+	}
+	return { ok: false, reason: `unknown tool charge phase ${String(p.phase)}` };
 }
 
 function emptyLedger() {

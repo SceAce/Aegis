@@ -318,13 +318,14 @@ export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
  * Broker Worker can admit and execute it through the ONE Broker path. The model
  * can never supply an executable, argv, authorization, or a verdict.
  *
- * @param {{ sdk: any, buffer: any, type?: any, admitTool?: any, remainingRequests?: any, state?: any }} args
+ * @param {{ sdk: any, buffer: any, type?: any, admitTool?: any, chargeUnit?: ((args: {unit_id: string, tool_call_id?: string|null, tool_name: string, arguments_digest: string}) => Promise<{ok: boolean, reason?: string}|null>)|null, remainingRequests?: any, state?: any }} args
  */
 export function createDecisionCaptureTool({
 	sdk,
 	buffer,
 	type,
 	admitTool = null,
+	chargeUnit = null,
 	remainingRequests = null,
 	state = null,
 }) {
@@ -371,30 +372,70 @@ export function createDecisionCaptureTool({
 				),
 			),
 		}),
-		async execute(_toolCallId, params) {
-			const actions = Array.isArray(params?.actions) ? params.actions : [];
-			let admitted = 0;
-			let refused = 0;
-			for (const action of actions) {
+		async execute(toolCallId, params) {
+			// §7.2 UNIT MODEL: one decision with N actions yields N units keyed `action:<original index>`; a decision with NO action yields ONE `call` unit.
+			const rawActions = Array.isArray(params?.actions) ? params.actions : [];
+			// `action:<original index>`; a decision with NO action yields ONE `call` unit.
+			// The shared `propose_task` payload is part of EVERY unit's argument digest so
+			// a shared payload cannot bypass the charge.
+			const shared = params?.propose_task && typeof params.propose_task === "object" ? params.propose_task : null;
+			const units = [];
+			for (const [index, action] of rawActions.entries()) {
 				if (!action || typeof action.action_ref !== "string" || action.action_ref.length === 0) continue;
-				// X2: each Broker action in a batch decision consumes the task's tool
-				// allocation. An action beyond the allocation is refused, never executed.
-				if (typeof admitTool === "function") {
-					const permit = admitTool({ tool_name: action.action_ref });
-					if (permit?.ok !== true) {
-						refused += 1;
-						continue;
-					}
-				}
-				buffer.push({
+				units.push({
+					unit_id: `action:${index}`,
+					original_index: index,
 					action_ref: action.action_ref,
 					arguments: action.arguments && typeof action.arguments === "object" ? action.arguments : {},
 					criterion_id: typeof action.criterion_id === "string" ? action.criterion_id : null,
 				});
-				admitted += 1;
 			}
-			if (params?.propose_task && typeof params.propose_task === "object" && typeof buffer.pushTask === "function") {
-				buffer.pushTask(params.propose_task);
+			if (units.length === 0)
+				units.push({ unit_id: "call", original_index: null, action_ref: null, arguments: {}, criterion_id: null });
+
+			let admittedUnits = 0;
+			let refusedUnits = 0;
+			const admittedActions = [];
+			for (const unit of units) {
+				const digestInput = JSON.stringify({
+					unit_id: unit.unit_id,
+					action_ref: unit.action_ref,
+					arguments: unit.arguments,
+					criterion_id: unit.criterion_id,
+					propose_task: shared,
+				});
+				let permit;
+				if (typeof chargeUnit === "function") {
+					try {
+						permit = await chargeUnit({
+							unit_id: unit.unit_id,
+							tool_call_id: toolCallId,
+							tool_name: unit.action_ref ?? "aegis_task_decision",
+							arguments_digest: digestInput,
+						});
+					} catch (error) {
+						permit = { ok: false, reason: String(error) };
+					}
+				}
+				// A durable-charge adapter that declines (returns null: no E1 host) falls
+				// back to the in-memory ledger admit, preserving legacy tool accounting.
+				if (permit == null && typeof admitTool === "function") {
+					permit = admitTool({ tool_name: unit.action_ref ?? "aegis_task_decision" });
+				}
+				if (permit && permit.ok !== true) {
+					refusedUnits += 1;
+					continue;
+				}
+				admittedUnits += 1;
+				if (unit.action_ref) admittedActions.push(unit);
+			}
+			// At least one unit must be charged before ANY buffer write; all rejected ⇒
+			// neither actions nor the shared proposal enter the buffer. Original order and
+			// full shared parameters are preserved for admitted units only.
+			if (admittedUnits > 0) {
+				for (const unit of admittedActions)
+					buffer.push({ action_ref: unit.action_ref, arguments: unit.arguments, criterion_id: unit.criterion_id });
+				if (shared && typeof buffer.pushTask === "function") buffer.pushTask(shared);
 			}
 			// X2: when the task's request allocation cannot fund the SDK's automatic
 			// follow-up, terminate so NO further provider request is sent for this task.
@@ -404,10 +445,10 @@ export function createDecisionCaptureTool({
 				content: [
 					{
 						type: "text",
-						text: `Aegis recorded ${admitted} task decision(s)${refused ? ` (${refused} refused by the task tool allocation)` : ""} for broker admission.`,
+						text: `Aegis recorded ${admittedUnits} task decision unit(s)${refusedUnits ? ` (${refusedUnits} refused by the task tool allocation)` : ""} for broker admission.`,
 					},
 				],
-				details: { recorded: admitted, refused },
+				details: { recorded: admittedUnits, refused: refusedUnits },
 				...(noFollowUp ? { terminate: true } : {}),
 			};
 		},

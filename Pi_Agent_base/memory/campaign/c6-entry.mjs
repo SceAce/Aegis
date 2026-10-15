@@ -63,9 +63,8 @@ export const C6_ENTRY_VERSION = "1.0.0";
  * rather than silently funded by the whole Campaign.
  *
  * @param {any} task
- * @param {any} manifest
  */
-function normalizeTaskBudget(task, manifest) {
+function normalizeTaskBudget(task) {
 	const definition = task?.definition ?? task ?? {};
 	const origin = task?.is_dynamic === true ? "plan" : "static";
 	const normalized = normalizeExecutableTask({
@@ -550,6 +549,11 @@ export async function runC6FromConfig(
 	// The ACTUAL current Task binding, so the observation read grant follows the
 	// task the Host is running (never the union of every Manifest target).
 	const currentTaskRef = { task: null };
+	// E1 §7.2: the ACTUAL provider request that produced the current assistant
+	// message's tool calls. Set when the request RESERVATION is persisted and held
+	// until the next request, so a tool charge is bound to the producing request
+	// (never the next continuation).
+	const requestBindingRef = { current: null };
 	const decisionCapture = {
 		tool: createDecisionCaptureTool({
 			sdk: sdkImpl,
@@ -557,6 +561,23 @@ export async function runC6FromConfig(
 			type: TypeSchema ?? undefined,
 			state: decisionState,
 			admitTool: ({ tool_name }) => (ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true }),
+			// E1 §7.2: when the Host is assembled for a durable-charge run, each decision
+			// UNIT is charged atomically dual-sided BEFORE the decision is buffered. The
+			// charge binds the actual Task/Episode and the real SDK tool call id. When no
+			// E1 host is wired the in-memory ledger admits tools as before.
+			chargeUnit: async ({ unit_id, tool_call_id, tool_name, arguments_digest }) => {
+				if (!hostRef || config.planning?.enabled !== true || typeof hostRef.chargeTool !== "function") return null;
+				const result = await hostRef.chargeTool({
+					request_id: requestBindingRef.current?.request_id ?? null,
+					tool_call_id: tool_call_id ?? `${unit_id}-${requestBindingRef.current?.request_id ?? "call"}`,
+					unit_id,
+					tool_name,
+					arguments_digest,
+					task_id: currentTaskRef.task?.task_id ?? null,
+					episode_id: currentTaskRef.task ? `ep-${currentTaskRef.task.task_id}` : null,
+				});
+				return result;
+			},
 			remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
 		}),
 		buffer,
@@ -881,7 +902,7 @@ export async function runC6FromConfig(
 					// back to the Campaign total for a dynamic task, which would silently widen
 					// its allocation (E1 §5.1/§7). The static Manifest path keeps the explicit
 					// task_budget produced by normalizeExecutableTask at assembly time.
-					const alloc = normalizeTaskBudget(task, manifest);
+					const alloc = normalizeTaskBudget(task);
 					const taskBase = persistedByTask.get(currentTaskId) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
 					// C-ISOLATION: only THIS Task's own pending holds and committed
 					// reservation identities seed this Task's ledger.
@@ -948,6 +969,7 @@ export async function runC6FromConfig(
 						if (phase === "reserved" && (!requestId || (!taskRes && !campaignRes))) {
 							return { ok: false, error: "reserved request requires request_id and a reservation id" };
 						}
+						if (phase === "reserved") requestBindingRef.current = { request_id: requestId };
 						// A committed/reconciliation record must name BOTH sides for a joint
 						// request (single-ledger mode uses the same id twice).
 						if (phase === "committed" && (!requestId || !taskRes || !campaignRes)) {

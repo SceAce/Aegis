@@ -244,3 +244,60 @@ test("T-A06: record_candidate then admit_plan shares ONE submitted record and re
 	assert.equal(submittedCount(), 1, "admit_plan did not append a second submitted record");
 	assert.equal(events.filter((e) => e.payload?.kind === "campaign.plan.admitted").length, 1);
 });
+
+test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunded", async () => {
+	const manifest = testPlanningManifest({ workDir: out });
+	const events = [];
+	let seq = 0;
+	const sink = {
+		events,
+		async append(event) {
+			const row = { ...event, event_id: `e${seq}`, sequence: seq, event_digest: `sha256:e${seq}` };
+			seq += 1;
+			events.push(row);
+			return { ok: true, event: row, durable: true };
+		},
+	};
+	// A 1-tool allocation: the second distinct unit must be refused.
+	const limited = {
+		...manifest,
+		tasks: [
+			{
+				...manifest.tasks[0],
+				task_budget: { wall_time_ms: 120000, model_requests: 8, tool_calls: 0 },
+			},
+		],
+	};
+	const scheduler = createCampaignScheduler({
+		manifest: limited,
+		ownedTasks: limited.tasks,
+		sink,
+		worker: { async run() { return { ok: true, outcome_ref: "a" }; } },
+		oracle: { id: "synthetic.oracle", async judge() { return { status: "unknown" }; } },
+		clock: () => 1000,
+		acquireOwnership: false,
+	});
+	const first = await scheduler.chargeTool({ request_id: "req-1", tool_call_id: "tc-1", unit_id: "action:0", tool_name: "data.record.set", task_id: "task-plan", episode_id: "ep-task-plan" });
+	// A zero task tool allocation refuses the first unit entirely.
+	assert.equal(first.ok, false, "a zero task tool allocation must refuse the charge");
+	assert.equal(events.filter((e) => e.payload?.kind === "c6.tool").length, 0, "no durable charge is written on refusal");
+	// Give the task a real allocation and re-charge.
+	const permissive = { ...limited, tasks: [{ ...limited.tasks[0], task_budget: { wall_time_ms: 120000, model_requests: 8, tool_calls: 2 } }] };
+	const scheduler2 = createCampaignScheduler({ manifest: permissive, ownedTasks: permissive.tasks, sink, worker: { async run() { return { ok: true, outcome_ref: "a" }; } }, oracle: { id: "synthetic.oracle", async judge() { return { status: "unknown" }; } }, clock: () => 1000, acquireOwnership: false });
+	const a = await scheduler2.chargeTool({ request_id: "req-2", tool_call_id: "tc-2", unit_id: "action:0", tool_name: "data.record.set", task_id: "task-plan", episode_id: "ep-task-plan" });
+	assert.equal(a.ok, true);
+	assert.equal(a.charged, true);
+	assert.equal(a.record_durable, true);
+	assert.equal(typeof a.event_id, "string");
+	const b = await scheduler2.chargeTool({ request_id: "req-2", tool_call_id: "tc-2", unit_id: "action:0", tool_name: "data.record.set", task_id: "task-plan", episode_id: "ep-task-plan" });
+	assert.equal(b.ok, true);
+	assert.equal(b.duplicate, true, "the same unit identity is charged at most once");
+	assert.equal(b.charged, false);
+	assert.equal(b.event_id, a.event_id, "duplicate references the existing durable event");
+	assert.equal(events.filter((e) => e.payload?.kind === "c6.tool").length, 1);
+	// A different request is a distinct unit and is charged again.
+	const c = await scheduler2.chargeTool({ request_id: "req-3", tool_call_id: "tc-3", unit_id: "action:0", tool_name: "data.record.set", task_id: "task-plan", episode_id: "ep-task-plan" });
+	assert.equal(c.ok, true);
+	assert.equal(c.charged, true);
+	assert.equal(events.filter((e) => e.payload?.kind === "c6.tool").length, 2);
+});

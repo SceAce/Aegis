@@ -148,6 +148,7 @@ export function createCampaignScheduler({
 				applied_commands: checkpoint.applied_commands ?? [],
 				applied_outcomes: checkpoint.applied_outcomes ?? [],
 				accepted_outcomes: checkpoint.accepted_outcomes ?? [],
+				tool_charges: checkpoint.tool_charges ?? [],
 				tail_offset: checkpoint.stream_offset ?? -1,
 			},
 		});
@@ -208,6 +209,7 @@ export function createCampaignScheduler({
 			applied_commands: projection.applied_commands ?? [],
 			applied_outcomes: projection.applied_outcomes ?? [],
 			accepted_outcomes: projection.accepted_outcomes ?? [],
+			tool_charges: projection.tool_charges ?? [],
 		};
 		const written = writeCheckpointImpl(baseDir, manifest.campaign_id, record);
 		lastCheckpoint = written?.ok ? { ok: true, reason: null } : { ok: false, reason: written?.reason ?? "unknown" };
@@ -243,19 +245,21 @@ export function createCampaignScheduler({
 	 * The exact §6.1 PlanCommandResult shape: every field explicitly present.
 	 * @param {{command: string, ok: boolean, status: string, reasons?: string[], planId?: string|null, planDigest?: string|null, submittedEventId?: string|null, transitionEventId?: string|null, committedPrefix?: any, recordDurable?: boolean, admission?: any}} args
 	 */
-	function commandResult({
-		command,
-		ok,
-		status,
-		reasons = [],
-		planId = null,
-		planDigest: pd = null,
-		submittedEventId = null,
-		transitionEventId = null,
-		committedPrefix: prefix = null,
-		recordDurable = true,
-		admission = null,
-	} = /** @type {any} */ ({})) {
+	function commandResult(
+		{
+			command,
+			ok,
+			status,
+			reasons = [],
+			planId = null,
+			planDigest: pd = null,
+			submittedEventId = null,
+			transitionEventId = null,
+			committedPrefix: prefix = null,
+			recordDurable = true,
+			admission = null,
+		} = /** @type {any} */ ({}),
+	) {
 		const current = project();
 		const active = (current.plans ?? []).find((p) => p.status === "admitted") ?? null;
 		return {
@@ -368,7 +372,6 @@ export function createCampaignScheduler({
 			// conflict and never overwrites the first record.
 			const existing = project().plans.find((p) => p.id === pid) ?? null;
 			let submittedEventId = null;
-			const recordDurable = true;
 			if (existing) {
 				if (existing.digest !== pd)
 					return commandResult({
@@ -558,6 +561,165 @@ export function createCampaignScheduler({
 				return { ok: false, reason: released.reason ?? released.error ?? "plan-ready gate failed" };
 			return { ok: true };
 		},
+		/**
+		 * E1 §7.2: the atomic, dual-sided DURABLE tool charge. Both the Task and the
+		 * Campaign tool_calls budget must have headroom, then a `c6.tool` charged note
+		 * is appended and re-projected to confirm. The dedup identity is
+		 * Campaign/Task/Episode/request_id/tool_call_id/unit_id, so an identical unit is
+		 * charged at most once. The caller must AWAIT this before running the tool
+		 * body; a failure means the tool is not executed.
+		 *
+		 * @param {{request_id: string, tool_call_id: string, unit_id: string, tool_name: string, arguments_digest?: string|null, task_id?: string|null, episode_id?: string|null}} args
+		 */
+		async chargeTool(
+			{
+				request_id,
+				tool_call_id,
+				unit_id,
+				tool_name,
+				arguments_digest = null,
+				task_id = null,
+				episode_id = null,
+			} = /** @type {any} */ ({}),
+		) {
+			if (!request_id || !tool_call_id || !unit_id)
+				return {
+					ok: false,
+					duplicate: false,
+					charged: false,
+					record_durable: false,
+					event_id: null,
+					reasons: ["chargeTool requires request_id, tool_call_id and unit_id"],
+				};
+			const projection = project();
+			const key = [manifest.campaign_id, task_id ?? "-", episode_id ?? "-", request_id, tool_call_id, unit_id].join(
+				"|",
+			);
+			const existing = (projection.tool_charges ?? []).find((entry) => entry.key === key);
+			if (existing?.charged === true)
+				return {
+					ok: true,
+					duplicate: true,
+					charged: false,
+					record_durable: true,
+					event_id: existing.charge_event_id ?? null,
+					reasons: [],
+				};
+			const campaignLimit = Number.parseInt(String(manifest.budget?.tool_calls ?? 0), 10);
+			const campaignCharged = (projection.tool_charges ?? []).filter((entry) => entry.charged === true).length;
+			const taskCharged = (projection.tool_charges ?? []).filter(
+				(entry) => entry.charged === true && entry.task_id === task_id,
+			).length;
+			const taskRow = task_id ? projection.tasks.find((row) => row.task_id === task_id) : null;
+			const taskLimit = taskRow?.definition?.task_budget?.tool_calls ?? null;
+			if (Number.isFinite(campaignLimit) && campaignLimit > 0 && campaignCharged + 1 > campaignLimit)
+				return {
+					ok: false,
+					duplicate: false,
+					charged: false,
+					record_durable: false,
+					event_id: null,
+					reasons: [`campaign tool_calls budget exhausted (${campaignCharged}/${campaignLimit})`],
+				};
+			if (Number.isSafeInteger(taskLimit) && taskLimit >= 0 && taskCharged + 1 > taskLimit)
+				return {
+					ok: false,
+					duplicate: false,
+					charged: false,
+					record_durable: false,
+					event_id: null,
+					reasons: [`task ${task_id} tool_calls budget exhausted (${taskCharged}/${taskLimit})`],
+				};
+			const written = await commit(
+				"c6.tool",
+				{
+					version: "e1-tool-charge-1.0",
+					phase: "charged",
+					task_id,
+					episode_id,
+					request_id,
+					tool_call_id,
+					unit_id,
+					tool_name,
+					arguments_digest,
+					manifest_revision: manifest.revision ?? 0,
+					manifest_digest: manifestDigest,
+					context_digest: manifest.planning_contract?.digest ?? null,
+					units: 1,
+					charge_event_id: null,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!written.ok)
+				return {
+					ok: false,
+					duplicate: false,
+					charged: false,
+					record_durable: false,
+					event_id: null,
+					reasons: [written.error ?? "tool charge append failed"],
+				};
+			const confirmed = (project().tool_charges ?? []).find((entry) => entry.key === key);
+			if (confirmed?.charged !== true)
+				return {
+					ok: false,
+					duplicate: false,
+					charged: false,
+					record_durable: true,
+					event_id: written.event?.event_id ?? null,
+					reasons: ["the durable tool charge was not accepted by the reducer"],
+				};
+			return {
+				ok: true,
+				duplicate: false,
+				charged: true,
+				record_durable: true,
+				event_id: written.event?.event_id ?? null,
+				reasons: [],
+			};
+		},
+		/**
+		 * E1 §7.2: mark a charged tool unit FINISHED (the body returned, error or not).
+		 * It references the same identity and never refunds; it is not a durable tool
+		 * RESULT.
+		 */
+		async finishTool(
+			{
+				request_id,
+				tool_call_id,
+				unit_id,
+				tool_name,
+				task_id = null,
+				episode_id = null,
+				result_ref = null,
+				result_digest = null,
+			} = /** @type {any} */ ({}),
+		) {
+			const written = await commit(
+				"c6.tool",
+				{
+					version: "e1-tool-charge-1.0",
+					phase: "finished",
+					task_id,
+					episode_id,
+					request_id,
+					tool_call_id,
+					unit_id,
+					tool_name,
+					result_ref,
+					result_digest,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!written.ok)
+				return {
+					ok: false,
+					record_durable: false,
+					event_id: null,
+					reasons: [written.error ?? "tool finish append failed"],
+				};
+			return { ok: true, record_durable: true, event_id: written.event?.event_id ?? null, reasons: [] };
+		},
 		lastCheckpointOk() {
 			return lastCheckpoint.ok;
 		},
@@ -636,6 +798,7 @@ export function createCampaignScheduler({
 									applied_commands: cp.applied_commands ?? [],
 									applied_outcomes: cp.applied_outcomes ?? [],
 									accepted_outcomes: cp.accepted_outcomes ?? [],
+									tool_charges: cp.tool_charges ?? [],
 									tail_offset: cpOffset,
 								},
 							});

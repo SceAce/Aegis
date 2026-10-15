@@ -247,6 +247,8 @@ export function createCampaignHost({
 		proposeDynamicTask: (input) => scheduler.proposeDynamicTask(input),
 		admitPlan: (input) => scheduler.admitPlan(input),
 		recordPlanCandidate: (input) => scheduler.recordPlanCandidate(input),
+		chargeTool: (input) => scheduler.chargeTool(input),
+		finishTool: (input) => scheduler.finishTool(input),
 		completePlanningTask: (input) => scheduler.completePlanningTask(input),
 		budgetLedger: currentLedger,
 		async pause(reason) {
