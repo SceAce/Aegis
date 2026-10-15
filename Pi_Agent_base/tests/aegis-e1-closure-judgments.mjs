@@ -175,6 +175,36 @@ test("T-J16: projectBoard without a Manifest keeps prior non-Campaign semantics"
 	];
 	const board = projectBoard(events, {});
 	assert.ok(board.byType.Fact.length >= 1, "a generic non-Campaign outcome keeps its original semantics");
+	// A Campaign judgment WITHOUT a trusted campaign context is never a Fact.
+	const campaignish = [
+		{
+			event_type: "runtime.note",
+			event_id: "c-1",
+			source: { kind: "oracle" },
+			evidence_refs: [{ ref_type: "artifact", ref_id: "a-1", digest: "sha256:x" }],
+			payload: {
+				kind: "campaign.oracle.result",
+				campaign_id: "campaign-x",
+				task_id: "t-1",
+				episode_id: "ep-t-1",
+				outcome_id: "o-1",
+				status: "success",
+				outcome: {
+					outcome_id: "o-1",
+					status: "success",
+					task_id: "t-1",
+					episode_id: "ep-t-1",
+					criterion: { criterion_id: "c1" },
+					observed: "x",
+					provenance: { source: "oracle", independent: true },
+					evidence_refs: [{ ref_type: "artifact", ref_id: "a-1", digest: "sha256:x" }],
+				},
+			},
+		},
+	];
+	const noCtx = projectBoard(campaignish, {});
+	assert.equal(noCtx.byType.Fact.length, 0, "a campaign judgment without a trusted context is not a Fact");
+	assert.ok(noCtx.byType.Hint.length >= 1, "it remains visible as a diagnostic Hint");
 });
 
 test("T-J15: the readonly E1 view never fabricates verified state from a rejected prefix", () => {

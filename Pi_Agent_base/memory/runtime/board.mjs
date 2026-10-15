@@ -706,6 +706,24 @@ export function projectBoard(events, { manifest = null } = {}) {
 				});
 			}
 		}
+		// FAIL-CLOSED WITHOUT CONTEXT (§8.1): a Campaign judgment encountered with NO
+		// Campaign context (no Manifest / no campaign_id) is never promoted to a
+		// verified Fact here; it is surfaced as a diagnostic Hint only. A manifest that
+		// names the Campaign keeps the Board's own fail-closed binding checks. A generic
+		// non-Campaign outcome is unaffected.
+		if (
+			!manifest?.campaign_id &&
+			event.payload?.campaign_outcome === true &&
+			permitted &&
+			(permitted.type === "Fact" || permitted.type === "Refuted")
+		) {
+			permitted = {
+				type: "Hint",
+				downgradedFrom: permitted.type,
+				reason: "campaign judgment without a trusted campaign context (read-only diagnostic)",
+			};
+			rejections.push({ event_id: event.event_id, reason: "campaign judgment lacks a trusted campaign context" });
+		}
 		if (event.event_type === "proposal.rejected" || (event.event_type === "proposal.submitted" && !permitted)) {
 			rejections.push({
 				event_id: event.event_id,

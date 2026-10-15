@@ -76,10 +76,17 @@ export function mapResolveRefToSupport(resolver) {
  * @param {object} [input.board] effective board projection (optional)
  * @param {object} [input.state] RuntimeState projection (optional)
  * @param {object} [input.scope] `{task_id?, episode_ids?}` binding (optional)
+ * @param {object|null} [input.manifest] trusted Campaign Manifest for shared authority (optional)
  */
-export function buildProductionResolver({ events = [], board = null, state = null, scope = null } = {}) {
+export function buildProductionResolver({
+	events = [],
+	board = null,
+	state = null,
+	scope = null,
+	manifest = null,
+} = {}) {
 	const rows = asArray(events);
-	const effectiveBoard = board ?? projectBoard(rows);
+	const effectiveBoard = board ?? projectBoard(rows, { manifest });
 	const effectiveState = state ?? projectState(rows);
 	const resolver = createEvidenceResolver({ events: rows, board: effectiveBoard, state: effectiveState, scope });
 	// The C2 dialect is exposed as a mapping, not a second resolver.

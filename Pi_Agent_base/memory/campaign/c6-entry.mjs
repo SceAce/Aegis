@@ -772,6 +772,7 @@ export async function runC6FromConfig(
 				task_types: config.learning?.environment?.task_types ?? [],
 			},
 			sink: sinkRef,
+			manifest,
 		});
 	}
 

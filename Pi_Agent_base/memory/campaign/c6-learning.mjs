@@ -33,7 +33,7 @@ export const C6_LEARNING_VERSION = "1.0.0";
  * authorization come from the SAME assembled Host, so a compiled proof resolves
  * against the real contracts.
  *
- * @param {{events: any[], registry: any, broker: any, authorization: any, environment?: object, sink: any, scope?: object|null}} args
+ * @param {{events: any[], registry: any, broker: any, authorization: any, environment?: object, sink: any, scope?: object|null, manifest?: object|null}} args
  */
 export function buildCampaignLearningBridge({
 	events,
@@ -43,8 +43,12 @@ export function buildCampaignLearningBridge({
 	environment = {},
 	sink,
 	scope = null,
+	manifest = null,
 }) {
-	const board = projectBoard(events);
+	// §8.1: the learning bridge consumes the SAME campaign authority as the queue
+	// when a Manifest/context is supplied. Without one, the generic board keeps its
+	// fail-closed non-Campaign semantics.
+	const board = projectBoard(events, { manifest });
 	const state = projectState(events);
 	return createLearningBridge({
 		events,
