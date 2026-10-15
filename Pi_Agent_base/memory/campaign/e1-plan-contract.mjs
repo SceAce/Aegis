@@ -157,6 +157,7 @@ export function validatePlanShape(plan) {
  *   existingTaskIds?: Set<string>,
  *   templates?: Map<string, any>|null,
  *   requiredCriteria?: string[],
+ *   expectedRootGoalRef?: string|null,
  *   derivedBudget?: {wall_time_ms: number, model_requests: number, tool_calls: number},
  * }} args
  * @returns {{status: "admitted"|"blocked"|"rejected", checks: object[], reasons: string[],

@@ -170,6 +170,7 @@ export function buildC3FixtureManifest({ workspaceRoot, campaignId = "campaign-c
  * cycle (E1 §8.1 item 2). Re-exported here for existing callers.
  */
 export { artifactIndexFromEvents } from "./artifact-index.mjs";
+
 import { artifactIndexFromEvents } from "./artifact-index.mjs";
 
 /**

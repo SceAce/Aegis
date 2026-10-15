@@ -16,7 +16,7 @@
 import { digest } from "../fixture/contracts.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
 import { planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
-import { normalizeExecutableTask, loadPlanningAuthority } from "./e1-planning-contract.mjs";
+import { loadPlanningAuthority, normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import { campaignEventEnvelope, isCampaignEventKind, validateCampaignEvent } from "./event-contract.mjs";
 import { resolveStageOutcome, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 import { isLegalTransition, makeQueueItem } from "./queue.mjs";
@@ -1070,7 +1070,7 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
 				ok: false,
 				reason: `plan ${planId} admitted ${definitions.length} definitions, recompiled ${recompile.normalized.length}`,
 			};
-		const byIdRecompiled = new Map(recompile.normalized.map((definition) => [definition.task_id, definition]));
+		const byIdRecompiled = new Map(/** @type {any[]} */ (recompile.normalized).map((definition) => [definition.task_id, definition]));
 		for (const definition of definitions) {
 			const expected = byIdRecompiled.get(definition.task_id);
 			if (!expected) return { ok: false, reason: `plan ${planId} admitted unknown task ${definition.task_id}` };
@@ -1259,7 +1259,12 @@ function buildDynamicTaskDefinition({ proposal, envelope, campaign_id, admission
 	// exact same definition. The ONE normalized executable shape is produced from
 	// the same alias so workers read only `task_budget`.
 	const normalized = normalizeExecutableTask({ definition, origin: "proposal" });
-	if (normalized.ok) return { ...normalized.task, admission_ref: definition.admission_ref, execution_adapter: definition.execution_adapter };
+	if (normalized.ok)
+		return {
+			...normalized.task,
+			admission_ref: definition.admission_ref,
+			execution_adapter: definition.execution_adapter,
+		};
 	definition.task_budget = { ...(proposal.budget_reservation ?? {}) };
 	definition.task_digest = digest(withoutTaskDigest(definition));
 	return definition;

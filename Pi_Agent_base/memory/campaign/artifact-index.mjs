@@ -32,11 +32,13 @@ export function artifactIndexFromEvents(events = []) {
 		if (!["oracle", "human"].includes(event?.source?.kind)) continue;
 		const outcome = payload.outcome;
 		for (const ref of Array.isArray(outcome?.evidence_refs) ? outcome.evidence_refs : []) {
-			if (ref?.ref_id && typeof ref.digest === "string") index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
+			if (ref?.ref_id && typeof ref.digest === "string")
+				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
 		}
 		// Stage-level results carry their own evidence refs in the outer payload.
 		for (const ref of Array.isArray(payload.evidence_refs) ? payload.evidence_refs : []) {
-			if (ref?.ref_id && typeof ref.digest === "string") index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
+			if (ref?.ref_id && typeof ref.digest === "string")
+				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
 		}
 	}
 	return index;

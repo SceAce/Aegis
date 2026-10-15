@@ -215,7 +215,14 @@ export function validatePlanningContract(contract) {
  */
 export function loadPlanningAuthority({ manifest } = /** @type {any} */ ({})) {
 	if (!manifest || typeof manifest !== "object")
-		return { ok: false, context: null, templates: null, manifest_digest: null, context_digest: null, reasons: ["manifest required"] };
+		return {
+			ok: false,
+			context: null,
+			templates: null,
+			manifest_digest: null,
+			context_digest: null,
+			reasons: ["manifest required"],
+		};
 	const manifest_digest = digest(manifest);
 	const contract = manifest.planning_contract ?? null;
 	if (!contract)
@@ -278,7 +285,7 @@ export function normalizeExecutableTask({ definition, origin, authority = null }
 
 	const budgetAlias = definition.budget_reservation ?? null;
 	const taskBudget = definition.task_budget ?? null;
-	const resolveDims = (value, label) => {
+	const resolveDims = (value) => {
 		const out = {};
 		for (const dim of BUDGET_DIMS) {
 			const raw = value?.[dim];
@@ -294,30 +301,36 @@ export function normalizeExecutableTask({ definition, origin, authority = null }
 		if (!budgetAlias && !taskBudget) {
 			reasons.push(`invalid_task_budget: a dynamic ${origin} task requires a complete budget`);
 		} else {
-			const dims = resolveDims(taskBudget ?? budgetAlias, "budget");
+			const dims = resolveDims(taskBudget ?? budgetAlias);
 			for (const dim of BUDGET_DIMS)
 				if (dims[dim] === undefined) reasons.push(`invalid_task_budget: ${origin} budget.${dim} is required`);
 				else if (typeof dims[dim] === "string") reasons.push(`invalid_task_budget: budget.${dim} ${dims[dim]}`);
 			// When BOTH aliases are present they must match dimension-by-dimension.
 			if (budgetAlias && taskBudget) {
-				const aliasDims = resolveDims(budgetAlias, "budget_reservation");
+				const aliasDims = resolveDims(budgetAlias);
 				for (const dim of BUDGET_DIMS) {
 					if (aliasDims[dim] === undefined || dims[dim] === undefined) continue;
 					if (aliasDims[dim] !== dims[dim])
-						reasons.push(`invalid_task_budget: task_budget.${dim} (${dims[dim]}) != budget_reservation.${dim} (${aliasDims[dim]})`);
+						reasons.push(
+							`invalid_task_budget: task_budget.${dim} (${dims[dim]}) != budget_reservation.${dim} (${aliasDims[dim]})`,
+						);
 				}
 			}
 			if (reasons.length === 0)
-				resolved = { wall_time_ms: dims.wall_time_ms, model_requests: dims.model_requests, tool_calls: dims.tool_calls };
+				resolved = {
+					wall_time_ms: dims.wall_time_ms,
+					model_requests: dims.model_requests,
+					tool_calls: dims.tool_calls,
+				};
 		}
 	} else {
 		// static: each provided dimension must be valid; missing -> 0.
 		if (taskBudget || budgetAlias) {
-			const dims = resolveDims(taskBudget ?? budgetAlias, "budget");
+			const dims = resolveDims(taskBudget ?? budgetAlias);
 			for (const dim of BUDGET_DIMS)
 				if (typeof dims[dim] === "string") reasons.push(`invalid_task_budget: budget.${dim} ${dims[dim]}`);
 			if (taskBudget && budgetAlias) {
-				const aliasDims = resolveDims(budgetAlias, "budget_reservation");
+				const aliasDims = resolveDims(budgetAlias);
 				for (const dim of BUDGET_DIMS)
 					if (aliasDims[dim] !== undefined && dims[dim] !== undefined && aliasDims[dim] !== dims[dim])
 						reasons.push(`invalid_task_budget: task_budget.${dim} != budget_reservation.${dim}`);

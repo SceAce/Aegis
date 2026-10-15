@@ -29,7 +29,6 @@ import { buildRam } from "../runtime/ram.mjs";
 import { createSessionSupervisor } from "../runtime/session-supervisor.mjs";
 import { projectState } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
-import { normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import {
 	buildCampaignLearningBridge,
 	createCampaignLearningStore,
@@ -49,6 +48,7 @@ import { reservedSeedForTask, summarizeRequestLedger } from "./c6-request-lifecy
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
 import { createToolLedger } from "./c6-tool-ledger.mjs";
 import { loadCampaignConfig } from "./campaign-config.mjs";
+import { normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import { createObservationServer } from "./observation-server.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
 import { describeCredentialRef, resolveProviderConfig } from "./provider-config.mjs";
