@@ -257,7 +257,15 @@ test("XR-12 finished without charge returns rejected semantic result", async () 
 });
 test("XR-13 tool charges survive rebuilding the actual C6 ledger", () => {
 	const units = normal.events.filter((e) => e.payload?.kind === "c6.tool" && e.payload.phase === "charged").length;
-	assert.equal(units, 3, "normal chain has three decision units");
+	assert.equal(units, 4, "§7.2: normal chain charges one submit_plan and three decision units");
+	assert.equal(
+		normal.events.filter(
+			(e) =>
+				e.payload?.kind === "c6.tool" && e.payload.phase === "charged" && e.payload.tool_name === "aegis_submit_plan",
+		).length,
+		1,
+		"the planning submission is charged independently of decision actions",
+	);
 	assert.equal(
 		summarizeRequestLedger(normal.events).consumed.tool_calls,
 		units,
@@ -376,9 +384,12 @@ test("XR-21 rejected correction cannot retire a valid Fact", () => {
 });
 test("XR-22 environment invalidation withdraws unstarted dependency permission", () => {
 	const end = normal.events.findIndex(
-		(e) => e.payload?.kind === "campaign.task.completed" && e.payload.task_id === "dyn-a",
+		(e) => e.payload?.kind === "campaign.task.completed" && e.payload.task_id === "dyn-b",
 	);
 	const events = structuredClone(normal.events.slice(0, end + 1));
+	const control = project(events, manifest).tasks.find((t) => t.task_id === "dyn-c");
+	assert.ok(control.definition.depends_on.includes("dyn-a"), "control: dyn-c really depends on dyn-a");
+	assert.equal(control.state, "ready", "control: the dependant is ready before invalidation");
 	const scope = project(events, manifest).tasks.find((t) => t.task_id === "dyn-a").definition.scope;
 	events.push({
 		event_type: "environment.changed",
@@ -395,8 +406,8 @@ test("XR-22 environment invalidation withdraws unstarted dependency permission",
 		0,
 		"control: Board removed stale Facts",
 	);
-	const child = project(events, manifest).tasks.find((t) => t.task_id === "dyn-b");
-	assert.notEqual(child.state, "ready", "scheduler still uses completed history after Fact invalidation");
+	const child = project(events, manifest).tasks.find((t) => t.task_id === "dyn-c");
+	assert.equal(child.state, "queued", "the real dependant loses readiness after Fact invalidation");
 });
 test("XR-23 outcome evidence must resolve at its accepted prefix", () => {
 	const events = structuredClone(normal.events);
