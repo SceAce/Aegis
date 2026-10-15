@@ -20,12 +20,7 @@
 import { artifactIndexFromEvents } from "./c3-entry.mjs";
 import { summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
 import { buildPlanningContext, planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
-import {
-	buildPlanningContract,
-	loadPlanningAuthority,
-	normalizeExecutableTask,
-	ROOT_GOAL_REF,
-} from "./e1-planning-contract.mjs";
+import { buildPlanningContract } from "./e1-planning-contract.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
 
 /** The Host-owned planning task id (never a business task). */

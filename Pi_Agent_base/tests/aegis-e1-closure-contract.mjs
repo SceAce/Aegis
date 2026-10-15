@@ -440,7 +440,7 @@ test("T-C01e: durable persistence confirms fsync and refuses a digest collision"
 	assert.equal(second.ok, true);
 	assert.equal(second.synced, true, "an existing identical manifest also confirms durability");
 	// A same-address different-bytes collision is refused (never overwritten).
-	writeFileSync(first.path, "{\"tampered\":true}\n");
+	writeFileSync(first.path, '{"tampered":true}\n');
 	const collision = await persistImmutableManifest(manifest, dir);
 	assert.equal(collision.ok, false, "a canonical file with different bytes is never overwritten");
 	assert.match(collision.reason, /collision|different bytes/);
