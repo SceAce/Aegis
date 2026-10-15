@@ -17,8 +17,8 @@
 // the trusted registries (registries.mjs). A model-provided value can never add
 // a permission; validation only ever SUBTRACTS from what the registries allow.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, open, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { digest } from "../fixture/contracts.mjs";
 import { assertIdType, classifyId, isIdOfKind } from "./identifiers.mjs";
@@ -637,10 +637,25 @@ export async function persistImmutableManifest(manifest, dir) {
 	// by `digest`, so the bytes and the content address agree.
 	const body = `${canonicalJson(manifest)}\n`;
 	// A single success shape so every branch returns the identical key set.
-	const success = (existed) => ({ ok: true, digest: digestValue, canonical_digest: digestValue, path, existed });
+	const success = (existed) => ({
+		ok: true,
+		digest: digestValue,
+		canonical_digest: digestValue,
+		path,
+		existed,
+		synced: true,
+	});
+	// DURABLE CONFIRMATION (E1 §4.1): a writeFile that returns is NOT a durability
+	// guarantee. The canonical file must be fsynced, and a newly created parent
+	// directory entry must be fsynced, BEFORE the caller may declare the run
+	// durable. Any fsync failure is reported as a non-durable failure (fail-closed).
+	let sync = null;
 	try {
 		const existing = await readFile(path, "utf8");
-		if (existing === body) return success(true);
+		if (existing === body) {
+			await fsyncPath(path);
+			return success(true);
+		}
 		return {
 			ok: false,
 			digest: digestValue,
@@ -658,7 +673,10 @@ export async function persistImmutableManifest(manifest, dir) {
 		// A concurrent writer may have created it; re-read and compare.
 		try {
 			const existing = await readFile(path, "utf8");
-			if (existing === body) return success(true);
+			if (existing === body) {
+				await fsyncPath(path);
+				return success(true);
+			}
 		} catch {
 			// fall through
 		}
@@ -671,7 +689,41 @@ export async function persistImmutableManifest(manifest, dir) {
 			reason: `could not persist immutable manifest: ${String(error)}`,
 		};
 	}
-	return success(false);
+	try {
+		sync = await fsyncPath(path);
+		await fsyncDirectory(dirname(path));
+	} catch (error) {
+		return {
+			ok: false,
+			digest: digestValue,
+			canonical_digest: digestValue,
+			path,
+			existed: false,
+			reason: `could not confirm immutable manifest durability: ${String(error)}`,
+		};
+	}
+	return { ...success(false), synced: sync === true };
+}
+
+/** fsync a single file path. Returns true on success; throws on failure. */
+async function fsyncPath(path) {
+	const handle = await open(path, "r+");
+	try {
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	return true;
+}
+
+/** fsync a directory so a newly created entry survives a crash. */
+async function fsyncDirectory(dir) {
+	const handle = await open(dir, "r");
+	try {
+		if (typeof handle.sync === "function") await handle.sync();
+	} finally {
+		await handle.close();
+	}
 }
 
 /**

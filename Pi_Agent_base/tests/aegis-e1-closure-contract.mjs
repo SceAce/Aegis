@@ -429,3 +429,19 @@ writeFileSync(
 	join(out, "contract-summary.json"),
 	`${JSON.stringify({ script: "aegis-e1-closure-contract", cases: ["T-C01", "T-C02", "T-C04", "T-C06", "T-C07", "T-C08", "T-C09", "T-C10", "T-C11", "T-C12", "T-C13", "T-C14", "T-C16"], plan_ready_criterion: PLAN_READY_CRITERION }, null, 2)}\n`,
 );
+
+test("T-C01e: durable persistence confirms fsync and refuses a digest collision", async () => {
+	const dir = join(out, "manifests-fsync");
+	const manifest = buildPlanningManifest({ base: baseManifest(), planningConfig: { templates: TEMPLATES } }).manifest;
+	const first = await persistImmutableManifest(manifest, dir);
+	assert.equal(first.ok, true);
+	assert.equal(first.synced, true, "a new canonical manifest must confirm fsync before reporting durable");
+	const second = await persistImmutableManifest(manifest, dir);
+	assert.equal(second.ok, true);
+	assert.equal(second.synced, true, "an existing identical manifest also confirms durability");
+	// A same-address different-bytes collision is refused (never overwritten).
+	writeFileSync(first.path, "{\"tampered\":true}\n");
+	const collision = await persistImmutableManifest(manifest, dir);
+	assert.equal(collision.ok, false, "a canonical file with different bytes is never overwritten");
+	assert.match(collision.reason, /collision|different bytes/);
+});
