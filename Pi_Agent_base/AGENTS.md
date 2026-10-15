@@ -219,3 +219,21 @@ A real ready-prefix subprocess restart with both planning ids absent produces
 6 faux provider requests and 3 Broker effects. Preserve accepted C6/A gates.
 Campaign tsc has 194 diagnostics (0 in Campaign modules); Batch-E has 186.
 This audit changes tests/docs only and makes no paid provider/target calls.
+
+E1 contract-closure round (2026-10-15), branch `fix/e1-contract-closure`, start
+`852cc5e`, delivered HEAD `0d315e0`: see
+`../docs/E1_CONTRACT_CLOSURE_IMPLEMENTATION_REPORT.md`. Implements the trusted
+`planning_contract` embedded in the immutable Manifest, the ONE
+`normalizeExecutableTask` shape, one effective plan with cumulative
+`allocation_total`, the §6.1 Host plan-command result and shared candidate
+dedup, the durable dual-sided `c6.tool` charge, and a shared campaign
+`authority` consumed by Board/RAM/E1-view/learning (fail-closed without
+context). The four new required scripts `aegis-e1-closure-{contract,admission,
+judgments,recovery}` are 18/11/11/10 cases. All 68 required unique scripts exit 0;
+the independent completion audit is now 12/12 (was 3/9) and the history audit
+4/4 (was 1/3), with no assertion changed. Type baselines unchanged (Campaign
+194, Batch-E 186, both exit 1 as before). Overall status is **changes_required**:
+the wall-time durable anchor (T-A16), SDK sequential tool ordering, read/submit
+tool charging, tool-charge SIGKILL barrier, the explicit `full_replay_required`
+code and a per-consumer E1 verification remain open (report §8). Development
+checks call no real provider or target.
