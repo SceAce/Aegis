@@ -1,0 +1,115 @@
+{
+  "version": "E1-CC-1.0",
+  "status": "planned",
+  "description": "E1 whole-task closure required scripts. This manifest is a plan, not a test result.",
+  "baseline": "SYS-20261015-01",
+  "planning_start_commit": "3e42555245b6a9eeb2f267d4e3828e85ad4099df",
+  "specification": "docs/E1_CONTRACT_CLOSURE_TASK.md",
+  "matrix": "docs/E1_CONTRACT_CLOSURE_TEST_MATRIX.md",
+  "inherited_manifest": "docs/E1_REPAIR_REQUIRED_CHECKS.json",
+  "runner": "Pi_Agent_base/tests/helpers/c6-suite-runner.mjs",
+  "script_path_pattern": "Pi_Agent_base/tests/{name}.mjs",
+  "expected_unique_scripts": 68,
+  "required_exit_code": 0,
+  "blocked_or_skipped_satisfies_required": false,
+  "actual_status": "not_run",
+  "actual_exit": null,
+  "evidence": null,
+  "implementation_owned_new_scripts": [
+    "aegis-e1-closure-contract",
+    "aegis-e1-closure-admission",
+    "aegis-e1-closure-judgments",
+    "aegis-e1-closure-recovery"
+  ],
+  "groups": {
+    "e1": [
+      "aegis-e1-plan-contract",
+      "aegis-e1-planning-product",
+      "aegis-e1-observation-view",
+      "aegis-e1-planning-chain",
+      "aegis-e1-planning-gate",
+      "aegis-e1-planning-gate-audit",
+      "aegis-e1-external-review"
+    ],
+    "c6": [
+      "aegis-c6-code-repair",
+      "aegis-c6-durability-recovery",
+      "aegis-c6-external-boundaries",
+      "aegis-c6-learning-closure",
+      "aegis-c6-learning-reuse",
+      "aegis-c6-ledger-input",
+      "aegis-c6-product-chain",
+      "aegis-c6-provider",
+      "aegis-c6-recovery",
+      "aegis-c6-rotation-reject",
+      "aegis-c6-runbook",
+      "aegis-c6-runner",
+      "aegis-c6-sdk-lifecycle",
+      "aegis-c6-service-measure",
+      "aegis-c6-recheck-boundaries",
+      "aegis-c6-lifecycle-convergence",
+      "aegis-c6-lifecycle-restart",
+      "aegis-c6-architecture-review"
+    ],
+    "regress": [
+      "aegis-c5-integration",
+      "aegis-c5-export-observation",
+      "aegis-c5-runbook",
+      "aegis-c5-session-sdk",
+      "aegis-c5-external-boundaries",
+      "aegis-c2-supervisor-boundaries",
+      "aegis-c2-budget-sdk",
+      "aegis-c2-session-rotation",
+      "aegis-c3-host-fixture",
+      "aegis-c3-gate-sdk",
+      "aegis-c3-durability-recovery",
+      "aegis-c3-external-boundaries",
+      "aegis-c4-report-export",
+      "aegis-c4-external-boundaries",
+      "aegis-c4a-observation-http",
+      "aegis-c4a-external-boundaries",
+      "aegis-observer-runtime-handoff",
+      "aegis-observer-failclosed-pi",
+      "aegis-observer-outcome-command",
+      "aegis-observer-verify-first-pi",
+      "aegis-observer-data-use-pi",
+      "aegis-learning-bridge-e",
+      "aegis-learning-commands-pi",
+      "fixture-pi-orchestrator",
+      "aegis-campaign-c1-eventlog-durability",
+      "aegis-campaign-c1-integration-recovery"
+    ],
+    "affected": [
+      "aegis-campaign-contracts-c0",
+      "aegis-campaign-c1-scheduler",
+      "aegis-campaign-c1-integration-scheduler",
+      "aegis-runtime-effective-board",
+      "aegis-c4a-observation-xss",
+      "aegis-c4a-observation-command",
+      "aegis-c4a-observation-sdk-command",
+      "aegis-e1-remote-provider"
+    ],
+    "repair_focused": [
+      "aegis-e1-fail-closed-repair",
+      "aegis-e1-planner-input",
+      "aegis-e1-observation-repair"
+    ],
+    "independent_audits": [
+      "aegis-completion-audit",
+      "aegis-e1-history-audit"
+    ],
+    "closure": [
+      "aegis-e1-closure-contract",
+      "aegis-e1-closure-admission",
+      "aegis-e1-closure-judgments",
+      "aegis-e1-closure-recovery"
+    ]
+  },
+  "static_checks": {
+    "biome": "./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json <explicit changed code and test paths>",
+    "campaign_types": "./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis-campaign.json --pretty false",
+    "batch_e_types": "./Pi_Agent_base/pi/node_modules/.bin/tsc -p Pi_Agent_base/tsconfig.aegis.json --pretty false",
+    "types_acceptance": "Capture initial and final diagnostics, compare identity/location/content; no new or worsened diagnostics from changed paths. Existing nonzero exits remain nonzero and are not PASS.",
+    "diff": "git diff --check"
+  }
+}
