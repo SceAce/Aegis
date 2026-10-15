@@ -29,6 +29,7 @@ import { buildRam } from "../runtime/ram.mjs";
 import { createSessionSupervisor } from "../runtime/session-supervisor.mjs";
 import { projectState } from "../runtime/state.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
+import { normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import {
 	buildCampaignLearningBridge,
 	createCampaignLearningStore,
@@ -54,6 +55,30 @@ import { describeCredentialRef, resolveProviderConfig } from "./provider-config.
 import { runReportExport } from "./report-entry.mjs";
 
 export const C6_ENTRY_VERSION = "1.0.0";
+
+/**
+ * Resolve the ONE execution budget for a task from its normalized executable
+ * shape. A dynamic task that carries no valid `task_budget` fails CLOSED to a
+ * zero limit (never the Campaign total): its provider/tool calls are refused
+ * rather than silently funded by the whole Campaign.
+ *
+ * @param {any} task
+ * @param {any} manifest
+ */
+function normalizeTaskBudget(task, manifest) {
+	const definition = task?.definition ?? task ?? {};
+	const origin = task?.is_dynamic === true ? "plan" : "static";
+	const normalized = normalizeExecutableTask({
+		definition: { ...definition, task_id: task?.task_id ?? definition.task_id },
+		origin,
+	});
+	if (normalized.ok) return { ...normalized.task.task_budget };
+	// Legacy static Manifest tasks that predate the executable shape: use the
+	// explicit task_budget dims when present, otherwise 0 (never Campaign total).
+	const alloc = task?.task_budget ?? definition?.task_budget ?? {};
+	const dim = (key) => (Number.isSafeInteger(alloc[key]) && alloc[key] >= 0 ? alloc[key] : 0);
+	return { wall_time_ms: dim("wall_time_ms"), model_requests: dim("model_requests"), tool_calls: dim("tool_calls") };
+}
 
 const SUBCOMMANDS = ["run", "status", "pause", "resume", "cancel", "export", "observe", "rotate", "measure"];
 
@@ -839,19 +864,22 @@ export async function runC6FromConfig(
 				const ledgerFactory = (task) => {
 					currentTaskId = task?.task_id ?? currentTaskId;
 					currentTaskRef.task = task ?? currentTaskRef.task;
-					const alloc = task?.task_budget ?? {};
+					// The Task budget is the ONE normalized executable budget. A STATIC task
+					// whose dims were explicitly zeroed keeps its own (0) limit; we NEVER fall
+					// back to the Campaign total for a dynamic task, which would silently widen
+					// its allocation (E1 §5.1/§7). The static Manifest path keeps the explicit
+					// task_budget produced by normalizeExecutableTask at assembly time.
+					const alloc = normalizeTaskBudget(task, manifest);
 					const taskBase = persistedByTask.get(currentTaskId) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
 					// C-ISOLATION: only THIS Task's own pending holds and committed
 					// reservation identities seed this Task's ledger.
 					const taskBaseReserved = reservedSeedForTask(taskPending, taskCommittedByTask, currentTaskId);
 					currentTaskLedger = createToolLedger({
 						limit: {
-							model_requests: Number.isInteger(alloc.model_requests)
-								? alloc.model_requests
-								: manifest.budget.model_requests,
-							tool_calls: Number.isInteger(alloc.tool_calls) ? alloc.tool_calls : manifest.budget.tool_calls,
+							model_requests: alloc.model_requests,
+							tool_calls: alloc.tool_calls,
 							input_chars: 0,
-							wall_time_ms: Number.isInteger(alloc.wall_time_ms) ? alloc.wall_time_ms : manifest.budget.wall_time_ms,
+							wall_time_ms: alloc.wall_time_ms,
 						},
 						baseConsumed: taskBase,
 						baseReserved: taskBaseReserved,

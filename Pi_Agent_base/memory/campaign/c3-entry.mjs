@@ -165,36 +165,12 @@ export function buildC3FixtureManifest({ workspaceRoot, campaignId = "campaign-c
  * evidence ref, so a restarted process can resolve prior evidence WITHOUT
  * re-running the worker. This is what makes recovery/restart correct.
  *
- * @param {Array<any>} events committed rows
- * @returns {Map<string, {ref_id: string, digest: string}>}
+ * The implementation is a NEUTRAL helper (no Campaign/Board dependency) so the
+ * runtime Board and the Campaign projection can share it without an import
+ * cycle (E1 §8.1 item 2). Re-exported here for existing callers.
  */
-export function artifactIndexFromEvents(events = []) {
-	const index = new Map();
-	for (const event of events) {
-		if (!["runtime", "oracle", "human"].includes(event?.source?.kind)) continue;
-		const payload = event?.payload ?? {};
-		if (event?.event_type === "action.completed") {
-			const refId = payload.evidence_ref;
-			if (typeof refId === "string" && typeof payload.content_digest === "string") {
-				index.set(refId, { ref_id: refId, digest: payload.content_digest });
-			}
-		}
-		// Oracle-committed evidence refs (e.g. from a reconcile that read the real
-		// artifact) are indexed too.
-		if (!["oracle", "human"].includes(event?.source?.kind)) continue;
-		const outcome = payload.outcome;
-		for (const ref of Array.isArray(outcome?.evidence_refs) ? outcome.evidence_refs : []) {
-			if (ref?.ref_id && typeof ref.digest === "string")
-				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
-		}
-		// Stage-level results carry their own evidence refs in the outer payload.
-		for (const ref of Array.isArray(payload.evidence_refs) ? payload.evidence_refs : []) {
-			if (ref?.ref_id && typeof ref.digest === "string")
-				index.set(ref.ref_id, { ref_id: ref.ref_id, digest: ref.digest });
-		}
-	}
-	return index;
-}
+export { artifactIndexFromEvents } from "./artifact-index.mjs";
+import { artifactIndexFromEvents } from "./artifact-index.mjs";
 
 /**
  * Assemble a Host for a validated manifest. The Worker plan is TRUSTED Host

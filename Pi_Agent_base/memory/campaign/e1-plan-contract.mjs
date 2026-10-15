@@ -23,6 +23,7 @@
 // legal subset is never executed to masquerade as a complete plan.
 
 import { digest } from "../fixture/contracts.mjs";
+import { normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import { isKnownTaskType } from "./registries.mjs";
 
 export const PLAN_SCHEMA_VERSION = "aegis-plan-1.0";
@@ -168,6 +169,7 @@ export function validatePlanGraph({
 	existingTaskIds = new Set(),
 	templates = null,
 	requiredCriteria = [],
+	expectedRootGoalRef = null,
 	derivedBudget = { wall_time_ms: 0, model_requests: 0, tool_calls: 0 },
 }) {
 	const checks = [];
@@ -188,6 +190,19 @@ export function validatePlanGraph({
 	const shape = validatePlanShape(plan);
 	checks.push(check("shape_valid", shape.ok, shape.ok ? null : shape.reasons.join("; ")));
 	if (!shape.ok) rejectReasons.push(...shape.reasons);
+	if (rejectReasons.length > 0) {
+		return { status: "rejected", checks, reasons: rejectReasons, normalized: null, reserved_budget: null };
+	}
+
+	// 1b. Root-goal binding: the candidate's `root_goal_ref` must EXACTLY equal the
+	//     frozen planning-context root goal. A foreign root is a structural
+	//     rejection of the whole batch (it never activates another goal).
+	if (expectedRootGoalRef !== null && plan.root_goal_ref !== expectedRootGoalRef) {
+		rejectReasons.push(
+			`root_goal_ref ${JSON.stringify(plan.root_goal_ref)} does not match the frozen root goal ${JSON.stringify(expectedRootGoalRef)}`,
+		);
+	}
+	checks.push(check("root_goal_bound", rejectReasons.length === 0, plan.root_goal_ref ?? null));
 	if (rejectReasons.length > 0) {
 		return { status: "rejected", checks, reasons: rejectReasons, normalized: null, reserved_budget: null };
 	}
@@ -464,8 +479,16 @@ function normalizePlanNode({ node, plan, manifest, templates, planningTaskId }) 
 		rationale: node.rationale ?? null,
 		source: "model_plan",
 	};
-	definition.task_digest = digest(definition);
-	return { ...definition, order: (manifest.tasks?.length ?? 0) + 1 };
+	// The ONE normalized executable shape: `task_budget` and `budget_reservation`
+	// are dimension-wise equal and the task_digest covers the complete final
+	// definition. Consumers read `task_budget`, never the Campaign total.
+	const normalized = normalizeExecutableTask({ definition, origin: "plan" });
+	if (!normalized.ok) {
+		definition.task_budget = { ...node.budget_reservation };
+		definition.task_digest = digest(definition);
+		return { ...definition, order: (manifest.tasks?.length ?? 0) + 1, normalize_error: normalized.reasons };
+	}
+	return { ...normalized.task, order: (manifest.tasks?.length ?? 0) + 1 };
 }
 
 /**

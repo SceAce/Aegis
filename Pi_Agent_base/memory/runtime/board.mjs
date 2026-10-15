@@ -26,6 +26,8 @@
 // Nodes keep their STRUCTURED fields (`observed`, `criterion`, `ref`s), not just
 // their rendered text, so the effective view is derived from data, not prose.
 
+import { artifactIndexFromEvents } from "../campaign/artifact-index.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { digest } from "./events.mjs";
 
 export const NODE_TYPES = ["Origin", "Fact", "Refuted", "Intent", "Hint", "Artifact"];
@@ -631,13 +633,32 @@ export function projectBoard(events, { manifest = null } = {}) {
 	const byType = Object.fromEntries(NODE_TYPES.map((type) => [type, []]));
 	const rejections = [];
 	const byEventId = new Map();
+	const rawEvents = Array.isArray(events) ? events : [];
+	// THE SHARED CAMPAIGN AUTHORITY (§8.1): when a Manifest names a Campaign, the
+	// Board derives the accepted/effective Campaign judgement set from the SAME
+	// pure projection the queue/consumers use. A `campaign.oracle.result` that the
+	// projection REJECTED (scope/criterion/evidence/admission/identity mismatch)
+	// can NEVER become a verified Fact here, regardless of how it renders.
+	let campaignAuthority = null;
+	if (manifest && typeof manifest.campaign_id === "string" && manifest.planning_contract) {
+		const projection = projectQueueFromEvents({
+			campaign_id: manifest.campaign_id,
+			tasks: manifest.tasks ?? [],
+			events: rawEvents,
+			revision: manifest.revision ?? 0,
+			manifest,
+			artifacts: Object.fromEntries(artifactIndexFromEvents(rawEvents)),
+		});
+		campaignAuthority = projection.authority ?? null;
+		for (const rejection of projection.rejected ?? []) rejections.push(rejection);
+	}
+	const acceptedOutcomeIds = new Set(campaignAuthority?.accepted_outcomes ?? []);
 	// Normalize Campaign `campaign.oracle.result` notes into the canonical Outcome
 	// shape ONCE, so the node loop, supersede resolution and environment changes all
 	// see the SAME trusted outcome semantics (`campaignOutcomeAsRecorded`). The
 	// binding indices come from the Manifest task definitions AND the durable
 	// `campaign.plan.admitted` normalized definitions; the task -> started-episode
 	// index binds each judgement to its OWN current task episode.
-	const rawEvents = Array.isArray(events) ? events : [];
 	const taskDefs = new Map();
 	const indexDefinition = (task) => {
 		if (!task || typeof task.task_id !== "string" || task.task_id.length === 0) return;
@@ -662,7 +683,29 @@ export function projectBoard(events, { manifest = null } = {}) {
 
 	for (const event of normalizedEvents) {
 		if (!event || typeof event !== "object") continue;
-		const permitted = permittedNodeType(event);
+		let permitted = permittedNodeType(event);
+		// SHARED AUTHORITY (§8.1): a Campaign outcome that the projection did not
+		// accept as an effective judgement can never create a verified Fact/Refuted
+		// node. It stays visible as a Hint with an explicit rejection reason.
+		if (
+			campaignAuthority &&
+			event.payload?.kind === CAMPAIGN_OUTCOME_KIND &&
+			permitted &&
+			(permitted.type === "Fact" || permitted.type === "Refuted")
+		) {
+			const outcomeId = event.payload?.outcome_id ?? null;
+			if (!outcomeId || !acceptedOutcomeIds.has(outcomeId)) {
+				permitted = {
+					type: "Hint",
+					downgradedFrom: permitted.type,
+					reason: "campaign authority rejected this outcome (not an accepted effective judgement)",
+				};
+				rejections.push({
+					event_id: event.event_id,
+					reason: `campaign outcome ${String(outcomeId)} was not accepted by the campaign authority`,
+				});
+			}
+		}
 		if (event.event_type === "proposal.rejected" || (event.event_type === "proposal.submitted" && !permitted)) {
 			rejections.push({
 				event_id: event.event_id,

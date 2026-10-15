@@ -23,7 +23,7 @@ import * as sdkBase from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { artifactIndexFromEvents } from "../../memory/campaign/c3-entry.mjs";
 import { runC6FromConfig } from "../../memory/campaign/c6-entry.mjs";
-import { buildPlanningManifest } from "../../memory/campaign/e1-planning.mjs";
+import { requirePlanningManifest } from "../../memory/campaign/e1-planning.mjs";
 import { projectQueueFromEvents } from "../../memory/campaign/projection.mjs";
 import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
 import { hostEventLog } from "../../memory/runtime/events.mjs";
@@ -60,7 +60,26 @@ const readEffects = () => (existsSync(effectsPath) ? (JSON.parse(readFileSync(ef
 
 // Build a VALID base manifest, then replace its business tree with the single
 // Host planning task. The on-disk Manifest therefore contains NO business tasks.
+//
+// EXPLICIT TEST AUTHORIZATION (E1_CONTRACT_CLOSURE_TASK §4.2): the old planning
+// builder silently widened the base max_fan_out (2 -> 6) and task totals. That
+// implicit expansion is removed. This TEST HOST now explicitly selects a legal
+// authorization BEFORE freezing: max_fan_out=4 with task_count/policy totals=4
+// for the normal three-child plan; only the original illegal_plan fourth-child
+// scenario explicitly selects totals=5 so its original target overreach remains
+// the actual rejected cause. Budgets, per-Task allocations and the forbidden
+// target are unchanged.
 const base = buildDataRepairManifest({ workspaceRoot, campaignId: "campaign-e1-plan" });
+const isIllegal = scenario === "illegal_plan";
+const testAuthorizedBase = {
+	...base,
+	budget: { ...base.budget, task_count: isIllegal ? 5 : 4 },
+	dynamic_task_policy: {
+		...base.dynamic_task_policy,
+		max_fan_out: 4,
+		max_task_count: isIllegal ? 5 : 4,
+	},
+};
 const planningConfig = {
 	enabled: true,
 	templates: [
@@ -93,7 +112,7 @@ const planningConfig = {
 	],
 };
 const manifestPath = join(workDir, "manifest.json");
-const planningManifest = buildPlanningManifest({ base, planningConfig });
+const planningManifest = requirePlanningManifest({ base: testAuthorizedBase, planningConfig });
 writeFileSync(manifestPath, JSON.stringify(planningManifest), "utf8");
 const configPath = join(workDir, "config.json");
 writeFileSync(

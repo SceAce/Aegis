@@ -147,6 +147,7 @@ export function createCampaignScheduler({
 				outcomes: checkpoint.outcomes ?? [],
 				applied_commands: checkpoint.applied_commands ?? [],
 				applied_outcomes: checkpoint.applied_outcomes ?? [],
+				accepted_outcomes: checkpoint.accepted_outcomes ?? [],
 				tail_offset: checkpoint.stream_offset ?? -1,
 			},
 		});
@@ -206,6 +207,7 @@ export function createCampaignScheduler({
 			outcomes: [...projection.outcomes.entries()].map(([id, outcome]) => ({ id, outcome })),
 			applied_commands: projection.applied_commands ?? [],
 			applied_outcomes: projection.applied_outcomes ?? [],
+			accepted_outcomes: projection.accepted_outcomes ?? [],
 		};
 		const written = writeCheckpointImpl(baseDir, manifest.campaign_id, record);
 		lastCheckpoint = written?.ok ? { ok: true, reason: null } : { ok: false, reason: written?.reason ?? "unknown" };
@@ -446,6 +448,7 @@ export function createCampaignScheduler({
 									outcomes: cp.outcomes ?? [],
 									applied_commands: cp.applied_commands ?? [],
 									applied_outcomes: cp.applied_outcomes ?? [],
+									accepted_outcomes: cp.accepted_outcomes ?? [],
 									tail_offset: cpOffset,
 								},
 							});

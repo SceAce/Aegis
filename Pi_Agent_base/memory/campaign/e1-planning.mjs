@@ -20,6 +20,12 @@
 import { artifactIndexFromEvents } from "./c3-entry.mjs";
 import { summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
 import { buildPlanningContext, planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
+import {
+	buildPlanningContract,
+	loadPlanningAuthority,
+	normalizeExecutableTask,
+	ROOT_GOAL_REF,
+} from "./e1-planning-contract.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
 
 /** The Host-owned planning task id (never a business task). */
@@ -78,8 +84,12 @@ export function buildPlanningManifest({ base, planningConfig, campaignId = null 
 		oracle_ref: base.adapters?.oracle ?? "fixture.oracle.v1",
 		task_budget: { wall_time_ms: 120000, model_requests: 8, tool_calls: 24 },
 	};
-	const taskCountBudget = Math.max(base.budget?.task_count ?? 0, 12);
-	return {
+	// The Host-OWNED tool/planning budget and the plan-shape limits come from the
+	// base Manifest. We NEVER widen them here (no Math.max on budget, count, depth
+	// or fan-out): a base Manifest that is too small for planning must be fixed by
+	// the Host selecting a legal Manifest, not by the builder silently expanding.
+	const taskCountBudget = base.budget?.task_count ?? 0;
+	const frozen = {
 		...base,
 		campaign_id: campaignId ?? base.campaign_id,
 		title: `${base.title} (planning)`,
@@ -95,13 +105,31 @@ export function buildPlanningManifest({ base, planningConfig, campaignId = null 
 			...base.dynamic_task_policy,
 			enabled: true,
 			allowed_task_types: [...new Set((planningConfig?.templates ?? []).map((t) => t.task_type ?? t.template_ref))],
-			// The planning manifest needs room for a real split; keep the base tighter
-			// limit only when it is at least this large.
-			max_depth: Math.max(base.dynamic_task_policy?.max_depth ?? 0, 3),
-			max_fan_out: Math.max(base.dynamic_task_policy?.max_fan_out ?? 0, 6),
-			max_task_count: Math.min(taskCountBudget, Math.max(base.dynamic_task_policy?.max_task_count ?? 0, 12)),
 		},
 	};
+	// Embed the IMMUTABLE trusted planning contract. A base whose budget/policy
+	// cannot accommodate planning is refused with an explicit reason rather than
+	// silently widened.
+	const built = buildPlanningContract({
+		manifest: frozen,
+		templates: planningConfig?.templates ?? [],
+		requiredCriteria,
+	});
+	if (!built.ok) {
+		return { ok: false, reasons: built.reasons, manifest: null };
+	}
+	return { ok: true, reasons: [], manifest: { ...frozen, planning_contract: built.contract } };
+}
+
+/** Convenience wrapper that returns the Manifest directly (throws on refusal). */
+export function requirePlanningManifest(args) {
+	const built = buildPlanningManifest(args);
+	if (!built.ok) {
+		const error = /** @type {any} */ (new Error(`cannot build planning manifest: ${built.reasons.join("; ")}`));
+		error.reasons = built.reasons;
+		throw error;
+	}
+	return built.manifest;
 }
 
 /** The Host-owned plan readiness criterion (never a resolvable business claim). */
@@ -301,6 +329,13 @@ export async function admitCandidatePlan({
 	// Consume the SAME normalized contract the provider was given (or rebuild it
 	// from the same manifest + trusted templates). Never a second test-only copy.
 	const context = planningContext ?? buildPlanningContext({ manifest, templates, planningTaskId });
+	// Root-goal binding: compare against the trusted context when one is known
+	// (the real product run always supplies it). A caller that supplies NO context
+	// and whose manifest has NO frozen contract has no root to bind against, so the
+	// candidate root is accepted as-is (the Host still re-validates the whole graph).
+	const expectedRoot = planningContext
+		? (context?.root_goal_ref ?? null)
+		: (manifest?.planning_contract?.root_goal_ref ?? null);
 	const admission = validatePlanGraph({
 		plan,
 		manifest,
@@ -308,6 +343,7 @@ export async function admitCandidatePlan({
 		existingTaskIds,
 		templates: templates && templates.size > 0 ? templates : null,
 		requiredCriteria: context?.root_goal?.required_criteria ?? [],
+		expectedRootGoalRef: expectedRoot,
 		derivedBudget: derived,
 	});
 	if (admission.status !== "admitted") {
