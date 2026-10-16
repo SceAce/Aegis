@@ -1,5 +1,5 @@
 // Independent reproduction of CTF RAM feedback. No real provider or target.
-// CR-01/02 are regression evidence: existing code is expected to fail them.
+// CR-01 is repaired by the RAM transport change; CR-02 remains a separate detail gap.
 // Run with the embedded Pi source resolver, as documented in the review.
 
 import assert from "node:assert/strict";
@@ -34,6 +34,24 @@ function sectionsOf(messages) {
 		}
 	}
 	return sections;
+}
+
+function ramContextOf(messages) {
+	// Pi converts custom context messages to user messages before the provider.
+	const ramMessages = messages.filter(
+		(message) => message.role === "user" && messageText(message).startsWith("<aegis_ram>\n"),
+	);
+	if (ramMessages.length !== 1) throw new Error(`expected one provider-bound RAM message, got ${ramMessages.length}`);
+	return messageText(ramMessages[0]);
+}
+
+function messageText(message) {
+	return typeof message.content === "string"
+		? message.content
+		: (message.content ?? [])
+				.filter((part) => part.type === "text")
+				.map((part) => part.text)
+				.join("\n");
 }
 
 async function main() {
@@ -131,6 +149,8 @@ async function main() {
 		const state = projectState(events);
 		const first = sectionsOf(requests[0]);
 		const second = sectionsOf(requests[1]);
+		const firstRam = ramContextOf(requests[0]);
+		const secondRam = ramContextOf(requests[1]);
 		const projected = events.filter((event) => event.event_type === "request.projected");
 		const ram = buildRam({ board, state, episodeId });
 
@@ -174,9 +194,11 @@ async function main() {
 				String(value)
 					.replace(/^<aegis_ram>\n/, "")
 					.replace(/\n<\/aegis_ram>$/, "");
-			assert.equal(projected[0].payload.ram_digest, digest(inner(first.aegis_ram)));
-			assert.equal(projected[1].payload.ram_digest, digest(inner(second.aegis_ram)));
-			assert.notEqual(projected[0].payload.ram_digest, projected[1].payload.ram_digest);
+			assert.equal(first.aegis_ram, undefined, "dynamic RAM must not be stored in the system prefix");
+			assert.equal(second.aegis_ram, undefined, "dynamic RAM must not be stored in the system prefix");
+			assert.equal(projected[0].payload.ram_digest, digest(inner(firstRam)));
+			assert.equal(projected[1].payload.ram_digest, digest(inner(secondRam)));
+			assert.notEqual(firstRam, secondRam);
 			assert.equal(
 				projectState(events.filter((event) => event.event_type !== "request.projected")).version,
 				state.version,

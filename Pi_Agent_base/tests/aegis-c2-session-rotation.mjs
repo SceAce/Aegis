@@ -79,8 +79,15 @@ function lastUserText(messages) {
 	for (let i = messages.length - 1; i >= 0; i -= 1) {
 		const message = messages[i];
 		if (!message || message.role !== "user") continue;
-		if (typeof message.content === "string") return message.content;
-		if (Array.isArray(message.content)) return message.content.map((part) => part?.text || "").join(" ");
+		const text =
+			typeof message.content === "string"
+				? message.content
+				: Array.isArray(message.content)
+					? message.content.map((part) => part?.text || "").join(" ")
+					: "";
+		// Select the human prompt, not the request-local runtime RAM context.
+		if (text.startsWith("<aegis_ram>\n")) continue;
+		return text;
 	}
 	return "";
 }

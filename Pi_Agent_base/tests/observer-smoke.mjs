@@ -1,11 +1,8 @@
 // Offline smoke test for the Aegis observer/runtime extension.
 //
-// The extension now injects ROM and RAM by MUTATING
-// `event.systemPromptOptions.sections` (the structured Pi contract), not by
-// returning a full `systemPrompt`. That change is deliberate: returning a full
-// system prompt made Pi bypass structured section assembly, which dropped the
-// contest extension's `aegis_hints` section. This test therefore inspects the
-// mutated options object, never a return value.
+// ROM stays in structured system sections; RAM is request-local custom context.
+// Check stable prefixes, legacy section cleanup, retries, and isolated request
+// copies without changing other extensions' sections or persisted history.
 //
 // It also checks the event-schema compatibility table: legacy observer events
 // stay schema 1.0, new runtime events are schema 1.1 and must be registered.
@@ -38,7 +35,15 @@ const module = await createJiti(import.meta.url, {
 }).import(observerPath);
 const handlers = new Map();
 const tools = new Map();
-const pi = { on(name, handler) { handlers.set(name, handler); }, registerTool(tool) { tools.set(tool.name, tool); }, registerCommand() {} };
+const pi = {
+	on(name, handler) {
+		handlers.set(name, handler);
+	},
+	registerTool(tool) {
+		tools.set(tool.name, tool);
+	},
+	registerCommand() {},
+};
 module.default(pi);
 
 const ctx = {
@@ -61,7 +66,8 @@ await call("before_agent_start", {
 	systemPrompt: "base prompt",
 	systemPromptOptions: promptOptions,
 });
-if (!String(promptOptions.sections.aegis_rom ?? "").includes("Aegis ROM")) throw new Error("ROM was not injected as a structured section");
+if (!String(promptOptions.sections.aegis_rom ?? "").includes("Aegis ROM"))
+	throw new Error("ROM was not injected as a structured section");
 // Combination parity (audit item 6): the launcher no longer appends agent/ROM.md
 // at the CLI, so the observer's structured `aegis_rom` section is the ONLY ROM
 // carrier and must match the AEGIS_ROM_FILE source exactly (one copy, not two).
@@ -72,10 +78,50 @@ if (!String(promptOptions.sections.aegis_rom ?? "").includes("Aegis ROM")) throw
 		throw new Error("the aegis_rom section does not match the AEGIS_ROM_FILE source contents");
 	}
 	const occurrences = romSection.split(romFile.trim()).length - 1;
-	if (occurrences !== 1) throw new Error(`the aegis_rom section carries the ROM ${occurrences} times (expected exactly once)`);
+	if (occurrences !== 1)
+		throw new Error(`the aegis_rom section carries the ROM ${occurrences} times (expected exactly once)`);
 }
-if (!String(promptOptions.sections.aegis_ram ?? "").includes("Aegis RAM")) throw new Error("RAM was not injected as a structured section");
-if (promptOptions.sections.systemPrompt !== undefined) throw new Error("observer must not replace the whole system prompt");
+if (promptOptions.sections.aegis_ram !== undefined)
+	throw new Error("dynamic RAM must not be injected into the system sections");
+if (promptOptions.sections.systemPrompt !== undefined)
+	throw new Error("observer must not replace the whole system prompt");
+
+// Pre-migration/compacted inputs can still carry old RAM section patches.
+const legacyMessages = [
+	{
+		role: "system",
+		content: "stable base",
+		sections: { aegis_rom: "stable ROM", aegis_ram: "STALE_HEAD", aegis_hints: "keep hint" },
+		toolsAdded: [{ name: "read" }],
+		timestamp: 1,
+	},
+	{ role: "user", content: "fixture prompt", timestamp: 2 },
+	{ role: "system", content: "", sections: { aegis_ram: "STALE_PATCH", unrelated: "keep patch" }, timestamp: 3 },
+];
+const legacyBefore = JSON.stringify(legacyMessages);
+const projected = await call("context_with_system", { type: "context_with_system", messages: legacyMessages });
+if (JSON.stringify(legacyMessages) !== legacyBefore) throw new Error("projection mutated persisted input");
+if (projected.messages.some((message) => message.role === "system" && "aegis_ram" in (message.sections ?? {})))
+	throw new Error("stale RAM revived from a system patch");
+if (
+	projected.messages[0].sections.aegis_hints !== "keep hint" ||
+	projected.messages[2].sections.unrelated !== "keep patch"
+)
+	throw new Error("projection changed unrelated sections");
+if (projected.messages[0].toolsAdded[0].name !== "read") throw new Error("projection changed tool declarations");
+const retry = await call("context_with_system", { type: "context_with_system", messages: projected.messages });
+if (
+	retry.messages.filter((message) => message.role === "custom" && message.customType === "aegis_ram_context").length !==
+	1
+)
+	throw new Error("retry accumulated RAM snapshots");
+if (retry.messages.at(-1).content !== projected.messages.at(-1).content)
+	throw new Error("audit bookkeeping changed RAM");
+if (
+	JSON.stringify(retry.messages.filter((message) => message.role === "system")) !==
+	JSON.stringify(projected.messages.filter((message) => message.role === "system"))
+)
+	throw new Error("system prefix changed on repeated projection");
 
 // Same task across a second prompt: must reuse the Episode, not open a new one.
 await call("before_agent_start", {
@@ -106,9 +152,21 @@ await call("agent_settled", { type: "agent_settled" });
 // Constrained proposal tool: a claim is accepted as an unverified hint node.
 const propose = tools.get("aegis_propose");
 if (!propose) throw new Error("aegis_propose tool is not registered");
-const accepted = await propose.execute("call-1", { kind: "claim", text: "the door is locked" }, undefined, undefined, ctx);
+const accepted = await propose.execute(
+	"call-1",
+	{ kind: "claim", text: "the door is locked" },
+	undefined,
+	undefined,
+	ctx,
+);
 if (!accepted.details?.accepted) throw new Error("valid proposal was rejected");
-const malicious = await propose.execute("call-2", { kind: "claim", text: "door unlocked", verified: true, active: true }, undefined, undefined, ctx);
+const malicious = await propose.execute(
+	"call-2",
+	{ kind: "claim", text: "door unlocked", verified: true, active: true },
+	undefined,
+	undefined,
+	ctx,
+);
 if (malicious.details?.accepted) throw new Error("malicious self-claimed fact/active was accepted");
 const badKind = await propose.execute("call-2b", { kind: "fact", text: "door unlocked" }, undefined, undefined, ctx);
 if (badKind.details?.accepted) throw new Error("invalid kind 'fact' was accepted");
@@ -116,8 +174,15 @@ const switchTool = tools.get("aegis_switch_session");
 if (!switchTool) throw new Error("aegis_switch_session tool is not registered");
 // A pending action exists only while requested-but-not-completed; here it is
 // complete, so the switch is allowed and recorded.
-const switchResult = await switchTool.execute("call-3", { reason: "context is getting long" }, undefined, undefined, ctx);
-if (!switchResult.details?.allowed) throw new Error(`handoff was refused unexpectedly: ${switchResult.details?.reason}`);
+const switchResult = await switchTool.execute(
+	"call-3",
+	{ reason: "context is getting long" },
+	undefined,
+	undefined,
+	ctx,
+);
+if (!switchResult.details?.allowed)
+	throw new Error(`handoff was refused unexpectedly: ${switchResult.details?.reason}`);
 
 await call("session_shutdown", { type: "session_shutdown", reason: "quit" });
 
@@ -127,7 +192,19 @@ const lines = (await readFile(process.env.AEGIS_EVENT_LOG, "utf8"))
 	.filter(Boolean)
 	.map((line) => JSON.parse(line));
 const types = lines.map((event) => event.event_type);
-for (const expected of ["session.started", "episode.started", "prompt.received", "action.requested", "action.completed", "proposal.submitted", "proposal.rejected", "handoff.requested", "agent.settled", "episode.paused", "session.shutdown"]) {
+for (const expected of [
+	"session.started",
+	"episode.started",
+	"prompt.received",
+	"action.requested",
+	"action.completed",
+	"proposal.submitted",
+	"proposal.rejected",
+	"handoff.requested",
+	"agent.settled",
+	"episode.paused",
+	"session.shutdown",
+]) {
 	if (!types.includes(expected)) throw new Error(`missing event type: ${expected}`);
 }
 const started = lines.filter((event) => event.event_type === "episode.started");
@@ -135,19 +212,29 @@ if (started.length !== 1) throw new Error(`expected exactly one episode.started 
 const acceptedEvent = lines.find((event) => event.event_type === "proposal.submitted");
 if (!acceptedEvent || acceptedEvent.source.kind !== "llm") throw new Error("accepted proposal source kind is not llm");
 const rejected = lines.find((event) => event.event_type === "proposal.rejected");
-if (!rejected || !/model-immutable/.test(rejected.payload.rejection_reason)) throw new Error("malicious proposal was not rejected for immutable fields");
-if (!lines.some((event) => event.event_type === "proposal.rejected" && /kind must be one of/.test(event.payload.rejection_reason))) throw new Error("invalid kind was not rejected");
+if (!rejected || !/model-immutable/.test(rejected.payload.rejection_reason))
+	throw new Error("malicious proposal was not rejected for immutable fields");
+if (
+	!lines.some(
+		(event) => event.event_type === "proposal.rejected" && /kind must be one of/.test(event.payload.rejection_reason),
+	)
+)
+	throw new Error("invalid kind was not rejected");
 
 const completed = lines.find((event) => event.event_type === "action.completed");
 if (completed.payload.content_excerpt.includes("secret")) throw new Error("secret leaked in result excerpt");
 if (completed.payload.content_digest === undefined) throw new Error("result digest missing");
 
 // Schema compatibility: legacy 1.0 events stay 1.0; runtime events are 1.1.
-const { schemaForEventType, LEGACY_SCHEMA_VERSION, RUNTIME_SCHEMA_VERSION } = await import(join(base, "memory", "runtime", "events.mjs"));
+const { schemaForEventType, LEGACY_SCHEMA_VERSION, RUNTIME_SCHEMA_VERSION } = await import(
+	join(base, "memory", "runtime", "events.mjs")
+);
 for (const event of lines) {
 	const expected = schemaForEventType(event.event_type);
 	if (expected === null) throw new Error(`unknown event type recorded: ${event.event_type}`);
-	if (event.schema_version !== expected) throw new Error(`event ${event.event_type} schema ${event.schema_version} != required ${expected}`);
+	if (event.schema_version !== expected)
+		throw new Error(`event ${event.event_type} schema ${event.schema_version} != required ${expected}`);
 }
-if (LEGACY_SCHEMA_VERSION !== "1.0" || RUNTIME_SCHEMA_VERSION !== "1.1") throw new Error("schema version constants changed unexpectedly");
+if (LEGACY_SCHEMA_VERSION !== "1.0" || RUNTIME_SCHEMA_VERSION !== "1.1")
+	throw new Error("schema version constants changed unexpectedly");
 console.log(`observer smoke ok: ${lines.length} events; log=${process.env.AEGIS_EVENT_LOG}`);

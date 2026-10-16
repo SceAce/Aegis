@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -36,11 +36,10 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 
 import { projectBoard } from "../memory/runtime/board.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
 import { applyStagedHandoff } from "../memory/runtime/handoff-host.mjs";
+import { projectState } from "../memory/runtime/state.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");
@@ -71,15 +70,27 @@ function makeFauxModelDetails(model) {
 
 function readEvents(path) {
 	if (!existsSync(path)) return [];
-	return readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+	return readFileSync(path, "utf8")
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => JSON.parse(line));
 }
 
 function lastUserText(messages) {
 	for (let i = messages.length - 1; i >= 0; i -= 1) {
 		const message = messages[i];
 		if (!message || message.role !== "user") continue;
-		if (typeof message.content === "string") return message.content;
-		if (Array.isArray(message.content)) return message.content.map((part) => part?.text || "").join(" ");
+		const text =
+			typeof message.content === "string"
+				? message.content
+				: Array.isArray(message.content)
+					? message.content.map((part) => part?.text || "").join(" ")
+					: "";
+		// The real provider also sees request-local RAM as user-role context; the
+		// deterministic faux dispatcher must select the human prompt, not RAM.
+		if (text.startsWith("<aegis_ram>\n")) continue;
+		return text;
 	}
 	return "";
 }
@@ -188,7 +199,9 @@ async function main() {
 			return fauxAssistantMessage([fauxToolCall("aegis_propose", { kind: "intent", text: "handoff-breadcrumb" })]);
 		}
 		if (turn === 1 && text.includes("hand over")) {
-			return fauxAssistantMessage([fauxToolCall("aegis_switch_session", { reason: "context budget is nearly exhausted" })]);
+			return fauxAssistantMessage([
+				fauxToolCall("aegis_switch_session", { reason: "context budget is nearly exhausted" }),
+			]);
 		}
 		return fauxAssistantMessage("ok");
 	}
@@ -207,17 +220,35 @@ async function main() {
 	await runtime.session.prompt("Propose a breadcrumb.");
 	const startedState = projectState(readEvents(eventLog));
 	const episodeId = Object.keys(startedState.episodes)[0];
-	check("an episode was opened for the task", typeof episodeId === "string" && startedState.episodes[episodeId].goal.description === "Start the runtime handoff task.", JSON.stringify(startedState.episodes));
-	check("the model's intent proposal is on the board (breadcrumb preserved)", projectBoard(readEvents(eventLog)).nodes.some((node) => node.text.includes("handoff-breadcrumb")));
+	check(
+		"an episode was opened for the task",
+		typeof episodeId === "string" &&
+			startedState.episodes[episodeId].goal.description === "Start the runtime handoff task.",
+		JSON.stringify(startedState.episodes),
+	);
+	check(
+		"the model's intent proposal is on the board (breadcrumb preserved)",
+		projectBoard(readEvents(eventLog)).nodes.some((node) => node.text.includes("handoff-breadcrumb")),
+	);
 
 	// ---- Phase 1: MANUAL /aegis switch through the real runtime --------------
 	queue(2);
 	await runtime.session.prompt("Please hand over to a fresh session.");
 	check("the LLM proposal staged a handoff file", existsSync(handoffFile), handoffFile);
 	const stagedManual = JSON.parse(readFileSync(handoffFile, "utf8"));
-	check("the staged handoff points at the live episode", stagedManual.episode_id === episodeId, JSON.stringify(stagedManual));
-	const settled = readEvents(eventLog).filter((e) => e.event_type === "agent.settled").pop();
-	check("the Observer signaled a ready handoff at settle (thin Host trigger)", settled?.payload?.handoff_ready === true && settled?.payload?.handoff_request_id === stagedManual.request_id, JSON.stringify(settled?.payload));
+	check(
+		"the staged handoff points at the live episode",
+		stagedManual.episode_id === episodeId,
+		JSON.stringify(stagedManual),
+	);
+	const settled = readEvents(eventLog)
+		.filter((e) => e.event_type === "agent.settled")
+		.pop();
+	check(
+		"the Observer signaled a ready handoff at settle (thin Host trigger)",
+		settled?.payload?.handoff_ready === true && settled?.payload?.handoff_request_id === stagedManual.request_id,
+		JSON.stringify(settled?.payload),
+	);
 
 	const beforeManual = runtime.session;
 	const beforeManualFile = beforeManual.sessionFile;
@@ -226,29 +257,77 @@ async function main() {
 	await runtime.session.prompt("/aegis switch");
 
 	check("manual switch replaced the session object", runtime.session !== beforeManual);
-	check("manual switch opened a DISTINCT session file", typeof runtime.session.sessionFile === "string" && runtime.session.sessionFile !== beforeManualFile, `${beforeManualFile} -> ${runtime.session.sessionFile}`);
+	check(
+		"manual switch opened a DISTINCT session file",
+		typeof runtime.session.sessionFile === "string" && runtime.session.sessionFile !== beforeManualFile,
+		`${beforeManualFile} -> ${runtime.session.sessionFile}`,
+	);
 	check("manual switch changed the session id", runtime.session.sessionId !== beforeManualId);
 
 	let events = readEvents(eventLog);
-	let manualCompletions = events.filter((e) => e.event_type === "handoff.completed" && e.payload?.request_id === stagedManual.request_id);
-	check("manual switch recorded handoff.completed exactly once", manualCompletions.length === 1, `count=${manualCompletions.length}`);
-	check("the completion was written by the NEW session via the runtime", manualCompletions[0]?.source?.kind === "runtime" && manualCompletions[0]?.payload?.to_session === runtime.session.sessionId, JSON.stringify(manualCompletions[0]?.payload));
-	check("the staged handoff was retired only AFTER success", !existsSync(handoffFile) && existsSync(`${handoffFile}.applied.json`));
+	const manualCompletions = events.filter(
+		(e) => e.event_type === "handoff.completed" && e.payload?.request_id === stagedManual.request_id,
+	);
+	check(
+		"manual switch recorded handoff.completed exactly once",
+		manualCompletions.length === 1,
+		`count=${manualCompletions.length}`,
+	);
+	check(
+		"the completion was written by the NEW session via the runtime",
+		manualCompletions[0]?.source?.kind === "runtime" &&
+			manualCompletions[0]?.payload?.to_session === runtime.session.sessionId,
+		JSON.stringify(manualCompletions[0]?.payload),
+	);
+	check(
+		"the staged handoff was retired only AFTER success",
+		!existsSync(handoffFile) && existsSync(`${handoffFile}.applied.json`),
+	);
 
 	const manualState = projectState(events);
-	check("the SAME episode survived the switch", manualState.episodes[episodeId]?.status === "open", JSON.stringify(manualState.episodes[episodeId]));
-	check("both sessions are linked to the one episode (session != episode)", (manualState.episodes[episodeId]?.sessions || []).length >= 2, JSON.stringify(manualState.episodes[episodeId]?.sessions));
-	check("the original goal was not overwritten by the continuation", manualState.episodes[episodeId]?.goal?.description === "Start the runtime handoff task.");
-	check("the board breadcrumb survived the switch", projectBoard(events).nodes.some((node) => node.text.includes("handoff-breadcrumb")));
+	check(
+		"the SAME episode survived the switch",
+		manualState.episodes[episodeId]?.status === "open",
+		JSON.stringify(manualState.episodes[episodeId]),
+	);
+	check(
+		"both sessions are linked to the one episode (session != episode)",
+		(manualState.episodes[episodeId]?.sessions || []).length >= 2,
+		JSON.stringify(manualState.episodes[episodeId]?.sessions),
+	);
+	check(
+		"the original goal was not overwritten by the continuation",
+		manualState.episodes[episodeId]?.goal?.description === "Start the runtime handoff task.",
+	);
+	check(
+		"the board breadcrumb survived the switch",
+		projectBoard(events).nodes.some((node) => node.text.includes("handoff-breadcrumb")),
+	);
 
 	const newTranscript = JSON.stringify(runtime.session.messages);
-	check("the replacement delivered the continuation user message", newTranscript.includes("[Aegis] continuing episode"));
+	check(
+		"the replacement delivered the continuation user message",
+		newTranscript.includes("[Aegis] continuing episode"),
+	);
 	const newUserTexts = runtime.session.messages
 		.filter((message) => message.role === "user")
-		.map((message) => (typeof message.content === "string" ? message.content : (message.content || []).map((part) => part?.text || "").join(" ")));
-	check("the replacement did NOT replay the old session's USER prompt", !newUserTexts.some((text) => text.includes("Start the runtime handoff task.")), JSON.stringify(newUserTexts));
+		.map((message) =>
+			typeof message.content === "string"
+				? message.content
+				: (message.content || []).map((part) => part?.text || "").join(" "),
+		);
+	check(
+		"the replacement did NOT replay the old session's USER prompt",
+		!newUserTexts.some((text) => text.includes("Start the runtime handoff task.")),
+		JSON.stringify(newUserTexts),
+	);
 	const continuationRequests = captured.slice(-1)[0] || [];
-	check("the continuation request carried the preserved goal + board in RAM", JSON.stringify(continuationRequests).includes("total_goal: Start the runtime handoff task.") && JSON.stringify(continuationRequests).includes("handoff-breadcrumb"), "RAM did not carry goal/breadcrumb");
+	check(
+		"the continuation request carried the preserved goal + board in RAM",
+		JSON.stringify(continuationRequests).includes("total_goal: Start the runtime handoff task.") &&
+			JSON.stringify(continuationRequests).includes("handoff-breadcrumb"),
+		"RAM did not carry goal/breadcrumb",
+	);
 
 	// ---- Phase 2: AUTO (Host helper) switch through the real runtime ---------
 	queue(2);
@@ -257,13 +336,31 @@ async function main() {
 	const beforeAuto = runtime.session;
 	const beforeAutoFile = beforeAuto.sessionFile;
 	queue(1); // helper continuation prompt
-	const autoResult = await applyStagedHandoff({ eventLogPath: eventLog, handoffPath: handoffFile, runtime, taskId: process.env.AEGIS_TASK_ID });
+	const autoResult = await applyStagedHandoff({
+		eventLogPath: eventLog,
+		handoffPath: handoffFile,
+		runtime,
+		taskId: process.env.AEGIS_TASK_ID,
+	});
 	check("the Host helper applied the staged handoff", autoResult.applied === true, JSON.stringify(autoResult));
-	check("the helper switch replaced the session with a distinct file", runtime.session !== beforeAuto && runtime.session.sessionFile !== beforeAutoFile, JSON.stringify({ before: beforeAutoFile, after: runtime.session.sessionFile }));
+	check(
+		"the helper switch replaced the session with a distinct file",
+		runtime.session !== beforeAuto && runtime.session.sessionFile !== beforeAutoFile,
+		JSON.stringify({ before: beforeAutoFile, after: runtime.session.sessionFile }),
+	);
 	events = readEvents(eventLog);
-	const autoCompletions = events.filter((e) => e.event_type === "handoff.completed" && e.payload?.request_id === stagedAuto.request_id);
-	check("the helper switch recorded handoff.completed exactly once", autoCompletions.length === 1, `count=${autoCompletions.length}`);
-	check("the helper switch retired the staged file", !existsSync(handoffFile) && existsSync(`${handoffFile}.applied.json`));
+	const autoCompletions = events.filter(
+		(e) => e.event_type === "handoff.completed" && e.payload?.request_id === stagedAuto.request_id,
+	);
+	check(
+		"the helper switch recorded handoff.completed exactly once",
+		autoCompletions.length === 1,
+		`count=${autoCompletions.length}`,
+	);
+	check(
+		"the helper switch retired the staged file",
+		!existsSync(handoffFile) && existsSync(`${handoffFile}.applied.json`),
+	);
 
 	// ---- Phase 3: a cancelled switch must NOT fake success -------------------
 	queue(2);
@@ -278,28 +375,57 @@ async function main() {
 	delete process.env.AEGIS_TEST_CANCEL_SWITCH;
 	check("a cancelled switch did not replace the session", runtime.session === beforeCancel);
 	check("a cancelled switch left the request staged", existsSync(handoffFile), handoffFile);
-	check("a cancelled switch recorded NO completion", readEvents(eventLog).filter((e) => e.event_type === "handoff.completed").length === completionsBeforeCancel);
-	check("a cancelled switch did not retire the staged file", !existsSync(`${handoffFile}.applied.json`) || JSON.parse(readFileSync(`${handoffFile}.applied.json`, "utf8")).request_id !== stagedCancel.request_id);
+	check(
+		"a cancelled switch recorded NO completion",
+		readEvents(eventLog).filter((e) => e.event_type === "handoff.completed").length === completionsBeforeCancel,
+	);
+	check(
+		"a cancelled switch did not retire the staged file",
+		!existsSync(`${handoffFile}.applied.json`) ||
+			JSON.parse(readFileSync(`${handoffFile}.applied.json`, "utf8")).request_id !== stagedCancel.request_id,
+	);
 
 	// ---- Phase 4: a creation failure must NOT fake success -------------------
 	const completionsBeforeFailure = readEvents(eventLog).filter((e) => e.event_type === "handoff.completed").length;
 	const failure = await applyStagedHandoff({
 		eventLogPath: eventLog,
 		handoffPath: handoffFile,
-		runtime: { newSession: async () => { throw new Error("boom"); } },
+		runtime: {
+			newSession: async () => {
+				throw new Error("boom");
+			},
+		},
 		taskId: process.env.AEGIS_TASK_ID,
 	});
-	check("a creation failure is reported, not swallowed", failure.applied === false && failure.reason === "boom", JSON.stringify(failure));
+	check(
+		"a creation failure is reported, not swallowed",
+		failure.applied === false && failure.reason === "boom",
+		JSON.stringify(failure),
+	);
 	check("a creation failure left the request staged", existsSync(handoffFile));
-	check("a creation failure recorded NO completion", readEvents(eventLog).filter((e) => e.event_type === "handoff.completed").length === completionsBeforeFailure);
+	check(
+		"a creation failure recorded NO completion",
+		readEvents(eventLog).filter((e) => e.event_type === "handoff.completed").length === completionsBeforeFailure,
+	);
 
 	// ---- Global invariants ---------------------------------------------------
 	events = readEvents(eventLog);
 	const totalCompletions = events.filter((e) => e.event_type === "handoff.completed");
-	check("every successful switch produced exactly one completion (2 total)", totalCompletions.length === 2, `count=${totalCompletions.length}`);
+	check(
+		"every successful switch produced exactly one completion (2 total)",
+		totalCompletions.length === 2,
+		`count=${totalCompletions.length}`,
+	);
 	const finalState = projectState(events);
-	check("one episode, not a new one per session", Object.keys(finalState.episodes).length === 1, JSON.stringify(Object.keys(finalState.episodes)));
-	check("no board node was created by request.projected/handoff bookkeeping", projectBoard(events).byType.Fact.length === 0 && projectBoard(events).byType.Refuted.length === 0);
+	check(
+		"one episode, not a new one per session",
+		Object.keys(finalState.episodes).length === 1,
+		JSON.stringify(Object.keys(finalState.episodes)),
+	);
+	check(
+		"no board node was created by request.projected/handoff bookkeeping",
+		projectBoard(events).byType.Fact.length === 0 && projectBoard(events).byType.Refuted.length === 0,
+	);
 
 	await runtime.dispose();
 	rmSync(base, { recursive: true, force: true });

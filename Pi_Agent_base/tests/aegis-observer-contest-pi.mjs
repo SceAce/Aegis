@@ -25,10 +25,15 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import {
+	createAgentSession,
+	DefaultResourceLoader,
+	ModelRuntime,
+	SessionManager,
+	SettingsManager,
+} from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 import { projectBoard } from "../memory/runtime/board.mjs";
 import { digest } from "../memory/runtime/events.mjs";
@@ -52,17 +57,19 @@ function makeFauxModelDetails(model) {
 		baseUrl: model.baseUrl,
 		api: model.api,
 		apiKey: "faux-key",
-		models: [{
-			id: model.id,
-			name: model.name,
-			api: model.api,
-			reasoning: model.reasoning,
-			input: model.input,
-			cost: model.cost,
-			contextWindow: model.contextWindow,
-			maxTokens: model.maxTokens,
-			baseUrl: model.baseUrl,
-		}],
+		models: [
+			{
+				id: model.id,
+				name: model.name,
+				api: model.api,
+				reasoning: model.reasoning,
+				input: model.input,
+				cost: model.cost,
+				contextWindow: model.contextWindow,
+				maxTokens: model.maxTokens,
+				baseUrl: model.baseUrl,
+			},
+		],
 	};
 }
 
@@ -79,8 +86,30 @@ function currentSections(messages) {
 	return state;
 }
 
+function ramContext(messages) {
+	// Pi converts custom context messages to user messages before the provider.
+	const ramMessages = messages.filter(
+		(message) => message.role === "user" && messageText(message).startsWith("<aegis_ram>\n"),
+	);
+	if (ramMessages.length !== 1) throw new Error(`expected one provider-bound RAM message, got ${ramMessages.length}`);
+	return messageText(ramMessages[0]);
+}
+
+function messageText(message) {
+	return typeof message.content === "string"
+		? message.content
+		: (message.content ?? [])
+				.filter((part) => part.type === "text")
+				.map((part) => part.text)
+				.join("\n");
+}
+
 function readEvents(path) {
-	return readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+	return readFileSync(path, "utf8")
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => JSON.parse(line));
 }
 
 async function main() {
@@ -97,18 +126,23 @@ async function main() {
 	mkdirSync(sessionDir, { recursive: true });
 
 	const cardsPath = join(base, "cards.json");
-	writeFileSync(cardsPath, JSON.stringify({
-		cards: [{
-			id: "verified-observe-first",
-			revision: "3",
-			title: "Observe before acting",
-			status: "verified",
-			source_refs: ["fixture:combo"],
-			scope: { task_category: "demo", environment: "linux" },
-			when: ["task_started"],
-			hint: ["State the observed state before changing anything."],
-		}],
-	}) + "\n");
+	writeFileSync(
+		cardsPath,
+		JSON.stringify({
+			cards: [
+				{
+					id: "verified-observe-first",
+					revision: "3",
+					title: "Observe before acting",
+					status: "verified",
+					source_refs: ["fixture:combo"],
+					scope: { task_category: "demo", environment: "linux" },
+					when: ["task_started"],
+					hint: ["State the observed state before changing anything."],
+				},
+			],
+		}) + "\n",
+	);
 
 	const faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-combo", name: "FauxCombo" }] });
 	const model = faux.getModel();
@@ -167,11 +201,21 @@ async function main() {
 	faux.setResponses([
 		(ctx) => {
 			captured.push(ctx.messages);
-			return fauxAssistantMessage([fauxToolCall("aegis_propose", { kind: "claim", text: "the door is probably locked" })]);
+			return fauxAssistantMessage([
+				fauxToolCall("aegis_propose", { kind: "claim", text: "the door is probably locked" }),
+			]);
 		},
 		(ctx) => {
 			captured.push(ctx.messages);
-			return fauxAssistantMessage([fauxToolCall("aegis_propose", { kind: "claim", text: "door is unlocked", verified: true, active: true, authorization: { allow: "all" } })]);
+			return fauxAssistantMessage([
+				fauxToolCall("aegis_propose", {
+					kind: "claim",
+					text: "door is unlocked",
+					verified: true,
+					active: true,
+					authorization: { allow: "all" },
+				}),
+			]);
 		},
 		(ctx) => {
 			captured.push(ctx.messages);
@@ -185,63 +229,163 @@ async function main() {
 	await first.session.prompt("Wrap up.");
 
 	const req1 = currentSections(captured[0] ?? []);
-	check("combined request carries the Observer ROM section", typeof req1.aegis_rom === "string" && req1.aegis_rom.includes("Aegis ROM"), JSON.stringify(Object.keys(req1)));
-	check("combined request carries the Observer RAM section", typeof req1.aegis_ram === "string" && req1.aegis_ram.includes("Aegis RAM"), JSON.stringify(Object.keys(req1)));
-	check("combined request carries the contest hint section", typeof req1.aegis_hints === "string" && req1.aegis_hints.includes("verified-observe-first"), JSON.stringify(Object.keys(req1)));
-	check("ROM, RAM and hint sections coexist without masking each other", Object.keys(req1).filter((k) => k.startsWith("aegis_")).length >= 3, JSON.stringify(Object.keys(req1)));
+	const ram1 = ramContext(captured[0] ?? []);
+	check(
+		"combined request carries the Observer ROM section",
+		typeof req1.aegis_rom === "string" && req1.aegis_rom.includes("Aegis ROM"),
+		JSON.stringify(Object.keys(req1)),
+	);
+	check(
+		"dynamic RAM is carried as an ephemeral context message",
+		typeof ram1 === "string" && ram1.includes("Aegis RAM"),
+		JSON.stringify(captured[0]?.map((message) => (message.role === "custom" ? message.customType : message.role))),
+	);
+	check(
+		"the system prefix does not carry dynamic RAM",
+		req1.aegis_ram === undefined,
+		JSON.stringify(Object.keys(req1)),
+	);
+	check(
+		"combined request carries the contest hint section",
+		typeof req1.aegis_hints === "string" && req1.aegis_hints.includes("verified-observe-first"),
+		JSON.stringify(Object.keys(req1)),
+	);
+	check(
+		"ROM, RAM and hint context coexist without masking each other",
+		typeof req1.aegis_rom === "string" && typeof ram1 === "string" && typeof req1.aegis_hints === "string",
+	);
 
 	// --- A2: RAM is rebuilt for EVERY provider-bound request, not once per prompt.
 	// Turn 1 (captured[0]) and turn 2 (captured[1]) belong to the SAME prompt; the
 	// `aegis_propose` tool commits between them, so the candidate must appear only
 	// in turn 2's RAM, while ROM and the contest hint stay stable/unmasked.
 	const req2 = currentSections(captured[1] ?? []);
-	check("a later turn in the SAME prompt sees the candidate the tool just committed", typeof req2.aegis_ram === "string" && req2.aegis_ram.includes("the door is probably locked"), JSON.stringify({ turns: captured.length, has: typeof req2.aegis_ram === "string" && req2.aegis_ram.includes("the door is probably locked") }));
-	check("the first turn of that prompt did not yet contain the candidate", !(typeof req1.aegis_ram === "string" && req1.aegis_ram.includes("the door is probably locked")));
+	const ram2 = ramContext(captured[1] ?? []);
+	check(
+		"a later turn in the SAME prompt sees the candidate the tool just committed",
+		typeof ram2 === "string" && ram2.includes("the door is probably locked"),
+		JSON.stringify({
+			turns: captured.length,
+			has: typeof ram2 === "string" && ram2.includes("the door is probably locked"),
+		}),
+	);
+	check(
+		"the first turn of that prompt did not yet contain the candidate",
+		!(typeof ram1 === "string" && ram1.includes("the door is probably locked")),
+	);
 	check("the ROM section is byte-stable across turns in one prompt", req1.aegis_rom === req2.aegis_rom);
-	check("the contest hint stays unmasked on the SECOND request", typeof req2.aegis_hints === "string" && req2.aegis_hints.includes("verified-observe-first"));
+	check("the system prefix remains free of dynamic RAM on the SECOND request", req2.aegis_ram === undefined);
+	check(
+		"the contest hint stays unmasked on the SECOND request",
+		typeof req2.aegis_hints === "string" && req2.aegis_hints.includes("verified-observe-first"),
+	);
 	const projected = readEvents(eventLog).filter((e) => e.event_type === "request.projected");
-	check("every provider-bound request was recorded as request.projected", projected.length >= 2, `projected=${projected.length}`);
-	const inner1 = String(req1.aegis_ram).replace(/^<aegis_ram>\n/, "").replace(/\n<\/aegis_ram>$/, "");
-	check("the recorded RAM digest matches the provider-bound RAM bytes", projected.some((e) => e.payload?.ram_digest === digest(inner1)), JSON.stringify(projected.map((e) => e.payload?.ram_digest).slice(0, 3)));
+	check(
+		"every provider-bound request was recorded as request.projected",
+		projected.length >= 2,
+		`projected=${projected.length}`,
+	);
+	const inner1 = String(ram1)
+		.replace(/^<aegis_ram>\n/, "")
+		.replace(/\n<\/aegis_ram>$/, "");
+	check(
+		"the recorded RAM digest matches the provider-bound RAM bytes",
+		projected.some((e) => e.payload?.ram_digest === digest(inner1)),
+		JSON.stringify(projected.map((e) => e.payload?.ram_digest).slice(0, 3)),
+	);
 	const projectedEvents = readEvents(eventLog).filter((e) => e.event_type === "request.projected");
 	const stateWithoutProjection = projectState(readEvents(eventLog).filter((e) => e.event_type !== "request.projected"));
 	const stateWithProjection = projectState(readEvents(eventLog));
-	check("request.projected creates no board node and does not bump RuntimeState", projectedEvents.every((e) => !projectBoard([e]).nodes.length) && stateWithoutProjection.version === stateWithProjection.version);
+	check(
+		"request.projected creates no board node and does not bump RuntimeState",
+		projectedEvents.every((e) => !projectBoard([e]).nodes.length) &&
+			stateWithoutProjection.version === stateWithProjection.version,
+	);
 
 	let events = readEvents(eventLog);
 	const proposals = events.filter((e) => e.event_type === "proposal.submitted");
 	check("a model claim was recorded as a proposal.submitted event", proposals.length === 1);
 	check("the accepted proposal source kind is llm", proposals[0]?.source?.kind === "llm");
 	const rejections = events.filter((e) => e.event_type === "proposal.rejected");
-	check("the malicious fact/active/authorization proposal was rejected", rejections.length >= 1 && /model-immutable/.test(rejections[0]?.payload?.rejection_reason || ""));
+	check(
+		"the malicious fact/active/authorization proposal was rejected",
+		rejections.length >= 1 && /model-immutable/.test(rejections[0]?.payload?.rejection_reason || ""),
+	);
 
 	let board = projectBoard(events);
-	check("the claim became a candidate Hint node with its text", board.byType.Hint.some((n) => n.text.includes("the door is probably locked") && n.status === "candidate"));
-	check("no malicious text became a Fact/verified node", !board.byType.Fact.some((n) => n.text.includes("door is unlocked")));
-	check("no LLM path created an active/authorization node", board.byType.Fact.length === 0 && board.byType.Refuted.length === 0);
+	check(
+		"the claim became a candidate Hint node with its text",
+		board.byType.Hint.some((n) => n.text.includes("the door is probably locked") && n.status === "candidate"),
+	);
+	check(
+		"no malicious text became a Fact/verified node",
+		!board.byType.Fact.some((n) => n.text.includes("door is unlocked")),
+	);
+	check(
+		"no LLM path created an active/authorization node",
+		board.byType.Fact.length === 0 && board.byType.Refuted.length === 0,
+	);
 
 	// The contest extension EMITS its injection decision on the shared Pi event
 	// bus; the Observer (single writer) records it as `experience.decision`.
 	const decisions = events.filter((e) => e.event_type === "experience.decision");
-	check("contest injection decisions reach the Observer EventLog via the shared bus", decisions.length >= 1, `experience.decision=${decisions.length}`);
+	check(
+		"contest injection decisions reach the Observer EventLog via the shared bus",
+		decisions.length >= 1,
+		`experience.decision=${decisions.length}`,
+	);
 	const firstDecision = decisions[0]?.payload ?? {};
-	check("the decision records considered/matched/rejected/selected", Array.isArray(firstDecision.considered) && firstDecision.considered.length >= 1 && Array.isArray(firstDecision.matched) && Array.isArray(firstDecision.rejected) && firstDecision.selected?.id === "verified-observe-first", JSON.stringify({ c: firstDecision.considered?.length, m: firstDecision.matched?.length, r: firstDecision.rejected?.length, s: firstDecision.selected?.id }));
-	check("a rejected card must carry a reason", firstDecision.rejected.every((entry) => typeof entry.reason === "string" && entry.reason.length > 0));
-	check("the decision records card provenance (path + digest)", typeof firstDecision.card_provenance?.cards_path === "string" && /^sha256:/.test(firstDecision.card_provenance?.cards_digest || ""));
-	check("the injected card is a Hint, never an active Experience", firstDecision.active_experience === false && firstDecision.verdict === "unverified");
+	check(
+		"the decision records considered/matched/rejected/selected",
+		Array.isArray(firstDecision.considered) &&
+			firstDecision.considered.length >= 1 &&
+			Array.isArray(firstDecision.matched) &&
+			Array.isArray(firstDecision.rejected) &&
+			firstDecision.selected?.id === "verified-observe-first",
+		JSON.stringify({
+			c: firstDecision.considered?.length,
+			m: firstDecision.matched?.length,
+			r: firstDecision.rejected?.length,
+			s: firstDecision.selected?.id,
+		}),
+	);
+	check(
+		"a rejected card must carry a reason",
+		firstDecision.rejected.every((entry) => typeof entry.reason === "string" && entry.reason.length > 0),
+	);
+	check(
+		"the decision records card provenance (path + digest)",
+		typeof firstDecision.card_provenance?.cards_path === "string" &&
+			/^sha256:/.test(firstDecision.card_provenance?.cards_digest || ""),
+	);
+	check(
+		"the injected card is a Hint, never an active Experience",
+		firstDecision.active_experience === false && firstDecision.verdict === "unverified",
+	);
 	// No second writer: the decision event id must be written by the observer log
 	// itself (it is present in the same chain), and the contest metadata log is a
 	// separate file used only for A/B bookkeeping.
-	check("the decision event is inside the observer's own event chain", decisions.every((e) => typeof e.event_digest === "string"));
+	check(
+		"the decision event is inside the observer's own event chain",
+		decisions.every((e) => typeof e.event_digest === "string"),
+	);
 
 	// One Episode across the three prompts of one session.
 	let state = projectState(events);
 	const started = events.filter((e) => e.event_type === "episode.started");
 	check("three prompts in one session kept ONE episode", started.length === 1, `${started.length} episode.started`);
-	check("the two follow-up prompts were counted on the one episode (origin carries the first)", state.episodes[started[0].episode_id]?.prompts === 2, JSON.stringify(state.episodes));
+	check(
+		"the two follow-up prompts were counted on the one episode (origin carries the first)",
+		state.episodes[started[0].episode_id]?.prompts === 2,
+		JSON.stringify(state.episodes),
+	);
 	const episodeId = started[0].episode_id;
 	const originalGoal = state.episodes[episodeId]?.goal?.description;
-	check("episode goal is the original prompt, not a later short prompt", originalGoal === "Start the demo task.", String(originalGoal));
+	check(
+		"episode goal is the original prompt, not a later short prompt",
+		originalGoal === "Start the demo task.",
+		String(originalGoal),
+	);
 
 	// ---- LLM handoff request is allowed (control tool does not block itself) -
 	const captured2 = [];
@@ -259,7 +403,11 @@ async function main() {
 	events = readEvents(eventLog);
 	const handoffReq = events.filter((e) => e.event_type === "handoff.requested");
 	const handoffRej = events.filter((e) => e.event_type === "handoff.rejected");
-	check("a genuine LLM handoff request was allowed (not blocked by its own control call)", handoffReq.length === 1, `requested=${handoffReq.length} rejected=${handoffRej.length} ${JSON.stringify(handoffRej.map((e) => e.payload))}`);
+	check(
+		"a genuine LLM handoff request was allowed (not blocked by its own control call)",
+		handoffReq.length === 1,
+		`requested=${handoffReq.length} rejected=${handoffRej.length} ${JSON.stringify(handoffRej.map((e) => e.payload))}`,
+	);
 	check("the handoff request carried a reason", typeof handoffReq[0]?.payload?.reason === "string");
 	check("a handoff file was staged for the command boundary", readFileSync(handoffFile, "utf8").includes(episodeId));
 
@@ -269,10 +417,23 @@ async function main() {
 	// state with a pending real action.
 	const { pendingActionsFor } = await import("../memory/runtime/state.mjs");
 	const blockedState = JSON.parse(JSON.stringify(state));
-	blockedState.pending_actions["a-real"] = { action_id: "a-real", tool_name: "bash", episode_id: episodeId, status: "pending" };
+	blockedState.pending_actions["a-real"] = {
+		action_id: "a-real",
+		tool_name: "bash",
+		episode_id: episodeId,
+		status: "pending",
+	};
 	check("pending real action is counted for the episode", pendingActionsFor(blockedState, episodeId).length === 1);
-	blockedState.pending_actions["a-ctrl"] = { action_id: "a-ctrl", tool_name: "aegis_switch_session", episode_id: episodeId, status: "pending" };
-	check("the control tool itself is not counted as a blocking action", pendingActionsFor(blockedState, episodeId).length === 1);
+	blockedState.pending_actions["a-ctrl"] = {
+		action_id: "a-ctrl",
+		tool_name: "aegis_switch_session",
+		episode_id: episodeId,
+		status: "pending",
+	};
+	check(
+		"the control tool itself is not counted as a blocking action",
+		pendingActionsFor(blockedState, episodeId).length === 1,
+	);
 
 	first.session.dispose();
 
@@ -290,13 +451,36 @@ async function main() {
 	state = projectState(events);
 	board = projectBoard(events);
 	const startedAfter = events.filter((e) => e.event_type === "episode.started");
-	check("a fresh session did NOT start a new episode", startedAfter.length === 1, `${startedAfter.length} episode.started`);
-	check("the resumed session recorded handoff.completed", events.some((e) => e.event_type === "handoff.completed"));
-	check("the resumed episode keeps the original goal", state.episodes[episodeId]?.goal?.description === "Start the demo task.");
-	check("the board (candidate claim) survived the resume", board.byType.Hint.some((n) => n.text.includes("the door is probably locked")));
+	check(
+		"a fresh session did NOT start a new episode",
+		startedAfter.length === 1,
+		`${startedAfter.length} episode.started`,
+	);
+	check(
+		"the resumed session recorded handoff.completed",
+		events.some((e) => e.event_type === "handoff.completed"),
+	);
+	check(
+		"the resumed episode keeps the original goal",
+		state.episodes[episodeId]?.goal?.description === "Start the demo task.",
+	);
+	check(
+		"the board (candidate claim) survived the resume",
+		board.byType.Hint.some((n) => n.text.includes("the door is probably locked")),
+	);
 	const reqResume = currentSections(captured3[0] ?? []);
-	check("the resumed request still carries the Observer RAM", typeof reqResume.aegis_ram === "string" && reqResume.aegis_ram.includes("Start the demo task."));
-	check("the resumed RAM lists the preserved goal and pending/finished actions section", /total_goal: Start the demo task\./.test(reqResume.aegis_ram) && /Unfinished actions/.test(reqResume.aegis_ram));
+	const ramResume = ramContext(captured3[0] ?? []);
+	check(
+		"the resumed request carries the Observer RAM as ephemeral context",
+		typeof ramResume === "string" && ramResume.includes("Start the demo task."),
+	);
+	check("the resumed system prefix stays free of dynamic RAM", reqResume.aegis_ram === undefined);
+	check(
+		"the resumed RAM lists the preserved goal and pending/finished actions section",
+		typeof ramResume === "string" &&
+			/total_goal: Start the demo task\./.test(ramResume) &&
+			/Unfinished actions/.test(ramResume),
+	);
 
 	second.session.dispose();
 	faux.unregister();

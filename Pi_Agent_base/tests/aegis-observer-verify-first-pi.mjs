@@ -86,6 +86,24 @@ function currentSections(messages) {
 	return state;
 }
 
+function ramContext(messages) {
+	// Pi converts custom context messages to user messages before the provider.
+	const ramMessages = messages.filter(
+		(message) => message.role === "user" && messageText(message).startsWith("<aegis_ram>\n"),
+	);
+	if (ramMessages.length !== 1) throw new Error(`expected one provider-bound RAM message, got ${ramMessages.length}`);
+	return messageText(ramMessages[0]);
+}
+
+function messageText(message) {
+	return typeof message.content === "string"
+		? message.content
+		: (message.content ?? [])
+				.filter((part) => part.type === "text")
+				.map((part) => part.text)
+				.join("\n");
+}
+
 function readEvents(path) {
 	try {
 		return readFileSync(path, "utf8")
@@ -324,11 +342,13 @@ async function main() {
 
 	// --- 2. The verified data is VISIBLE in the NEXT request's RAM. ---
 	const reqAfterObserve = currentSections(captured[2] ?? []);
+	const ramAfterObserve = ramContext(captured[2] ?? []);
 	check(
 		"the next request's RAM carries the verified ELF observation as data",
-		typeof reqAfterObserve.aegis_ram === "string" && /x86_64|bits=64|ELF/.test(reqAfterObserve.aegis_ram),
-		typeof reqAfterObserve.aegis_ram === "string" ? reqAfterObserve.aegis_ram.slice(0, 400) : "no ram",
+		typeof ramAfterObserve === "string" && /x86_64|bits=64|ELF/.test(ramAfterObserve),
+		typeof ramAfterObserve === "string" ? ramAfterObserve.slice(0, 400) : "no ram",
 	);
+	check("the verified observation is not written into the system prefix", reqAfterObserve.aegis_ram === undefined);
 
 	// --- 3. The registered script ran; the Oracle read the real post-state. ---
 	const stageJson = JSON.parse(readFileSync(stageGood, "utf8"));

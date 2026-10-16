@@ -13,14 +13,16 @@
 //   handoff.mjs  short-session switch safety
 //
 // Key behaviour:
-//   * ROM and RAM are injected through Pi's STRUCTURED prompt sections
-//     (`aegis_rom`, `aegis_ram`), never by replacing the whole system prompt, so
-//     the contest extension's `aegis_hints` section composes cleanly.
+//   * ROM, tool definitions and fixed rules stay in Pi's STRUCTURED system
+//     prompt sections. Dynamic RAM is never written into the system prefix.
 //   * RAM is rebuilt for EVERY provider-bound request through the
 //     `context_with_system` seam (not once per prompt), so a tool the model just
-//     ran is reflected in the very next request of the same prompt. Each
-//     request records a `request.projected` audit row (digest + state version);
-//     the row creates no board node and does not bump RuntimeState.
+//     ran is reflected in the very next request of the same prompt. It is added
+//     as one ephemeral custom context message after the transcript; Pi restores
+//     the original transcript after the request, so RAM does not accumulate in
+//     session history or invalidate the stable system-prefix cache. Each request
+//     records a `request.projected` audit row (digest + state version); the row
+//     creates no board node and does not bump RuntimeState.
 //   * One Episode is kept for one task id across prompts and sessions; a new
 //     task id starts a new Episode.
 //   * The model may only propose (`aegis_propose`) and request a handoff
@@ -617,12 +619,11 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		}
 		refreshProjections();
 
-		const ram = buildRam({ board, state, episodeId, goal: currentGoal });
 		const rom = await loadRom();
 		const options = event.systemPromptOptions as { sections?: Record<string, string> } | undefined;
 		if (options?.sections) {
 			if (rom) options.sections.aegis_rom = rom;
-			options.sections.aegis_ram = ram;
+			delete options.sections.aegis_ram;
 		}
 		return undefined;
 	});
@@ -630,43 +631,45 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 	// Per-request RAM refresh. `before_agent_start` fires once per prompt, so its
 	// RAM goes stale as tools execute WITHIN the same prompt. This handler fires
-	// immediately before every provider-bound request (Pi's `transformContext`
-	// seam) and rebuilds the effective RAM from the committed Events, then patches
-	// only the Aegis sections of the leading system message for THIS request. The
-	// result is not persisted, so the transcript never accumulates stale RAM
-	// copies and the contest's `aegis_hints` section is preserved untouched.
+	// immediately before every provider-bound request and appends one ephemeral
+	// custom context message after the transcript. The system prefix remains
+	// stable; Pi restores the original transcript after this request, so the RAM
+	// message is neither persisted nor accumulated across provider calls.
 	// -----------------------------------------------------------------------
 	pi.on("context_with_system", async (event, ctx) => {
 		commandCtx = ctx;
 		if (!log || !episodeId) return undefined;
 		sessionId = sessionKey(ctx);
 		refreshProjections();
-		const messages = event.messages as Array<Record<string, unknown>>;
+		const messages = event.messages;
 		if (!Array.isArray(messages) || messages.length === 0) return undefined;
-		const systemIndex = messages.findIndex((message) => message && message.role === "system");
-		if (systemIndex < 0) return undefined;
-		const target = messages[systemIndex];
-		const sections: Record<string, string | null> = {
-			...((target.sections as Record<string, string | null> | undefined) ?? {}),
-		};
-		// Only the leading system message owns the Aegis sections; strip them from
-		// any later system patch so a trailing `aegis_ram` cannot revive old RAM.
-		for (let i = systemIndex + 1; i < messages.length; i += 1) {
-			const message = messages[i];
-			if (!message || message.role !== "system") continue;
-			const other = message.sections as Record<string, string | null> | undefined;
-			if (!other || (!("aegis_ram" in other) && !("aegis_rom" in other))) continue;
-			const cleaned = { ...other };
-			delete cleaned.aegis_ram;
-			delete cleaned.aegis_rom;
-			message.sections = cleaned;
-		}
+		if (messages[0]?.role !== "system") return undefined;
 		const ram = buildRam({ board, state, episodeId, goal: currentGoal });
-		const rom = await loadRom();
-		sections.aegis_ram = sectionWrapped("aegis_ram", ram);
-		if (rom) sections.aegis_rom = sectionWrapped("aegis_rom", rom);
-		else delete sections.aegis_rom;
-		target.sections = sections;
+		// `context_with_system` owns the complete request transcript, but Pi restores
+		// it after the provider call. A custom message converts to a user context
+		// message for the provider without changing the leading system message.
+		const withoutEphemeralRam = messages
+			.filter((message) => !(message.role === "custom" && message.customType === "aegis_ram_context"))
+			.map((message) => {
+				// Resuming a pre-migration session must not revive its stale system RAM.
+				// Strip only the Observer-owned section in the request-local copy; leave
+				// ROM, tools, contest hints and the on-disk session history untouched.
+				if (message.role !== "system" || !message.sections || !("aegis_ram" in message.sections)) return message;
+				const sections = { ...message.sections };
+				delete sections.aegis_ram;
+				return { ...message, sections };
+			});
+		const projectedMessages = [
+			...withoutEphemeralRam,
+			{
+				role: "custom" as const,
+				customType: "aegis_ram_context",
+				content: sectionWrapped("aegis_ram", ram),
+				display: false,
+				details: { ram_digest: digest(ram), state_version: state.version },
+				timestamp: Date.now(),
+			},
+		];
 		// Audit that this genuinely provider-bound request was projected from the
 		// committed Events: the RAM digest + state revision are recorded, and the
 		// event creates no board node and does not bump RuntimeState, so it can
@@ -680,10 +683,11 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				board_digest: board.digest,
 				effective_digest: board.effective_digest,
 				provider_bound: true,
+				ram_transport: "ephemeral-user-tail-v1",
 			},
 			{ episode_id: episodeId, source_kind: "runtime" },
 		);
-		return { messages: messages as never };
+		return { messages: projectedMessages };
 	});
 
 	pi.on("agent_start", async () => {
