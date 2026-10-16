@@ -740,6 +740,7 @@ Experience D: | iI
 应该是什么粒度，尚未决定。
 
 **选项**：
+
 1. scope = `(task_category, environment)` 二元组；
 2. scope = 显式 `environment_fingerprint`（可复现摘要）；
 3. scope 为空表示“全局失效”，可标记所有 Fact 为 stale。
@@ -757,6 +758,7 @@ task_id)`，scope/fingerprint 单独做 `scope_mismatch` 校验。是否需要�
 subject（即 scope 不同直接视为不同 subject，而非单独的错误原因）尚未决定。
 
 **选项**：
+
 1. 保持现有分离（subject 与 scope 各自校验、各自给出原因）；
 2. 把 scope 并入 subject，scope 不同等同 “不同命题”。
 
@@ -773,6 +775,7 @@ Host helper `memory/runtime/handoff-host.mjs` 的 `applyStagedHandoff` 调用真
 print/interactive host，尚未决定。
 
 **选项**：
+
 1. 维持薄 helper，由上层 host 在 settle 后显式调用（当前测试即如此）；
 2. 在 Pi host 里内置一个 settle 后自动调用点；
 3. 只保留手动 `/aegis switch`，不做自动。
@@ -790,6 +793,7 @@ digest、state version）。长会话下事件量会显著增长，是否需要�
 尚未决定。
 
 **选项**：
+
 1. 全量写入（审计优先）；
 2. 仅记录 digest 变化的请求；
 3. 投影写入独立文件/表，不与主链混排。
@@ -806,6 +810,7 @@ digest、state version）。长会话下事件量会显著增长，是否需要�
 `/aegis switch`，两者可能竞争同一个 staged handoff 文件。
 
 **选项**：
+
 1. 依赖 `handoffAlreadyCompleted` 幂等 + rename 原子性（当前实现）；
 2. 增加显式文件锁 / 单飞（single-flight）标志；
 3. host 串行化两者（先手动后自动，或反之）。
@@ -815,3 +820,9 @@ digest、state version）。长会话下事件量会显著增长，是否需要�
 
 **临时处理**：完成记录以“提交到事件日志的 `handoff.completed`（按 request_id 去重）”
 为唯一真相；staged 文件 rename 为 `.applied.json` 只是辅助信号，失败也不假成功。
+
+# 实际CTF测试
+
+发现如下问题：1:RAM 会改变 system prompt 的缓存前置，极大的降低缓存命中
+              2:RAM 信息不全，没有“哪个参数成功、哪个字段失败、返回了什么”
+              3:在找到正确的路径之后还是会为了让 oracle 验证而去把其他的方向也进行验证，从而耗费大量的时间，整体时间额外的消耗大概在 50%

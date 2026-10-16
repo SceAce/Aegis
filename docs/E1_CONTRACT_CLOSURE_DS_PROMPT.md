@@ -167,4 +167,4 @@ git diff --check
 required失败/blocked/not_run、消费者漏接、无产品正例、恢复仅同进程模拟，都必须 **changes_required**，
 如实列出，不自封externally_accepted。后置项按主任务书§13归档，不假称已完成。
 
-请现在开始S0，并持续推进到S4完整交付；最终简明报告结果和证据入口，不用“是否继续”结束。
+请现在开始S0，并持续推进到S4完整交付；如果你需要可以使用 PI+max 里面的 deepseek v4.1flash 开启多个 Agent 以辅助开发；最终简明报告结果和证据入口，不用“是否继续”结束。
