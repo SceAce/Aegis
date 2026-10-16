@@ -42,7 +42,10 @@ test("RP-01 complete output including footer fits budgets when mandatory context
 	for (const budgetChars of [1200, 1500, 2000, 3999, 4000, 6000]) {
 		const p = buildRamProjection({ ...f, budgetChars });
 		assert.ok(p.text.length <= budgetChars, `budget=${budgetChars} actual=${p.text.length}`);
-		assert.equal(footer(p.text), p.text.length);
+		assert.equal(footer(p.text), p.text.length, `serialized footer budget=${budgetChars}`);
+		assert.equal(p.data.meta.ram_estimated_chars, p.text.length, `data footer budget=${budgetChars}`);
+		assert.deepEqual(p.data, JSON.parse(p.text));
+		assert.equal(p.data.meta.overflow, false);
 		assert.equal(p.overflow, false);
 		assert.equal(p.estimated_chars, p.text.length);
 		for (const section of p.sections) assert.equal(section.shown + section.omitted, section.total);

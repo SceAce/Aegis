@@ -232,22 +232,26 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 				...(ORDER.every((id) => selected[id].length === 0) ? { core_overflow: false } : {}),
 			},
 		};
-		let text = JSON.stringify(data);
-		for (let i = 0; i < 8; i++) {
-			data.meta.ram_estimated_chars = text.length;
-			data.meta.overflow = text.length > budget;
-			if (Object.hasOwn(data.meta, "core_overflow")) data.meta.core_overflow = data.meta.overflow;
-			const next = JSON.stringify(data);
-			if (next === text) break;
-			text = next;
+		function serialize() {
+			let text = JSON.stringify(data);
+			while (data.meta.ram_estimated_chars !== text.length) {
+				data.meta.ram_estimated_chars = text.length;
+				text = JSON.stringify(data);
+			}
+			return text;
 		}
+		// Decide overflow before shortening its flags so boundary cases cannot oscillate.
+		let text = serialize();
+		data.meta.overflow = text.length > budget;
+		if (Object.hasOwn(data.meta, "core_overflow")) data.meta.core_overflow = data.meta.overflow;
+		text = serialize();
 		return { text, data };
 	}
 	function admit(id, row) {
 		selected[id].push(row);
-		if (render().text.length > budget) selected[id].pop();
+		if (render().data.meta.overflow) selected[id].pop();
 	}
-	if (render().text.length <= budget) {
+	if (!render().data.meta.overflow) {
 		for (const id of ["external_reference", "facts", "refuted", "proposals", "tools"])
 			if (raw[id][0]) admit(id, raw[id][0]);
 		for (const id of ORDER)
@@ -255,7 +259,7 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		for (const id of ORDER)
 			for (const row of selected[id]) {
 				full.add(row);
-				if (render().text.length > budget) full.delete(row);
+				if (render().data.meta.overflow) full.delete(row);
 			}
 	}
 	const { text, data } = render();
