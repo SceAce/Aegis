@@ -649,60 +649,82 @@ export async function persistImmutableManifest(manifest, dir) {
 	// guarantee. The canonical file must be fsynced, and a newly created parent
 	// directory entry must be fsynced, BEFORE the caller may declare the run
 	// durable. Any fsync failure is reported as a non-durable failure (fail-closed).
-	let sync = null;
-	try {
-		const existing = await readFile(path, "utf8");
-		if (existing === body) {
+	const failure = (existed, reason) => ({
+		ok: false,
+		digest: digestValue,
+		canonical_digest: digestValue,
+		path,
+		existed,
+		synced: false,
+		reason,
+	});
+	// EVERY success branch (first write, already exists, concurrent identical)
+	// confirms BOTH the file and its directory entry. An existing file may be the
+	// leftover of an earlier attempt whose directory fsync failed, so its presence
+	// alone is not a durability proof.
+	const confirm = async (existed) => {
+		try {
 			await fsyncPath(path);
-			return success(true);
+			await fsyncDirectory(dirname(path));
+		} catch (error) {
+			return failure(existed, `durability_unconfirmed: ${String(error)}`);
 		}
-		return {
-			ok: false,
-			digest: digestValue,
-			canonical_digest: digestValue,
-			path,
-			existed: true,
-			reason: "content address exists with different bytes (digest collision)",
-		};
-	} catch {
-		// Not found: write it.
+		return success(existed);
+	};
+	/** Read the canonical copy; ONLY a missing file is "absent", any other error fails. */
+	const readExisting = async () => {
+		try {
+			return { ok: true, text: await readFile(path, "utf8") };
+		} catch (error) {
+			if (/** @type {any} */ (error)?.code === "ENOENT") return { ok: true, text: null };
+			return { ok: false, error };
+		}
+	};
+	const first = await readExisting();
+	if (!first.ok) return failure(true, `could not read immutable manifest: ${String(first.error)}`);
+	if (first.text !== null) {
+		if (first.text === body) return confirm(true);
+		return failure(true, "content address exists with different bytes (digest collision)");
 	}
 	try {
 		await writeFile(path, body, { encoding: "utf8", flag: "wx" });
 	} catch (error) {
-		// A concurrent writer may have created it; re-read and compare.
-		try {
-			const existing = await readFile(path, "utf8");
-			if (existing === body) {
-				await fsyncPath(path);
-				return success(true);
-			}
-		} catch {
-			// fall through
-		}
-		return {
-			ok: false,
-			digest: digestValue,
-			canonical_digest: digestValue,
-			path,
-			existed: true,
-			reason: `could not persist immutable manifest: ${String(error)}`,
-		};
+		if (/** @type {any} */ (error)?.code !== "EEXIST")
+			return failure(false, `could not persist immutable manifest: ${String(error)}`);
+		// A concurrent writer created it first; it counts only if the bytes match.
+		const raced = await readExisting();
+		if (raced.ok && raced.text === body) return confirm(true);
+		return failure(true, `could not persist immutable manifest: ${String(error)}`);
 	}
+	return confirm(false);
+}
+
+/**
+ * Load the canonical immutable Manifest copy named by a trusted digest. Fails
+ * closed on a missing file, unreadable file or a digest mismatch.
+ *
+ * @param {string} dir
+ * @param {string} manifestDigest
+ */
+export async function loadImmutableManifest(dir, manifestDigest) {
+	if (typeof manifestDigest !== "string" || !manifestDigest.startsWith("sha256:"))
+		return { ok: false, manifest: null, reason: "a trusted manifest digest is required" };
+	const path = join(dir, `${manifestDigest.replace(/^sha256:/, "manifest-")}.json`);
+	let text;
 	try {
-		sync = await fsyncPath(path);
-		await fsyncDirectory(dirname(path));
+		text = await readFile(path, "utf8");
 	} catch (error) {
-		return {
-			ok: false,
-			digest: digestValue,
-			canonical_digest: digestValue,
-			path,
-			existed: false,
-			reason: `could not confirm immutable manifest durability: ${String(error)}`,
-		};
+		return { ok: false, manifest: null, reason: `canonical manifest copy unavailable: ${String(error)}` };
 	}
-	return { ...success(false), synced: sync === true };
+	let parsed;
+	try {
+		parsed = JSON.parse(text);
+	} catch (error) {
+		return { ok: false, manifest: null, reason: `canonical manifest copy is not JSON: ${String(error)}` };
+	}
+	if (canonicalManifestDigest(parsed) !== manifestDigest)
+		return { ok: false, manifest: null, reason: "canonical manifest copy does not match its content address" };
+	return { ok: true, manifest: parsed, path, reason: null };
 }
 
 /** fsync a single file path. Returns true on success; throws on failure. */

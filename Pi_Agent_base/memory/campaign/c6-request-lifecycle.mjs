@@ -166,9 +166,10 @@ export function validateCommittedRecord(payload, reservedNote = null) {
  *   unresolved: number,
  *   diagnostics: Array<{code: string, request_id: string|null, reason?: string|null}>,
  *   records: any[],
+ *   tool_accounting: string,
  * }}
  */
-export function summarizeRequestLedger(events = []) {
+export function summarizeRequestLedger(events = [], { toolCharges = null } = {}) {
 	const consumed = { model_requests: 0, tool_calls: 0, input_chars: 0, wall_time_ms: 0 };
 	/** @type {Map<string, {model_requests: number, tool_calls: number, input_chars: number}>} */
 	const byTask = new Map();
@@ -334,6 +335,32 @@ export function summarizeRequestLedger(events = []) {
 		}
 	}
 
+	// E1-CC §7.2: a run uses ONE fixed tool-accounting protocol. In a
+	// durable-charge run the tool count is the accepted `c6.tool` charges (from the
+	// authoritative projection when the caller has it), never the legacy
+	// per-request aggregate; a legacy count inside such a run is a diagnostic hold.
+	const rows = Array.isArray(events) ? events : [];
+	const durable =
+		Array.isArray(toolCharges) ||
+		rows.some(
+			(event) =>
+				event?.payload?.kind === "c6.tool" ||
+				(event?.payload?.kind === "c6.request" && event.payload.tool_accounting === TOOL_ACCOUNTING_DURABLE),
+		);
+	if (durable) {
+		for (const record of records)
+			if (Number.isInteger(record.tool_calls) && record.tool_calls > 0)
+				diagnostics.push({ code: "mixed_tool_accounting", request_id: record.request_id ?? null });
+		consumed.tool_calls = 0;
+		for (const dims of byTask.values()) dims.tool_calls = 0;
+		for (const charge of toolCharges ?? chargesFromEvents(rows)) {
+			consumed.tool_calls += 1;
+			if (!isRequestId(charge.task_id)) continue;
+			const dims = byTask.get(charge.task_id) ?? { model_requests: 0, tool_calls: 0, input_chars: 0 };
+			dims.tool_calls += 1;
+			byTask.set(charge.task_id, dims);
+		}
+	}
 	const campaignPending = [];
 	const taskPending = [];
 	const committedReservations = new Set();
@@ -373,7 +400,30 @@ export function summarizeRequestLedger(events = []) {
 		unresolved,
 		diagnostics,
 		records,
+		tool_accounting: durable ? TOOL_ACCOUNTING_DURABLE : "legacy_request_aggregate",
 	};
+}
+
+export const TOOL_ACCOUNTING_DURABLE = "durable-charge-v1";
+
+/**
+ * Context-free view of the durable charges in a stream (used only when the
+ * caller has no authoritative projection): trusted writer, known version, a
+ * complete identity, deduplicated by key. The projection applies the full
+ * binding/limit rules; this view never ADDS charges the projection would drop
+ * for shape reasons and never double-counts a repeated unit.
+ */
+function chargesFromEvents(rows) {
+	const seen = new Map();
+	for (const event of rows) {
+		const p = event?.payload;
+		if (event?.event_type !== "runtime.note" || p?.kind !== "c6.tool" || p.phase !== "charged") continue;
+		if (event.source?.kind !== "runtime" || p.version !== "e1-tool-charge-1.0") continue;
+		if (![p.request_id, p.tool_call_id, p.unit_id, p.task_id].every(isRequestId)) continue;
+		const key = [p.campaign_id, p.task_id, p.episode_id ?? "-", p.request_id, p.tool_call_id, p.unit_id].join("|");
+		if (!seen.has(key)) seen.set(key, { task_id: p.task_id });
+	}
+	return [...seen.values()];
 }
 
 /**

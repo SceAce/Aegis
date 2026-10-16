@@ -212,6 +212,23 @@ function summarizeToolInput(toolName: string, input: unknown) {
 	return result;
 }
 
+/**
+ * The trusted Campaign context the Host bound for this run (E1-CC §8.2). The
+ * Observer rebuilds its Board with the SAME Manifest the Host projects, so a
+ * Campaign judgment is never reinterpreted from raw records. A missing/unreadable
+ * file keeps the fail-closed no-context Board (Campaign judgments stay Hints).
+ */
+function hostManifest(): Record<string, unknown> | null {
+	const path = process.env.AEGIS_MANIFEST_FILE;
+	if (!path) return null;
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8"));
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
 export default function aegisRuntime(pi: ExtensionAPI): void {
 	let log: EventLog | null = null;
 	let borrowedHostLog = false;
@@ -324,7 +341,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	function refreshProjections() {
 		if (!log) return;
 		const events = log.replay();
-		board = projectBoard(events);
+		board = projectBoard(events, { manifest: hostManifest() });
 		state = projectState(events);
 	}
 
@@ -338,7 +355,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	async function persistProjections(): Promise<void> {
 		if (!log || !log.healthy) return;
 		const events = log.replay();
-		const rebuiltBoard = projectBoard(events);
+		const rebuiltBoard = projectBoard(events, { manifest: hostManifest() });
 		const rebuiltState = projectState(events);
 		const source = {
 			event_count: events.length,

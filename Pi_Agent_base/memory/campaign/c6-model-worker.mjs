@@ -177,10 +177,20 @@ export function measureProviderInput({ llmContext = null, promptMetadata = null,
  *   workspaceRoot: string,
  *   allowedTargets?: string[],
  *   grantProvider?: (() => { task_id?: string, targets?: string[] })|null,
+ *   chargeUnit?: ((args: any) => Promise<any>)|null,
+ *   finishUnit?: ((args: any) => Promise<any>)|null,
  * }} args
  */
 export function createObservationTool(
-	{ sdk, type, workspaceRoot, allowedTargets = [], grantProvider = null } = /** @type {any} */ ({}),
+	{
+		sdk,
+		type,
+		workspaceRoot,
+		allowedTargets = [],
+		grantProvider = null,
+		chargeUnit = null,
+		finishUnit = null,
+	} = /** @type {any} */ ({}),
 ) {
 	const Type = type ?? sdk.Type;
 	if (!Type) throw new Error("createObservationTool requires a Type schema builder");
@@ -200,16 +210,44 @@ export function createObservationTool(
 		return { task_id: null, targets: allowedTargets.filter((t) => typeof t === "string") };
 	}
 
-	return sdk.defineTool({
+	const tool = sdk.defineTool({
 		name: "aegis_read",
 		label: "Aegis: read a file in the authorized workspace",
+		executionMode: "sequential",
 		description:
 			"Read the real content of a file INSIDE the authorized task workspace (read-only; no effect). Use it to inspect the current target before proposing a registered action.",
 		promptSnippet: "Read a workspace file to inspect the current target state (read-only)",
 		parameters: Type.Object({
 			path: Type.String({ description: "Workspace-relative path to read" }),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(toolCallId, params) {
+			// E1-CC §7.2: a read is ONE charged unit, charged before the body runs and
+			// finished after it returns (error or not).
+			if (typeof chargeUnit === "function") {
+				const permit = await chargeUnit({
+					unit_id: "call",
+					tool_call_id: toolCallId,
+					tool_name: "aegis_read",
+					arguments_digest: digest({ unit_id: "call", path: params?.path ?? null }),
+				}).catch((error) => ({ ok: false, reasons: [String(error)] }));
+				if (permit && permit.ok !== true)
+					return {
+						content: [{ type: "text", text: "Aegis refused the read: the task tool allocation does not permit it" }],
+						details: { ok: false, reason: "tool_not_charged" },
+					};
+				if (permit) {
+					const result = readBody(params);
+					await finishUnit?.({ unit_id: "call", tool_call_id: toolCallId, tool_name: "aegis_read" });
+					return result;
+				}
+			}
+			return readBody(params);
+		},
+	});
+	return tool;
+
+	function readBody(params) {
+		{
 			const requested = typeof params?.path === "string" ? params.path : "";
 			if (!requested) {
 				return {
@@ -281,8 +319,43 @@ export function createObservationTool(
 				content: [{ type: "text", text: `contents of ${requested}:\n${text.slice(0, 4000)}` }],
 				details: { ok: true, path: requested, chars: text.length, task_id: grant.task_id },
 			};
+		}
+	}
+}
+
+/**
+ * @typedef {{bind: (args: {request_id: string, commit: Promise<any>, toolCalls: any[], providerStatus: string}) => void,
+ *   lookup: (toolCallId: string) => {request_id: string, commit: Promise<any>, tool_name: string}|null, reset: () => void}} ToolCallRegistry
+ */
+
+/**
+ * The binding between an SDK tool call and the REAL provider request whose
+ * assistant message carried it. Bound at that message's `message_end` (before the
+ * outstanding reservation is cleared), looked up by the SDK-supplied tool call id.
+ * A duplicate id inside one message poisons the whole batch; a synthetic/error
+ * message binds nothing, so no tool can guess a request identity.
+ *
+ * @returns {ToolCallRegistry}
+ */
+export function createToolCallRegistry() {
+	/** @type {Map<string, {request_id: string, commit: Promise<any>, tool_name: string}|null>} */
+	const bindings = new Map();
+	return {
+		bind({ request_id, commit, toolCalls, providerStatus }) {
+			if (providerStatus !== "ok") return;
+			const ids = toolCalls.map((call) => call?.id);
+			const duplicate = ids.some((id, index) => typeof id !== "string" || ids.indexOf(id) !== index);
+			for (const call of toolCalls)
+				if (typeof call?.id === "string")
+					bindings.set(call.id, duplicate ? null : { request_id, commit, tool_name: call.name ?? null });
 		},
-	});
+		lookup(toolCallId) {
+			return typeof toolCallId === "string" ? (bindings.get(toolCallId) ?? null) : null;
+		},
+		reset() {
+			bindings.clear();
+		},
+	};
 }
 
 /**
@@ -318,7 +391,7 @@ export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
  * Broker Worker can admit and execute it through the ONE Broker path. The model
  * can never supply an executable, argv, authorization, or a verdict.
  *
- * @param {{ sdk: any, buffer: any, type?: any, admitTool?: any, chargeUnit?: ((args: {unit_id: string, tool_call_id?: string|null, tool_name: string, arguments_digest: string}) => Promise<{ok: boolean, reason?: string}|null>)|null, remainingRequests?: any, state?: any }} args
+ * @param {{ sdk: any, buffer: any, type?: any, admitTool?: any, chargeUnit?: ((args: {unit_id: string, tool_call_id?: string|null, tool_name: string, arguments_digest: string}) => Promise<{ok: boolean, reason?: string}|null>)|null, finishUnit?: ((args: {unit_id: string, tool_call_id?: string|null, tool_name: string}) => Promise<any>)|null, remainingRequests?: any, state?: any }} args
  */
 export function createDecisionCaptureTool({
 	sdk,
@@ -326,6 +399,7 @@ export function createDecisionCaptureTool({
 	type,
 	admitTool = null,
 	chargeUnit = null,
+	finishUnit = null,
 	remainingRequests = null,
 	state = null,
 }) {
@@ -334,6 +408,8 @@ export function createDecisionCaptureTool({
 	return sdk.defineTool({
 		name: "aegis_task_decision",
 		label: "Aegis: propose a task action decision",
+		// E1-CC §7.2: units are charged in the assistant's original tool order.
+		executionMode: "sequential",
 		description:
 			"State how to act on the CURRENT task. Provide one or more registered action_refs with DATA-ONLY arguments. This records a decision; it does NOT execute. The Aegis broker admits and executes it, and an independent oracle judges the result.",
 		promptSnippet: "Propose a registered action decision for the current task (data-only; never executed here)",
@@ -397,7 +473,9 @@ export function createDecisionCaptureTool({
 			let refusedUnits = 0;
 			const admittedActions = [];
 			for (const unit of units) {
-				const digestInput = JSON.stringify({
+				// A canonical digest of the unit's complete validated parameters; the
+				// log never copies the raw (possibly sensitive) arguments.
+				const digestInput = digest({
 					unit_id: unit.unit_id,
 					action_ref: unit.action_ref,
 					arguments: unit.arguments,
@@ -427,16 +505,29 @@ export function createDecisionCaptureTool({
 					continue;
 				}
 				admittedUnits += 1;
-				if (unit.action_ref) admittedActions.push(unit);
+				admittedActions.push(unit);
 			}
 			// At least one unit must be charged before ANY buffer write; all rejected ⇒
 			// neither actions nor the shared proposal enter the buffer. Original order and
 			// full shared parameters are preserved for admitted units only.
 			if (admittedUnits > 0) {
 				for (const unit of admittedActions)
-					buffer.push({ action_ref: unit.action_ref, arguments: unit.arguments, criterion_id: unit.criterion_id });
+					if (unit.action_ref)
+						buffer.push({ action_ref: unit.action_ref, arguments: unit.arguments, criterion_id: unit.criterion_id });
 				if (shared && typeof buffer.pushTask === "function") buffer.pushTask(shared);
 			}
+			// Every charged unit's body has now returned: record `finished` durably.
+			let finishFailed = 0;
+			if (typeof finishUnit === "function")
+				for (const unit of admittedActions) {
+					const finished = await finishUnit({
+						unit_id: unit.unit_id,
+						tool_call_id: toolCallId,
+						tool_name: unit.action_ref ?? "aegis_task_decision",
+					}).catch((error) => ({ ok: false, reasons: [String(error)] }));
+					if (finished && finished.ok !== true) finishFailed += 1;
+				}
+			if (finishFailed > 0 && state) state.tool_finish_failed = true;
 			// X2: when the task's request allocation cannot fund the SDK's automatic
 			// follow-up, terminate so NO further provider request is sent for this task.
 			const noFollowUp = typeof remainingRequests === "function" && remainingRequests() < 1;
@@ -462,7 +553,7 @@ export function createDecisionCaptureTool({
  * Host can validate the whole graph and admit it as a batch. The return text
  * never claims the Host admitted the plan or that the root goal is done.
  *
- * @param {{sdk: any, buffer: any, type?: any, recordPlan?: ((plan: any) => Promise<{ok: boolean, buffered?: boolean, error?: string}>)|null, planLimits?: any, planningContext?: any}} args
+ * @param {{sdk: any, buffer: any, type?: any, recordPlan?: ((plan: any) => Promise<{ok: boolean, buffered?: boolean, error?: string}>)|null, planLimits?: any, planningContext?: any, chargeUnit?: ((args: any) => Promise<any>)|null, finishUnit?: ((args: any) => Promise<any>)|null}} args
  */
 export function createPlanSubmitTool({
 	sdk,
@@ -471,6 +562,8 @@ export function createPlanSubmitTool({
 	recordPlan = null,
 	planLimits = null,
 	planningContext = null,
+	chargeUnit = null,
+	finishUnit = null,
 }) {
 	const Type = type ?? sdk.Type;
 	if (!Type) throw new Error("createPlanSubmitTool requires a Type schema builder");
@@ -483,9 +576,10 @@ export function createPlanSubmitTool({
 		.join("; ");
 	const rootCriteria = (planningContext?.root_goal?.required_criteria ?? []).join(" | ");
 	const criteriaHint = `Non-empty subset of the chosen template's offered criteria. Required roots: ${rootCriteria || "(none)"}. Templates: ${templateSummary || "(see the planning input)"}`;
-	return sdk.defineTool({
+	const tool = sdk.defineTool({
 		name: "aegis_submit_plan",
 		label: "Aegis: submit a complete candidate task plan",
+		executionMode: "sequential",
 		description:
 			"Submit ONE complete candidate plan that splits the campaign root goal into a DAG of tasks. Provide the root goal ref and every task with its parent_task_id, depends_on, goal, task_type, target_ref, capabilities, evidence, stop_condition and budget. This only RECORDS a candidate; the Host validates the whole graph and admits it. It does not execute anything and does not mean the goal is complete.",
 		promptSnippet: "Submit a complete candidate task plan (data-only candidate; the Host admits it)",
@@ -523,7 +617,34 @@ export function createPlanSubmitTool({
 				}),
 			),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(toolCallId, params) {
+			if (typeof chargeUnit === "function") {
+				const permit = await chargeUnit({
+					unit_id: "call",
+					tool_call_id: toolCallId,
+					tool_name: "aegis_submit_plan",
+					arguments_digest: digest({ unit_id: "call", params: params ?? null }),
+				}).catch((error) => ({ ok: false, reasons: [String(error)] }));
+				if (permit && permit.ok !== true)
+					return {
+						content: [
+							{ type: "text", text: "Aegis refused the plan submission: the tool allocation does not permit it" },
+						],
+						details: { ok: false, reason: "tool_not_charged" },
+					};
+				if (permit) {
+					const result = await submitBody(params);
+					await finishUnit?.({ unit_id: "call", tool_call_id: toolCallId, tool_name: "aegis_submit_plan" });
+					return result;
+				}
+			}
+			return submitBody(params);
+		},
+	});
+	return tool;
+
+	async function submitBody(params) {
+		{
 			const plan = {
 				version: "aegis-plan-1.0",
 				plan_id: typeof params?.plan_id === "string" ? params.plan_id : "",
@@ -578,8 +699,8 @@ export function createPlanSubmitTool({
 				],
 				details: { recorded: plan.tasks.length, durable: persisted?.buffered !== true },
 			};
-		},
-	});
+		}
+	}
 }
 
 /**
@@ -607,6 +728,8 @@ export function createPlanSubmitTool({
  *   campaignId?: string|null,
  *   reconciliationGuard?: {unresolved: number, diagnostics: number, runtimeBlocked?: boolean}|null,
  *   planning?: {context: any}|null,
+ *   toolCallRegistry?: ToolCallRegistry|null,
+ *   executionPermit?: ((args: {task_id: string, operation: string}) => {ok: boolean, reasons: any[]})|null,
  * }} args
  */
 export function createModelWorker(
@@ -634,6 +757,8 @@ export function createModelWorker(
 		campaignId = null,
 		reconciliationGuard = null,
 		planning = null,
+		toolCallRegistry = null,
+		executionPermit = null,
 	} = /** @type {any} */ ({}),
 ) {
 	if (typeof session !== "function") throw new Error("createModelWorker requires a session() accessor");
@@ -779,6 +904,21 @@ export function createModelWorker(
 				}
 			}
 
+			// 1c. The common execution permit (E1-CC §5.3): the latest authoritative
+			// prefix must still allow THIS task to issue a provider request (active
+			// binding, effective dependencies, persistent wall-time deadlines).
+			if (typeof executionPermit === "function") {
+				const permit = executionPermit({ task_id: gateTaskId, operation: "provider_request" });
+				if (!permit?.ok) {
+					const code = permit?.reasons?.[0]?.code ?? "execution_not_permitted";
+					gate.refused = true;
+					gate.stopped = true;
+					gate.failure_mode = code === "budget_exhausted" ? "budget_exhausted" : code;
+					gate.reason = (permit?.reasons ?? []).map((r) => `${r.code}: ${r.message}`).join("; ") || code;
+					throw budgetRefused(gate.reason, gate.failure_mode);
+				}
+			}
+
 			// 2. Measure the ACTUAL request context (messages + tool schema), never a
 			// cached copy. First request and every continuation use the same function.
 			const measurement = measureProviderInput({ llmContext, outputReserveChars: outputReserve });
@@ -903,6 +1043,7 @@ export function createModelWorker(
 		// A PER-TASK ledger enforces the task's own allocation; the cumulative
 		// campaign ledger is mirrored on each commit for cross-restart accounting.
 		const activeLedger = typeof ledgerFactory === "function" ? ledgerFactory(task) : ledger;
+		toolCallRegistry?.reset();
 
 		// RESTART/DISPATCH BLOCK: an unresolved prior request (or an invalid rebuild)
 		// means a previous provider request may already have happened. No provider AND
@@ -1205,6 +1346,14 @@ export function createModelWorker(
 							return gate.lastCommit;
 						});
 					gate.pendingCommit = pending;
+					// E1-CC §7.2: bind THIS message's tool calls to the request that
+					// produced them, with the commit the tool must await before charging.
+					toolCallRegistry?.bind({
+						request_id: reservation.request_id,
+						commit: pending,
+						toolCalls: content.filter((part) => part?.type === "toolCall"),
+						providerStatus,
+					});
 					if (typeof onRequestCommitted === "function")
 						onRequestCommitted({ ...reservation, usage, provider_status: providerStatus });
 				} else if (text) {

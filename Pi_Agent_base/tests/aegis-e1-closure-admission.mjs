@@ -13,8 +13,10 @@ import { test } from "node:test";
 import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
 import { templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
 import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
+import { digest } from "../memory/fixture/contracts.mjs";
 import { verifyChain } from "../memory/runtime/events.mjs";
 import {
+	acceptedPlanningPrefix,
 	evidenceDir,
 	project,
 	providerRequestsByTask,
@@ -56,7 +58,15 @@ test("T-A10 / HA-03: a second differently-identified plan cannot overallocate", 
 	const projection = project(scenario.events, scenario.manifest);
 	const admitted = projection.plans.filter((p) => p.status === "admitted");
 	assert.equal(admitted.length, 1, "only the first legal batch is admitted");
-	assert.ok(projection.rejected.length > 0, "the later conflicting batch is visibly rejected");
+	// The refused second batch is visible: either as a reducer rejection or as a
+	// durable Host rejection record carrying `plan_already_admitted`.
+	assert.ok(
+		projection.rejected.length > 0 ||
+			projection.plans.some(
+				(p) => p.status === "rejected" && (p.reasons ?? []).some((r) => /plan_already_admitted/.test(r)),
+			),
+		"the later conflicting batch is visibly rejected",
+	);
 	// Independent prefix check: reserved+consumed never exceeds the Campaign limit.
 	const limit = scenario.manifest.budget;
 	for (let i = 0; i < scenario.events.length; i += 1) {
@@ -150,7 +160,8 @@ test("T-A08 / HA-04: a foreign-root candidate is retained but never admitted", (
 
 test("T-A06: record_candidate then admit_plan shares ONE submitted record and reports exact fields", async () => {
 	const manifest = testPlanningManifest({ workDir: out });
-	const events = [];
+	// Host plan commands require the ACCEPTED, running planning Task/Episode.
+	const events = acceptedPlanningPrefix({ campaignId: manifest.campaign_id });
 	let seq = 0;
 	const sink = {
 		events,
@@ -251,7 +262,8 @@ test("T-A06: record_candidate then admit_plan shares ONE submitted record and re
 
 test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunded", async () => {
 	const manifest = testPlanningManifest({ workDir: out });
-	const events = [];
+	// A charge binds the accepted running Task/Episode and a COMMITTED request.
+	const events = acceptedPlanningPrefix({ campaignId: manifest.campaign_id, requests: ["req-1", "req-2", "req-3"] });
 	let seq = 0;
 	const sink = {
 		events,
@@ -295,6 +307,7 @@ test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunde
 		tool_call_id: "tc-1",
 		unit_id: "action:0",
 		tool_name: "data.record.set",
+		arguments_digest: digest({ unit_id: "action:0", action_ref: "data.record.set" }),
 		task_id: "task-plan",
 		episode_id: "ep-task-plan",
 	});
@@ -333,10 +346,11 @@ test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunde
 		tool_call_id: "tc-2",
 		unit_id: "action:0",
 		tool_name: "data.record.set",
+		arguments_digest: digest({ unit_id: "action:0", action_ref: "data.record.set" }),
 		task_id: "task-plan",
 		episode_id: "ep-task-plan",
 	});
-	assert.equal(a.ok, true);
+	assert.equal(a.ok, true, JSON.stringify(a.reasons));
 	assert.equal(a.charged, true);
 	assert.equal(a.record_durable, true);
 	assert.equal(typeof a.event_id, "string");
@@ -345,6 +359,7 @@ test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunde
 		tool_call_id: "tc-2",
 		unit_id: "action:0",
 		tool_name: "data.record.set",
+		arguments_digest: digest({ unit_id: "action:0", action_ref: "data.record.set" }),
 		task_id: "task-plan",
 		episode_id: "ep-task-plan",
 	});
@@ -359,6 +374,7 @@ test("T-A14: a durable tool charge is dual-sided, deduplicated and never refunde
 		tool_call_id: "tc-3",
 		unit_id: "action:0",
 		tool_name: "data.record.set",
+		arguments_digest: digest({ unit_id: "action:0", action_ref: "data.record.set" }),
 		task_id: "task-plan",
 		episode_id: "ep-task-plan",
 	});

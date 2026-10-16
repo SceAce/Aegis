@@ -183,6 +183,7 @@ export function campaignEventEnvelope(event) {
 		planning_status: event?.payload?.planning_status ?? null,
 		outcome: event?.payload?.outcome ?? null,
 		reason: event?.payload?.reason ?? null,
+		reasons: Array.isArray(event?.payload?.reasons) ? event.payload.reasons : [],
 		oracle_ref: event?.payload?.oracle_ref ?? null,
 		event_digest: event?.event_digest ?? null,
 		event_sequence: event?.sequence ?? null,

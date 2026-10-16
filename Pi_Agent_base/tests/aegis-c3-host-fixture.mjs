@@ -96,6 +96,7 @@ await test("C3-POS: two static tasks reach real local effects and bound Stage/Ta
 	assert.equal(kinds(sink).filter((k) => k === "action.completed").length, 2);
 	assert.equal(projection.rejected.length, 0, `no rejected outcomes: ${JSON.stringify(projection.rejected)}`);
 	host.releaseOwnership();
+	await sink?.close?.();
 });
 
 await test("C3-POS-2: the dependent task is not dispatched before its dependency completes", async () => {
@@ -115,6 +116,7 @@ await test("C3-POS-2: the dependent task is not dispatched before its dependency
 	assert.equal(started[0], "task-001", "task-001 starts first");
 	assert.ok(completed1 >= 0 && started2 > completed1, "task-002 starts after task-001 completes");
 	host.releaseOwnership();
+	await sink?.close?.();
 });
 
 // ---------------------------------------------------------------------------
@@ -178,6 +180,7 @@ await test("C3-DYN: a real submitted/admitted dynamic task is dispatched through
 	assert.ok(dynAction, "the dynamic task produced a brokered action completion");
 	assert.equal(dynAction.payload.action_ref, FIXTURE_ADAPTER_ACTION_REF);
 	host.releaseOwnership();
+	await sink?.close?.();
 });
 
 // ---------------------------------------------------------------------------
@@ -229,7 +232,9 @@ await test("C3-DENY-1: an unregistered action_ref is refused and produces no eff
 	assert.match(String(completed.payload.rejection_reason), /unknown action/i);
 	assert.equal(existsSync(join(workspaceRoot, "door.json")), false, "no effect file was produced");
 	host.releaseOwnership();
+	await sink?.close?.();
 	hostileHost.releaseOwnership();
+	await assembled.sink?.close?.();
 	void sink;
 });
 
@@ -266,6 +271,7 @@ await test("C3-ORACLE-2: an unresolvable (missing/foreign) evidence ref blocks a
 		`an evidence rejection is recorded: ${JSON.stringify(result.status.rejected)}`,
 	);
 	assembled.host.releaseOwnership();
+	await assembled.sink?.close?.();
 });
 
 await test("C3-ORACLE-3: a delayed judgment blocks the dependent task, then a late result advances it without re-running the worker", async () => {
@@ -329,6 +335,7 @@ await test("C3-ORACLE-3: a delayed judgment blocks the dependent task, then a la
 		.filter((e) => e.payload?.kind === "campaign.task.started" && e.payload.task_id === "task-002").length;
 	assert.equal(dispatchesAfter, 1, "the worker is NOT re-run for the late judgment");
 	assembled.host.releaseOwnership();
+	await assembled.sink?.close?.();
 });
 
 // ---------------------------------------------------------------------------

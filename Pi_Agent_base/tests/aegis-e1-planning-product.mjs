@@ -19,8 +19,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
+import { validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
 import { admitCandidatePlan, PLAN_READY_CRITERION, templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
+import { buildPlanningContract } from "../memory/campaign/e1-planning-contract.mjs";
 import { buildTaskGraph } from "../memory/campaign/e1-task-graph.mjs";
 import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
 import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
@@ -67,26 +68,37 @@ const MANIFEST = {
 	],
 };
 
-const TEMPLATES = templatesFromConfig({
-	templates: [
-		{
-			template_ref: "verify",
-			task_type: "verify",
-			oracle_ref: "fixture.oracle.v1",
-			required_capabilities: ["data.record.write"],
-			success_criteria: ROOT_CRITERIA,
-			scope: SCOPE,
-		},
-		{
-			template_ref: "reproduce",
-			task_type: "reproduce",
-			oracle_ref: "fixture.oracle.v1",
-			required_capabilities: ["data.record.write"],
-			success_criteria: ROOT_CRITERIA,
-			scope: SCOPE,
-		},
-	],
+const TEMPLATE_LIST = [
+	{
+		template_ref: "verify",
+		task_type: "verify",
+		oracle_ref: "fixture.oracle.v1",
+		required_capabilities: ["data.record.write"],
+		success_criteria: ROOT_CRITERIA,
+		scope: SCOPE,
+	},
+	{
+		template_ref: "reproduce",
+		task_type: "reproduce",
+		oracle_ref: "fixture.oracle.v1",
+		required_capabilities: ["data.record.write"],
+		success_criteria: ROOT_CRITERIA,
+		scope: SCOPE,
+	},
+];
+const TEMPLATES = templatesFromConfig({ templates: TEMPLATE_LIST });
+// FIXTURE MIGRATION (E1-CC §4.2/§6.1): plan admission is only executable under
+// the Manifest's FROZEN planning contract, and the Host compiles every candidate
+// itself (it never trusts a caller-supplied admission). The Manifest therefore
+// embeds the contract and every plan uses the frozen root reference.
+const CONTRACT = buildPlanningContract({
+	manifest: MANIFEST,
+	templates: TEMPLATE_LIST,
+	requiredCriteria: ROOT_CRITERIA,
 });
+assert.equal(CONTRACT.ok, true, JSON.stringify(CONTRACT.reasons));
+MANIFEST.planning_contract = CONTRACT.contract;
+const ROOT = CONTRACT.contract.root_goal_ref;
 
 function planNode(id, extra = {}) {
 	return {
@@ -119,13 +131,21 @@ function makeSink() {
 	};
 }
 
-function makeFixtureWorker() {
+/**
+ * The planning Task submits its candidate through the REAL Host command while it
+ * is the active started Task (as the product composite worker does).
+ */
+function makeFixtureWorker({ plan = null, host = () => null } = {}) {
 	const calls = [];
 	return {
 		calls,
 		worker: {
 			async run({ task }) {
 				calls.push(task.task_id);
+				if (task.task_id === "task-plan" && plan) {
+					const admitted = await admitCandidatePlan({ plan, host: host() });
+					if (!admitted.ok) return { ok: false, failure_mode: "plan_not_admitted", error: admitted.reasons.join("; ") };
+				}
 				return { ok: true, outcome_ref: `artifact:${task.task_id}` };
 			},
 		},
@@ -188,66 +208,49 @@ function makeArtifacts(taskIds) {
 	);
 }
 
-/** A Host stub exposing admitPlan/completePlanningTask over a real scheduler sink. */
+/**
+ * The REAL Host commands over the shared sink, with the planning Task already the
+ * active started Task (the precondition of a Host plan command). Its
+ * `completePlanningTask` writes the independent plan_ready Oracle result and the
+ * durable completion, then releases the gate through the real Scheduler.
+ */
 function makeHost({ manifest, sink }) {
-	const events = [];
-	let seq = 0;
-	const commit = async (kind, payload, source) => {
+	const commit = (kind, payload, source) => {
 		const row = {
 			event_type: "runtime.note",
 			source,
 			payload: { kind, campaign_id: manifest.campaign_id, ...payload },
-			event_id: `h${seq}`,
-			sequence: 1000 + seq,
-			event_digest: `sha256:h${seq}`,
+			event_id: `h${sink.events.length}`,
+			event_digest: `sha256:h${sink.events.length}`,
+			recorded_at: new Date(1000).toISOString(),
 		};
-		seq += 1;
-		events.push(row);
 		sink.events.push(row);
-		return { ok: true, event: row, durable: true };
+		return row;
 	};
+	commit(
+		"campaign.task.started",
+		{ task_id: "task-plan", episode_id: "ep-task-plan" },
+		{ kind: "runtime", actor_id: "host" },
+	);
+	const scheduler = createCampaignScheduler({
+		manifest,
+		ownedTasks: manifest.tasks,
+		baseDir: null,
+		sink,
+		worker: { run: async () => ({ ok: false }) },
+		oracle: { id: "synthetic.oracle", judge: async () => ({ status: "unknown" }) },
+		clock: () => 1000,
+	});
 	return {
-		events,
-		async admitPlan({ plan, planningTaskId, admission, planId }) {
-			const canonicalDigest = planDigest(plan);
-			await commit(
-				"campaign.plan.submitted",
-				{ plan_id: planId ?? plan.plan_id, plan_digest: canonicalDigest, plan, planning_task_id: planningTaskId },
-				{ kind: "runtime", actor_id: "host" },
-			);
-			if (admission.status !== "admitted") {
-				const kind = admission.status === "rejected" ? "campaign.plan.rejected" : "campaign.plan.blocked";
-				await commit(
-					kind,
-					{ plan_id: planId ?? plan.plan_id, reasons: admission.reasons, planning_task_id: planningTaskId },
-					{ kind: "runtime", actor_id: "host" },
-				);
-				return { ok: false, status: admission.status };
-			}
-			await commit(
-				"campaign.plan.admitted",
-				{
-					plan_id: planId ?? plan.plan_id,
-					plan_digest: canonicalDigest,
-					plan_tasks: admission.normalized,
-					planning_task_id: planningTaskId,
-				},
-				{ kind: "runtime", actor_id: "host" },
-			);
-			return { ok: true, status: "admitted", plan_id: planId ?? plan.plan_id };
-		},
+		admitPlan: (input) => scheduler.admitPlan(input),
 		async completePlanningTask({ taskId, planId }) {
-			// A contract-correct planning completion: the durable dispatch intent, the
-			// independent plan_ready Oracle result (stage + task), the durable Task
-			// completion, and ONLY then the separate plan-ready activation gate.
-			const scope = { ...SCOPE };
-			const evidenceRef = { ref_type: "artifact", ref_id: `artifact:${taskId}`, digest: `sha256:${taskId}` };
-			await commit(
-				"campaign.task.started",
-				{ task_id: taskId, episode_id: `ep-${taskId}` },
-				{ kind: "runtime", actor_id: "host" },
+			const plan = sink.events.find(
+				(e) => e.payload?.kind === "campaign.plan.admitted" && e.payload.plan_id === planId,
 			);
-			await commit(
+			const evidenceRef = { ref_type: "artifact", ref_id: `artifact:${taskId}`, digest: plan?.payload.plan_digest };
+			const base = { episode_id: `ep-${taskId}`, task_id: taskId, scope: SCOPE, evidence_refs: [evidenceRef] };
+			const oracle = { oracle_id: "fixture.oracle.v1", source: "oracle" };
+			commit(
 				"campaign.oracle.result",
 				{
 					task_id: taskId,
@@ -256,23 +259,20 @@ function makeHost({ manifest, sink }) {
 					step_id: "stage-plan",
 					episode_id: `ep-${taskId}`,
 					outcome: {
+						...base,
 						outcome_id: `so-${taskId}-stage-plan`,
 						level: "step",
 						step_id: "stage-plan",
 						status: "success",
-						episode_id: `ep-${taskId}`,
-						task_id: taskId,
 						criterion: { criterion_id: "plan_ready", expected: "plan_ready" },
 						observed: { plan_id: planId },
-						scope,
-						oracle: { oracle_id: "fixture.oracle.v1", source: "oracle" },
+						oracle,
 						provenance: { source: "oracle", independent: true, task_id: taskId, stage_id: "stage-plan" },
-						evidence_refs: [evidenceRef],
 					},
 				},
 				{ kind: "oracle", actor_id: "oracle" },
 			);
-			await commit(
+			commit(
 				"campaign.oracle.result",
 				{
 					task_id: taskId,
@@ -281,33 +281,25 @@ function makeHost({ manifest, sink }) {
 					task_oracle: true,
 					episode_id: `ep-${taskId}`,
 					outcome: {
+						...base,
 						outcome_id: `o-${taskId}`,
 						level: "episode",
 						status: "success",
-						episode_id: `ep-${taskId}`,
-						task_id: taskId,
 						task_oracle: true,
 						criterion: { criterion_id: "plan_campaign", expected: "plan_ready" },
 						observed: { plan_id: planId },
-						scope,
-						oracle: { oracle_id: "fixture.oracle.v1", source: "oracle" },
+						oracle,
 						provenance: { source: "oracle", independent: true, task_id: taskId },
-						evidence_refs: [evidenceRef],
 					},
 				},
 				{ kind: "oracle", actor_id: "oracle" },
 			);
-			await commit(
+			commit(
 				"campaign.task.completed",
 				{ task_id: taskId, outcome_id: `o-${taskId}` },
 				{ kind: "runtime", actor_id: "host" },
 			);
-			await commit(
-				"campaign.plan.ready",
-				{ task_id: taskId, plan_id: planId, outcome_id: `o-${taskId}` },
-				{ kind: "oracle", actor_id: "oracle" },
-			);
-			return { ok: true };
+			return scheduler.completePlanningTask({ taskId, planId, outcome: { outcome_id: `o-${taskId}` } });
 		},
 	};
 }
@@ -318,7 +310,7 @@ test("E1-PLAN: batch admission creates the DAG and the plan-ready gate is separa
 	const plan = {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-1",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [planNode("t-c", { depends_on: ["t-a", "t-b"] }), planNode("t-b"), planNode("t-a")],
 	};
 	// Not settled → blocked, nothing admitted.
@@ -399,36 +391,15 @@ test("E1-PLAN: batch admission creates the DAG and the plan-ready gate is separa
 
 test("E1-PLAN: a successor waits for ALL prerequisites before dispatch", async () => {
 	const sink = makeSink();
-	const host = makeHost({ manifest: MANIFEST, sink });
 	const plan = {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-diamond",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [planNode("t-a"), planNode("t-b"), planNode("t-c", { depends_on: ["t-a", "t-b"] })],
 	};
-	await admitCandidatePlan({
-		plan,
-		manifest: MANIFEST,
-		host,
-		projection: { tasks: [], budget: { reserved: { wall_time_ms: 0, model_requests: 0, tool_calls: 0 } } },
-		templates: TEMPLATES,
-	});
-	// The stored dependency set reaches both the scheduler-facing projection and the
-	// task graph.
-	const gated = projectQueueFromEvents({
-		campaign_id: MANIFEST.campaign_id,
-		tasks: MANIFEST.tasks,
-		events: sink.events,
-		revision: 1,
-		manifest: MANIFEST,
-		artifacts: makeArtifacts(["t-a", "t-b", "t-c"]),
-	});
-	assert.deepEqual(
-		gated.tasks.find((t) => t.task_id === "t-c").depends_on,
-		["t-a", "t-b"],
-		"the projection keeps the joint dependency set",
-	);
-	const { worker, calls } = makeFixtureWorker();
+	// The planning Task admits the candidate through the real Host command.
+	let scheduler = null;
+	const { worker, calls } = makeFixtureWorker({ plan, host: () => scheduler });
 	const oracle = makeOracle({
 		"task-plan": { status: "success" },
 		"t-a": { status: "success" },
@@ -436,7 +407,7 @@ test("E1-PLAN: a successor waits for ALL prerequisites before dispatch", async (
 		"t-c": { status: "success" },
 	});
 	const owned = MANIFEST.tasks;
-	const scheduler = createCampaignScheduler({
+	scheduler = createCampaignScheduler({
 		manifest: MANIFEST,
 		ownedTasks: owned,
 		baseDir: null,
@@ -460,32 +431,31 @@ test("E1-PLAN: a successor waits for ALL prerequisites before dispatch", async (
 		manifest: MANIFEST,
 		artifacts: makeArtifacts(["t-a", "t-b", "t-c", "task-plan"]),
 	});
+	// The stored dependency set reaches the scheduler-facing projection.
+	assert.deepEqual(
+		finalProjection.tasks.find((t) => t.task_id === "t-c").depends_on,
+		["t-a", "t-b"],
+		"the projection keeps the joint dependency set",
+	);
 	for (const id of ["t-a", "t-b", "t-c"])
 		assert.equal(finalProjection.tasks.find((t) => t.task_id === id).state, "completed", `${id} completed`);
 });
 
 test("E1-PLAN: an unsatisfied prerequisite blocks the successor provider/effect", async () => {
 	const sink = makeSink();
-	const host = makeHost({ manifest: MANIFEST, sink });
 	const plan = {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-blocked",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [planNode("t-a"), planNode("t-c", { depends_on: ["t-a"] })],
 	};
-	await admitCandidatePlan({
-		plan,
-		manifest: MANIFEST,
-		host,
-		projection: { tasks: [], budget: { reserved: { wall_time_ms: 0, model_requests: 0, tool_calls: 0 } } },
-		templates: TEMPLATES,
-	});
-	const { worker, calls } = makeFixtureWorker();
+	let scheduler = null;
+	const { worker, calls } = makeFixtureWorker({ plan, host: () => scheduler });
 	// t-a produces an UNKNOWN result → it does not complete → t-c must not run.
 	// task-plan completes normally so the admission batch is released to the
 	// dependency scheduler; the point is the unsatisfied PREREQUISITE, not the gate.
 	const oracle = makeOracle({ "task-plan": { status: "success" }, "t-a": { status: "unknown" } });
-	const scheduler = createCampaignScheduler({
+	scheduler = createCampaignScheduler({
 		manifest: MANIFEST,
 		ownedTasks: MANIFEST.tasks,
 		baseDir: null,
@@ -506,7 +476,7 @@ test("E1-PLAN: an illegal node rejects the whole batch and runs no legal subset"
 	const plan = {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-bad",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [planNode("t-a"), planNode("t-bad", { target_ref: "unauthorized.txt" })],
 	};
 	const outcome = await admitCandidatePlan({
@@ -552,7 +522,7 @@ test("E1-GRAPH: the tree and the dependency DAG come from the same committed str
 	const plan = {
 		version: "aegis-plan-1.0",
 		plan_id: "plan-graph",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [
 			planNode("t-a", { parent_task_id: "task-plan" }),
 			planNode("t-b", { parent_task_id: "t-a" }),
@@ -600,7 +570,7 @@ test("E1-PLAN: different plans produce different graphs (not hardcoded)", () => 
 		plan: {
 			version: "aegis-plan-1.0",
 			plan_id: "p-a",
-			root_goal_ref: "root",
+			root_goal_ref: ROOT,
 			tasks: [planNode("x-1"), planNode("x-2", { depends_on: ["x-1"] })],
 		},
 		manifest: MANIFEST,
@@ -613,7 +583,7 @@ test("E1-PLAN: different plans produce different graphs (not hardcoded)", () => 
 		plan: {
 			version: "aegis-plan-1.0",
 			plan_id: "p-b",
-			root_goal_ref: "root",
+			root_goal_ref: ROOT,
 			tasks: [planNode("y-1"), planNode("y-2"), planNode("y-3", { depends_on: ["y-1", "y-2"] })],
 		},
 		manifest: MANIFEST,
@@ -643,7 +613,7 @@ test("E1-PLAN: submitting a plan is a candidate record; it never asserts root co
 	});
 	const result = await tool.execute("t1", {
 		plan_id: "p1",
-		root_goal_ref: "root",
+		root_goal_ref: ROOT,
 		tasks: [
 			{
 				proposed_task_id: "t-a",

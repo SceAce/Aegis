@@ -272,7 +272,49 @@ export function resolveStageOutcome({
 			outcome: null,
 		};
 	}
+	// A success whose structured observed value CONTRADICTS a machine-checkable
+	// criterion is internally inconsistent: it is not a judgment of this criterion.
+	if (result.status === "success") {
+		const check = checkStructuredCriterion(criterionId, result.observed);
+		if (check.checked && !check.satisfied)
+			return {
+				ok: false,
+				status: "invalid",
+				reasons: [`criterion_contradiction: observed ${check.detail} does not satisfy "${criterionId}"`],
+				outcome: null,
+			};
+	}
 	return { ok: true, status: result.status, reasons: [], outcome: normalizeResolvedOutcome(result, task) };
+}
+
+/**
+ * Check the registered machine-checkable criterion forms against a structured
+ * observed value. Free-form criteria are not parsed (the Oracle owns them):
+ *   * `data.<field> == <string>` / `data.<field> is <string>`
+ *   * `door.locked == true|false` / `state.locked == true|false`
+ *
+ * @param {string|null} criterionId
+ * @param {any} observed
+ * @returns {{checked: boolean, satisfied: boolean, detail: string|null}}
+ */
+export function checkStructuredCriterion(criterionId, observed) {
+	const text = String(criterionId ?? "").trim();
+	const data = /^data\.([A-Za-z0-9_]+)\s+(?:==|is)\s+(.+)$/.exec(text);
+	const lock = /^(?:door|state)\.locked == (true|false)$/.exec(text);
+	if (!data && !lock) return { checked: false, satisfied: true, detail: null };
+	// Only a value that NAMES the criterion field can contradict it; an observed
+	// value that does not mention the field is left to the Oracle's judgment.
+	if (!observed || typeof observed !== "object" || Array.isArray(observed))
+		return { checked: false, satisfied: true, detail: null };
+	const field = data ? data[1] : "locked";
+	const expected = data ? data[2].replace(/^["']|["']$/g, "") : lock[1] === "true";
+	const holder = Object.hasOwn(observed, field)
+		? observed
+		: observed.state && typeof observed.state === "object" && Object.hasOwn(observed.state, field)
+			? observed.state
+			: null;
+	if (!holder) return { checked: false, satisfied: true, detail: null };
+	return { checked: true, satisfied: holder[field] === expected, detail: `${field}=${JSON.stringify(holder[field])}` };
 }
 
 /**

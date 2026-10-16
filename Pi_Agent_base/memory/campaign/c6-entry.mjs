@@ -28,6 +28,7 @@ import { evaluateHandoff } from "../runtime/handoff.mjs";
 import { buildRam } from "../runtime/ram.mjs";
 import { createSessionSupervisor } from "../runtime/session-supervisor.mjs";
 import { projectState } from "../runtime/state.mjs";
+import { inspectExecutionPermit } from "./authority.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
 import {
 	buildCampaignLearningBridge,
@@ -43,12 +44,14 @@ import {
 	createModelPlan,
 	createModelWorker,
 	createObservationTool,
+	createToolCallRegistry,
 } from "./c6-model-worker.mjs";
 import { reservedSeedForTask, summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
 import { createCampaignSdkRuntime } from "./c6-sdk-runtime.mjs";
 import { createToolLedger } from "./c6-tool-ledger.mjs";
 import { loadCampaignConfig } from "./campaign-config.mjs";
-import { normalizeExecutableTask } from "./e1-planning-contract.mjs";
+import { loadPlanningAuthority, normalizeExecutableTask, normalizeTrustedTemplates } from "./e1-planning-contract.mjs";
+import { canonicalManifestDigest, loadImmutableManifest, persistImmutableManifest } from "./manifest.mjs";
 import { createObservationServer } from "./observation-server.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
 import { describeCredentialRef, resolveProviderConfig } from "./provider-config.mjs";
@@ -98,6 +101,20 @@ function readEventsSafe(path) {
 	} catch {
 		return [];
 	}
+}
+
+/**
+ * Read the committed stream for an EXECUTION decision. A corrupt chain or an
+ * unparseable line is never filtered into a "normal" prefix: it throws, and the
+ * caller fails closed. (`readEventsSafe` remains for display-only diagnostics.)
+ */
+function readEventsStrict(path) {
+	if (!existsSync(path)) return [];
+	const { rows, errors } = parseJsonl(readFileSync(path, "utf8"));
+	if (errors.length > 0) throw new Error(`committed event log has unparseable lines: ${errors.slice(0, 2).join("; ")}`);
+	const chain = verifyChain(rows);
+	if (!chain.ok) throw new Error(`committed event log chain is corrupt: ${chain.errors.slice(0, 2).join("; ")}`);
+	return rows;
 }
 
 // The rebuild rules live in ONE shared module (`c6-request-lifecycle.mjs`) so the
@@ -187,6 +204,7 @@ export function createCompositeWorker({
 	buffer,
 	onTaskSettled = null,
 	onPlanSubmitted = null,
+	permitEffect = null,
 }) {
 	return {
 		bindCampaign(manifest) {
@@ -213,6 +231,19 @@ export function createCompositeWorker({
 					};
 				}
 				return { ok: true, overview: "plan_submitted", plans: planned.plans };
+			}
+			// The effect boundary re-checks the LATEST authoritative permit (binding,
+			// effective dependencies, deadlines, settled tool units). A refusal is a
+			// hold, never a fabricated Oracle failure.
+			if (typeof permitEffect === "function") {
+				const permit = permitEffect({ task });
+				if (permit && permit.ok !== true)
+					return {
+						ok: false,
+						failure_mode: permit.reasons?.[0]?.code ?? "execution_not_permitted",
+						detail: (permit.reasons ?? []).map((r) => `${r.code}: ${r.message}`).join("; "),
+						provider_requests: planned.provider_requests,
+					};
 			}
 			// Execute the model's admitted decision through the existing Broker.
 			const result = await brokerWorker.run({ task });
@@ -271,9 +302,31 @@ export async function runC6FromConfig(
 	let planningTemplates = null;
 	let planningContext = null;
 	let e1Planning = null;
+	const READ_ONLY_SCENARIO = ["status", "export", "observe", "measure"].includes(scenario);
 	if (config.planning?.enabled === true) {
 		e1Planning = await import("./e1-planning.mjs");
-		planningTemplates = e1Planning.templatesFromConfig(config.planning);
+		// E1-CC §4.2: the trusted planning context is the contract FROZEN in the
+		// Manifest. The current config may only confirm it; a differing safe field is
+		// `planning_context_conflict` (zero new requests/effects). Read-only views
+		// keep using the frozen contract.
+		const authority = loadPlanningAuthority({ manifest });
+		if (!authority.ok)
+			return {
+				ok: false,
+				reasons: [`${authority.code ?? "planning_context_conflict"}: ${authority.reasons.join("; ")}`],
+				stage: "config",
+			};
+		const configured = normalizeTrustedTemplates(config.planning.templates ?? []);
+		if (
+			!READ_ONLY_SCENARIO &&
+			(!configured.ok || digest(configured.templates) !== digest(authority.contract.templates))
+		)
+			return {
+				ok: false,
+				reasons: ["planning_context_conflict: the current planning config differs from the frozen Manifest contract"],
+				stage: "config",
+			};
+		planningTemplates = authority.templates;
 		planningContext = e1Planning.buildPlanningContext({ manifest, templates: planningTemplates });
 	}
 
@@ -348,6 +401,57 @@ export async function runC6FromConfig(
 	for (const d of [cwd, agentDir, sessionDir]) mkdirSync(d, { recursive: true });
 
 	const eventLogPath = join(config.work_dir, "events.jsonl");
+	// E1-CC §4.1/§4.2: a planning run's Manifest is FROZEN as an immutable,
+	// content-addressed canonical copy (file + directory fsync confirmed) BEFORE
+	// any provider request. A resume locates the copy through the first accepted
+	// Host start binding; an existing log without a valid binding, a missing copy
+	// or a different Manifest holds with zero new requests/effects.
+	const manifestDir = join(config.work_dir, "manifests");
+	let canonicalManifestPath = null;
+	if (manifest.planning_contract) {
+		const runDigest = canonicalManifestDigest(manifest);
+		let priorRows;
+		try {
+			priorRows = readEventsStrict(eventLogPath);
+		} catch (error) {
+			return { ok: false, reasons: [String(error instanceof Error ? error.message : error)], stage: "events" };
+		}
+		const firstStart = priorRows.find(
+			(row) =>
+				row?.event_type === "runtime.note" &&
+				row.payload?.kind === "campaign.task.started" &&
+				row.source?.kind === "runtime" &&
+				row.payload?.campaign_id === manifest.campaign_id,
+		);
+		if (firstStart) {
+			const bound = firstStart.payload.manifest_digest ?? null;
+			if (!bound)
+				return {
+					ok: false,
+					reasons: ["legacy_context_unavailable: the existing log has no trusted Manifest binding"],
+					stage: "config",
+					read_only: true,
+				};
+			const frozen = await loadImmutableManifest(manifestDir, bound);
+			if (!frozen.ok) return { ok: false, reasons: [`planning_context_conflict: ${frozen.reason}`], stage: "config" };
+			if (bound !== runDigest)
+				return {
+					ok: false,
+					reasons: ["planning_context_conflict: the configured Manifest differs from the run's frozen Manifest"],
+					stage: "config",
+				};
+			canonicalManifestPath = frozen.path;
+		} else if (!READ_ONLY_SCENARIO) {
+			const persisted = await persistImmutableManifest(manifest, manifestDir);
+			if (!persisted.ok || persisted.digest !== runDigest)
+				return {
+					ok: false,
+					reasons: [`durability_unconfirmed: ${persisted.reason ?? "manifest not durable"}`],
+					stage: "config",
+				};
+			canonicalManifestPath = persisted.path;
+		}
+	}
 	// Read-only scenarios project the committed stream only: they never create an
 	// SDK runtime, never dispatch a task and never append an event.
 
@@ -364,6 +468,7 @@ export async function runC6FromConfig(
 		"AEGIS_ROM_FILE",
 		"AEGIS_TASK_ID",
 		"AEGIS_PROJECTION_DIR",
+		"AEGIS_MANIFEST_FILE",
 	];
 	const envBefore = Object.fromEntries(aegisEnvKeys.map((key) => [key, process.env[key]]));
 	const ramDir = join(config.work_dir, "ram");
@@ -375,6 +480,9 @@ export async function runC6FromConfig(
 		process.env.AEGIS_HANDOFF_FILE = config.session.handoff_path;
 		process.env.AEGIS_ROM_FILE = romPath;
 		process.env.AEGIS_PROJECTION_DIR = join(config.work_dir, "projections");
+		// The Observer rebuilds its Board with the SAME trusted Campaign context.
+		if (canonicalManifestPath) process.env.AEGIS_MANIFEST_FILE = canonicalManifestPath;
+		else process.env.AEGIS_MANIFEST_FILE = config.manifest_path;
 		if (typeof taskId === "string" && taskId) process.env.AEGIS_TASK_ID = taskId;
 	}
 	function restoreObserverEnv() {
@@ -549,11 +657,33 @@ export async function runC6FromConfig(
 	// The ACTUAL current Task binding, so the observation read grant follows the
 	// task the Host is running (never the union of every Manifest target).
 	const currentTaskRef = { task: null };
-	// E1 §7.2: the ACTUAL provider request that produced the current assistant
-	// message's tool calls. Set when the request RESERVATION is persisted and held
-	// until the next request, so a tool charge is bound to the producing request
-	// (never the next continuation).
-	const requestBindingRef = { current: null };
+	// E1-CC §7.2: the binding between each SDK tool call id and the REAL provider
+	// request whose assistant message carried it (bound by the model worker at that
+	// message_end). Tools never guess a request identity.
+	const toolCallRegistry = createToolCallRegistry();
+	const durableTools = config.planning?.enabled === true;
+	/**
+	 * Charge ONE tool unit durably before its body runs. Returns null when this run
+	 * does not use durable tool accounting (legacy in-memory admit applies).
+	 */
+	async function chargeUnit({ unit_id, tool_call_id, tool_name, arguments_digest }) {
+		if (!durableTools) return null;
+		if (!hostRef || typeof hostRef.chargeTool !== "function")
+			return { ok: false, reasons: ["invalid_tool_binding: no Host is bound"] };
+		const binding = toolCallRegistry.lookup(tool_call_id);
+		if (!binding) return { ok: false, reasons: ["invalid_tool_binding: the tool call has no dispatched request"] };
+		// The producing request's durable commit must settle BEFORE the charge.
+		const settled = await binding.commit.catch((error) => ({ ok: false, error: String(error) }));
+		if (!settled || settled.ok === false)
+			return { ok: false, reasons: [`durability_unconfirmed: ${settled?.error ?? "request commit failed"}`] };
+		return hostRef.chargeTool({ request_id: binding.request_id, tool_call_id, unit_id, tool_name, arguments_digest });
+	}
+	async function finishUnit({ unit_id, tool_call_id, tool_name }) {
+		if (!durableTools || !hostRef) return null;
+		const binding = toolCallRegistry.lookup(tool_call_id);
+		if (!binding) return { ok: false, reasons: ["invalid_tool_binding: the tool call has no dispatched request"] };
+		return hostRef.finishTool({ request_id: binding.request_id, tool_call_id, unit_id, tool_name });
+	}
 	const decisionCapture = {
 		tool: createDecisionCaptureTool({
 			sdk: sdkImpl,
@@ -561,23 +691,11 @@ export async function runC6FromConfig(
 			type: TypeSchema ?? undefined,
 			state: decisionState,
 			admitTool: ({ tool_name }) => (ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true }),
-			// E1 §7.2: when the Host is assembled for a durable-charge run, each decision
-			// UNIT is charged atomically dual-sided BEFORE the decision is buffered. The
-			// charge binds the actual Task/Episode and the real SDK tool call id. When no
-			// E1 host is wired the in-memory ledger admits tools as before.
-			chargeUnit: async ({ unit_id, tool_call_id, tool_name, arguments_digest }) => {
-				if (!hostRef || config.planning?.enabled !== true || typeof hostRef.chargeTool !== "function") return null;
-				const result = await hostRef.chargeTool({
-					request_id: requestBindingRef.current?.request_id ?? null,
-					tool_call_id: tool_call_id ?? `${unit_id}-${requestBindingRef.current?.request_id ?? "call"}`,
-					unit_id,
-					tool_name,
-					arguments_digest,
-					task_id: currentTaskRef.task?.task_id ?? null,
-					episode_id: currentTaskRef.task ? `ep-${currentTaskRef.task.task_id}` : null,
-				});
-				return result;
-			},
+			// E1-CC §7.2: in a durable-charge run each decision UNIT is charged by the
+			// Host (actual accepted Task/Episode, real SDK tool call id, producing
+			// request) BEFORE it is buffered, and finished after the body returns.
+			chargeUnit,
+			finishUnit,
 			remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
 		}),
 		buffer,
@@ -590,6 +708,8 @@ export async function runC6FromConfig(
 				sdk: sdkImpl,
 				type: TypeSchema,
 				workspaceRoot: config.workspace_root,
+				chargeUnit,
+				finishUnit,
 				// X5/X11: the read grant is the CURRENT task's own target(s), resolved
 				// against the real workspace location. The whole-Manifest target set is
 				// NOT used as a fallback, so task A cannot read task B's file.
@@ -614,6 +734,8 @@ export async function runC6FromConfig(
 				type: TypeSchema,
 				planLimits: PLAN_LIMITS,
 				planningContext,
+				chargeUnit,
+				finishUnit,
 				recordPlan: async (plan) => {
 					// The tool and the Host share ONE dedup + writer (§6.1). When the Host is
 					// assembled, route through recordPlanCandidate so a later admit reuses this
@@ -802,6 +924,7 @@ export async function runC6FromConfig(
 			},
 			taskId: config.label ?? "campaign-task",
 			budget: sessionLedger(),
+			manifest,
 		});
 		return {
 			committedRotations: () => readEventsSafe(eventLogPath).filter((e) => e.event_type === "handoff.completed").length,
@@ -815,6 +938,7 @@ export async function runC6FromConfig(
 					handoffPath: config.session.handoff_path,
 					taskId: config.label ?? "campaign-task",
 					reason: options.reason ?? "auto_request_threshold",
+					manifest,
 				});
 				if (!staged.ok) return { applied: false, reason: staged.reason };
 				const result = /** @type {any} */ (
@@ -831,6 +955,53 @@ export async function runC6FromConfig(
 			},
 			recoverInterrupted: () => supervisor.recoverInterrupted(),
 		};
+	}
+
+	/** Committed rows for an EXECUTION decision (the Host sink, else a strict read). */
+	function committedRows() {
+		if (sinkRef && typeof sinkRef.replay === "function") return sinkRef.replay();
+		return readEventsStrict(eventLogPath);
+	}
+	/** The ONE authoritative projection over the current committed stream. */
+	function authorityProjection(rows = committedRows()) {
+		return projectQueueFromEvents({
+			campaign_id: manifest.campaign_id,
+			tasks: manifest.tasks ?? [],
+			events: rows,
+			revision: manifest.revision ?? 0,
+			manifest,
+		});
+	}
+	/**
+	 * The common execution permit at a provider/tool/effect boundary, evaluated on
+	 * the LATEST prefix (never cached). An unfinished durable tool charge of the
+	 * active task also holds later effects/continuations (E1-CC §7.2).
+	 */
+	function executionPermit({ task_id, operation }) {
+		let projection;
+		try {
+			projection = authorityProjection();
+		} catch (error) {
+			return {
+				ok: false,
+				reasons: [{ code: "full_replay_required", field: null, event_id: null, message: String(error) }],
+			};
+		}
+		const permit = inspectExecutionPermit({ projection, taskId: task_id, now: Date.now(), operation });
+		if (durableTools && operation !== "tool_unit") {
+			const open = (projection.tool_charges ?? []).filter(
+				(entry) => entry.task_id === task_id && entry.finished !== true,
+			);
+			if (open.length > 0)
+				permit.reasons.push({
+					code: "tool_unsettled",
+					field: "tool_calls",
+					event_id: open[0].charge_event_id ?? null,
+					message: `${open.length} charged tool unit(s) have no durable finished record`,
+				});
+			permit.ok = permit.reasons.length === 0;
+		}
+		return permit;
 	}
 
 	let assembled;
@@ -932,6 +1103,8 @@ export async function runC6FromConfig(
 					contextWindowChars,
 					romPath,
 					reconciliationGuard,
+					toolCallRegistry,
+					executionPermit,
 					context: config.context ?? { max_total_input_chars: 24000, output_reserve_chars: 2000 },
 					taskId: config.label ?? "campaign-task",
 					campaignId: manifest.campaign_id ?? null,
@@ -942,7 +1115,7 @@ export async function runC6FromConfig(
 					// X5: the RAM/facts/refs are bound to the CURRENT task's episode, never
 					// the first episode in the map.
 					ramProvider: () => {
-						const events = readEventsSafe(eventLogPath);
+						const events = committedRows();
 						const board = projectBoard(events, { manifest });
 						const state = projectState(events);
 						const episodeId = `ep-${currentTaskId}`;
@@ -970,7 +1143,6 @@ export async function runC6FromConfig(
 						if (phase === "reserved" && (!requestId || (!taskRes && !campaignRes))) {
 							return { ok: false, error: "reserved request requires request_id and a reservation id" };
 						}
-						if (phase === "reserved") requestBindingRef.current = { request_id: requestId };
 						// A committed/reconciliation record must name BOTH sides for a joint
 						// request (single-ledger mode uses the same id twice).
 						if (phase === "committed" && (!requestId || !taskRes || !campaignRes)) {
@@ -980,8 +1152,12 @@ export async function runC6FromConfig(
 							return { ok: false, error: "no durable writer is bound" };
 						}
 						const usage = request?.usage ?? null;
+						// A durable-charge run counts tools ONLY through `c6.tool`; the legacy
+						// per-request aggregate is not written, so it can never double-count.
 						const toolCalls =
-							phase === "committed" || phase === "reconciliation_required" ? pendingToolAdmissions.length : undefined;
+							!durableTools && (phase === "committed" || phase === "reconciliation_required")
+								? pendingToolAdmissions.length
+								: undefined;
 						const written = await sinkRef.append({
 							event_type: "runtime.note",
 							episode_id: `ep-${request?.task_id ?? currentTaskId}`,
@@ -997,6 +1173,7 @@ export async function runC6FromConfig(
 								...(Array.isArray(request?.coverage) ? { coverage: request.coverage } : {}),
 								...(request?.source ? { input_source: request.source } : {}),
 								...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+								...(durableTools ? { tool_accounting: "durable-charge-v1" } : {}),
 								...(request?.provider_started === true ? { provider_started: true } : {}),
 								...(request?.provider_status ? { provider_status: request.provider_status } : {}),
 								...(request?.stop_reason ? { stop_reason: request.stop_reason } : {}),
@@ -1067,38 +1244,29 @@ export async function runC6FromConfig(
 					modelWorker,
 					brokerWorker,
 					buffer,
+					// E1-CC §6.2: every candidate goes through the ONE Host command, in the
+					// tools' sequential (durable) order. The result is decided by the Host's
+					// active plan, never by "the last command in this loop".
 					onPlanSubmitted: async ({ task: planTask, plans }) => {
 						if (!hostRef || config.planning?.enabled !== true || !e1Planning) return { ok: true };
 						const { admitCandidatePlan } = e1Planning;
-						const events = readEventsSafe(eventLogPath);
-						const projection = projectQueueFromEvents({
-							campaign_id: manifest.campaign_id,
-							tasks: manifest.tasks ?? [],
-							events,
-							revision: manifest.revision ?? 0,
-							manifest,
-							artifacts: Object.fromEntries(artifactIndexFromEvents(events)),
-						});
-						// The REAL settlement fact comes from the durable request ledger; the
-						// independent plan_ready judge re-checks termination and settlement
-						// durably before the planning Task can complete.
-						const settlement = summarizeRequestLedger(events);
+						const settlement = summarizeRequestLedger(committedRows());
 						let last = { ok: false, status: "blocked", reasons: ["no candidate plan"] };
+						let accepted = null;
 						for (const plan of plans) {
 							last = await admitCandidatePlan({
 								plan,
-								manifest,
 								host: hostRef,
-								projection,
-								templates: planningTemplates,
-								planningContext,
 								planningTaskId: planTask?.task_id ?? e1Planning.PLANNING_TASK_ID,
 								planningSettled: settlement.unresolved === 0,
 							});
 							dynamicAdmissions.push(last);
+							if (last.ok === true && !accepted) accepted = last;
 						}
-						return last;
+						return accepted ?? last;
 					},
+					permitEffect: ({ task: effectTask }) =>
+						executionPermit({ task_id: effectTask.task_id, operation: "broker_effect" }),
 					onTaskSettled: async () => {
 						// Admit any model-proposed bounded dynamic tasks through the ONE policy.
 						if (hostRef && buffer.listTasks().length > 0) {
@@ -1386,12 +1554,12 @@ function safeSessionId(session) {
  * forced. The observer writes the single `handoff.completed` at the post-bind
  * boundary; the Host never writes a completion itself.
  *
- * @param {{eventLogPath: string, handoffPath: string, taskId: string, reason: string}} args
+ * @param {{eventLogPath: string, handoffPath: string, taskId: string, reason: string, manifest?: any}} args
  */
-export function stageHostHandoff({ eventLogPath, handoffPath, taskId, reason }) {
+export function stageHostHandoff({ eventLogPath, handoffPath, taskId, reason, manifest = null }) {
 	const events = readEventsSafe(eventLogPath);
 	const state = projectState(events);
-	const board = projectBoard(events);
+	const board = projectBoard(events, { manifest });
 	const episodeId = state.open_handoff?.episode_id ?? resolveOpenEpisodeId(state, taskId);
 	if (!episodeId) return { ok: false, reason: "no open episode to hand over" };
 	const ram = buildRam({ board, state, episodeId, goal: state.episodes[episodeId]?.goal?.description ?? "" });

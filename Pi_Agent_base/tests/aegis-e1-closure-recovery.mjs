@@ -9,7 +9,7 @@
 // Run: node --test Pi_Agent_base/tests/aegis-e1-closure-recovery.mjs
 
 import assert from "node:assert/strict";
-import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { eventDigest, verifyChain } from "../memory/runtime/events.mjs";
@@ -25,11 +25,22 @@ test("T-R00 setup: produce a real ready prefix", () => {
 	assert.equal(initial.summary.plan_ready, true);
 });
 
-/** Truncate the stream to a durable prefix and re-run in a NEW process. */
+/**
+ * Truncate the stream to a durable prefix and re-run in a NEW process.
+ *
+ * The prefix is produced IN the resume directory: the Manifest binds the
+ * authorized workspace path, so a run copied to another directory is a
+ * different Manifest and is (correctly) refused as `planning_context_conflict`.
+ * Producing the run in place keeps the frozen Manifest identical, so each case
+ * exercises its own intended cause.
+ */
 function resumeFromPrefix({ label, mutate = null }) {
-	const end = initial.events.findIndex((e) => e.payload?.kind === "campaign.plan.ready");
+	const dir = join(out, `resume-${label}`);
+	const source = runPlanningScenario({ workDir: out, scenario: "normal_plan", dir });
+	assert.equal(source.exit, 0, source.stderr.slice(-600));
+	const end = source.events.findIndex((e) => e.payload?.kind === "campaign.plan.ready");
 	assert.ok(end >= 0, "control: the ready prefix exists");
-	const prefix = structuredClone(initial.events.slice(0, end + 1));
+	const prefix = structuredClone(source.events.slice(0, end + 1));
 	if (mutate) mutate(prefix);
 	// Recompute the chain after any mutation so the persisted stream is valid.
 	let previous;
@@ -40,9 +51,6 @@ function resumeFromPrefix({ label, mutate = null }) {
 		previous = event.event_digest;
 	}
 	assert.equal(verifyChain(prefix).ok, true, "the persisted resume prefix must be a valid hash chain");
-	// Work in an ISOLATED copy so concurrent/resumed tests never interfere.
-	const dir = join(out, `resume-${label}`);
-	cpSync(initial.dir, dir, { recursive: true, force: true });
 	writeFileSync(join(dir, "events.jsonl"), `${prefix.map((e) => JSON.stringify(e)).join("\n")}\n`);
 	writeFileSync(join(dir, "workspace/dataset.json"), JSON.stringify({ name: "??", status: "pending" }));
 	writeFileSync(join(dir, "effects.json"), JSON.stringify({ effects: 0 }));

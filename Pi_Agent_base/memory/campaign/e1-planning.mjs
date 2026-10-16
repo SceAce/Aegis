@@ -17,11 +17,11 @@
 // It never grants the planning Task the business oracle, and never lets a
 // business task inherit the planning task's own readiness criterion.
 
-import { artifactIndexFromEvents } from "./c3-entry.mjs";
 import { summarizeRequestLedger } from "./c6-request-lifecycle.mjs";
-import { buildPlanningContext, planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
+import { planDigest } from "./e1-plan-contract.mjs";
 import { buildPlanningContract } from "./e1-planning-contract.mjs";
 import { projectQueueFromEvents } from "./projection.mjs";
+import { isKnownOracleAdapter } from "./registries.mjs";
 
 /** The Host-owned planning task id (never a business task). */
 export const PLANNING_TASK_ID = "task-plan";
@@ -80,27 +80,24 @@ export function buildPlanningManifest({ base, planningConfig, campaignId = null 
 		task_budget: { wall_time_ms: 120000, model_requests: 8, tool_calls: 24 },
 	};
 	// The Host-OWNED tool/planning budget and the plan-shape limits come from the
-	// base Manifest. We NEVER widen them here (no Math.max on budget, count, depth
-	// or fan-out): a base Manifest that is too small for planning must be fixed by
-	// the Host selecting a legal Manifest, not by the builder silently expanding.
-	const taskCountBudget = base.budget?.task_count ?? 0;
+	// base Manifest. We NEVER widen them here (no Math.max on budget, count, depth,
+	// fan-out, enabled flag or allowed types): a base Manifest that cannot host
+	// planning is REFUSED so the Host must select a legal Manifest explicitly.
+	const baseCheck = checkPlanningBase({ base, planningTask, templates: planningConfig?.templates ?? [] });
+	if (!baseCheck.ok) return { ok: false, reasons: baseCheck.reasons, manifest: null };
 	const frozen = {
 		...base,
 		campaign_id: campaignId ?? base.campaign_id,
 		title: `${base.title} (planning)`,
 		tasks: [planningTask],
-		budget: { ...base.budget, task_count: taskCountBudget },
+		budget: { ...base.budget },
 		// The root-goal required criteria are frozen so a plan cannot delete them.
 		objective: {
 			...base.objective,
 			success_criteria: [...(base.objective?.success_criteria ?? [])],
 			required_criteria: requiredCriteria,
 		},
-		dynamic_task_policy: {
-			...base.dynamic_task_policy,
-			enabled: true,
-			allowed_task_types: [...new Set((planningConfig?.templates ?? []).map((t) => t.task_type ?? t.template_ref))],
-		},
+		dynamic_task_policy: { ...base.dynamic_task_policy },
 	};
 	// Embed the IMMUTABLE trusted planning contract. A base whose budget/policy
 	// cannot accommodate planning is refused with an explicit reason rather than
@@ -114,6 +111,50 @@ export function buildPlanningManifest({ base, planningConfig, campaignId = null 
 		return { ok: false, reasons: built.reasons, manifest: null };
 	}
 	return { ok: true, reasons: [], manifest: { ...frozen, planning_contract: built.contract } };
+}
+
+/**
+ * Refuse a base Manifest that cannot host the planning Task and at least one
+ * child, or whose trusted templates step outside the Manifest's own
+ * authorization/registries. Nothing is widened to make a base fit.
+ *
+ * @param {{base: any, planningTask: any, templates: any[]}} args
+ * @returns {{ok: boolean, reasons: string[]}}
+ */
+function checkPlanningBase({ base, planningTask, templates }) {
+	const reasons = [];
+	const budget = base?.budget ?? {};
+	for (const dim of ["wall_time_ms", "model_requests", "tool_calls"]) {
+		const limit = budget[dim];
+		if (!Number.isSafeInteger(limit) || limit < 0)
+			reasons.push(`base budget.${dim} must be a safe non-negative integer`);
+		else if (planningTask.task_budget[dim] > limit)
+			reasons.push(
+				`planning_budget_exceeds_base: the planning task needs ${dim}=${planningTask.task_budget[dim]} but the base allows ${limit}`,
+			);
+	}
+	// The planning Task itself plus at least one child Task.
+	if (!Number.isSafeInteger(budget.task_count) || budget.task_count < 2)
+		reasons.push(`base budget.task_count ${String(budget.task_count)} cannot hold the planning task and a child task`);
+	const policy = base?.dynamic_task_policy ?? {};
+	if (policy.enabled !== true) reasons.push("base dynamic_task_policy.enabled must be true for planning");
+	if (Number.isInteger(policy.max_task_count) && policy.max_task_count < 2)
+		reasons.push(`base dynamic_task_policy.max_task_count ${policy.max_task_count} cannot hold a child task`);
+	if (!planningTask.target_ref) reasons.push("base authorization.allowed_targets is empty");
+	const allowedTypes = new Set(Array.isArray(policy.allowed_task_types) ? policy.allowed_task_types : []);
+	const allowedCapabilities = new Set(base?.authorization?.allowed_capabilities ?? []);
+	for (const template of templates) {
+		const label = template?.template_ref ?? template?.task_type ?? "?";
+		const type = template?.task_type ?? template?.template_ref;
+		if (!allowedTypes.has(type)) reasons.push(`template ${label}: task_type ${type} is not allowed by the base policy`);
+		if (!isKnownOracleAdapter(template?.oracle_ref))
+			reasons.push(`template ${label}: oracle ${String(template?.oracle_ref)} is not registered`);
+		for (const cap of template?.required_capabilities ?? [])
+			if (!allowedCapabilities.has(cap)) reasons.push(`template ${label}: capability ${cap} is not authorized`);
+		for (const perm of template?.scope?.permissions ?? [])
+			if (!allowedCapabilities.has(perm)) reasons.push(`template ${label}: scope permission ${perm} is not authorized`);
+	}
+	return { ok: reasons.length === 0, reasons };
 }
 
 /** Convenience wrapper that returns the Manifest directly (throws on refusal). */
@@ -248,8 +289,18 @@ export function createPlanReadyJudge(
 			events,
 			revision: manifest?.revision ?? 0,
 			manifest,
-			artifacts: Object.fromEntries(artifactIndexFromEvents(events)),
 		});
+		// A charged planning tool unit with no durable `finished` is an open
+		// responsibility: the plan is not ready while it is outstanding.
+		const unfinished = (projection.tool_charges ?? []).filter(
+			(entry) => entry.task_id === (task?.task_id ?? planningTaskId) && entry.finished !== true,
+		);
+		if (unfinished.length > 0)
+			return {
+				status: "unknown",
+				failure_mode: "planning_tool_unsettled",
+				detail: `${unfinished.length} charged planning tool unit(s) have no durable finished record`,
+			};
 		const termination = planningTerminationFromEvents(events, task?.task_id ?? planningTaskId);
 		const settlement = summarizeRequestLedger(events);
 		const verdict = evaluatePlanReady({
@@ -286,85 +337,31 @@ export function createPlanReadyJudge(
 }
 
 /**
- * Validate and admit a candidate plan as ONE durable batch. The plan is validated
- * by the whole graph BEFORE any durable write, so an illegal node rejects the
- * whole batch and no legal subset runs. This records the batch admission ONLY;
- * the plan-ready activation gate is reached later through the Scheduler's
- * independent plan_ready Oracle and durable Task completion.
+ * Submit a candidate plan to the Host for whole-batch admission. The decision is
+ * made ONLY by the Host command (`host.admitPlan`), which compiles the candidate
+ * against the latest committed prefix with the same compiler the replay uses;
+ * this adapter never pre-validates with a stale projection and never passes an
+ * "already admitted" conclusion. The plan-ready gate is reached later through
+ * the Scheduler's independent plan_ready Oracle.
  *
- * @param {{
- *   plan: any,
- *   manifest: any,
- *   host: any,
- *   projection: any,
- *   templates?: Map<string, any>|null,
- *   planningTaskId?: string,
- *   planningSettled?: boolean,
- *   planningContext?: any|null,
- * }} args
+ * `projection`, `templates` and `planningContext` are accepted for interface
+ * compatibility only; they never authorize anything.
+ *
+ * @param {{plan: any, manifest?: any, host: any, projection?: any, templates?: any, planningTaskId?: string, planningSettled?: boolean, planningContext?: any}} args
  */
-export async function admitCandidatePlan({
-	plan,
-	manifest,
-	host,
-	projection,
-	templates = null,
-	planningTaskId = PLANNING_TASK_ID,
-	planningSettled = true,
-	planningContext = null,
-}) {
+export async function admitCandidatePlan({ plan, host, planningTaskId = PLANNING_TASK_ID, planningSettled = true }) {
 	if (!planningSettled) {
 		return { ok: false, status: "blocked", reasons: ["the planning request did not settle normally"] };
 	}
-	const existingTaskIds = new Set([
-		...(manifest.tasks ?? []).map((task) => task.task_id),
-		...(projection?.tasks ?? []).map((task) => task.task_id),
-	]);
-	const derived = projection?.budget?.reserved ?? { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
-	// Consume the SAME normalized contract the provider was given (or rebuild it
-	// from the same manifest + trusted templates). Never a second test-only copy.
-	const context = planningContext ?? buildPlanningContext({ manifest, templates, planningTaskId });
-	// Root-goal binding: compare against the trusted context when one is known
-	// (the real product run always supplies it). A caller that supplies NO context
-	// and whose manifest has NO frozen contract has no root to bind against, so the
-	// candidate root is accepted as-is (the Host still re-validates the whole graph).
-	const expectedRoot = planningContext
-		? (context?.root_goal_ref ?? null)
-		: (manifest?.planning_contract?.root_goal_ref ?? null);
-	const admission = validatePlanGraph({
-		plan,
-		manifest,
-		planningTaskId,
-		existingTaskIds,
-		templates: templates && templates.size > 0 ? templates : null,
-		requiredCriteria: context?.root_goal?.required_criteria ?? [],
-		expectedRootGoalRef: expectedRoot,
-		derivedBudget: derived,
-	});
-	if (admission.status !== "admitted") {
-		await host.admitPlan({ plan, planningTaskId, admission, planId: plan?.plan_id ?? null });
-		return { ok: false, status: admission.status, reasons: admission.reasons, admission };
-	}
-	const recorded = await host.admitPlan({
-		plan,
-		planningTaskId,
-		admission,
-		planId: plan?.plan_id ?? null,
-		planDigest: planDigest(plan),
-	});
-	if (!recorded.ok) {
-		return {
-			ok: false,
-			status: recorded.status ?? "incomplete",
-			reasons: [recorded.reason ?? "plan admission incomplete"],
-			admission,
-		};
-	}
-	// The plan-ready gate is a SEPARATE durable state reached ONLY through the
-	// Scheduler's independent Oracle chain (planning Task completed). This function
-	// records the whole-batch admission and stops there: it never writes
-	// `campaign.plan.ready` and never releases a child Task.
-	return { ok: true, status: "admitted", plan_id: recorded.plan_id, admission, digest: planDigest(plan) };
+	const result = await host.admitPlan({ plan, planningTaskId });
+	return {
+		...result,
+		ok: result?.ok === true,
+		status: result?.status ?? "incomplete",
+		reasons: result?.reasons ?? (result?.reason ? [result.reason] : []),
+		plan_id: result?.plan_id ?? plan?.plan_id ?? null,
+		digest: planDigest(plan),
+	};
 }
 
 export { buildPlanningContext, buildPlanningPrompt, PLAN_LIMITS, planDigest } from "./e1-plan-contract.mjs";

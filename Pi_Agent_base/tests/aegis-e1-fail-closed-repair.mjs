@@ -15,8 +15,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { PLAN_BINDING_VERSION } from "../memory/campaign/authority.mjs";
 import { artifactIndexFromEvents } from "../memory/campaign/c3-entry.mjs";
-import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
+import { compilePlanAdmission, planDigest } from "../memory/campaign/e1-plan-contract.mjs";
+import { buildPlanningContract, loadPlanningAuthority } from "../memory/campaign/e1-planning-contract.mjs";
 import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
 import { projectBoard } from "../memory/runtime/board.mjs";
 
@@ -56,9 +58,23 @@ const BOARD_MANIFEST = {
 			goal: { goal_id: "g1", description: "verify", success_criteria: ["c1"] },
 			stages: [{ stage_id: "s-1", criteria: ["c1"], required: true }],
 			oracle_ref: "fixture.oracle.v1",
+			// A COMPLETE trusted binding needs the Task's current scope (fail-closed
+			// without it, E1-CC §8.1 item 1).
+			scope: { domain: "structured-data" },
 		},
 	],
 };
+
+/** The trusted effect row that produced the evidence BEFORE the judgment. */
+function evidenceEvent() {
+	return {
+		event_type: "action.completed",
+		event_id: "effect-t-1",
+		episode_id: "ep-1",
+		source: { kind: "runtime" },
+		payload: { evidence_ref: "artifact:t-1", content_digest: "sha256:x", task_id: "t-1" },
+	};
+}
 
 function startedEvent(taskId = "t-1", episodeId = "ep-1") {
 	return {
@@ -103,7 +119,9 @@ function stageOracleEvent() {
 }
 
 function boardOf(events) {
-	return projectBoard(events, { manifest: BOARD_MANIFEST });
+	// Evidence must be committed before the claim; the Board and the queue share
+	// the Campaign authority, so a Fact needs a judgment the queue also accepts.
+	return projectBoard([evidenceEvent(), ...events], { manifest: BOARD_MANIFEST });
 }
 function factFor(board, eventId) {
 	return board.byType.Fact.find((node) => node.origin_event_id === eventId);
@@ -253,35 +271,13 @@ const PLAN = {
 	],
 };
 const PLAN_DIGEST = planDigest(PLAN);
-const ADMISSION = validatePlanGraph({
-	plan: PLAN,
-	manifest: {
-		...BOARD_MANIFEST,
-		objective: {
-			description: "g",
-			success_criteria: ["data.status == active"],
-			required_criteria: ["data.status == active"],
-		},
-	},
-	planningTaskId: "task-plan",
-	existingTaskIds: new Set(["task-plan"]),
-	templates: new Map([
-		[
-			"verify",
-			{
-				template_ref: "verify",
-				task_type: "verify",
-				oracle_ref: "fixture.oracle.v1",
-				required_capabilities: ["data.record.write"],
-				success_criteria: ["data.status == active"],
-			},
-		],
-	]),
-	requiredCriteria: ["data.status == active"],
-});
-assert.equal(ADMISSION.status, "admitted", "control: the plan normalizes");
-
-const PLAN_MANIFEST = {
+// FIXTURE MIGRATION (E1-CC §4.2): a plan admission is only executable under the
+// Manifest's frozen planning contract; a contract-less Manifest is
+// `legacy_context_unavailable`. The positive chain therefore uses a contract
+// Manifest, an accepted planning start and Host-bound envelopes. The negative
+// cases keep their original assertions and now fail for their own cause.
+const PLAN_SCOPE = { environment_fingerprint: "data-repair-env", domain: "structured-data", permissions: [] };
+const PLAN_BASE = {
 	...BOARD_MANIFEST,
 	objective: {
 		description: "g",
@@ -301,6 +297,40 @@ const PLAN_MANIFEST = {
 		},
 	],
 };
+const CONTRACT = buildPlanningContract({
+	manifest: PLAN_BASE,
+	templates: [
+		{
+			template_ref: "verify",
+			task_type: "verify",
+			oracle_ref: "fixture.oracle.v1",
+			required_capabilities: ["data.record.write"],
+			success_criteria: ["data.status == active"],
+			scope: PLAN_SCOPE,
+		},
+	],
+	requiredCriteria: ["data.status == active"],
+});
+assert.equal(CONTRACT.ok, true, JSON.stringify(CONTRACT.reasons));
+const PLAN_MANIFEST = { ...PLAN_BASE, planning_contract: CONTRACT.contract };
+const AUTHORITY = loadPlanningAuthority({ manifest: PLAN_MANIFEST });
+const ADMISSION = compilePlanAdmission({
+	plan: PLAN,
+	manifest: PLAN_MANIFEST,
+	planningTaskId: "task-plan",
+	existingTaskIds: ["task-plan"],
+	allocation: { wall_time_ms: 0, model_requests: 0, tool_calls: 0 },
+	templates: AUTHORITY.templates,
+	rootGoalRef: AUTHORITY.contract.root_goal_ref,
+});
+assert.equal(ADMISSION.status, "admitted", "control: the plan normalizes");
+const BINDING = {
+	binding_version: PLAN_BINDING_VERSION,
+	manifest_revision: PLAN_MANIFEST.revision,
+	manifest_digest: AUTHORITY.manifest_digest,
+	context_digest: AUTHORITY.context_digest,
+	episode_id: "ep-task-plan",
+};
 
 function campaignEvent(kind, payload, { id, source = "runtime" } = {}) {
 	return {
@@ -314,8 +344,8 @@ function campaignEvent(kind, payload, { id, source = "runtime" } = {}) {
 function submitted(payload = {}) {
 	return campaignEvent(
 		"campaign.plan.submitted",
-		{ plan_id: "plan-fc", plan_digest: PLAN_DIGEST, plan: PLAN, planning_task_id: "task-plan", ...payload },
-		{ id: "submitted-1", source: "llm" },
+		{ plan_id: "plan-fc", plan_digest: PLAN_DIGEST, plan: PLAN, planning_task_id: "task-plan", ...BINDING, ...payload },
+		{ id: "submitted-1" },
 	);
 }
 function admitted(payload = {}) {
@@ -326,6 +356,8 @@ function admitted(payload = {}) {
 			plan_digest: PLAN_DIGEST,
 			planning_task_id: "task-plan",
 			plan_tasks: ADMISSION.normalized,
+			reserved_budget: ADMISSION.reserved_budget,
+			...BINDING,
 			...payload,
 		},
 		{ id: "admitted-1" },
@@ -335,7 +367,14 @@ function project(events) {
 	return projectQueueFromEvents({
 		campaign_id: CAMPAIGN,
 		tasks: PLAN_MANIFEST.tasks,
-		events,
+		events: [
+			campaignEvent(
+				"campaign.task.started",
+				{ task_id: "task-plan", episode_id: "ep-task-plan" },
+				{ id: "start-plan" },
+			),
+			...events,
+		],
 		revision: 1,
 		manifest: PLAN_MANIFEST,
 		artifacts: {},

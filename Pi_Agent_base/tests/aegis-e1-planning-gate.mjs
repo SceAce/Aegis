@@ -190,13 +190,15 @@ function makeSink({ failKinds = [] } = {}) {
 	};
 }
 
-function makePlanningScheduler({ sink, failReady = false }) {
+function makePlanningScheduler({ sink, plan, failReady = false }) {
 	const planningTask = normal.manifest.tasks.find((t) => t.task_id === "task-plan");
 	const oracle = {
 		id: "synthetic.oracle",
 		async judge({ task }) {
 			if (task.task_id !== "task-plan") return { status: "unknown", failure_mode: "no_rule" };
-			const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: "sha256:plan" }];
+			// The plan_ready evidence binds the ADMITTED batch identity (as the product
+			// judge does), so it resolves against the reducer's prefix artifact log.
+			const evidence = [{ ref_id: `artifact:${task.task_id}`, digest: planDigest(plan) }];
 			return {
 				status: "success",
 				outcome_id: `o-${task.task_id}`,
@@ -239,13 +241,20 @@ function makePlanningScheduler({ sink, failReady = false }) {
 			};
 		},
 	};
+	// The planning worker submits the candidate through the REAL Host command
+	// while the planning Task is the active started Task (E1-CC §6.2).
+	let scheduler = null;
 	const worker = {
-		async run() {
+		async run({ task }) {
+			if (task.task_id === "task-plan") {
+				const admitted = await scheduler.admitPlan({ plan, planningTaskId: "task-plan" });
+				if (!admitted.ok) return { ok: false, failure_mode: "plan_not_admitted", error: admitted.reasons.join("; ") };
+			}
 			return { ok: true, outcome_ref: "artifact:task-plan" };
 		},
 	};
 	void failReady;
-	return createCampaignScheduler({
+	scheduler = createCampaignScheduler({
 		manifest: normal.manifest,
 		ownedTasks: normal.manifest.tasks,
 		baseDir: null,
@@ -253,44 +262,16 @@ function makePlanningScheduler({ sink, failReady = false }) {
 		worker,
 		oracle,
 		clock: () => 1000,
-		artifacts: { "artifact:task-plan": { ref_id: "artifact:task-plan", digest: "sha256:plan" } },
 	});
+	return scheduler;
 }
 
 test("GATE-07: a durable failure writing the plan-ready gate stops dispatch and holds children", async () => {
 	const sink = makeSink({ failKinds: ["campaign.plan.ready"] });
-	// Seed the durable submitted candidate and its admitted batch (the admission is
-	// durable; the gate write fails). The admitted record MUST reference the
-	// prior candidate digest under the fail-closed replay contract.
-	const submittedEvent = normal.events.find((e) => e.payload?.kind === "campaign.plan.submitted");
-	const candidatePlan = submittedEvent.payload.plan;
-	const canonicalDigest = planDigest(candidatePlan);
-	const planTasks = normal.events.find((e) => e.payload?.kind === "campaign.plan.admitted").payload.plan_tasks;
-	await sink.append({
-		event_type: "runtime.note",
-		source: { kind: "runtime", actor_id: "host" },
-		payload: {
-			kind: "campaign.plan.submitted",
-			campaign_id: normal.manifest.campaign_id,
-			plan_id: "plan-e1",
-			plan_digest: canonicalDigest,
-			plan: candidatePlan,
-			planning_task_id: "task-plan",
-		},
-	});
-	await sink.append({
-		event_type: "runtime.note",
-		source: { kind: "runtime", actor_id: "host" },
-		payload: {
-			kind: "campaign.plan.admitted",
-			campaign_id: normal.manifest.campaign_id,
-			plan_id: "plan-e1",
-			plan_digest: canonicalDigest,
-			planning_task_id: "task-plan",
-			plan_tasks: planTasks,
-		},
-	});
-	const scheduler = makePlanningScheduler({ sink, failReady: true });
+	// The admission happens durably INSIDE the planning Task (real Host command);
+	// only the subsequent plan-ready gate write fails.
+	const candidatePlan = normal.events.find((e) => e.payload?.kind === "campaign.plan.submitted").payload.plan;
+	const scheduler = makePlanningScheduler({ sink, plan: candidatePlan, failReady: true });
 	const result = await scheduler.run();
 	assert.equal(result.ok, false, "a non-durable activation must not report success");
 	assert.equal(

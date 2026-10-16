@@ -398,7 +398,10 @@ function artifactIndexToObject(map) {
 		{},
 		{
 			get(_target, prop) {
-				return typeof prop === "string" ? map.get(prop) : undefined;
+				// Live in-process evidence is never projection authority: tag it so the
+				// reducer uses only its own committed prefix log (live == replay).
+				const entry = typeof prop === "string" ? map.get(prop) : undefined;
+				return entry ? { ...entry, origin: entry.origin ?? "live" } : undefined;
 			},
 			has(_target, prop) {
 				return typeof prop === "string" && map.has(prop);

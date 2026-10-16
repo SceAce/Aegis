@@ -26,7 +26,6 @@
 // Nodes keep their STRUCTURED fields (`observed`, `criterion`, `ref`s), not just
 // their rendered text, so the effective view is derived from data, not prose.
 
-import { artifactIndexFromEvents } from "../campaign/artifact-index.mjs";
 import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { digest } from "./events.mjs";
 
@@ -514,7 +513,7 @@ export function resolveEffective(events, nodes = []) {
  * History is preserved: the nodes stay in `byType` with `effective_status:
  * "stale"`; they only leave the current effective view.
  *
- * @returns {{staleNodeIds: Set<string>, changes: object[]}}
+ * @returns {{staleNodeIds: Set<string>, changes: Array<{event_id: string|null, scope: string|null, stale_nodes: string[], reason: any}>}}
  */
 export function resolveEnvironmentChanges(events, nodes) {
 	const outcomeIndex = new Map();
@@ -634,78 +633,76 @@ export function projectBoard(events, { manifest = null } = {}) {
 	const rejections = [];
 	const byEventId = new Map();
 	const rawEvents = Array.isArray(events) ? events : [];
-	// THE SHARED CAMPAIGN AUTHORITY (§8.1): when a Manifest names a Campaign, the
-	// Board derives the accepted/effective Campaign judgement set from the SAME
-	// pure projection the queue/consumers use. A `campaign.oracle.result` that the
-	// projection REJECTED (scope/criterion/evidence/admission/identity mismatch)
-	// can NEVER become a verified Fact here, regardless of how it renders.
-	let campaignAuthority = null;
-	if (manifest && typeof manifest.campaign_id === "string" && manifest.planning_contract) {
+	// THE SHARED CAMPAIGN AUTHORITY (§8.1): when a Manifest names a Campaign, every
+	// Campaign Outcome's acceptance, binding (accepted start/definition), evidence,
+	// supersede and environment validity come from the ONE Campaign reducer. The
+	// Board never re-derives Campaign identity from raw admitted/started rows.
+	let authority = null;
+	if (manifest && typeof manifest.campaign_id === "string") {
 		const projection = projectQueueFromEvents({
 			campaign_id: manifest.campaign_id,
 			tasks: manifest.tasks ?? [],
 			events: rawEvents,
 			revision: manifest.revision ?? 0,
 			manifest,
-			artifacts: Object.fromEntries(artifactIndexFromEvents(rawEvents)),
 		});
-		campaignAuthority = projection.authority ?? null;
+		authority = projection.authority ?? null;
 		for (const rejection of projection.rejected ?? []) rejections.push(rejection);
 	}
-	const acceptedOutcomeIds = new Set(campaignAuthority?.accepted_outcomes ?? []);
-	// Normalize Campaign `campaign.oracle.result` notes into the canonical Outcome
-	// shape ONCE, so the node loop, supersede resolution and environment changes all
-	// see the SAME trusted outcome semantics (`campaignOutcomeAsRecorded`). The
-	// binding indices come from the Manifest task definitions AND the durable
-	// `campaign.plan.admitted` normalized definitions; the task -> started-episode
-	// index binds each judgement to its OWN current task episode.
-	const taskDefs = new Map();
-	const indexDefinition = (task) => {
-		if (!task || typeof task.task_id !== "string" || task.task_id.length === 0) return;
-		taskDefs.set(task.task_id, { stages: new Set((task.stages ?? []).map((stage) => stage.stage_id)) });
+	const recordsByOutcome = new Map((authority?.outcome_records ?? []).map((record) => [record.outcome_id, record]));
+	const outcomeEvents = authority?.outcome_events ?? {};
+	const rejectionByEvent = new Map((authority?.rejections ?? []).map((r) => [r.event_id, r.reason]));
+	/** The authority record that THIS row established (null for duplicates/conflicts/unknown rows). */
+	const recordForRow = (event) => {
+		const info = outcomeEvents[event?.event_id];
+		const record = info ? (recordsByOutcome.get(info.outcome_id) ?? null) : null;
+		return record && record.event_id === event.event_id ? record : null;
 	};
-	for (const task of manifest?.tasks ?? []) indexDefinition(task);
+	// Without a Campaign context, the legacy binding indices still annotate WHY a
+	// Campaign judgment is only a diagnostic (it never becomes a Fact below).
+	const taskDefs = new Map();
 	const episodeByTask = new Map();
-	for (const event of rawEvents) {
-		const payload = event?.payload ?? {};
-		if (event?.event_type !== "runtime.note") continue;
-		if (payload.kind === "campaign.plan.admitted" && Array.isArray(payload.plan_tasks)) {
-			for (const definition of payload.plan_tasks) indexDefinition(definition);
-		}
-		if (payload.kind === "campaign.task.started" && payload.task_id && payload.episode_id) {
-			// The latest durable `started` episode wins: a re-started task binds to its
-			// CURRENT episode, not a stale first attempt.
-			episodeByTask.set(payload.task_id, payload.episode_id);
+	if (!authority) {
+		const indexDefinition = (task) => {
+			if (!task || typeof task.task_id !== "string" || task.task_id.length === 0) return;
+			taskDefs.set(task.task_id, { stages: new Set((task.stages ?? []).map((stage) => stage.stage_id)) });
+		};
+		for (const event of rawEvents) {
+			const payload = event?.payload ?? {};
+			if (event?.event_type !== "runtime.note") continue;
+			if (payload.kind === "campaign.plan.admitted" && Array.isArray(payload.plan_tasks))
+				for (const definition of payload.plan_tasks) indexDefinition(definition);
+			if (payload.kind === "campaign.task.started" && payload.task_id && payload.episode_id)
+				episodeByTask.set(payload.task_id, payload.episode_id);
 		}
 	}
 	const indexes = { campaignId: manifest?.campaign_id ?? null, taskDefs, episodeByTask };
-	const normalizedEvents = rawEvents.map((event) => campaignOutcomeAsRecorded(event, indexes) ?? event);
+	const normalizedEvents = rawEvents.map((event) => {
+		const normalized = campaignOutcomeAsRecorded(event, indexes);
+		if (!normalized || !authority) return normalized ?? event;
+		// Authority mode: the binding verdict IS the reducer's verdict for this row.
+		const record = recordForRow(event);
+		const info = outcomeEvents[event.event_id];
+		// The reducer's own reason for THIS row comes first (a row can be refused
+		// before it ever becomes an outcome record, e.g. a missing task_id).
+		const reason = rejectionByEvent.has(event.event_id)
+			? rejectionByEvent.get(event.event_id)
+			: !info
+				? "campaign outcome is not part of the authoritative stream"
+				: !record
+					? `duplicate record of outcome ${info.outcome_id}`
+					: record.accepted
+						? null
+						: (record.reason ?? "campaign outcome was rejected");
+		const payload = { ...normalized.payload, campaign_binding_ok: reason === null };
+		if (reason) payload.campaign_binding_reason = reason;
+		else delete payload.campaign_binding_reason;
+		return { ...normalized, payload };
+	});
 
 	for (const event of normalizedEvents) {
 		if (!event || typeof event !== "object") continue;
 		let permitted = permittedNodeType(event);
-		// SHARED AUTHORITY (§8.1): a Campaign outcome that the projection did not
-		// accept as an effective judgement can never create a verified Fact/Refuted
-		// node. It stays visible as a Hint with an explicit rejection reason.
-		if (
-			campaignAuthority &&
-			event.payload?.kind === CAMPAIGN_OUTCOME_KIND &&
-			permitted &&
-			(permitted.type === "Fact" || permitted.type === "Refuted")
-		) {
-			const outcomeId = event.payload?.outcome_id ?? null;
-			if (!outcomeId || !acceptedOutcomeIds.has(outcomeId)) {
-				permitted = {
-					type: "Hint",
-					downgradedFrom: permitted.type,
-					reason: "campaign authority rejected this outcome (not an accepted effective judgement)",
-				};
-				rejections.push({
-					event_id: event.event_id,
-					reason: `campaign outcome ${String(outcomeId)} was not accepted by the campaign authority`,
-				});
-			}
-		}
 		// FAIL-CLOSED WITHOUT CONTEXT (§8.1): a Campaign judgment encountered with NO
 		// Campaign context (no Manifest / no campaign_id) is never promoted to a
 		// verified Fact here; it is surfaced as a diagnostic Hint only. A manifest that
@@ -759,6 +756,8 @@ export function projectBoard(events, { manifest = null } = {}) {
 			environment_fingerprint: payload.environment_fingerprint ?? null,
 			origin_event_id: event.event_id,
 			episode_id: event.episode_id || null,
+			...(payload.campaign_outcome === true ? { campaign_outcome: true } : {}),
+			...(authority && payload.campaign_outcome === true && recordForRow(event) ? { authority_record: true } : {}),
 			created_at: event.recorded_at,
 			...(permitted.downgradedFrom ? { downgraded_from: permitted.downgradedFrom } : {}),
 			...(permitted.reason ? { downgrade_reason: permitted.reason } : {}),
@@ -789,9 +788,30 @@ export function projectBoard(events, { manifest = null } = {}) {
 		}
 	}
 
-	// Effective view: same-Episode supersedes + trusted environment changes.
-	const { superseded, invalid } = resolveEffective(normalizedEvents, nodes);
-	const { staleNodeIds, changes } = resolveEnvironmentChanges(normalizedEvents, nodes);
+	// Effective view. Campaign Outcomes take their effectiveness from the Campaign
+	// authority (supersede + environment invalidation evaluated once, in the
+	// reducer). The Board's own resolution applies ONLY to non-Campaign nodes, so a
+	// correction the authority rejected can never retire a Campaign Fact here.
+	const isCampaignNode = (node) => authority !== null && node.campaign_outcome === true;
+	const ownEvents = normalizedEvents.filter((event) => !(authority && event?.payload?.campaign_outcome === true));
+	const ownNodes = nodes.filter((node) => !isCampaignNode(node));
+	const { superseded, invalid } = resolveEffective(ownEvents, ownNodes);
+	const { staleNodeIds, changes } = resolveEnvironmentChanges(ownEvents, ownNodes);
+	for (const node of nodes) {
+		if (!isCampaignNode(node) || !node.authority_record) continue;
+		const record = recordsByOutcome.get(node.outcome_id);
+		if (!record || record.effective) continue;
+		if (record.ineffective_reason === "superseded")
+			superseded.set(node.outcome_id, { by: record.superseded_by, event_id: null });
+		else if (record.ineffective_reason === "environment_changed") staleNodeIds.add(node.node_id);
+	}
+	for (const change of authority?.environment_changes ?? []) {
+		const entry = changes.find((c) => c.event_id === change.event_id);
+		const staleCampaign = nodes
+			.filter((node) => isCampaignNode(node) && node.authority_record && change.invalidated.includes(node.outcome_id))
+			.map((node) => node.node_id);
+		if (entry) entry.stale_nodes.push(...staleCampaign);
+	}
 	// Index outcome -> superseding node so a supersede draws an auditable edge.
 	const nodeByOutcomeId = new Map();
 	for (const node of nodes) if (node.outcome_id) nodeByOutcomeId.set(node.outcome_id, node);

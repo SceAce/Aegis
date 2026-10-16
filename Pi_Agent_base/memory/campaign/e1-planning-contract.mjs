@@ -276,76 +276,110 @@ export function loadPlanningAuthority({ manifest } = /** @type {any} */ ({})) {
  * @param {{definition: any, origin: "static"|"plan"|"proposal", authority?: any}} args
  */
 export function normalizeExecutableTask({ definition, origin, authority = null } = /** @type {any} */ ({})) {
-	const reasons = [];
 	if (!definition || typeof definition !== "object")
 		return { ok: false, task: null, reasons: ["definition must be an object"] };
 	if (!["static", "plan", "proposal"].includes(origin))
 		return { ok: false, task: null, reasons: [`unknown origin ${String(origin)}`] };
 	const dynamic = origin === "plan" || origin === "proposal";
-
-	const budgetAlias = definition.budget_reservation ?? null;
-	const taskBudget = definition.task_budget ?? null;
-	const resolveDims = (value) => {
-		const out = {};
-		for (const dim of BUDGET_DIMS) {
-			const raw = value?.[dim];
-			if (raw === undefined || raw === null) out[dim] = undefined;
-			else if (!isSafeNonNegativeInteger(raw)) out[dim] = `invalid:${String(raw)}`;
-			else out[dim] = raw;
-		}
-		return out;
-	};
-
-	let resolved = { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	const reasons = [];
 	if (dynamic) {
-		if (!budgetAlias && !taskBudget) {
-			reasons.push(`invalid_task_budget: a dynamic ${origin} task requires a complete budget`);
-		} else {
-			const dims = resolveDims(taskBudget ?? budgetAlias);
-			for (const dim of BUDGET_DIMS)
-				if (dims[dim] === undefined) reasons.push(`invalid_task_budget: ${origin} budget.${dim} is required`);
-				else if (typeof dims[dim] === "string") reasons.push(`invalid_task_budget: budget.${dim} ${dims[dim]}`);
-			// When BOTH aliases are present they must match dimension-by-dimension.
-			if (budgetAlias && taskBudget) {
-				const aliasDims = resolveDims(budgetAlias);
-				for (const dim of BUDGET_DIMS) {
-					if (aliasDims[dim] === undefined || dims[dim] === undefined) continue;
-					if (aliasDims[dim] !== dims[dim])
-						reasons.push(
-							`invalid_task_budget: task_budget.${dim} (${dims[dim]}) != budget_reservation.${dim} (${aliasDims[dim]})`,
-						);
-				}
-			}
-			if (reasons.length === 0)
-				resolved = {
-					wall_time_ms: dims.wall_time_ms,
-					model_requests: dims.model_requests,
-					tool_calls: dims.tool_calls,
-				};
-		}
-	} else {
-		// static: each provided dimension must be valid; missing -> 0.
-		if (taskBudget || budgetAlias) {
-			const dims = resolveDims(taskBudget ?? budgetAlias);
-			for (const dim of BUDGET_DIMS)
-				if (typeof dims[dim] === "string") reasons.push(`invalid_task_budget: budget.${dim} ${dims[dim]}`);
-			if (taskBudget && budgetAlias) {
-				const aliasDims = resolveDims(budgetAlias);
-				for (const dim of BUDGET_DIMS)
-					if (aliasDims[dim] !== undefined && dims[dim] !== undefined && aliasDims[dim] !== dims[dim])
-						reasons.push(`invalid_task_budget: task_budget.${dim} != budget_reservation.${dim}`);
-			}
-			if (reasons.length === 0)
-				resolved = {
-					wall_time_ms: dims.wall_time_ms ?? 0,
-					model_requests: dims.model_requests ?? 0,
-					tool_calls: dims.tool_calls ?? 0,
-				};
-		}
+		// A dynamic definition may only carry fields this contract knows how to
+		// normalize and digest. An unknown field could carry execution meaning that
+		// would otherwise be silently dropped from the authorized shape.
+		const unknown = Object.keys(definition).filter((key) => !EXECUTABLE_TASK_FIELDS.has(key));
+		if (unknown.length > 0) reasons.push(`invalid_task_definition: unknown field(s) ${unknown.sort().join(", ")}`);
 	}
 
+	const taskBudget = parseBudgetAlias(definition.task_budget, "task_budget", { requireComplete: dynamic });
+	// A static task whose ONLY budget field is the alias uses it as its budget
+	// (missing dims are explicit zero). When BOTH are present the alias must be a
+	// complete, equal copy; two sources are never pieced together.
+	const aliasIsSecondCopy = dynamic || (definition.task_budget !== null && definition.task_budget !== undefined);
+	const alias = parseBudgetAlias(definition.budget_reservation, "budget_reservation", {
+		requireComplete: aliasIsSecondCopy,
+	});
+	reasons.push(...taskBudget.reasons, ...alias.reasons);
+	if (dynamic && !taskBudget.present && !alias.present)
+		reasons.push(`invalid_task_budget: a dynamic ${origin} task requires a complete budget`);
+	if (reasons.length > 0) return { ok: false, task: null, reasons };
+
+	// Static: a missing dimension is an explicit ZERO (never the Campaign total).
+	const resolved = taskBudget.present
+		? { ...taskBudget.value }
+		: alias.present
+			? { ...alias.value }
+			: { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	if (alias.present)
+		for (const dim of BUDGET_DIMS)
+			if (alias.value[dim] !== resolved[dim])
+				reasons.push(
+					`invalid_task_budget: task_budget.${dim} (${resolved[dim]}) != budget_reservation.${dim} (${alias.value[dim]})`,
+				);
 	if (reasons.length > 0) return { ok: false, task: null, reasons };
 	return { ok: true, task: buildExecutableTask({ definition, origin, resolved, authority }), reasons: [] };
+}
+
+/** Every field the normalized ExecutableTask carries (and therefore digests). */
+const EXECUTABLE_TASK_FIELDS = new Set([
+	"task_id",
+	"campaign_id",
+	"origin",
+	"plan_id",
+	"planning_task_id",
+	"parent_task_id",
+	"parent_stage_id",
+	"depends_on",
+	"order",
+	"target_ref",
+	"task_type",
+	"template_ref",
+	"goal",
+	"stages",
+	"required_capabilities",
+	"oracle_ref",
+	"scope",
+	"initial_state",
+	"expected_evidence",
+	"stop_condition",
+	"priority",
+	"rationale",
+	"source",
+	"execution_adapter",
+	"admission_ref",
+	"task_budget",
+	"budget_reservation",
+	"definition_version",
+	"task_digest",
+]);
+
+/**
+ * Parse ONE budget alias. `null`/`undefined` is "absent". A present alias must be
+ * an object whose every dimension is a safe non-negative integer; with
+ * `requireComplete` a missing dimension is refused rather than pieced together.
+ *
+ * @param {any} value
+ * @param {string} label
+ * @param {{requireComplete: boolean}} options
+ */
+function parseBudgetAlias(value, label, { requireComplete }) {
+	if (value === null || value === undefined) return { present: false, value: null, reasons: [] };
+	if (typeof value !== "object" || Array.isArray(value))
+		return { present: true, value: null, reasons: [`invalid_task_budget: ${label} must be an object`] };
+	const reasons = [];
+	const out = { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	for (const dim of BUDGET_DIMS) {
+		const raw = value[dim];
+		if (raw === undefined || raw === null) {
+			if (requireComplete) reasons.push(`invalid_task_budget: ${label}.${dim} is required`);
+			continue;
+		}
+		if (!isSafeNonNegativeInteger(raw)) {
+			reasons.push(`invalid_task_budget: ${label}.${dim} must be a safe non-negative integer, got ${String(raw)}`);
+			continue;
+		}
+		out[dim] = raw;
+	}
+	return { present: true, value: reasons.length === 0 ? out : null, reasons };
 }
 
 /** Compose the canonical ExecutableTask and its digest (covers every field). */
@@ -390,6 +424,8 @@ function buildExecutableTask({ definition, origin, resolved, authority }) {
 		priority: Number.isInteger(definition.priority) ? definition.priority : 0,
 		rationale: definition.rationale ?? null,
 		source: definition.source ?? origin,
+		execution_adapter: definition.execution_adapter ?? null,
+		admission_ref: definition.admission_ref ? canonicalValue(definition.admission_ref) : null,
 		task_budget: { ...resolved },
 		budget_reservation: { ...resolved },
 		definition_version,

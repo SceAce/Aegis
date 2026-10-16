@@ -112,12 +112,38 @@ test("T-C01b: an insufficient base budget/policy is refused, never widened", () 
 		},
 	});
 	const built = buildPlanningManifest({ base: small, planningConfig: { templates: TEMPLATES } });
-	// The contract itself still builds; the refusal is about policy sufficiency.
-	// Verify the builder does NOT auto-raise the frozen limits.
-	assert.equal(built.ok, true);
-	assert.equal(built.manifest.budget.task_count, 0, "the builder never widens task_count");
-	assert.equal(built.manifest.dynamic_task_policy.max_fan_out, 1, "the builder never widens max_fan_out");
-	assert.equal(built.manifest.dynamic_task_policy.max_depth, 0, "the builder never widens max_depth");
+	// E1-CC §4.1: an inadequate base is REFUSED at creation (no Math.max, and no
+	// half-built manifest that a caller could still run).
+	assert.equal(built.ok, false, "an inadequate base must be refused, not built");
+	assert.equal(built.manifest, null);
+	const reasons = built.reasons.join("; ");
+	assert.match(reasons, /planning_budget_exceeds_base: .*wall_time_ms/);
+	assert.match(reasons, /task_count 0 cannot hold/);
+	assert.match(reasons, /max_task_count 1 cannot hold/);
+});
+
+test("T-C01b2: templates outside the base authorization/policy are refused", () => {
+	const built = buildPlanningManifest({
+		base: baseManifest(),
+		planningConfig: {
+			templates: [
+				{
+					...TEMPLATES[0],
+					required_capabilities: ["net.fetch"],
+					scope: { ...TEMPLATES[0].scope, permissions: ["net.fetch"] },
+				},
+			],
+		},
+	});
+	assert.equal(built.ok, false);
+	assert.match(built.reasons.join("; "), /capability net\.fetch is not authorized/);
+	assert.match(built.reasons.join("; "), /scope permission net\.fetch is not authorized/);
+	const disabled = buildPlanningManifest({
+		base: baseManifest({ dynamic_task_policy: { ...baseManifest().dynamic_task_policy, enabled: false } }),
+		planningConfig: { templates: TEMPLATES },
+	});
+	assert.equal(disabled.ok, false, "the builder never force-enables dynamic expansion");
+	assert.match(disabled.reasons.join("; "), /enabled must be true/);
 });
 
 test("T-C01c: a template set that does not cover root criteria is refused", () => {

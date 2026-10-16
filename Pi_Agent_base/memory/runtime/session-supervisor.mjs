@@ -92,14 +92,15 @@ export function committedRotations(events, episodeId) {
  * The committed rotation state: open episode + the handoff already completed
  * for a request id (if any). Re-derived from the EventLog every call.
  */
-async function readCommitted({ eventLogPath, handoffPath, budget }) {
+async function readCommitted({ eventLogPath, handoffPath, budget, manifest = null }) {
 	const log = new EventLog(eventLogPath);
 	const opened = await log.open();
 	if (!opened.ok) return { ok: false, reason: opened.error || "event log unavailable" };
 	const events = log.replay();
 	await log.close();
 	const state = projectState(events);
-	const board = projectBoard(events);
+	// The SAME Campaign context the Host uses (no raw-outcome reinterpretation).
+	const board = projectBoard(events, { manifest });
 
 	let handoff = null;
 	try {
@@ -122,9 +123,18 @@ async function readCommitted({ eventLogPath, handoffPath, budget }) {
  *   taskId?: string,
  *   budget?: object|null,
  *   continuation?: (handoff: object) => string,
+ *   manifest?: any,
  * }} args
  */
-export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, taskId, budget = null, continuation }) {
+export function createSessionSupervisor({
+	eventLogPath,
+	handoffPath,
+	runtime,
+	taskId,
+	budget = null,
+	continuation,
+	manifest = null,
+}) {
 	if (!eventLogPath || !handoffPath) throw new Error("createSessionSupervisor requires eventLogPath and handoffPath");
 	if (!runtime || typeof runtime.newSession !== "function")
 		throw new Error("createSessionSupervisor requires a runtime with newSession");
@@ -134,7 +144,7 @@ export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, ta
 	 * mutates the runtime or the log. Safe to call at a settle boundary.
 	 */
 	async function canRotate() {
-		const committed = await readCommitted({ eventLogPath, handoffPath, budget });
+		const committed = await readCommitted({ eventLogPath, handoffPath, budget, manifest });
 		if (!committed.ok) return { allowed: false, reason: committed.reason, blocking: [] };
 		const { state, board, handoff, events } = committed;
 		const episodeId = handoff?.episode_id ?? resolveOpenEpisode(state, taskId)?.episode_id ?? null;
@@ -178,7 +188,7 @@ export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, ta
 	 * `{applied:true, reused:true}` is returned with no new completion/charge.
 	 */
 	async function rotate({ requestId = null, reason = null } = {}) {
-		const committed = await readCommitted({ eventLogPath, handoffPath, budget });
+		const committed = await readCommitted({ eventLogPath, handoffPath, budget, manifest });
 		if (!committed.ok) return { applied: false, reason: committed.reason };
 		const { state, board, handoff, completedIds, events } = committed;
 
@@ -231,7 +241,7 @@ export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, ta
 		// E2: the Host verifies the completion itself rather than trusting the
 		// helper/SDK return. Exactly one committed `handoff.completed` must exist for
 		// this request, bound to this episode, naming the bound runtime's Session.
-		const verified = await readCommitted({ eventLogPath, handoffPath, budget });
+		const verified = await readCommitted({ eventLogPath, handoffPath, budget, manifest });
 		const completion = verified.ok
 			? verified.events.find(
 					(event) => event.event_type === "handoff.completed" && event.payload?.request_id === effectiveRequestId,
@@ -288,7 +298,7 @@ export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, ta
 			// A rotation legitimately charges exactly ONE Session generation: the
 			// cumulative usage is the caller's BASE consumption PLUS every committed
 			// rotation for this episode (never a reset, never a double charge).
-			const afterCommitted = await readCommitted({ eventLogPath, handoffPath, budget });
+			const afterCommitted = await readCommitted({ eventLogPath, handoffPath, budget, manifest });
 			const rotationsAfter = afterCommitted.ok
 				? committedRotations(afterCommitted.events, result.episode_id ?? episodeId)
 				: usedRotations + 1;
@@ -318,7 +328,7 @@ export function createSessionSupervisor({ eventLogPath, handoffPath, runtime, ta
 	 * an unconfirmed Task side effect (it only rebinds the session).
 	 */
 	async function recoverInterrupted() {
-		const committed = await readCommitted({ eventLogPath, handoffPath, budget });
+		const committed = await readCommitted({ eventLogPath, handoffPath, budget, manifest });
 		if (!committed.ok) return { recovered: false, reason: committed.reason };
 		const { handoff, completedIds } = committed;
 		if (!handoff?.episode_id) return { recovered: false, reason: "no staged handoff to recover" };

@@ -14,12 +14,34 @@
 // same state. A checkpoint is a deletable derived cache.
 
 import { digest } from "../fixture/contracts.mjs";
+import {
+	createArtifactLog,
+	evaluateToolRecord,
+	indexRequestRecord,
+	outcomeContentDigest,
+	PLAN_BINDING_VERSION,
+	registerRowArtifacts,
+	scopeKey,
+	validateCampaignSupersede,
+} from "./authority.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
-import { planDigest, validatePlanGraph } from "./e1-plan-contract.mjs";
+import { compilePlanAdmission, planDigest, safeAddBudget } from "./e1-plan-contract.mjs";
 import { loadPlanningAuthority, normalizeExecutableTask } from "./e1-planning-contract.mjs";
 import { campaignEventEnvelope, isCampaignEventKind, validateCampaignEvent } from "./event-contract.mjs";
 import { resolveStageOutcome, resolveTaskFromOutcomes, resolveTaskOutcome } from "./outcome-resolver.mjs";
 import { isLegalTransition, makeQueueItem } from "./queue.mjs";
+
+/**
+ * A stream is an E1 planning stream when its trusted Manifest embeds a planning
+ * contract, or when cached state carries planning-derived definitions. E1 is
+ * ALWAYS rebuilt from the complete committed source.
+ */
+function isE1Context(manifest, priorState) {
+	if (manifest?.planning_contract) return true;
+	return (priorState?.queue ?? []).some(
+		(row) => row?.definition?.origin === "plan" || row?.definition?.source === "model_plan" || row?.plan_id,
+	);
+}
 
 const BUDGET_KEYS = Object.freeze(["wall_time_ms", "model_requests", "tool_calls"]);
 const TERMINAL_STATES = Object.freeze(["completed", "failed", "unknown", "cancelled"]);
@@ -91,6 +113,17 @@ export function projectQueueFromEvents({
 
 	if (typeof campaign_id !== "string" || campaign_id.length === 0) {
 		return { ok: false, reasons: ["campaign_id is required"], ...emptyProjection(campaign_id, revision) };
+	}
+	// E1-CC §9: an E1 stream is rebuilt from the COMPLETE committed source. A
+	// checkpoint/priorState is never authority for plans, definitions, ready,
+	// outcomes or completion, so a cache with a tail (or no tail) is refused.
+	if (priorState && isE1Context(manifest, priorState)) {
+		return {
+			ok: false,
+			reasons: ["full_replay_required: an E1 stream cannot resume from cached state"],
+			...emptyProjection(campaign_id, revision),
+			used_checkpoint: false,
+		};
 	}
 
 	// 1. Static Manifest tasks seed the initial rows (or hydrate from a checkpoint).
@@ -212,21 +245,97 @@ export function projectQueueFromEvents({
 	let lastAppliedEventId = null;
 	let lastAppliedOffset = priorState?.tail_offset ?? -1;
 
+	// E1-CC §7.1: GROSS allocation is an explicit counter. It only grows when a
+	// static budget is seeded or a dynamic definition/reservation is ACCEPTED; it is
+	// never derived from reserved+consumed+released (cancellation would break it).
+	const allocation = priorState?.budget?.allocation_total
+		? { ...zeroBudget(), ...priorState.budget.allocation_total }
+		: zeroBudget();
 	if (!priorState?.queue) {
 		for (const task of tasks) {
 			const alloc = parseBudgetStrict(task.task_budget);
 			const item = byId.get(task.task_id);
 			if (item && alloc.ok) item.reservation = { ...alloc.value };
-			if (alloc.ok) addBudget(budget.reserved, alloc.value);
+			if (alloc.ok) {
+				addBudget(budget.reserved, alloc.value);
+				addBudget(allocation, alloc.value);
+			}
 		}
 	}
+	const manifestDigest = manifest ? digest(manifest) : null;
+	const contextDigest = manifest?.planning_contract?.digest ?? null;
+	const planningAuthority = manifest?.planning_contract ? loadPlanningAuthority({ manifest }) : null;
+	const artifactLog = createArtifactLog(artifacts);
+	/** task_id -> latest accepted start {episode_id, offset, event_id, first_recorded_at} */
+	const acceptedStarts = new Map();
+	/** outcome_id -> AcceptedOutcome record (accepted or rejected, first wins) */
+	const outcomeRecords = new Map();
+	/** event_id -> outcome_id for every Campaign Outcome row (incl. duplicates). */
+	const outcomeEvents = new Map();
+	const requests = new Map();
+	const environmentChanges = [];
+	const timeAnchor = { campaign_started_at: null, latest_recorded_at: null };
 
 	const control = priorState?.control ? { ...priorState.control } : { state: "running", reason: null, offset: -1 };
 	const reduceFrom = priorState ? (priorState.tail_offset ?? -1) + 1 : 0;
+
+	/** The normalized Task budget a consumer may read (never the Campaign total). */
+	const taskBudgetOf = (taskId) => {
+		return normalizedTaskBudget(byId.get(taskId)?.definition ?? null);
+	};
+	/** Persistent wall-time deadlines anchored at the first ACCEPTED start. */
+	const deadlinesOf = (taskId) => {
+		const start = acceptedStarts.get(taskId) ?? null;
+		const campaignAt = timeAnchor.campaign_started_at;
+		const campaignLimit = limit.wall_time_ms;
+		const taskLimit = taskBudgetOf(taskId).wall_time_ms;
+		const campaign =
+			campaignAt !== null && Number.isSafeInteger(campaignAt + campaignLimit) ? campaignAt + campaignLimit : null;
+		const taskAt = start?.first_recorded_at ?? null;
+		const task = taskAt !== null && Number.isSafeInteger(taskAt + taskLimit) ? taskAt + taskLimit : null;
+		return { task, campaign };
+	};
+	/**
+	 * EFFECTIVE satisfaction (E1-CC §8.1 item 7): a completed Task satisfies its
+	 * dependants only while its completion Outcome and every required Stage
+	 * success are still effective (not superseded, not environment-invalidated).
+	 * The `completed` history label alone never satisfies a dependency.
+	 */
+	const effectiveSuccess = (outcomeId) => {
+		const record = outcomeId ? outcomeRecords.get(outcomeId) : null;
+		if (!record) return null; // no record: hydrated legacy row
+		return record.accepted === true && record.effective === true && record.status === "success";
+	};
+	const isSatisfied = (taskId) => {
+		const item = byId.get(taskId);
+		if (!item || item.state !== "completed") return false;
+		const taskOk = effectiveSuccess(item.completion_outcome_ref ?? item.task_outcome_ref ?? null);
+		if (taskOk === false) return false;
+		for (const stage of (item.definition?.stages ?? []).filter((s) => s.required !== false)) {
+			const stageRecords = [...outcomeRecords.values()].filter(
+				(r) => r.accepted && r.task_id === taskId && r.stage_id === stage.stage_id && r.effective,
+			);
+			if (outcomeRecords.size > 0 && taskOk !== null && !stageRecords.some((r) => r.status === "success")) return false;
+		}
+		return true;
+	};
+	const toolState = () => ({
+		campaign_id,
+		manifest_digest: manifestDigest,
+		context_digest: contextDigest,
+		charges: toolCharges,
+		requests,
+		starts: acceptedStarts,
+		runningTaskId: [...byId.values()].find((t) => t.state === "running")?.task_id ?? null,
+		taskToolLimit: (taskId) => taskBudgetOf(taskId).tool_calls,
+		campaignToolLimit: limit.tool_calls,
+		deadlines: deadlinesOf,
+	});
 	const context = {
 		campaign_id,
 		byId,
 		budget,
+		allocation,
 		appliedOutcomes,
 		acceptedOutcomes,
 		proposals,
@@ -234,32 +343,63 @@ export function projectQueueFromEvents({
 		dynamicDefinitions,
 		outcomeIndex,
 		manifest,
+		manifestDigest,
+		contextDigest,
+		planningAuthority,
 		tasks,
-		artifacts,
+		artifactLog,
+		acceptedStarts,
+		outcomeRecords,
 		rejected,
 		control,
 		revision,
+		isSatisfied,
 	};
-
 	for (let offset = reduceFrom; offset < events.length; offset += 1) {
 		const raw = events[offset];
+		const recordedAt = Date.parse(raw?.recorded_at ?? "");
+		if (Number.isFinite(recordedAt))
+			timeAnchor.latest_recorded_at = Math.max(timeAnchor.latest_recorded_at ?? recordedAt, recordedAt);
+		// Evidence and request facts are indexed in PHYSICAL order, so a claim can
+		// only use what was durable before it.
+		registerRowArtifacts(artifactLog, raw, offset);
+		indexRequestRecord(requests, raw, offset);
+		if (raw?.event_type === "environment.changed") {
+			applyEnvironmentChange({ raw, offset, outcomeRecords, environmentChanges });
+			demoteInvalidatedTasks(byId, isSatisfied);
+			continue;
+		}
 		// C3: the Campaign reuses the shared runtime EventLog, which also carries
-		// unrelated rows (action.requested/completed, observation.captured, ...).
-		// A row that is NOT a campaign event at all is IGNORED, never counted as a
-		// rejected campaign event. Only a genuine `campaign.*` envelope that is
-		// malformed/unauthorized is rejected. This keeps `events_rejected` an honest
-		// count of campaign-contract violations in a mixed log.
+		// unrelated rows. A row that is NOT a campaign event is IGNORED; only a
+		// genuine malformed/unauthorized `campaign.*` envelope is rejected.
 		const isCampaignRow = raw?.event_type === "runtime.note" && isCampaignEventKind(raw?.payload?.kind);
-		// DURABLE TOOL CHARGE (E1 §7.2 `c6.tool`, version `e1-tool-charge-1.0`). This
-		// is a `runtime.note` that participates in the SAME reducer as live/rebuild/
-		// status, so a repeated unit is deduplicated and never double-charged.
-		const isToolCharge = raw?.event_type === "runtime.note" && raw?.payload?.kind === "c6.tool";
-		if (isToolCharge) {
-			const charge = reduceToolCharge({ raw, toolCharges, campaign_id });
-			if (charge.ok) health.events_applied += 1;
-			else {
-				rejected.push({ offset, event_id: raw?.event_id ?? null, reason: charge.reason });
+		// DURABLE TOOL CHARGE (`c6.tool`): validated by the SAME evaluator the Host
+		// uses before committing, against the authority state at THIS prefix.
+		if (raw?.event_type === "runtime.note" && raw?.payload?.kind === "c6.tool") {
+			const verdict = evaluateToolRecord({
+				payload: raw.payload,
+				sourceKind: raw.source?.kind ?? null,
+				recordedAt: raw.recorded_at ?? null,
+				state: toolState(),
+			});
+			if (!verdict.ok) {
+				rejected.push({ offset, event_id: raw?.event_id ?? null, reason: verdict.reason });
 				health.events_rejected += 1;
+			} else {
+				if (!verdict.duplicate)
+					toolCharges.set(verdict.key, {
+						...verdict.entry,
+						...(raw.payload.phase === "charged" ? { charge_event_id: raw.event_id ?? null } : {}),
+						...(raw.payload.phase === "finished"
+							? {
+									finish_event_id: raw.event_id ?? null,
+									result_ref: raw.payload.result_ref ?? null,
+									result_digest: raw.payload.result_digest ?? null,
+								}
+							: {}),
+					});
+				else health.events_deduplicated += 1;
+				health.events_applied += 1;
 			}
 			continue;
 		}
@@ -293,15 +433,25 @@ export function projectQueueFromEvents({
 		}
 
 		const applied = applyEvent({
-			envelope: { ...envelope, __event_id: raw.event_id ?? null, __event_digest: raw.event_digest ?? null },
+			envelope: {
+				...envelope,
+				__event_id: raw.event_id ?? null,
+				__event_digest: raw.event_digest ?? null,
+				__payload: raw.payload ?? {},
+				__recorded_at: Number.isFinite(recordedAt) ? recordedAt : null,
+			},
 			offset,
 			...context,
 		});
+		if (envelope.kind === "campaign.oracle.result" && raw.event_id && envelope.outcome_id)
+			outcomeEvents.set(raw.event_id, { outcome_id: envelope.outcome_id, duplicate: applied.duplicate === true });
 		if (!applied.ok) {
 			rejected.push({ offset, event_id: raw.event_id, reason: applied.reason });
 			health.events_rejected += 1;
 			continue;
 		}
+		if (envelope.kind === "campaign.task.started" && timeAnchor.campaign_started_at === null)
+			timeAnchor.campaign_started_at = acceptedStarts.get(envelope.task_id)?.first_recorded_at ?? null;
 		if (dedupKey) {
 			appliedCommands.add(dedupKey);
 			// F12: record the dedup key on the task row so a checkpoint restore can
@@ -312,38 +462,46 @@ export function projectQueueFromEvents({
 				if (!target.applied_command_keys.includes(dedupKey)) target.applied_command_keys.push(dedupKey);
 			}
 		}
-		promoteReadyTasks(byId);
+		demoteInvalidatedTasks(byId, isSatisfied);
+		promoteReadyTasks(byId, isSatisfied);
 		health.events_applied += 1;
 		lastAppliedEventId = raw.event_id ?? null;
 		lastAppliedOffset = offset;
 	}
 
-	// 3. Derive dependency status + ready promotion from the satisfied set.
+	// 3. Derive dependency status + ready promotion from the EFFECTIVE satisfied set.
 	for (const item of byId.values()) {
 		item.dependency_status = {};
 		for (const dep of item.depends_on) {
 			const depItem = byId.get(dep);
-			item.dependency_status[dep] = depItem?.state === "completed" ? "satisfied" : "pending";
+			item.dependency_status[dep] = isSatisfied(dep)
+				? "satisfied"
+				: depItem?.state === "completed"
+					? "invalidated"
+					: "pending";
 		}
+		item.effective_status =
+			item.state === "completed" ? (isSatisfied(item.task_id) ? "effective" : "invalidated") : item.state;
 	}
-	promoteReadyTasks(byId);
+	demoteInvalidatedTasks(byId, isSatisfied);
+	promoteReadyTasks(byId, isSatisfied);
 
 	health.last_applied_event_id = lastAppliedEventId;
 	health.last_applied_offset = lastAppliedOffset;
-	// E1 §7.1: `allocation_total` is the GROSS committed allocation (static Task
-	// budgets + every admitted dynamic definition). It is NOT reduced by actual
-	// consumption or release: gross = outstanding reserved + consumed + released, so
-	// the invariant holds whether a unit is consumed, released or cancelled.
-	budget.allocation_total = zeroBudget();
-	for (const key of BUDGET_KEYS)
-		budget.allocation_total[key] =
-			(budget.reserved[key] ?? 0) + (budget.consumed[key] ?? 0) + (budget.released[key] ?? 0);
+	// E1-CC §7.1: `allocation_total` is the explicit GROSS allocation counter.
+	budget.allocation_total = { ...allocation };
 	health.reservation_outstanding = { ...budget.reserved };
 	health.remaining = remainingBudget(limit, budget);
+	health.allocation_remaining = Object.fromEntries(
+		BUDGET_KEYS.map((key) => [key, Math.max(0, (limit[key] ?? 0) - (allocation[key] ?? 0))]),
+	);
 	health.budget_limit = limit;
 	health.budget_limit_valid = limitParse.ok;
 	if (!limitParse.ok) reasons.push(...limitParse.reasons);
 
+	const records = [...outcomeRecords.values()];
+	const byTaskDeadlines = {};
+	for (const taskId of acceptedStarts.keys()) byTaskDeadlines[taskId] = deadlinesOf(taskId);
 	return {
 		ok: reasons.length === 0,
 		reasons,
@@ -359,11 +517,18 @@ export function projectQueueFromEvents({
 		// yields the SAME validity judgement.
 		authority: {
 			campaign_id,
-			manifest_digest: manifest ? digest(manifest) : null,
-			context_digest: manifest?.planning_contract?.digest ?? null,
+			manifest_digest: manifestDigest,
+			context_digest: contextDigest,
 			physical_tail: events.length - 1,
 			accepted_outcomes: [...acceptedOutcomes],
 			accepted_definitions: [...dynamicDefinitions.keys()],
+			accepted_starts: [...acceptedStarts.entries()].map(([task_id, start]) => ({ task_id, ...start })),
+			outcome_records: records,
+			outcome_events: Object.fromEntries(outcomeEvents),
+			effective_judgments: records.filter((r) => r.accepted && r.effective),
+			environment_changes: environmentChanges,
+			deadlines: { ...timeAnchor, byTask: byTaskDeadlines },
+			requests: Object.fromEntries(requests),
 			rejections: rejected.map((r) => ({ offset: r.offset, event_id: r.event_id, reason: r.reason })),
 		},
 		// F12: expose the dedup sets so the scheduler can persist them and a
@@ -407,63 +572,6 @@ function emptyProjection(campaign_id, revision) {
 		revision,
 		campaign_id,
 	};
-}
-
-/**
- * Reduce ONE durable `c6.tool` charge/finish note into the tool-charge index.
- * The dedup identity is Campaign/Task/Episode/request_id/tool_call_id/unit_id; a
- * repeated CHARGED record for the same identity is idempotent (never re-charged),
- * a FINISHED record only annotates the existing charge. A charge that does not
- * match the current campaign is ignored.
- *
- * @param {{raw: any, toolCharges: Map<string, any>, campaign_id: string}} args
- */
-function reduceToolCharge({ raw, toolCharges, campaign_id }) {
-	const p = raw?.payload ?? {};
-	if (p.campaign_id && p.campaign_id !== campaign_id)
-		return { ok: false, reason: "tool charge belongs to another campaign" };
-	if (p.version !== "e1-tool-charge-1.0")
-		return { ok: false, reason: `unsupported tool charge version ${String(p.version)}` };
-	if (typeof p.request_id !== "string" || p.request_id.length === 0)
-		return { ok: false, reason: "tool charge requires a request_id" };
-	if (typeof p.tool_call_id !== "string" || p.tool_call_id.length === 0)
-		return { ok: false, reason: "tool charge requires a tool_call_id" };
-	if (typeof p.unit_id !== "string" || p.unit_id.length === 0)
-		return { ok: false, reason: "tool charge requires a unit_id" };
-	const key = [
-		p.campaign_id ?? campaign_id,
-		p.task_id ?? "-",
-		p.episode_id ?? "-",
-		p.request_id,
-		p.tool_call_id,
-		p.unit_id,
-	].join("|");
-	const prior = toolCharges.get(key) ?? null;
-	if (p.phase === "charged") {
-		if (prior?.charged === true) return { ok: true }; // idempotent
-		toolCharges.set(key, {
-			charged: true,
-			finished: prior?.finished === true,
-			task_id: p.task_id ?? null,
-			episode_id: p.episode_id ?? null,
-			request_id: p.request_id,
-			tool_call_id: p.tool_call_id,
-			unit_id: p.unit_id,
-			tool_name: p.tool_name ?? null,
-			arguments_digest: p.arguments_digest ?? null,
-			units: Number.isSafeInteger(p.units) ? p.units : 1,
-			charge_event_id: raw.event_id ?? null,
-		});
-		return { ok: true };
-	}
-	if (p.phase === "finished") {
-		if (!prior?.charged) return { ok: false, reason: `finished charge has no prior charged record for ${key}` };
-		prior.finished = true;
-		prior.result_ref = p.result_ref ?? prior.result_ref ?? null;
-		prior.result_digest = p.result_digest ?? prior.result_digest ?? null;
-		return { ok: true };
-	}
-	return { ok: false, reason: `unknown tool charge phase ${String(p.phase)}` };
 }
 
 function emptyLedger() {
@@ -529,10 +637,20 @@ function applyEvent({
 	dynamicDefinitions,
 	outcomeIndex,
 	manifest,
+	manifestDigest,
+	contextDigest,
+	planningAuthority,
 	tasks,
-	artifacts,
+	artifactLog,
+	acceptedStarts,
+	outcomeRecords,
+	allocation,
 	control,
+	isSatisfied,
 }) {
+	// Evidence valid at THIS prefix only (never the final full-stream index).
+	const artifacts = artifactLog.view(offset);
+	const ctx = { manifest, manifestDigest, contextDigest, acceptedStarts, byId };
 	switch (envelope.kind) {
 		case "campaign.task.started": {
 			if (!envelope.task_id) return { ok: false, reason: "task_id is required" };
@@ -544,98 +662,47 @@ function applyEvent({
 			if (TERMINAL_STATES.includes(item.state)) {
 				return { ok: false, reason: `terminal task ${item.task_id} (${item.state}) cannot be restarted` };
 			}
-			if (item.state === "queued") {
-				const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
-				if (!allSatisfied) return { ok: false, reason: "dependencies are not satisfied" };
-			} else if (item.state !== "ready") {
+			if (item.awaiting_plan_ready === true)
+				return { ok: false, reason: `task ${item.task_id} is held by the plan-ready gate` };
+			if (!item.depends_on.every((dep) => isSatisfied(dep)))
+				return { ok: false, reason: "dependency_invalidated: dependencies are not effectively satisfied" };
+			if (item.state !== "queued" && item.state !== "ready")
 				return { ok: false, reason: `task ${item.task_id} cannot start from ${item.state}` };
-			}
+			if (typeof envelope.episode_id !== "string" || envelope.episode_id.length === 0)
+				return { ok: false, reason: "invalid_task_binding: a started task requires its episode_id" };
+			// A start that DECLARES a run binding must name THIS run.
+			const declared = envelope.__payload ?? {};
+			if (declared.manifest_digest !== undefined && declared.manifest_digest !== manifestDigest)
+				return { ok: false, reason: "invalid_task_binding: start manifest_digest does not match the run" };
+			if (declared.context_digest !== undefined && declared.context_digest !== contextDigest)
+				return { ok: false, reason: "invalid_task_binding: start context_digest does not match the run" };
+			if (item.state === "queued") item.state = "ready";
 			const moved = transition(item, "running");
 			if (!moved.ok) return moved;
-			item.episode_id = envelope.episode_id ?? item.episode_id;
+			item.episode_id = envelope.episode_id;
 			item.applied_command_ids.push(envelope.command_id);
+			const previous = acceptedStarts.get(item.task_id) ?? null;
+			acceptedStarts.set(item.task_id, {
+				episode_id: envelope.episode_id,
+				offset,
+				event_id: envelope.__event_id ?? null,
+				first_recorded_at: previous?.first_recorded_at ?? envelope.__recorded_at ?? null,
+			});
 			return { ok: true };
 		}
-		case "campaign.oracle.result": {
-			if (!envelope.task_id) return { ok: false, reason: "task_id is required" };
-			const item = byId.get(envelope.task_id);
-			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
-			if (!envelope.outcome_id) return { ok: false, reason: "outcome_id is required" };
-			if (appliedOutcomes.has(envelope.outcome_id)) return { ok: true }; // idempotent
-			const definition = item.definition ?? null;
-			if (!definition) return { ok: false, reason: `task ${envelope.task_id} has no definition to bind an Outcome` };
-			const stepId = envelope.step_id ?? envelope.outcome?.step_id ?? null;
-			const isTaskOracle = envelope.task_oracle === true;
-
-			// F2 (provenance binding) is enforced inside the resolver, which receives
-			// the committed event source; nothing to compute here.
-
-			if (isTaskOracle) {
-				const resolved = resolveTaskOutcome({
-					result: envelope.outcome,
-					task: definition,
-					episodeId: item.episode_id ?? envelope.episode_id ?? null,
-					scope: currentTaskScope(definition),
-					artifacts,
-					eventSource: envelope.source_kind,
-				});
-				appliedOutcomes.add(envelope.outcome_id);
-				outcomeIndex.set(
-					envelope.outcome_id,
-					resolved.outcome ?? { outcome_id: envelope.outcome_id, status: "invalid" },
-				);
-				if (!resolved.ok) return { ok: false, reason: `oracle outcome rejected: ${resolved.reasons.join("; ")}` };
-				acceptedOutcomes.add(envelope.outcome_id);
-				if (!item.task_outcomes) item.task_outcomes = [];
-				item.task_outcomes.push({ outcome_id: envelope.outcome_id, status: resolved.status, task_oracle: true });
-				item.task_outcome_status = resolved.status;
-				item.task_outcome_ref = envelope.outcome_id;
-				if (resolved.status === "unknown")
-					applyTerminalEvidence(
-						item,
-						"unknown",
-						envelope.reason === "delayed_verification" ? "delayed_verification" : "insufficient_evidence",
-					);
-				else if (resolved.status === "failure") applyTerminalEvidence(item, "failed", "oracle_failure");
-				else if (resolved.status === "invalid") applyTerminalEvidence(item, "failed", "invalid_outcome");
-				else if (resolved.status === "success" && item.state === "unknown") {
-					const reopened = transition(item, "waiting_oracle", "illegal unknown re-open");
-					if (!reopened.ok) return reopened;
-					item.stop_reason = null;
-				}
-				return { ok: true };
-			}
-
-			// A STAGE-level Outcome: run the FULL trusted stage binding (F11) — task,
-			// episode, declared criterion, independent provenance, current scope, and
-			// non-empty resolvable evidence — before it may enter the projection.
-			const stage = (definition.stages ?? []).find((s) => s.stage_id === stepId);
-			if (!stage) return { ok: false, reason: `stage outcome references unknown stage ${String(stepId)}` };
-			const outcome = envelope.outcome ?? {};
-			const stageVerdict = resolveStageOutcome({
-				result: outcome,
-				task: definition,
-				stage,
-				episodeId: item.episode_id ?? null,
-				scope: currentTaskScope(definition),
+		case "campaign.oracle.result":
+			return applyOracleResult({
+				envelope,
+				offset,
+				byId,
+				appliedOutcomes,
+				acceptedOutcomes,
+				outcomeIndex,
+				outcomeRecords,
+				acceptedStarts,
 				artifacts,
-				eventSource: envelope.source_kind,
+				campaign_id,
 			});
-			if (!stageVerdict.ok) return { ok: false, reason: `stage outcome rejected: ${stageVerdict.reasons.join("; ")}` };
-			appliedOutcomes.add(envelope.outcome_id);
-			acceptedOutcomes.add(envelope.outcome_id);
-			// F8: store the COMPLETE canonical Stage Outcome so the snapshot, the
-			// projection digest, the checkpoint and prefix+tail/full replay all see it.
-			const canonical = canonicalStageOutcome(outcome, {
-				outcome_id: envelope.outcome_id,
-				step_id: stepId,
-				task_id: item.task_id,
-			});
-			if (!item.stage_outcomes) item.stage_outcomes = [];
-			item.stage_outcomes.push(canonical);
-			outcomeIndex.set(envelope.outcome_id, canonical);
-			return { ok: true };
-		}
 		case "campaign.task.completed": {
 			const item = byId.get(envelope.task_id);
 			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
@@ -680,8 +747,16 @@ function applyEvent({
 			const item = byId.get(envelope.task_id);
 			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
 			if (item.state !== "paused") return { ok: false, reason: `only a paused task can resume, not ${item.state}` };
-			const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
-			const moved = transition(item, allSatisfied ? "ready" : "queued", "illegal resume");
+			// Resume re-checks EFFECTIVE satisfaction, never the completed history
+			// label. The frozen C0 machine has no paused -> queued edge, so a resume
+			// whose prerequisite is no longer effective is refused and the Task stays
+			// paused (no execution permission is granted).
+			if (!item.depends_on.every((dep) => isSatisfied(dep)))
+				return {
+					ok: false,
+					reason: "dependency_invalidated: a paused task cannot resume onto an ineffective dependency",
+				};
+			const moved = transition(item, "ready", "illegal resume");
 			if (!moved.ok) return moved;
 			return { ok: true };
 		}
@@ -712,11 +787,25 @@ function applyEvent({
 			return { ok: true };
 		}
 		case "campaign.proposal.admitted":
-			return applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, tasks, campaign_id });
+			return applyAdmitted({ envelope, offset, byId, budget, allocation, proposals, manifest, tasks, campaign_id });
 		case "campaign.plan.submitted":
-			return applyPlanSubmitted({ envelope, offset, plans });
+			return applyPlanSubmitted({ envelope, offset, plans, ctx });
 		case "campaign.plan.admitted":
-			return applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, campaign_id, dynamicDefinitions });
+			return applyPlanAdmitted({
+				envelope,
+				offset,
+				byId,
+				budget,
+				allocation,
+				plans,
+				manifest,
+				tasks,
+				campaign_id,
+				dynamicDefinitions,
+				planningAuthority,
+				artifactLog,
+				ctx,
+			});
 		case "campaign.plan.blocked":
 		case "campaign.plan.rejected": {
 			// Record the rejection/block on the SUBMITTED candidate so the plan index
@@ -742,6 +831,8 @@ function applyEvent({
 			// prefix can never release a child Task.
 			const item = byId.get(envelope.task_id);
 			if (!item) return { ok: false, reason: `unknown planning task ${envelope.task_id}` };
+			const readyBinding = checkPlanBinding({ envelope, ctx, planningTaskId: envelope.task_id, phase: "completed" });
+			if (!readyBinding.ok) return readyBinding;
 			if (item.state !== "completed")
 				return {
 					ok: false,
@@ -770,7 +861,7 @@ function applyEvent({
 			for (const child of byId.values()) {
 				if (child.awaiting_plan_ready === true && child.plan_id === planId) child.awaiting_plan_ready = false;
 			}
-			promoteReadyTasks(byId);
+			promoteReadyTasks(byId, isSatisfied);
 			return { ok: true };
 		}
 		case "campaign.proposal.blocked":
@@ -784,6 +875,7 @@ function applyEvent({
 			item.reservation = parseBudgetStrict(item.reservation).value ?? zeroBudget();
 			for (const key of BUDGET_KEYS) item.reservation[key] += delta.value[key];
 			addBudget(budget.reserved, delta.value);
+			addBudget(allocation, delta.value);
 			return { ok: true };
 		}
 		case "campaign.budget.consumed": {
@@ -878,6 +970,167 @@ function applyEvent({
 }
 
 /**
+ * Resolve ONE committed Campaign Outcome into an AcceptedOutcome record.
+ *
+ *   * identity: the FIRST record for an outcome_id is final. An identical repeat
+ *     is a duplicate of that record (accepted or rejected); different content
+ *     under the same id is `outcome_identity_conflict` and changes nothing;
+ *   * binding: the Episode is the Task's ACCEPTED start, never the result's own
+ *     self-reported episode;
+ *   * evidence: resolved against the artifact log at THIS prefix;
+ *   * supersedes: only a legal same-binding correction retires the prior record.
+ */
+function applyOracleResult({
+	envelope,
+	offset,
+	byId,
+	appliedOutcomes,
+	acceptedOutcomes,
+	outcomeIndex,
+	outcomeRecords,
+	acceptedStarts,
+	artifacts,
+	campaign_id,
+}) {
+	if (!envelope.task_id) return { ok: false, reason: "task_id is required" };
+	if (!envelope.outcome_id) return { ok: false, reason: "outcome_id is required" };
+	const contentDigest = outcomeContentDigest(envelope.__payload);
+	const prior = outcomeRecords.get(envelope.outcome_id) ?? null;
+	if (prior) {
+		if (prior.content_digest !== contentDigest)
+			return {
+				ok: false,
+				reason: `outcome_identity_conflict: outcome ${envelope.outcome_id} repeats with different content`,
+			};
+		if (!prior.accepted)
+			return { ok: false, duplicate: true, reason: `duplicate of rejected outcome: ${prior.reason}` };
+		return { ok: true, duplicate: true };
+	}
+	const isTaskOracle = envelope.task_oracle === true;
+	// The envelope names the Stage; `outer ?? inner` never fabricates a binding.
+	const stepId = isTaskOracle ? null : (envelope.step_id ?? null);
+	const outcome = envelope.outcome ?? {};
+	const record = {
+		outcome_id: envelope.outcome_id,
+		event_id: envelope.__event_id ?? null,
+		offset,
+		content_digest: contentDigest,
+		campaign_id,
+		task_id: envelope.task_id,
+		episode_id: null,
+		stage_id: stepId,
+		task_oracle: isTaskOracle,
+		criterion: outcome.criterion ?? null,
+		scope: outcome.scope ?? outcome.provenance?.scope ?? null,
+		scope_key: scopeKey(outcome.scope ?? outcome.provenance?.scope ?? null),
+		subject: outcome.criterion?.expected ?? null,
+		status: outcome.status ?? envelope.status ?? null,
+		source: envelope.source_kind,
+		evidence_refs: Array.isArray(outcome.evidence_refs) ? outcome.evidence_refs : [],
+		observed: outcome.observed ?? null,
+		supersedes: outcome.supersedes ?? null,
+		accepted: false,
+		effective: false,
+		ineffective_reason: null,
+		reason: null,
+	};
+	outcomeRecords.set(envelope.outcome_id, record);
+	appliedOutcomes.add(envelope.outcome_id);
+	const refuse = (reason) => {
+		record.reason = reason;
+		record.ineffective_reason = "rejected";
+		if (!outcomeIndex.has(envelope.outcome_id))
+			outcomeIndex.set(envelope.outcome_id, { outcome_id: envelope.outcome_id, status: "invalid" });
+		return { ok: false, reason };
+	};
+	const item = byId.get(envelope.task_id);
+	if (!item) return refuse(`unknown task ${envelope.task_id}`);
+	const definition = item.definition ?? null;
+	if (!definition) return refuse(`task ${envelope.task_id} has no definition to bind an Outcome`);
+	const start = acceptedStarts.get(envelope.task_id) ?? null;
+	if (!start && !item.episode_id)
+		return refuse(`invalid_outcome_binding: task ${envelope.task_id} has no accepted started episode`);
+	record.episode_id = start?.episode_id ?? item.episode_id;
+	if (envelope.episode_id && envelope.episode_id !== record.episode_id)
+		return refuse(`invalid_outcome_binding: envelope episode ${envelope.episode_id} is not the accepted episode`);
+	if (!isTaskOracle) {
+		if (!stepId) return refuse("invalid_outcome_binding: stage outcome is missing the envelope step_id");
+		const innerStep = outcome.step_id ?? outcome.stage_id ?? null;
+		if (innerStep !== null && innerStep !== stepId)
+			return refuse("invalid_outcome_binding: outcome stage binding does not match the envelope step_id");
+	}
+	const scope = currentTaskScope(definition);
+	let resolved;
+	if (isTaskOracle) {
+		resolved = resolveTaskOutcome({
+			result: outcome,
+			task: definition,
+			episodeId: record.episode_id,
+			scope,
+			artifacts,
+			eventSource: envelope.source_kind,
+		});
+	} else {
+		const stage = (definition.stages ?? []).find((s) => s.stage_id === stepId);
+		if (!stage) return refuse(`stage outcome references unknown stage ${String(stepId)}`);
+		resolved = resolveStageOutcome({
+			result: outcome,
+			task: definition,
+			stage,
+			episodeId: record.episode_id,
+			scope,
+			artifacts,
+			eventSource: envelope.source_kind,
+		});
+	}
+	if (!resolved.ok)
+		return refuse(`${isTaskOracle ? "oracle" : "stage"} outcome rejected: ${resolved.reasons.join("; ")}`);
+	if (record.supersedes) {
+		const target = outcomeRecords.get(record.supersedes) ?? null;
+		const verdict = validateCampaignSupersede({ prior: target, next: record });
+		if (!verdict.valid) return refuse(`invalid_supersede: ${verdict.reason}`);
+		target.effective = false;
+		target.ineffective_reason = "superseded";
+		target.superseded_by = record.outcome_id;
+	}
+	record.accepted = true;
+	record.effective = true;
+	record.status = resolved.status;
+	acceptedOutcomes.add(envelope.outcome_id);
+	if (isTaskOracle) {
+		outcomeIndex.set(envelope.outcome_id, resolved.outcome ?? { outcome_id: envelope.outcome_id, status: "invalid" });
+		if (!item.task_outcomes) item.task_outcomes = [];
+		item.task_outcomes.push({ outcome_id: envelope.outcome_id, status: resolved.status, task_oracle: true });
+		item.task_outcome_status = resolved.status;
+		item.task_outcome_ref = envelope.outcome_id;
+		if (resolved.status === "unknown")
+			applyTerminalEvidence(
+				item,
+				"unknown",
+				envelope.reason === "delayed_verification" ? "delayed_verification" : "insufficient_evidence",
+			);
+		else if (resolved.status === "failure") applyTerminalEvidence(item, "failed", "oracle_failure");
+		else if (resolved.status === "invalid") applyTerminalEvidence(item, "failed", "invalid_outcome");
+		else if (resolved.status === "success" && item.state === "unknown") {
+			const reopened = transition(item, "waiting_oracle", "illegal unknown re-open");
+			if (!reopened.ok) return reopened;
+			item.stop_reason = null;
+		}
+		return { ok: true };
+	}
+	// F8: store the COMPLETE canonical Stage Outcome so every replay sees it.
+	const canonical = canonicalStageOutcome(outcome, {
+		outcome_id: envelope.outcome_id,
+		step_id: stepId,
+		task_id: item.task_id,
+	});
+	if (!item.stage_outcomes) item.stage_outcomes = [];
+	item.stage_outcomes.push(canonical);
+	outcomeIndex.set(envelope.outcome_id, canonical);
+	return { ok: true };
+}
+
+/**
  * F3 + F7: the single completion gate used by BOTH `campaign.task.completed` and
  * `campaign.reconciliation.resolved`. It requires a current, matched task-Oracle
  * success AND every required Stage to resolve through the C0 aggregation
@@ -923,6 +1176,7 @@ function completeTaskIfVerified({ item, outcomeId, artifacts, reasonPrefix, soft
 	const moved = transition(item, "completed", `illegal ${reasonPrefix}`);
 	if (!moved.ok) return { ok: false, reason: moved.reason, soft };
 	item.task_outcome_ref = outcomeId ?? item.task_outcome_ref ?? null;
+	item.completion_outcome_ref = item.task_outcome_ref;
 	item.stage_aggregate = aggregate.stage_aggregates ?? [];
 	return { ok: true };
 }
@@ -942,23 +1196,141 @@ function applyTerminalEvidence(item, to, stopReason) {
 	return { ok: true };
 }
 
-function promoteReadyTasks(byId) {
+/**
+ * The ONE Task budget a consumer may read: an accepted dynamic definition is
+ * already normalized; a static Manifest task normalizes with explicit zero for
+ * missing dimensions. Never the Campaign total.
+ */
+export function normalizedTaskBudget(definition) {
+	if (!definition) return zeroBudget();
+	const normalized = normalizeExecutableTask({ definition: withoutTaskDigest(definition), origin: "static" });
+	return normalized.ok ? normalized.task.task_budget : zeroBudget();
+}
+
+/**
+ * Rebuild the tool-charge evaluation state from a projection's OUTPUT, so the
+ * Host's pre-commit decision evaluates exactly what the reducer will replay.
+ */
+export function toolStateFromProjection(projection, manifest) {
+	const authority = projection?.authority ?? {};
+	const byTask = new Map((projection?.tasks ?? []).map((task) => [task.task_id, task]));
+	return {
+		campaign_id: authority.campaign_id ?? manifest?.campaign_id ?? null,
+		manifest_digest: authority.manifest_digest ?? null,
+		context_digest: authority.context_digest ?? null,
+		charges: new Map((projection?.tool_charges ?? []).map(({ key, ...entry }) => [key, entry])),
+		requests: new Map(Object.entries(authority.requests ?? {})),
+		starts: new Map((authority.accepted_starts ?? []).map(({ task_id, ...start }) => [task_id, start])),
+		runningTaskId: (projection?.tasks ?? []).find((task) => task.state === "running")?.task_id ?? null,
+		taskToolLimit: (taskId) => normalizedTaskBudget(byTask.get(taskId)?.definition ?? null).tool_calls,
+		campaignToolLimit: projection?.health?.budget_limit?.tool_calls ?? 0,
+		deadlines: (taskId) => authority.deadlines?.byTask?.[taskId] ?? { task: null, campaign: null },
+	};
+}
+
+/**
+ * Promote queued Tasks whose dependencies are EFFECTIVELY satisfied. The
+ * predicate is required: there is no history-label fallback.
+ */
+function promoteReadyTasks(byId, isSatisfied) {
 	const anyRunning = [...byId.values()].some((t) => t.state === "running");
 	for (const item of byId.values()) {
 		if (item.state !== "queued") continue;
 		// E1: a batch-admitted child task waits for the SEPARATE plan-ready gate in
 		// addition to its dependencies. Durable definitions alone never dispatch.
 		if (item.awaiting_plan_ready === true) continue;
-		const allSatisfied = item.depends_on.every((dep) => byId.get(dep)?.state === "completed");
+		const allSatisfied = item.depends_on.every((dep) => isSatisfied(dep));
 		if (allSatisfied && !anyRunning) item.state = "ready";
 	}
+}
+
+/**
+ * Withdraw the execution permission of a `ready` (not yet started) Task whose
+ * dependency is no longer EFFECTIVELY satisfied (a legal correction or a trusted
+ * environment change retired the prerequisite). History is untouched: completed
+ * Tasks stay completed and nothing is re-run.
+ */
+function demoteInvalidatedTasks(byId, isSatisfied) {
+	for (const item of byId.values()) {
+		if (item.state !== "ready" || item.depends_on.length === 0) continue;
+		if (!item.depends_on.every((dep) => isSatisfied(dep))) item.state = "queued";
+	}
+}
+
+/**
+ * A trusted `environment.changed` retires every ACCEPTED Outcome of the same
+ * scope (and Episode, when named) recorded BEFORE it. Scope-less changes stale
+ * nothing (fail closed). Records are marked ineffective; history is preserved.
+ */
+function applyEnvironmentChange({ raw, offset, outcomeRecords, environmentChanges }) {
+	if (!["oracle", "human"].includes(raw?.source?.kind)) return;
+	const key = scopeKey(raw.payload?.scope ?? raw.payload?.environment_fingerprint ?? null);
+	const invalidated = [];
+	if (key)
+		for (const record of outcomeRecords.values()) {
+			if (!record.accepted || !record.effective || record.offset >= offset) continue;
+			if (record.scope_key !== key) continue;
+			if (raw.episode_id && record.episode_id !== raw.episode_id) continue;
+			record.effective = false;
+			record.ineffective_reason = "environment_changed";
+			record.invalidated_by = raw.event_id ?? null;
+			invalidated.push(record.outcome_id);
+		}
+	environmentChanges.push({ event_id: raw.event_id ?? null, offset, scope: key, invalidated });
 }
 
 /**
  * E1: record a SUBMITTED candidate plan. It is a candidate only: recording it
  * never admits or dispatches anything.
  */
-function applyPlanSubmitted({ envelope, offset, plans }) {
+/**
+ * E1-CC §4.1/§5.2: every Host plan envelope of a trusted E1 run names the run
+ * it belongs to (binding version, Manifest revision/digest, planning context
+ * digest) and the ACTUAL accepted planning Episode. Digests prove association,
+ * not authority; the authority is that they equal THIS run's trusted values.
+ * Streams without a planning contract (non-E1) keep their legacy shape.
+ *
+ * @param {{envelope: any, ctx: any, planningTaskId: string|null, phase: "running"|"completed"}} args
+ */
+function checkPlanBinding({ envelope, ctx, planningTaskId, phase }) {
+	if (!ctx.manifest?.planning_contract) return { ok: true };
+	const p = envelope.__payload ?? {};
+	const bad = (message) => ({ ok: false, reason: `invalid_plan_binding: ${message}` });
+	// Digests are public; the trust comes from the fixed Host writer, so a model
+	// cannot make its own record authoritative by copying them.
+	if (!["runtime", "human", "oracle"].includes(envelope.source_kind))
+		return bad(`source ${String(envelope.source_kind)} is not the Host writer`);
+	if (p.binding_version !== PLAN_BINDING_VERSION) return bad(`binding_version ${String(p.binding_version)}`);
+	if (p.manifest_revision !== (ctx.manifest.revision ?? 0))
+		return bad(`manifest_revision ${String(p.manifest_revision)} is not ${ctx.manifest.revision ?? 0}`);
+	if (p.manifest_digest !== ctx.manifestDigest) return bad("manifest_digest does not match the run");
+	if (p.context_digest !== ctx.contextDigest) return bad("context_digest does not match the planning contract");
+	if (!planningTaskId) return bad("no planning task identity");
+	if (planningTaskId !== ctx.manifest.planning_contract.planning_task_id)
+		return bad(`planning task ${planningTaskId} is not the contract planning task`);
+	const start = ctx.acceptedStarts.get(planningTaskId) ?? null;
+	if (!start) return bad(`planning task ${planningTaskId} has no accepted start`);
+	const episode = p.episode_id ?? envelope.episode_id ?? null;
+	if (episode !== start.episode_id) return bad(`episode ${String(episode)} is not the accepted planning episode`);
+	const item = ctx.byId.get(planningTaskId);
+	if (item?.state !== phase) return bad(`planning task is ${String(item?.state)}, not ${phase}`);
+	return { ok: true };
+}
+
+/** The binding identity of an envelope, kept on the plan entry for duplicate checks. */
+function envelopeBinding(envelope) {
+	const p = envelope.__payload ?? {};
+	return {
+		binding_version: p.binding_version ?? null,
+		manifest_revision: p.manifest_revision ?? null,
+		manifest_digest: p.manifest_digest ?? null,
+		context_digest: p.context_digest ?? null,
+		episode_id: p.episode_id ?? envelope.episode_id ?? null,
+		planning_task_id: envelope.planning_task_id ?? null,
+	};
+}
+
+function applyPlanSubmitted({ envelope, offset, plans, ctx }) {
 	const planId = envelope.plan_id;
 	if (!planId) return { ok: false, reason: "plan_id is required for a submitted plan" };
 	// Every applicable plan envelope must carry the planning Task identity. A
@@ -968,6 +1340,20 @@ function applyPlanSubmitted({ envelope, offset, plans }) {
 	if (!envelope.plan || typeof envelope.plan !== "object") {
 		return { ok: false, reason: "submitted plan has no resolvable plan object" };
 	}
+	// An EXACT repeat of an accepted candidate (same id, digest and binding) is an
+	// idempotent no-op even after planning ended: it creates no transition.
+	const repeat = plans.get(planId) ?? null;
+	// Same id with other content is an identity conflict, whatever the phase.
+	if (repeat && repeat.digest !== envelope.plan_digest)
+		return { ok: false, reason: `plan_identity_conflict: plan_id ${planId} already submitted with a different digest` };
+	const exactRepeat =
+		repeat !== null &&
+		repeat.digest === envelope.plan_digest &&
+		digest(repeat.binding ?? null) === digest(envelopeBinding(envelope));
+	const binding = exactRepeat
+		? { ok: true }
+		: checkPlanBinding({ envelope, ctx, planningTaskId: envelope.planning_task_id, phase: "running" });
+	if (!binding.ok) return binding;
 	// The candidate's OWN plan_id must equal the envelope identity. A foreign inner
 	// id (even with a re-hashed digest) is refused whole-batch.
 	if (envelope.plan.plan_id !== planId)
@@ -1009,6 +1395,7 @@ function applyPlanSubmitted({ envelope, offset, plans }) {
 		normalized: null,
 		planning_task_id: envelope.planning_task_id ?? null,
 		campaign_id: envelope.campaign_id ?? null,
+		binding: envelopeBinding(envelope),
 	});
 	return { ok: true };
 }
@@ -1028,189 +1415,133 @@ function applyPlanSubmitted({ envelope, offset, plans }) {
  * definitions are already durable.
  */
 /**
- * Recompile a submitted candidate under the manifest's FROZEN planning contract
- * and return the trusted normalized definitions. Used on REPLAY so a durable
- * admitted batch is compared field-by-field against trusted recompilation (not
- * a self-reported digest). Pure: it reads only the manifest + prior candidate.
+ * E1: apply ONE durable plan-admission batch through the SAME compiler the Host
+ * used live (`compilePlanAdmission`), evaluated against THIS prefix's accepted
+ * task ids and gross allocation. The durable batch must equal the trusted
+ * recompile field-by-field (definitions incl. task_digest, reserved budget);
+ * a self-reported or re-hashed definition never substitutes for it.
  *
- * @param {{manifest: any, prior: any, planningTaskId: string}} args
+ *   * one effective plan: a different plan id after an accepted plan is refused;
+ *   * an exact repeat (same id, candidate, definitions, budget, binding) is an
+ *     idempotent duplicate that allocates nothing; any difference is a conflict;
+ *   * a failure mutates nothing (no definition, allocation or permission).
+ *
+ * Child Tasks enter `queued` with `awaiting_plan_ready`: admission is not
+ * activation; `campaign.plan.ready` is the separate gate.
  */
-function recompilePlanDefinitions({ manifest, prior, planningTaskId }) {
-	const authority = loadPlanningAuthority({ manifest });
-	if (!authority.ok)
-		return { ok: false, reason: `plan recompile requires a trusted contract: ${authority.reasons.join("; ")}` };
-	const existingTaskIds = new Set((manifest.tasks ?? []).map((task) => task.task_id));
-	const derived = { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
-	const requiredCriteria = [...(manifest.objective?.required_criteria ?? manifest.objective?.success_criteria ?? [])];
-	const result = validatePlanGraph({
-		plan: prior.plan,
-		manifest,
-		planningTaskId: planningTaskId ?? authority.contract.planning_task_id,
-		existingTaskIds,
-		templates: authority.templates,
-		requiredCriteria,
-		expectedRootGoalRef: authority.contract.root_goal_ref,
-		derivedBudget: derived,
-	});
-	if (result.status !== "admitted")
-		return { ok: false, reason: `plan recompile ${result.status}: ${result.reasons.join("; ")}` };
-	return { ok: true, normalized: result.normalized };
-}
-
-function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, campaign_id, dynamicDefinitions }) {
+function applyPlanAdmitted({
+	envelope,
+	offset,
+	byId,
+	budget,
+	allocation,
+	plans,
+	manifest,
+	tasks,
+	campaign_id,
+	dynamicDefinitions,
+	planningAuthority,
+	artifactLog,
+	ctx,
+}) {
 	const planId = envelope.plan_id;
 	if (!planId) return { ok: false, reason: "plan_id is required for an admitted plan" };
 	if (!manifest) return { ok: false, reason: "no validated Manifest available to confirm plan admission" };
+	if (!manifest.planning_contract)
+		return {
+			ok: false,
+			reason: "legacy_context_unavailable: a plan admission requires the Manifest's trusted planning contract",
+		};
+	if (!planningAuthority?.ok)
+		return {
+			ok: false,
+			reason: `planning_context_conflict: ${(planningAuthority?.reasons ?? ["contract unavailable"]).join("; ")}`,
+		};
+	const payload = envelope.__payload ?? {};
 	const definitions = envelope.plan_tasks;
-	if (!Array.isArray(definitions) || definitions.length === 0) {
+	if (!Array.isArray(definitions) || definitions.length === 0)
 		return { ok: false, reason: "admitted plan batch carries no task definitions" };
-	}
 	const declared = envelope.plan_digest;
-	if (typeof declared !== "string" || declared.length === 0) {
+	if (typeof declared !== "string" || declared.length === 0)
 		return { ok: false, reason: `plan ${planId} admitted without a declared plan_digest` };
-	}
-	// Every applicable plan envelope must carry the planning Task identity.
 	if (typeof envelope.planning_task_id !== "string" || envelope.planning_task_id.length === 0)
 		return { ok: false, reason: `plan ${planId} admitted without a planning_task_id` };
-	// The admitted envelope identity must equal the candidate's own plan_id.
-	const prior = plans.get(planId);
-	// ONE EFFECTIVE PLAN (E1 §6.2): once a plan batch is durably admitted, a
-	// DIFFERENT plan id (or a different content for the same id) is REFUSED as a
-	// whole batch. It never overwrites the active plan, its budget or its
-	// definitions. A completely identical re-admission of the SAME id/digest is an
-	// idempotent no-op.
-	const alreadyAdmitted = [...plans.entries()].find(([id, entry]) => entry.status === "admitted" && id !== planId);
-	if (alreadyAdmitted) {
-		return {
-			ok: false,
-			reason: `plan_already_admitted: plan ${alreadyAdmitted[0]} is already the active admitted plan; ${planId} cannot replace it`,
-		};
+	const prior = plans.get(planId) ?? null;
+	const definitionsDigest = digest(definitions);
+	const reservedDigest = digest(payload.reserved_budget ?? null);
+	const bindingDigest = digest(envelopeBinding(envelope));
+	// A repeat of the ACCEPTED admission is compared field-by-field with the
+	// original (incl. its binding) and needs no new phase: it transitions nothing.
+	if (prior?.status !== "admitted") {
+		const binding = checkPlanBinding({ envelope, ctx, planningTaskId: envelope.planning_task_id, phase: "running" });
+		if (!binding.ok) return binding;
 	}
-	// Idempotent by plan id: a repeated IDENTICAL batch with the same digest is a
-	// no-op. A conflicting digest is refused and never overwrites the first record.
 	if (prior?.status === "admitted") {
-		if (prior.digest !== declared) {
-			return { ok: false, reason: `plan_id ${planId} already admitted with a different digest` };
-		}
-		return { ok: true };
-	}
-	// FAIL CLOSED: an admission must reference a prior SAME-CAMPAIGN submitted
-	// candidate whose declared digest matches BOTH the admitted digest AND the
-	// independently recomputed planDigest(candidate.plan). No prior candidate, a
-	// conflicting digest, a missing plan, or a planning identity mismatch rejects
-	// the whole batch BEFORE any queue/budget/definition mutation.
-	if (!prior) {
-		return { ok: false, reason: `plan ${planId} was admitted without a prior submitted candidate` };
-	}
-	if (prior.status !== "submitted") {
-		return { ok: false, reason: `plan ${planId} is in state ${prior.status}, not submitted` };
-	}
-	if (!prior.plan || typeof prior.plan !== "object") {
-		return { ok: false, reason: `plan ${planId} candidate has no resolvable plan` };
-	}
-	if (prior.digest !== declared) {
-		return {
-			ok: false,
-			reason: `plan ${planId} admitted digest ${declared} does not match the submitted digest ${prior.digest}`,
-		};
-	}
-	// Root-goal binding is re-checked on REPLAY from the durable contract: a
-	// candidate whose root_goal_ref does not match the frozen root never admits.
-	const authority = loadPlanningAuthority({ manifest });
-	const frozenRoot = authority.ok ? authority.contract.root_goal_ref : null;
-	if (frozenRoot && prior.plan.root_goal_ref !== frozenRoot) {
-		return {
-			ok: false,
-			reason: `plan ${planId} root_goal_ref ${JSON.stringify(prior.plan.root_goal_ref)} does not match the frozen root goal ${JSON.stringify(frozenRoot)}`,
-		};
-	}
-	const recomputed = planDigest(prior.plan);
-	if (recomputed !== declared) {
-		return {
-			ok: false,
-			reason: `plan ${planId} admitted digest ${declared} does not match planDigest(submitted.plan) ${recomputed}`,
-		};
-	}
-	const submittedPlanningTask = prior.planning_task_id ?? null;
-	if (envelope.planning_task_id && submittedPlanningTask && envelope.planning_task_id !== submittedPlanningTask) {
-		return {
-			ok: false,
-			reason: `plan ${planId} admitted planning task ${envelope.planning_task_id} does not match the submitted planning task ${submittedPlanningTask}`,
-		};
-	}
-	if (prior.campaign_id && envelope.campaign_id && prior.campaign_id !== envelope.campaign_id) {
-		return {
-			ok: false,
-			reason: `plan ${planId} admitted campaign ${envelope.campaign_id} does not match the submitted campaign ${prior.campaign_id}`,
-		};
-	}
-	// TRUSTED RECOMPILE (E1 §5.2 item 6): the durable batch's normalized
-	// definitions must equal what the Host would compile from the submitted
-	// candidate under the manifest's frozen planning contract. This re-checks
-	// target/criterion/scope/oracle/dependency/parent/budget/task-id/order and the
-	// per-task task_digest, so a re-hashed self-reported definition cannot pass.
-	// It applies to a NEW E1 run (a manifest carrying the frozen contract). A
-	// legacy/direct dynamic path without a contract keeps its prior (still
-	// whole-batch, still submitted-bound) behavior.
-	if (manifest.planning_contract) {
-		const recompile = recompilePlanDefinitions({ manifest, prior, planningTaskId: submittedPlanningTask });
-		if (!recompile.ok) return { ok: false, reason: recompile.reason };
-		if (definitions.length !== recompile.normalized.length)
+		const same =
+			prior.digest === declared &&
+			prior.definitions_digest === definitionsDigest &&
+			prior.reserved_digest === reservedDigest &&
+			prior.binding_digest === bindingDigest;
+		if (!same)
 			return {
 				ok: false,
-				reason: `plan ${planId} admitted ${definitions.length} definitions, recompiled ${recompile.normalized.length}`,
+				reason: `plan_identity_conflict: plan ${planId} repeats with a different candidate, definition, budget or binding`,
 			};
-		const byIdRecompiled = new Map(
-			/** @type {any[]} */ (recompile.normalized).map((definition) => [definition.task_id, definition]),
-		);
-		for (const definition of definitions) {
-			const expected = byIdRecompiled.get(definition.task_id);
-			if (!expected) return { ok: false, reason: `plan ${planId} admitted unknown task ${definition.task_id}` };
-			const actual = { ...definition };
-			delete actual.task_digest;
-			const wanted = { ...expected };
-			delete wanted.task_digest;
-			if (digest(actual) !== digest(wanted))
-				return {
-					ok: false,
-					reason: `plan task ${definition.task_id} admitted definition does not match the trusted recompile`,
-				};
-		}
+		return { ok: true, duplicate: true };
 	}
+	const active = [...plans.entries()].find(([, entry]) => entry.status === "admitted");
+	if (active)
+		return {
+			ok: false,
+			reason: `plan_already_admitted: plan ${active[0]} is already the active admitted plan; ${planId} cannot replace it`,
+		};
+	if (!prior) return { ok: false, reason: `plan ${planId} was admitted without a prior submitted candidate` };
+	if (prior.status !== "submitted")
+		return { ok: false, reason: `plan ${planId} is in state ${prior.status}, not submitted` };
+	if (!prior.plan || typeof prior.plan !== "object")
+		return { ok: false, reason: `plan ${planId} candidate has no resolvable plan` };
+	if (prior.digest !== declared || planDigest(prior.plan) !== declared)
+		return { ok: false, reason: `plan_identity_conflict: plan ${planId} admitted digest does not match its candidate` };
+	if (prior.planning_task_id !== envelope.planning_task_id)
+		return { ok: false, reason: `invalid_plan_binding: plan ${planId} admitted for another planning task` };
+	if (digest(prior.binding ?? null) !== bindingDigest)
+		return { ok: false, reason: `invalid_plan_binding: plan ${planId} admission binding differs from its candidate` };
+	// TRUSTED RECOMPILE at THIS prefix: accepted ids + gross allocation.
+	const compiled = compilePlanAdmission({
+		plan: prior.plan,
+		manifest,
+		planningTaskId: envelope.planning_task_id,
+		existingTaskIds: [...byId.keys(), ...tasks.map((task) => task.task_id)],
+		allocation,
+		templates: planningAuthority.templates,
+		rootGoalRef: planningAuthority.contract.root_goal_ref,
+	});
+	if (compiled.status !== "admitted")
+		return { ok: false, reason: `plan recompile ${compiled.status}: ${compiled.reasons.join("; ")}` };
+	if (definitionsDigest !== digest(compiled.normalized))
+		return { ok: false, reason: `plan ${planId} admitted definitions do not match the trusted recompile` };
+	if (reservedDigest !== digest(compiled.reserved_budget))
+		return { ok: false, reason: `plan ${planId} admitted reserved_budget does not match the trusted recompile` };
 	// Validate ALL definitions BEFORE any mutation (whole-graph, no legal prefix).
-	const batchIds = new Set();
 	const knownStageIds = new Set();
 	for (const existing of byId.values())
-		for (const sid of existing.definition?.stages ?? []) knownStageIds.add(sid.stage_id);
+		for (const stage of existing.definition?.stages ?? []) knownStageIds.add(stage.stage_id);
 	for (const task of tasks) for (const stage of task.stages ?? []) knownStageIds.add(stage.stage_id);
 	for (const definition of definitions) {
 		const validation = validateDynamicDefinition(definition);
 		if (!validation.ok) return { ok: false, reason: `plan task definition invalid: ${validation.reasons.join("; ")}` };
-		if (batchIds.has(definition.task_id))
-			return { ok: false, reason: `duplicate task id ${definition.task_id} in plan batch` };
-		batchIds.add(definition.task_id);
-		if (
-			byId.has(definition.task_id) &&
-			byId.get(definition.task_id).definition?.task_digest !== definition.task_digest
-		) {
-			return { ok: false, reason: `task ${definition.task_id} already exists with a different definition` };
-		}
 		for (const stage of definition.stages ?? []) {
 			if (knownStageIds.has(stage.stage_id))
 				return { ok: false, reason: `stage id ${stage.stage_id} is not unique across the Campaign` };
 			knownStageIds.add(stage.stage_id);
 		}
 	}
-	// Apply the WHOLE batch. Child tasks start `queued` (execution waits for the
-	// plan-ready gate + satisfied dependencies); the planning task is not redefined.
 	for (const definition of definitions) {
-		if (byId.has(definition.task_id)) continue; // idempotent by task id
-		const depends = Array.isArray(definition.depends_on) ? definition.depends_on : [];
 		const item = makeQueueItem({
 			campaign_id,
 			task_id: definition.task_id,
-			state: depends.length === 0 ? "queued" : "queued",
-			depends_on: depends,
+			state: "queued",
+			depends_on: Array.isArray(definition.depends_on) ? definition.depends_on : [],
 			order: definition.order ?? byId.size + 1,
 		});
 		item.parent_task_id = definition.parent_task_id ?? null;
@@ -1220,19 +1551,31 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
 		item.awaiting_plan_ready = true;
 		item.plan_id = planId;
 		item.definition = definition;
-		const reservation = parseBudgetStrict(definition.budget_reservation);
-		item.reservation = reservation.ok ? reservation.value : zeroBudget();
+		item.reservation = { ...definition.task_budget };
 		byId.set(definition.task_id, item);
 		dynamicDefinitions.set(definition.task_id, definition);
 		addBudget(budget.reserved, item.reservation);
+		addBudget(allocation, item.reservation);
 	}
+	// The admitted batch identity is the planning Task's evidence artifact.
+	artifactLog.register(`artifact:${envelope.planning_task_id}`, declared, {
+		offset,
+		event_id: envelope.__event_id ?? null,
+		source: "campaign.plan.admitted",
+	});
 	plans.set(planId, {
 		...prior,
 		digest: declared,
 		status: "admitted",
 		reasons: [],
 		normalized: definitions.map((definition) => definition.task_id),
-		planning_task_id: envelope.planning_task_id ?? prior?.planning_task_id ?? null,
+		planning_task_id: envelope.planning_task_id,
+		admitted_event_id: envelope.__event_id ?? null,
+		admitted_event_digest: envelope.__event_digest ?? null,
+		admitted_offset: offset,
+		definitions_digest: definitionsDigest,
+		reserved_digest: reservedDigest,
+		binding_digest: bindingDigest,
 	});
 	return { ok: true };
 }
@@ -1243,7 +1586,7 @@ function applyPlanAdmitted({ envelope, byId, budget, plans, manifest, tasks, cam
  * admission against the live policy. The durable admitted record carries the
  * FULL task definition so the scheduler can recover it without an external array.
  */
-function applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, tasks, campaign_id }) {
+function applyAdmitted({ envelope, offset, byId, budget, allocation, proposals, manifest, tasks, campaign_id }) {
 	const taskId = envelope.task_id;
 	if (!taskId) return { ok: false, reason: "task_id is required for an admitted proposal" };
 	if (byId.has(taskId)) return { ok: true }; // idempotent by task id
@@ -1261,9 +1604,8 @@ function applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, ta
 		return { ok: false, reason: "admitted event has no dynamic-policy 'admitted' decision" };
 	}
 	const consideredTasks = [...tasks, ...[...byId.values()].filter((t) => t.is_dynamic).map(dynamicRowToTask)];
-	const derived = zeroBudget();
-	addBudget(derived, budget.reserved);
-	addBudget(derived, budget.consumed);
+	// Gross allocation (reserved+consumed+released+cancelled), never outstanding only.
+	const derived = { ...allocation };
 	const revalidated = admitTaskProposal({
 		proposal,
 		manifest,
@@ -1300,8 +1642,12 @@ function applyAdmitted({ envelope, offset, byId, budget, proposals, manifest, ta
 	item.semantic_key = semanticKey(proposal);
 	item.proposal_id = proposalId;
 	item.proposal_offset = offset;
+	const after = safeAddBudget(allocation, item.reservation);
+	if (!after || !BUDGET_KEYS.every((key) => after[key] <= (manifest.budget?.[key] ?? 0)))
+		return { ok: false, reason: "allocation_exceeded: the admitted proposal exceeds the Campaign allocation envelope" };
 	byId.set(taskId, item);
 	addBudget(budget.reserved, item.reservation);
+	addBudget(allocation, item.reservation);
 	return { ok: true };
 }
 
@@ -1351,15 +1697,8 @@ function buildDynamicTaskDefinition({ proposal, envelope, campaign_id, admission
 	// exact same definition. The ONE normalized executable shape is produced from
 	// the same alias so workers read only `task_budget`.
 	const normalized = normalizeExecutableTask({ definition, origin: "proposal" });
-	if (normalized.ok)
-		return {
-			...normalized.task,
-			admission_ref: definition.admission_ref,
-			execution_adapter: definition.execution_adapter,
-		};
-	definition.task_budget = { ...(proposal.budget_reservation ?? {}) };
-	definition.task_digest = digest(withoutTaskDigest(definition));
-	return definition;
+	// A definition that cannot normalize is refused by the caller (no fallback).
+	return normalized.ok ? normalized.task : null;
 }
 
 /**

@@ -55,8 +55,27 @@ function isNonEmptyString(value) {
 }
 
 function isNonNegativeInteger(value) {
-	return Number.isInteger(value) && value >= 0;
+	return Number.isSafeInteger(value) && value >= 0;
 }
+
+/** The candidate-node fields the plan transport defines (model-supplied data only). */
+const PLAN_NODE_FIELDS = new Set([
+	"proposed_task_id",
+	"parent_task_id",
+	"depends_on",
+	"goal",
+	"task_type",
+	"template_ref",
+	"target_ref",
+	"required_capabilities",
+	"expected_evidence",
+	"stop_condition",
+	"priority",
+	"budget_reservation",
+	"task_budget",
+	"rationale",
+	"oracle_ref",
+]);
 
 /**
  * Validate the TRANSPORT shape of a submitted plan. A shape error is a
@@ -126,13 +145,32 @@ export function validatePlanShape(plan) {
 			task.priority > PRIORITY_MAX
 		)
 			reasons.push(`${label}.priority must be an integer in [${PRIORITY_MIN}, ${PRIORITY_MAX}]`);
+		const unknown = Object.keys(task).filter((key) => !PLAN_NODE_FIELDS.has(key));
+		if (unknown.length > 0) reasons.push(`${label} carries unknown field(s): ${unknown.sort().join(", ")}`);
 		const reservation = task.budget_reservation;
 		if (!reservation || typeof reservation !== "object") reasons.push(`${label}.budget_reservation is required`);
 		else
 			for (const key of ["wall_time_ms", "model_requests", "tool_calls"]) {
 				if (!isNonNegativeInteger(reservation[key]))
-					reasons.push(`${label}.budget_reservation.${key} must be a non-negative integer`);
+					reasons.push(`${label}.budget_reservation.${key} must be a safe non-negative integer`);
 			}
+		// The model MAY restate the budget as `task_budget`, but then it must be a
+		// complete, dimension-wise equal copy. A conflicting alias is never silently
+		// dropped in favour of the other one.
+		if (task.task_budget !== undefined) {
+			const alias = task.task_budget;
+			if (!alias || typeof alias !== "object" || Array.isArray(alias))
+				reasons.push(`${label}.task_budget must be an object when present`);
+			else
+				for (const key of ["wall_time_ms", "model_requests", "tool_calls"]) {
+					if (!isNonNegativeInteger(alias[key]))
+						reasons.push(`${label}.task_budget.${key} must be a safe non-negative integer`);
+					else if (reservation && alias[key] !== reservation[key])
+						reasons.push(
+							`invalid_task_budget: ${label}.task_budget.${key} (${alias[key]}) != budget_reservation.${key} (${reservation[key]})`,
+						);
+				}
+		}
 		for (const text of [
 			task.goal?.description,
 			task.stop_condition,
@@ -316,11 +354,9 @@ export function validatePlanGraph({
 			rejectReasons.push(`${label}: parent depth ${depth} exceeds max_depth ${policy.max_depth}`);
 
 		const reservation = node.budget_reservation;
-		aggregate = {
-			wall_time_ms: aggregate.wall_time_ms + reservation.wall_time_ms,
-			model_requests: aggregate.model_requests + reservation.model_requests,
-			tool_calls: aggregate.tool_calls + reservation.tool_calls,
-		};
+		const next = safeAddBudget(aggregate, reservation);
+		if (!next) rejectReasons.push(`${label}: budget aggregate exceeds the safe integer range`);
+		else aggregate = next;
 	}
 
 	// 6. Fan-out / total count / aggregate budget.
@@ -340,23 +376,25 @@ export function validatePlanGraph({
 		if (prospective > policy.max_task_count)
 			rejectReasons.push(`total task count ${prospective} exceeds max_task_count ${policy.max_task_count}`);
 	}
+	// E1-CC §7.1: `derivedBudget` is the GROSS allocation already committed at this
+	// prefix (static budgets + every accepted dynamic definition). The envelope is
+	// `allocation + candidate <= manifest.budget` on every dimension, with safe
+	// integer addition (never "remaining = limit - outstanding reservation").
 	const campaignBudget = manifest.budget ?? {};
-	const totalRemaining = {
-		wall_time_ms: (campaignBudget.wall_time_ms ?? 0) - (derivedBudget.wall_time_ms ?? 0),
-		model_requests: (campaignBudget.model_requests ?? 0) - (derivedBudget.model_requests ?? 0),
-		tool_calls: (campaignBudget.tool_calls ?? 0) - (derivedBudget.tool_calls ?? 0),
-	};
-	const fits = ["wall_time_ms", "model_requests", "tool_calls"].every((key) => aggregate[key] <= totalRemaining[key]);
+	const after = safeAddBudget(derivedBudget, aggregate);
+	const fits =
+		after !== null &&
+		["wall_time_ms", "model_requests", "tool_calls"].every((key) => after[key] <= (campaignBudget[key] ?? 0));
 	checks.push(
 		check(
 			"aggregate_budget_fits",
 			fits,
-			`need ${JSON.stringify(aggregate)} remaining ${JSON.stringify(totalRemaining)}`,
+			`allocation ${JSON.stringify(derivedBudget)} + plan ${JSON.stringify(aggregate)} vs limit ${JSON.stringify(campaignBudget)}`,
 		),
 	);
 	if (!fits)
 		blockReasons.push(
-			`plan budget aggregate ${JSON.stringify(aggregate)} exceeds remaining Campaign budget ${JSON.stringify(totalRemaining)}`,
+			`allocation_exceeded: allocation ${JSON.stringify(derivedBudget)} + plan ${JSON.stringify(aggregate)} exceeds the Campaign budget`,
 		);
 
 	// 7. Root-goal coverage: the plan must keep a task that can satisfy EVERY
@@ -378,11 +416,19 @@ export function validatePlanGraph({
 		return { status: "blocked", checks, reasons: blockReasons, normalized: null, reserved_budget: null };
 	}
 
-	// 8. Normalize to a deterministic definition set. Sort by (parent depth, id) so
-	//    the digest is stable regardless of the model's input order.
-	const normalized = nodes
-		.map((node) => normalizePlanNode({ node, plan, manifest, templates, planningTaskId }))
-		.sort((a, b) => a.order - b.order || a.task_id.localeCompare(b.task_id));
+	// 8. Normalize to a deterministic definition set. Sort by (order, id) so the
+	//    digest is stable regardless of the model's input order. A node that cannot
+	//    normalize rejects the WHOLE batch (no fallback half-definition).
+	const normalized = [];
+	const normalizeReasons = [];
+	for (const node of nodes) {
+		const result = normalizePlanNode({ node, plan, manifest, templates, planningTaskId });
+		if (result.ok) normalized.push(result.task);
+		else normalizeReasons.push(...result.reasons.map((reason) => `${node.proposed_task_id}: ${reason}`));
+	}
+	if (normalizeReasons.length > 0)
+		return { status: "rejected", checks, reasons: normalizeReasons, normalized: null, reserved_budget: null };
+	normalized.sort((a, b) => a.order - b.order || a.task_id.localeCompare(b.task_id));
 	return {
 		status: "admitted",
 		checks,
@@ -390,6 +436,54 @@ export function validatePlanGraph({
 		normalized,
 		reserved_budget: aggregate,
 	};
+}
+
+/**
+ * THE plan compiler for a trusted E1 run. The Host (live) and the projection
+ * (replay) both call this with the state AT the admission prefix: the accepted
+ * task ids and the gross allocation already committed. The trusted context
+ * (templates, root goal, required criteria) comes ONLY from the Manifest's
+ * embedded planning contract, never from mutable config or the caller.
+ *
+ * @param {{plan: any, manifest: any, planningTaskId: string, existingTaskIds: Iterable<string>, allocation: {wall_time_ms: number, model_requests: number, tool_calls: number}, templates: Map<string, any>, rootGoalRef: string}} args
+ */
+export function compilePlanAdmission({
+	plan,
+	manifest,
+	planningTaskId,
+	existingTaskIds,
+	allocation,
+	templates,
+	rootGoalRef,
+}) {
+	const requiredCriteria = [...(manifest?.objective?.required_criteria ?? manifest?.objective?.success_criteria ?? [])];
+	return validatePlanGraph({
+		plan,
+		manifest,
+		planningTaskId,
+		existingTaskIds: new Set(existingTaskIds),
+		templates,
+		requiredCriteria,
+		expectedRootGoalRef: rootGoalRef,
+		derivedBudget: allocation,
+	});
+}
+
+/**
+ * Safe per-dimension budget addition; null when any dimension is invalid/unsafe.
+ * @returns {{wall_time_ms: number, model_requests: number, tool_calls: number}|null}
+ */
+export function safeAddBudget(left, right) {
+	const out = { wall_time_ms: 0, model_requests: 0, tool_calls: 0 };
+	for (const key of ["wall_time_ms", "model_requests", "tool_calls"]) {
+		const a = left?.[key] ?? 0;
+		const b = right?.[key] ?? 0;
+		if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 0 || b < 0) return null;
+		const sum = a + b;
+		if (!Number.isSafeInteger(sum)) return null;
+		out[key] = sum;
+	}
+	return out;
 }
 
 /** Derive a node's parent depth from the in-batch parent edges + planning task. */
@@ -444,12 +538,16 @@ function findCycle(edges) {
 function normalizePlanNode({ node, plan, manifest, templates, planningTaskId }) {
 	const template = templates ? templates.get(node.template_ref ?? node.task_type) : null;
 	const criteria = (node.goal?.success_criteria ?? []).slice();
-	const oracleRef = template?.oracle_ref ?? node.oracle_ref ?? null;
+	// With a trusted template the Oracle comes ONLY from the template; a candidate
+	// can never name its own acceptance authority.
+	const oracleRef = templates ? (template?.oracle_ref ?? null) : (node.oracle_ref ?? null);
 	const definition = {
 		task_id: node.proposed_task_id,
 		campaign_id: manifest.campaign_id,
 		plan_id: plan.plan_id,
 		planning_task_id: planningTaskId,
+		// The order is fixed BEFORE normalization so task_digest covers it.
+		order: (manifest.tasks?.length ?? 0) + 1,
 		parent_task_id: node.parent_task_id ?? planningTaskId,
 		depends_on: [...new Set(node.depends_on ?? [])].sort(),
 		target_ref: node.target_ref,
@@ -477,19 +575,15 @@ function normalizePlanNode({ node, plan, manifest, templates, planningTaskId }) 
 		stop_condition: node.stop_condition ?? "task oracle judged",
 		priority: node.priority ?? 0,
 		budget_reservation: { ...node.budget_reservation },
+		...(node.task_budget !== undefined ? { task_budget: { ...node.task_budget } } : {}),
 		rationale: node.rationale ?? null,
 		source: "model_plan",
 	};
 	// The ONE normalized executable shape: `task_budget` and `budget_reservation`
 	// are dimension-wise equal and the task_digest covers the complete final
-	// definition. Consumers read `task_budget`, never the Campaign total.
-	const normalized = normalizeExecutableTask({ definition, origin: "plan" });
-	if (!normalized.ok) {
-		definition.task_budget = { ...node.budget_reservation };
-		definition.task_digest = digest(definition);
-		return { ...definition, order: (manifest.tasks?.length ?? 0) + 1, normalize_error: normalized.reasons };
-	}
-	return { ...normalized.task, order: (manifest.tasks?.length ?? 0) + 1 };
+	// definition (order included). Consumers read `task_budget`, never the
+	// Campaign total. A normalization failure is a failure, not a fallback.
+	return normalizeExecutableTask({ definition, origin: "plan" });
 }
 
 /**

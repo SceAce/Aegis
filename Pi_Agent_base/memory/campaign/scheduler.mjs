@@ -24,11 +24,25 @@
 //     recovery uses cache+tail when it is a verified prefix, else full replay.
 
 import { digest } from "../fixture/contracts.mjs";
+import {
+	evaluateToolRecord,
+	inspectExecutionPermit,
+	PLAN_BINDING_VERSION,
+	permitReasonText,
+	TOOL_CHARGE_VERSION,
+} from "./authority.mjs";
 import { admitTaskProposal } from "./dynamic-policy.mjs";
-import { planDigest } from "./e1-plan-contract.mjs";
+import { compilePlanAdmission, planDigest } from "./e1-plan-contract.mjs";
+import { loadPlanningAuthority } from "./e1-planning-contract.mjs";
 import { canonicalManifestDigest } from "./manifest.mjs";
 import { acquireCampaignOwnership, readCheckpoint, releaseCampaignOwnership, writeCheckpoint } from "./ownership.mjs";
-import { canDispatch, parseBudgetStrict, projectQueueFromEvents, remainingBudget } from "./projection.mjs";
+import {
+	canDispatch,
+	parseBudgetStrict,
+	projectQueueFromEvents,
+	remainingBudget,
+	toolStateFromProjection,
+} from "./projection.mjs";
 import { buildCommittedStream } from "./stream.mjs";
 
 export const SCHEDULER_VERSION = "2.0.0";
@@ -262,14 +276,20 @@ export function createCampaignScheduler({
 	) {
 		const current = project();
 		const active = (current.plans ?? []).find((p) => p.status === "admitted") ?? null;
+		// `activated` only reflects an ACCEPTED durable plan-ready for THIS plan.
+		const activated =
+			planId !== null &&
+			current.tasks.some((task) => task.plan_ready === true && task.plan_id === planId && task.state === "completed");
+		// Only an ACCEPTED admission is a plan transition; recording a candidate is not.
+		const transition = ok === true && command === "admit_plan" && status === "admitted";
 		return {
 			command,
 			ok: ok === true,
 			status,
 			buffered: false,
 			record_durable: recordDurable === true,
-			transition_accepted: ok === true && status === "admitted",
-			activated: false,
+			transition_accepted: transition,
+			activated,
 			plan_id: planId,
 			plan_digest: pd,
 			active_plan_id: active?.id ?? null,
@@ -285,6 +305,365 @@ export function createCampaignScheduler({
 	function committedPrefix(entry) {
 		if (!entry) return null;
 		return { offset: entry.offset ?? -1, event_id: entry.event_id ?? null, event_digest: entry.event_digest ?? null };
+	}
+
+	/**
+	 * E1-CC §6.2: ONE short critical section for every Host command that reads the
+	 * latest prefix, decides, appends and confirms (plans, tool charges). EventLog
+	 * serializes appends only; this serializes the read-decide-commit. It never
+	 * spans a provider/Oracle/Worker wait.
+	 */
+	let commandTail = Promise.resolve();
+	function exclusive(fn) {
+		const run = commandTail.then(fn, fn);
+		commandTail = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	}
+
+	const planningContract = manifest.planning_contract ?? null;
+	/** The run binding every E1 Host envelope carries (E1-CC §4.1). */
+	function runBinding() {
+		if (!planningContract) return {};
+		return {
+			binding_version: PLAN_BINDING_VERSION,
+			manifest_revision: manifest.revision ?? 0,
+			manifest_digest: manifestDigest,
+			context_digest: planningContract.digest ?? null,
+		};
+	}
+	/** The ACCEPTED planning Episode, from the projection (never the caller). */
+	function planningBinding(projection, requestedTaskId) {
+		const planningTaskId = planningContract?.planning_task_id ?? requestedTaskId ?? null;
+		if (!planningTaskId) return { ok: false, reason: "invalid_plan_binding: no planning task identity" };
+		if (planningContract && requestedTaskId && requestedTaskId !== planningTaskId)
+			return { ok: false, reason: `invalid_plan_binding: ${requestedTaskId} is not the contract planning task` };
+		const start = (projection.authority?.accepted_starts ?? []).find((s) => s.task_id === planningTaskId) ?? null;
+		const row = projection.tasks.find((task) => task.task_id === planningTaskId) ?? null;
+		if (planningContract && (!start || row?.state !== "running"))
+			return {
+				ok: false,
+				reason: `invalid_plan_binding: planning task ${planningTaskId} is not the active started task`,
+			};
+		return { ok: true, planningTaskId, episodeId: start?.episode_id ?? null };
+	}
+	/** True when the reducer rejected the event with this id. */
+	function rejectionFor(projection, eventId) {
+		return (projection.rejected ?? []).find((r) => r.event_id === eventId) ?? null;
+	}
+	function planResult(fields) {
+		return commandResult({ command: "admit_plan", ...fields });
+	}
+
+	async function recordCandidateLocked({ plan, planningTaskId }) {
+		const pid = plan?.plan_id ?? null;
+		const pd = planDigest(plan);
+		const fail = (status, reasons, extra = {}) =>
+			commandResult({ command: "record_candidate", ok: false, status, planId: pid, planDigest: pd, reasons, ...extra });
+		if (typeof pid !== "string" || !pid) return fail("rejected", ["plan.plan_id is required"]);
+		const projection = project();
+		const binding = planningBinding(projection, planningTaskId);
+		if (!binding.ok) return fail("rejected", [binding.reason]);
+		const existing = projection.plans.find((p) => p.id === pid) ?? null;
+		if (existing) {
+			if (existing.digest !== pd)
+				return fail("rejected", [
+					`plan_identity_conflict: plan ${pid} was already recorded with a different candidate`,
+				]);
+			return commandResult({
+				command: "record_candidate",
+				ok: true,
+				status: "duplicate",
+				planId: pid,
+				planDigest: pd,
+				submittedEventId: existing.event_id ?? null,
+				committedPrefix: committedPrefix(existing),
+			});
+		}
+		const written = await commit(
+			"campaign.plan.submitted",
+			{
+				plan_id: pid,
+				plan_digest: pd,
+				plan,
+				planning_task_id: binding.planningTaskId,
+				episode_id: binding.episodeId,
+				...runBinding(),
+			},
+			{ kind: "runtime", actor_id: ownerId },
+		);
+		if (!written.ok)
+			return fail("incomplete", [`submitted: ${written.error ?? "append failed"}`], { recordDurable: false });
+		const after = project();
+		const accepted = after.plans.find((p) => p.id === pid && p.event_id === written.event?.event_id) ?? null;
+		if (!accepted)
+			return fail("rejected", [rejectionFor(after, written.event?.event_id)?.reason ?? "candidate not accepted"], {
+				submittedEventId: written.event?.event_id ?? null,
+			});
+		return commandResult({
+			command: "record_candidate",
+			ok: true,
+			status: "submitted",
+			planId: pid,
+			planDigest: pd,
+			submittedEventId: written.event?.event_id ?? null,
+			committedPrefix: committedPrefix(accepted),
+		});
+	}
+	async function admitPlanLocked({ plan, planningTaskId }) {
+		const pid = plan?.plan_id ?? null;
+		const pd = planDigest(plan);
+		const base = { planId: pid, planDigest: pd };
+		if (!planningContract)
+			return planResult({
+				...base,
+				ok: false,
+				status: "rejected",
+				reasons: ["legacy_context_unavailable: a plan admission requires the Manifest's trusted planning contract"],
+			});
+		const authority = loadPlanningAuthority({ manifest });
+		if (!authority.ok)
+			return planResult({
+				...base,
+				ok: false,
+				status: "rejected",
+				reasons: [`planning_context_conflict: ${authority.reasons.join("; ")}`],
+			});
+		let projection = project();
+		const binding = planningBinding(projection, planningTaskId);
+		if (!binding.ok) return planResult({ ...base, ok: false, status: "rejected", reasons: [binding.reason] });
+		const envelopeBase = {
+			plan_id: pid,
+			plan_digest: pd,
+			planning_task_id: binding.planningTaskId,
+			episode_id: binding.episodeId,
+			...runBinding(),
+		};
+		// 1. The candidate: reuse the SAME durable submitted record (shared dedup).
+		let existing = projection.plans.find((p) => p.id === pid) ?? null;
+		if (existing && existing.digest !== pd)
+			return planResult({
+				...base,
+				ok: false,
+				status: "rejected",
+				reasons: [`plan_identity_conflict: plan ${pid} was already recorded with a different candidate`],
+			});
+		// 2. Exact duplicate of the ACCEPTED admission: return its original identity.
+		if (existing?.status === "admitted")
+			return planResult({
+				...base,
+				ok: true,
+				status: "duplicate",
+				submittedEventId: existing.event_id ?? null,
+				transitionEventId: existing.admitted_event_id ?? null,
+				committedPrefix: {
+					offset: existing.admitted_offset ?? -1,
+					event_id: existing.admitted_event_id ?? null,
+					event_digest: existing.admitted_event_digest ?? null,
+				},
+			});
+		if (existing && existing.status !== "submitted")
+			return planResult({
+				...base,
+				ok: false,
+				status: existing.status,
+				submittedEventId: existing.event_id ?? null,
+				reasons: [...(existing.reasons ?? []), `plan ${pid} was already ${existing.status}`],
+			});
+		let submittedEventId = existing?.event_id ?? null;
+		if (!existing) {
+			const submitted = await commit(
+				"campaign.plan.submitted",
+				{ ...envelopeBase, plan },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!submitted.ok)
+				return planResult({
+					...base,
+					ok: false,
+					status: "incomplete",
+					recordDurable: false,
+					reasons: [`submitted: ${submitted.error ?? "append failed"}`],
+				});
+			submittedEventId = submitted.event?.event_id ?? null;
+			projection = project();
+			existing = projection.plans.find((p) => p.id === pid && p.event_id === submittedEventId) ?? null;
+			if (!existing)
+				return planResult({
+					...base,
+					ok: false,
+					status: "rejected",
+					submittedEventId,
+					reasons: [rejectionFor(projection, submittedEventId)?.reason ?? "the candidate was not accepted"],
+				});
+		}
+		// 3. Decide against the LATEST prefix with the shared compiler.
+		const active = projection.plans.find((p) => p.status === "admitted") ?? null;
+		/** @type {any} */
+		const compiled = active
+			? {
+					status: "rejected",
+					reasons: [`plan_already_admitted: plan ${active.id} is already the active admitted plan`],
+				}
+			: compilePlanAdmission({
+					plan,
+					manifest,
+					planningTaskId: binding.planningTaskId,
+					existingTaskIds: [...projection.tasks.map((task) => task.task_id), ...staticTasks.map((t) => t.task_id)],
+					allocation: projection.budget.allocation_total,
+					templates: authority.templates,
+					rootGoalRef: authority.contract.root_goal_ref,
+				});
+		if (compiled.status !== "admitted") {
+			const kind = compiled.status === "rejected" ? "campaign.plan.rejected" : "campaign.plan.blocked";
+			const recorded = await commit(
+				kind,
+				{ ...envelopeBase, reasons: compiled.reasons, status: compiled.status },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			return planResult({
+				...base,
+				ok: false,
+				status: recorded.ok ? compiled.status : "incomplete",
+				recordDurable: recorded.ok,
+				submittedEventId,
+				transitionEventId: recorded.event?.event_id ?? null,
+				reasons: recorded.ok ? compiled.reasons : [...compiled.reasons, `${kind}: ${recorded.error}`],
+			});
+		}
+		const admitted = await commit(
+			"campaign.plan.admitted",
+			{ ...envelopeBase, plan_tasks: compiled.normalized, reserved_budget: compiled.reserved_budget },
+			{ kind: "runtime", actor_id: ownerId },
+		);
+		if (!admitted.ok)
+			return planResult({
+				...base,
+				ok: false,
+				status: "incomplete",
+				recordDurable: false,
+				submittedEventId,
+				reasons: [`admitted: ${admitted.error ?? "append failed"}`],
+			});
+		// 4. Confirm the reducer accepted THIS event (append success is not acceptance).
+		const after = project();
+		const transitionEventId = admitted.event?.event_id ?? null;
+		const entry = after.plans.find((p) => p.id === pid) ?? null;
+		if (entry?.status !== "admitted" || entry.admitted_event_id !== transitionEventId)
+			return planResult({
+				...base,
+				ok: false,
+				status: "rejected",
+				submittedEventId,
+				transitionEventId,
+				reasons: [rejectionFor(after, transitionEventId)?.reason ?? "the durable admission was not accepted"],
+			});
+		return planResult({
+			...base,
+			ok: true,
+			status: "admitted",
+			submittedEventId,
+			transitionEventId,
+			committedPrefix: {
+				offset: entry.admitted_offset,
+				event_id: transitionEventId,
+				event_digest: entry.admitted_event_digest ?? null,
+			},
+			admission: compiled,
+		});
+	}
+
+	async function toolCommandLocked(phase, args) {
+		const refuse = (reasons, extra = {}) => ({
+			ok: false,
+			duplicate: false,
+			charged: false,
+			record_durable: false,
+			event_id: null,
+			reasons,
+			...extra,
+		});
+		const projection = project();
+		const running = projection.tasks.find((task) => task.state === "running") ?? null;
+		const start = running
+			? ((projection.authority?.accepted_starts ?? []).find((s) => s.task_id === running.task_id) ?? null)
+			: null;
+		if (!running || !start) return refuse(["invalid_tool_binding: no active accepted Task/Episode"]);
+		if (args.task_id && args.task_id !== running.task_id)
+			return refuse([`invalid_tool_binding: ${args.task_id} is not the active task ${running.task_id}`]);
+		if (args.episode_id && args.episode_id !== start.episode_id)
+			return refuse([`invalid_tool_binding: ${args.episode_id} is not the accepted episode ${start.episode_id}`]);
+		if (phase === "charged") {
+			const permit = inspectExecutionPermit({
+				projection,
+				taskId: running.task_id,
+				episodeId: start.episode_id,
+				now: clock(),
+				operation: "tool_unit",
+			});
+			if (!permit.ok) return refuse([permitReasonText(permit)], { permit });
+		}
+		const payload = {
+			kind: "c6.tool",
+			campaign_id: manifest.campaign_id,
+			version: TOOL_CHARGE_VERSION,
+			phase,
+			task_id: running.task_id,
+			episode_id: start.episode_id,
+			request_id: args.request_id ?? null,
+			tool_call_id: args.tool_call_id ?? null,
+			unit_id: args.unit_id ?? null,
+			tool_name: args.tool_name ?? null,
+			...(phase === "charged"
+				? {
+						arguments_digest: args.arguments_digest ?? null,
+						manifest_revision: manifest.revision ?? 0,
+						manifest_digest: manifestDigest,
+						context_digest: planningContract?.digest ?? null,
+						units: 1,
+						charge_event_id: null,
+					}
+				: { result_ref: args.result_ref ?? null, result_digest: args.result_digest ?? null }),
+		};
+		const verdict = evaluateToolRecord({
+			payload,
+			sourceKind: "runtime",
+			recordedAt: null,
+			state: toolStateFromProjection(projection, manifest),
+		});
+		if (!verdict.ok) return refuse([verdict.reason], { code: verdict.code });
+		if (verdict.duplicate)
+			return {
+				ok: true,
+				duplicate: true,
+				charged: false,
+				record_durable: true,
+				event_id: (phase === "charged" ? verdict.entry.charge_event_id : verdict.entry.finish_event_id) ?? null,
+				reasons: [],
+			};
+		const { kind: _kind, campaign_id: _campaign, ...rest } = payload;
+		const written = await commit("c6.tool", rest, { kind: "runtime", actor_id: ownerId });
+		if (!written.ok) return refuse([`durability_unconfirmed: ${written.error ?? "tool append failed"}`]);
+		const eventId = written.event?.event_id ?? null;
+		const after = project();
+		const confirmed = (after.tool_charges ?? []).find((entry) => entry.key === verdict.key) ?? null;
+		const accepted =
+			phase === "charged" ? confirmed?.charge_event_id === eventId : confirmed?.finish_event_id === eventId;
+		if (!accepted)
+			return refuse([rejectionFor(after, eventId)?.reason ?? "the durable tool record was not accepted"], {
+				record_durable: true,
+				event_id: eventId,
+			});
+		return {
+			ok: true,
+			duplicate: false,
+			charged: phase === "charged",
+			record_durable: true,
+			event_id: eventId,
+			reasons: [],
+		};
 	}
 
 	return {
@@ -349,204 +728,27 @@ export function createCampaignScheduler({
 			return { ok: true, status: "admitted", task_id: proposal.proposed_task_id, admission };
 		},
 		/**
-		 * E1: admit ONE complete candidate plan as a whole. The reducer re-validates
-		 * the WHOLE graph BEFORE any mutation, so an illegal node rejects the whole
-		 * batch (no legal subset is executed). The durable record carries the full
-		 * normalized task definitions (with depends_on) plus the whole-graph
-		 * admission. Returns the admission WITHOUT completing the planning task: the
-		 * plan-ready gate is a SEPARATE durable state.
+		 * E1-CC §6: admit ONE complete candidate plan. The Host NEVER trusts a
+		 * caller-supplied admission: inside one short critical section it reads the
+		 * latest committed prefix, compiles the candidate with the SAME compiler the
+		 * replay uses, appends, and re-projects to confirm THIS event was accepted.
+		 * `admission` is accepted for interface compatibility and ignored.
 		 *
-		 * @param {{plan: any, planningTaskId: string, admission: any, planId?: string|null, planDigest?: string|null}} args
+		 * @param {{plan: any, planningTaskId?: string, admission?: any, planId?: string|null, planDigest?: string|null}} args
 		 */
-		async admitPlan(
-			{ plan, planningTaskId, admission, planId = null, planDigest: planDigestArg = null } = /** @type {any} */ ({}),
-		) {
-			const pid = planId ?? plan.plan_id ?? `plan-${manifest.campaign_id}-${clock()}`;
-			// The canonical candidate digest: the tool recorder, the admission and the
-			// projection all call the SAME `planDigest`, so a repeated submission of an
-			// identical candidate is idempotent and a changed one is still refused.
-			const pd = planDigestArg ?? planDigest(plan);
-			// SHARED DEDUP (§6.1): if the tool (or a prior Host command) already
-			// persisted the SAME id+digest submitted candidate, REUSE it instead of
-			// appending a duplicate record. A same-id/different-digest candidate is a
-			// conflict and never overwrites the first record.
-			const existing = project().plans.find((p) => p.id === pid) ?? null;
-			let submittedEventId = null;
-			if (existing) {
-				if (existing.digest !== pd)
-					return commandResult({
-						command: "admit_plan",
-						ok: false,
-						status: "rejected",
-						planId: pid,
-						planDigest: pd,
-						reasons: [`plan ${pid} was already recorded with a different candidate digest`],
-					});
-				submittedEventId = existing.event_id ?? null;
-			} else {
-				const submitted = await commit(
-					"campaign.plan.submitted",
-					{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
-					{ kind: "runtime", actor_id: ownerId },
-				);
-				if (!submitted.ok)
-					return commandResult({
-						command: "admit_plan",
-						ok: false,
-						status: "incomplete",
-						planId: pid,
-						planDigest: pd,
-						reasons: [submitted.error ?? "submitted append failed"],
-						recordDurable: false,
-					});
-				submittedEventId = submitted.event?.event_id ?? null;
-			}
-			if (admission.status !== "admitted") {
-				const kind = admission.status === "rejected" ? "campaign.plan.rejected" : "campaign.plan.blocked";
-				const recorded = await commit(
-					kind,
-					{
-						plan_id: pid,
-						plan_digest: pd,
-						planning_task_id: planningTaskId,
-						reasons: admission.reasons,
-						status: admission.status,
-					},
-					{ kind: "runtime", actor_id: ownerId },
-				);
-				if (!recorded.ok) return { ok: false, status: admission.status, reason: recorded.error };
-				return commandResult({
-					command: "admit_plan",
-					ok: false,
-					status: admission.status,
-					planId: pid,
-					planDigest: pd,
-					submittedEventId,
-					transitionEventId: recorded.event?.event_id ?? null,
-					reasons: admission.reasons,
-					admission,
-				});
-			}
-			const admitted = await commit(
-				"campaign.plan.admitted",
-				{
-					plan_id: pid,
-					plan_digest: pd,
-					planning_task_id: planningTaskId,
-					plan_tasks: admission.normalized,
-					reserved_budget: admission.reserved_budget,
-				},
-				{ kind: "runtime", actor_id: ownerId },
-			);
-			if (!admitted.ok) {
-				// A half-written batch is NOT a legal prefix: the reducer refuses it and
-				// the plan stays unresolved. The caller must not dispatch child tasks.
-				return commandResult({
-					command: "admit_plan",
-					ok: false,
-					status: "incomplete",
-					planId: pid,
-					planDigest: pd,
-					submittedEventId,
-					reasons: [admitted.error ?? "admitted append failed"],
-					recordDurable: false,
-					admission,
-				});
-			}
-			// Verify the reducer ACCEPTED the transition (an append success is not an
-			// accepted admission).
-			const after = project().plans.find((p) => p.id === pid) ?? null;
-			if (after?.status !== "admitted")
-				return commandResult({
-					command: "admit_plan",
-					ok: false,
-					status: "rejected",
-					planId: pid,
-					planDigest: pd,
-					submittedEventId,
-					transitionEventId: admitted.event?.event_id ?? null,
-					reasons: ["the durable admission was not accepted by the reducer"],
-					admission,
-				});
-			return commandResult({
-				command: "admit_plan",
-				ok: true,
-				status: "admitted",
-				planId: pid,
-				planDigest: pd,
-				submittedEventId,
-				transitionEventId: admitted.event?.event_id ?? null,
-				committedPrefix: committedPrefix(after),
-				admission,
-			});
+		async admitPlan({ plan, planningTaskId = null } = /** @type {any} */ ({})) {
+			return exclusive(() => admitPlanLocked({ plan, planningTaskId }));
 		},
 		/**
-		 * E1 §6.1: record ONE candidate plan. The tool and the Host share this single
-		 * dedup + writer, so a tool-persisted candidate is REUSED by a later admit and
-		 * an identical re-record is idempotent. A successful record only promises the
-		 * candidate is durable and accepted; it never activates a child.
+		 * E1-CC §6.1: record ONE candidate plan. Tool and Host share this dedup and
+		 * writer, so an identical candidate is a `duplicate` of the original durable
+		 * record and a same-id/different-content candidate is a conflict that writes
+		 * nothing. Recording never admits or activates anything.
 		 *
 		 * @param {{plan: any, planningTaskId?: string|null, planId?: string|null}} args
 		 */
-		async recordPlanCandidate({ plan, planningTaskId = null, planId = null } = /** @type {any} */ ({})) {
-			const pid = planId ?? plan?.plan_id ?? `plan-${manifest.campaign_id}-${clock()}`;
-			const pd = planDigest(plan);
-			const existing = project().plans.find((p) => p.id === pid) ?? null;
-			if (existing) {
-				if (existing.digest !== pd)
-					return commandResult({
-						command: "record_candidate",
-						ok: false,
-						status: "rejected",
-						planId: pid,
-						planDigest: pd,
-						reasons: [`plan ${pid} was already recorded with a different candidate digest`],
-					});
-				return commandResult({
-					command: "record_candidate",
-					ok: true,
-					status: "duplicate",
-					planId: pid,
-					planDigest: pd,
-					submittedEventId: existing.event_id ?? null,
-					committedPrefix: committedPrefix(existing),
-				});
-			}
-			const written = await commit(
-				"campaign.plan.submitted",
-				{ plan_id: pid, plan_digest: pd, plan, planning_task_id: planningTaskId },
-				{ kind: "runtime", actor_id: ownerId },
-			);
-			if (!written.ok)
-				return commandResult({
-					command: "record_candidate",
-					ok: false,
-					status: "incomplete",
-					planId: pid,
-					planDigest: pd,
-					recordDurable: false,
-					reasons: [written.error ?? "submitted append failed"],
-				});
-			const accepted = project().plans.find((p) => p.id === pid) ?? null;
-			if (!accepted)
-				return commandResult({
-					command: "record_candidate",
-					ok: false,
-					status: "rejected",
-					planId: pid,
-					planDigest: pd,
-					recordDurable: true,
-					reasons: ["the durable candidate was not accepted by the reducer"],
-				});
-			return commandResult({
-				command: "record_candidate",
-				ok: true,
-				status: "submitted",
-				planId: pid,
-				planDigest: pd,
-				submittedEventId: written.event?.event_id ?? null,
-				committedPrefix: committedPrefix(accepted),
-			});
+		async recordPlanCandidate({ plan, planningTaskId = null } = /** @type {any} */ ({})) {
+			return exclusive(() => recordCandidateLocked({ plan, planningTaskId }));
 		},
 		/**
 		 * E1: complete the PLANNING task through its own trusted plan_ready Oracle,
@@ -562,163 +764,24 @@ export function createCampaignScheduler({
 			return { ok: true };
 		},
 		/**
-		 * E1 §7.2: the atomic, dual-sided DURABLE tool charge. Both the Task and the
-		 * Campaign tool_calls budget must have headroom, then a `c6.tool` charged note
-		 * is appended and re-projected to confirm. The dedup identity is
-		 * Campaign/Task/Episode/request_id/tool_call_id/unit_id, so an identical unit is
-		 * charged at most once. The caller must AWAIT this before running the tool
-		 * body; a failure means the tool is not executed.
+		 * E1-CC §7.2: the atomic, dual-sided DURABLE tool charge. The binding (active
+		 * Task/Episode) comes from the authoritative projection, never the caller;
+		 * the decision uses the SAME evaluator the reducer replays, inside the same
+		 * critical section as plan commands, so two concurrent charges can never both
+		 * pass a stale balance. The caller must await this before the tool body.
 		 *
 		 * @param {{request_id: string, tool_call_id: string, unit_id: string, tool_name: string, arguments_digest?: string|null, task_id?: string|null, episode_id?: string|null}} args
 		 */
-		async chargeTool(
-			{
-				request_id,
-				tool_call_id,
-				unit_id,
-				tool_name,
-				arguments_digest = null,
-				task_id = null,
-				episode_id = null,
-			} = /** @type {any} */ ({}),
-		) {
-			if (!request_id || !tool_call_id || !unit_id)
-				return {
-					ok: false,
-					duplicate: false,
-					charged: false,
-					record_durable: false,
-					event_id: null,
-					reasons: ["chargeTool requires request_id, tool_call_id and unit_id"],
-				};
-			const projection = project();
-			const key = [manifest.campaign_id, task_id ?? "-", episode_id ?? "-", request_id, tool_call_id, unit_id].join(
-				"|",
-			);
-			const existing = (projection.tool_charges ?? []).find((entry) => entry.key === key);
-			if (existing?.charged === true)
-				return {
-					ok: true,
-					duplicate: true,
-					charged: false,
-					record_durable: true,
-					event_id: existing.charge_event_id ?? null,
-					reasons: [],
-				};
-			const campaignLimit = Number.parseInt(String(manifest.budget?.tool_calls ?? 0), 10);
-			const campaignCharged = (projection.tool_charges ?? []).filter((entry) => entry.charged === true).length;
-			const taskCharged = (projection.tool_charges ?? []).filter(
-				(entry) => entry.charged === true && entry.task_id === task_id,
-			).length;
-			const taskRow = task_id ? projection.tasks.find((row) => row.task_id === task_id) : null;
-			const taskLimit = taskRow?.definition?.task_budget?.tool_calls ?? null;
-			if (Number.isFinite(campaignLimit) && campaignLimit > 0 && campaignCharged + 1 > campaignLimit)
-				return {
-					ok: false,
-					duplicate: false,
-					charged: false,
-					record_durable: false,
-					event_id: null,
-					reasons: [`campaign tool_calls budget exhausted (${campaignCharged}/${campaignLimit})`],
-				};
-			if (Number.isSafeInteger(taskLimit) && taskLimit >= 0 && taskCharged + 1 > taskLimit)
-				return {
-					ok: false,
-					duplicate: false,
-					charged: false,
-					record_durable: false,
-					event_id: null,
-					reasons: [`task ${task_id} tool_calls budget exhausted (${taskCharged}/${taskLimit})`],
-				};
-			const written = await commit(
-				"c6.tool",
-				{
-					version: "e1-tool-charge-1.0",
-					phase: "charged",
-					task_id,
-					episode_id,
-					request_id,
-					tool_call_id,
-					unit_id,
-					tool_name,
-					arguments_digest,
-					manifest_revision: manifest.revision ?? 0,
-					manifest_digest: manifestDigest,
-					context_digest: manifest.planning_contract?.digest ?? null,
-					units: 1,
-					charge_event_id: null,
-				},
-				{ kind: "runtime", actor_id: ownerId },
-			);
-			if (!written.ok)
-				return {
-					ok: false,
-					duplicate: false,
-					charged: false,
-					record_durable: false,
-					event_id: null,
-					reasons: [written.error ?? "tool charge append failed"],
-				};
-			const confirmed = (project().tool_charges ?? []).find((entry) => entry.key === key);
-			if (confirmed?.charged !== true)
-				return {
-					ok: false,
-					duplicate: false,
-					charged: false,
-					record_durable: true,
-					event_id: written.event?.event_id ?? null,
-					reasons: ["the durable tool charge was not accepted by the reducer"],
-				};
-			return {
-				ok: true,
-				duplicate: false,
-				charged: true,
-				record_durable: true,
-				event_id: written.event?.event_id ?? null,
-				reasons: [],
-			};
+		async chargeTool(args = /** @type {any} */ ({})) {
+			return exclusive(() => toolCommandLocked("charged", args));
 		},
 		/**
-		 * E1 §7.2: mark a charged tool unit FINISHED (the body returned, error or not).
-		 * It references the same identity and never refunds; it is not a durable tool
-		 * RESULT.
+		 * E1-CC §7.2: mark an ACCEPTED charged unit finished (the body returned, error
+		 * or not). A finish with no prior accepted charge is refused. It never
+		 * refunds and is not an Oracle result.
 		 */
-		async finishTool(
-			{
-				request_id,
-				tool_call_id,
-				unit_id,
-				tool_name,
-				task_id = null,
-				episode_id = null,
-				result_ref = null,
-				result_digest = null,
-			} = /** @type {any} */ ({}),
-		) {
-			const written = await commit(
-				"c6.tool",
-				{
-					version: "e1-tool-charge-1.0",
-					phase: "finished",
-					task_id,
-					episode_id,
-					request_id,
-					tool_call_id,
-					unit_id,
-					tool_name,
-					result_ref,
-					result_digest,
-				},
-				{ kind: "runtime", actor_id: ownerId },
-			);
-			if (!written.ok)
-				return {
-					ok: false,
-					record_durable: false,
-					event_id: null,
-					reasons: [written.error ?? "tool finish append failed"],
-				};
-			return { ok: true, record_durable: true, event_id: written.event?.event_id ?? null, reasons: [] };
+		async finishTool(args = /** @type {any} */ ({})) {
+			return exclusive(() => toolCommandLocked("finished", args));
 		},
 		lastCheckpointOk() {
 			return lastCheckpoint.ok;
@@ -764,7 +827,8 @@ export function createCampaignScheduler({
 				const startupEvents = readCommittedRows();
 				let baseProjection = null;
 				usedCheckpoint = false;
-				if (baseDir) {
+				// E1-CC §9: an E1 stream always replays its complete committed source.
+				if (baseDir && !planningContract) {
 					// A checkpoint may be at ANY verified prefix (not only the exact tail).
 					const read = readCheckpointImpl(baseDir, manifest.campaign_id, { manifest_digest: manifestDigest });
 					if (read.ok) {
@@ -1108,9 +1172,15 @@ export function createCampaignScheduler({
 		const plan = admitted[admitted.length - 1];
 		const planId = requestedPlanId ?? plan.id ?? plan.plan?.plan_id ?? null;
 		if (!planId) return { ok: false, reason: `the admitted plan for ${taskId} has no id` };
+		const start = (projection.authority?.accepted_starts ?? []).find((s) => s.task_id === taskId) ?? null;
 		const record = await commit(
 			"campaign.plan.ready",
-			{ task_id: taskId, plan_id: planId, outcome_id: outcomeId },
+			{
+				task_id: taskId,
+				plan_id: planId,
+				outcome_id: outcomeId,
+				...(planningContract ? { episode_id: start?.episode_id ?? null, ...runBinding() } : {}),
+			},
 			{ kind: "oracle", actor_id: oracle?.id ?? "oracle" },
 		);
 		if (!record.ok) return { ok: false, reason: record.error };
@@ -1122,7 +1192,18 @@ export function createCampaignScheduler({
 		// 1. DURABLE INTENT (+ reservation commit) FIRST.
 		const started = await commit(
 			"campaign.task.started",
-			{ task_id: task.task_id, episode_id: episodeId, command_id: `start-${task.task_id}-${clock()}` },
+			{
+				task_id: task.task_id,
+				episode_id: episodeId,
+				command_id: `start-${task.task_id}-${clock()}`,
+				...(planningContract
+					? {
+							manifest_revision: manifest.revision ?? 0,
+							manifest_digest: manifestDigest,
+							context_digest: planningContract.digest ?? null,
+						}
+					: {}),
+			},
 			{ kind: "runtime", actor_id: ownerId },
 		);
 		if (!started.ok) return { ok: false, reason: `durable intent failed; worker not dispatched: ${started.error}` };

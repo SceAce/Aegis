@@ -108,6 +108,52 @@ export function project(events, manifest) {
 	});
 }
 
+/**
+ * The minimal LEGITIMATE prefix a Host command needs (E1-CC §6.2/§7.2): an
+ * accepted planning start (Episode + persistent time anchor) and, for tool
+ * charges, the committed provider requests that produced the tool calls. Rows
+ * are host-sourced; `at` must agree with the scheduler's injected clock.
+ *
+ * @param {{campaignId: string, taskId?: string, requests?: string[], at?: number}} args
+ */
+export function acceptedPlanningPrefix({ campaignId, taskId = "task-plan", requests = [], at = 1000 }) {
+	const recorded_at = new Date(at).toISOString();
+	const rows = [
+		{
+			event_type: "runtime.note",
+			event_id: `fixture-start-${taskId}`,
+			recorded_at,
+			source: { kind: "runtime", actor_id: "test-host" },
+			payload: {
+				kind: "campaign.task.started",
+				campaign_id: campaignId,
+				task_id: taskId,
+				episode_id: `ep-${taskId}`,
+				command_id: `fixture-start-${taskId}`,
+			},
+		},
+	];
+	for (const request_id of requests)
+		for (const phase of ["reserved", "committed"])
+			rows.push({
+				event_type: "runtime.note",
+				event_id: `fixture-${phase}-${request_id}`,
+				recorded_at,
+				source: { kind: "runtime", actor_id: "c6-ledger" },
+				payload: {
+					kind: "c6.request",
+					phase,
+					campaign_id: campaignId,
+					task_id: taskId,
+					request_id,
+					task_reservation_id: `res-task-${request_id}`,
+					campaign_reservation_id: `res-campaign-${request_id}`,
+					...(phase === "committed" ? { provider_started: true, provider_status: "ok" } : {}),
+				},
+			});
+	return rows;
+}
+
 /** Count real provider-started committed requests per task. */
 export function providerRequestsByTask(events) {
 	const counts = {};
