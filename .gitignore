@@ -24,6 +24,10 @@ vendor/pi/
 # Never track it here.
 Pi_Agent_base/pi/
 
+# Generated CTF Wiki reference seeds and crawl manifest
+/knowledge/ctf-wiki/
+/knowledge/ctf-wiki-github/
+
 # Local scratch
 tmp/
 
