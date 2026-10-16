@@ -229,6 +229,30 @@ function summarizeToolInput(toolName: string, input: unknown) {
  * Campaign judgment is never reinterpreted from raw records. A missing/unreadable
  * file keeps the fail-closed no-context Board (Campaign judgments stay Hints).
  */
+function ramSeed(): Record<string, unknown> | null {
+	const path = process.env.AEGIS_RAM_SEED_FILE;
+	if (!path) return null;
+	try {
+		if (readFileSync(path).length > 120_000) return null;
+		const seed = JSON.parse(readFileSync(path, "utf8"));
+		if (!seed || typeof seed !== "object" || Array.isArray(seed)) return null;
+		if (seed.source_kind !== "external_reference" || seed.verified !== false || seed.action_policy !== "none")
+			return null;
+		if (typeof seed.source_uri !== "string" || typeof seed.topic !== "string" || typeof seed.content !== "string")
+			return null;
+		return {
+			source_kind: "external_reference",
+			source_uri: seed.source_uri.slice(0, 500),
+			topic: seed.topic.slice(0, 200),
+			content: seed.content.slice(0, 12_000),
+			verified: false,
+			action_policy: "none",
+		};
+	} catch {
+		return null;
+	}
+}
+
 function hostManifest(): Record<string, unknown> | null {
 	const path = process.env.AEGIS_MANIFEST_FILE;
 	if (!path) return null;
@@ -756,7 +780,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		const messages = event.messages;
 		if (!Array.isArray(messages) || messages.length === 0) return undefined;
 		if (messages[0]?.role !== "system") return undefined;
-		const projection = buildRamProjection({ board, state, episodeId, goal: currentGoal });
+		const projection = buildRamProjection({ board, state, episodeId, goal: currentGoal, seed: ramSeed() });
 		const ram = projection.text;
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context

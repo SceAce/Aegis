@@ -4,7 +4,7 @@ import { memoryText, summarizeMemoryValue } from "./summary.mjs";
 
 export const RAM_VERSION = "3.0";
 const DEFAULT_BUDGET = 4000;
-const ORDER = ["facts", "refuted", "tools", "proposals", "artifacts", "decisions"];
+const ORDER = ["external_reference", "facts", "refuted", "tools", "proposals", "artifacts", "decisions"];
 const LABELS = {
 	facts: "Verified facts",
 	refuted: "Refuted",
@@ -12,10 +12,11 @@ const LABELS = {
 	proposals: "Historical proposals, NOT guidance",
 	artifacts: "Artifacts",
 	decisions: "Unverified selections",
+	external_reference: "External reference (unverified, no action policy)",
 };
 
 /** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number}} args */
-export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET }) {
+export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET, seed = null }) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
 	const current = board.currentByType ?? board.byType ?? {};
@@ -90,7 +91,12 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		if (!decisions.has(id))
 			decisions.set(id, { ...row, text: `${id} ${row.reason ?? ""}`, origin_event_id: row.event_id });
 	}
+	const external =
+		seed && seed.source_kind === "external_reference" && seed.verified === false && seed.action_policy === "none"
+			? [{ external_reference: true, ...seed }]
+			: [];
 	const raw = {
+		external_reference: external,
 		facts: rank(nodes("Fact")),
 		refuted: rank(nodes("Refuted")),
 		tools: selectedTools,
@@ -101,7 +107,7 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		decisions: [...decisions.values()],
 	};
 	const totals = Object.fromEntries(ORDER.map((id) => [id, id === "tools" ? toolPairs.length : raw[id].length]));
-	const limits = { facts: 20, refuted: 10, tools: 8, proposals: 8, artifacts: 5, decisions: 3 };
+	const limits = { external_reference: 1, facts: 20, refuted: 10, tools: 8, proposals: 8, artifacts: 5, decisions: 3 };
 	const selected = Object.fromEntries(ORDER.map((id) => [id, []]));
 	const full = new Set();
 	const pending = Object.values(state.pending_actions ?? {}).filter(
@@ -121,6 +127,15 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	}
 	function nodeData(node, expanded) {
 		const limit = expanded ? 180 : 80;
+		if (node.external_reference)
+			return {
+				source_kind: "external_reference",
+				source_uri: node.source_uri,
+				topic: node.topic,
+				verified: false,
+				action_policy: "none",
+				content: safe(node.content, expanded ? 1800 : 900),
+			};
 		return {
 			ref: ref("node", node.node_id ?? `ev:${node.origin_event_id}`),
 			event: ref("event", node.origin_event_id),
@@ -233,7 +248,8 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		if (render().text.length > budget) selected[id].pop();
 	}
 	if (render().text.length <= budget) {
-		for (const id of ["facts", "refuted", "proposals", "tools"]) if (raw[id][0]) admit(id, raw[id][0]);
+		for (const id of ["external_reference", "facts", "refuted", "proposals", "tools"])
+			if (raw[id][0]) admit(id, raw[id][0]);
 		for (const id of ORDER)
 			for (const row of raw[id].slice(0, limits[id])) if (!selected[id].includes(row)) admit(id, row);
 		for (const id of ORDER)

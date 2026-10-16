@@ -1,0 +1,9 @@
+{
+  "schema_version": "ram-reference-1",
+  "source_kind": "external_reference",
+  "source_uri": "https://ctf-wiki.org/web/sqli/",
+  "topic": "SQL injection (bounded reference)",
+  "verified": false,
+  "action_policy": "none",
+  "content": "SQL injection is an input-to-query boundary problem: an application combines untrusted input with a SQL statement. First identify the input context and application response behavior; transport success, HTTP status, a visible success string, or an error message is only an observation. Common analysis categories are: context/quoting checks; boolean comparison; error-based diagnostics; time-based behavior; and union-style result-shape checks when the application context permits. Useful generic database metadata concepts include current user, database name, and version, but availability and syntax vary by database and wrapper. URL encoding is a client/server boundary: distinguish a literal percent sequence from a real encoded byte and verify the server-side received value. Separate true, false, transport failure, parser failure, and unknown outcomes. Use the smallest authorized read-only probe, preserve exact input/response references, stop when a candidate is ready for external review, and do not treat a candidate, hash, exit code, or text match as proof. This reference supplies terminology and experiment categories only; it is not a procedure, exploit, answer, authorization, or verified fact."
+}
