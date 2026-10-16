@@ -3,6 +3,7 @@
 适用于 extensions/。扩展负责 Pi 事件、命令、工具与 Aegis 模块的接线。
 
 - 业务状态机、授权、Oracle、记忆算法放对应模块，扩展不复制第二套权威实现。
+- 通用 bash/powershell 的命令与输出在所有领域均保持不透明观察数据；不得猜测解析为业务状态、目标成功、权限或控制结论。结构化语义必须来自已登记适配器/独立判断。
 - 改 hook/tool/session 行为前核对实际 SDK API 和必要文档；保持工具 allowlist、Campaign gate 与轮换后重绑定。
 - 保留 tool_call/tool_result 的动作身份、因果与 transport；自记录完成的工具避免二次记账。
 - 模型提案不获得 Fact、Outcome、授权或 active Experience 写权；事件收集不改变来源可信度。

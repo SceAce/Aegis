@@ -28,6 +28,7 @@
 
 import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { digest } from "../shared/events.mjs";
+import { inspectProposalRefs, inspectProposalReplacement } from "./proposal-refs.mjs";
 import { memoryValue, summarizeMemoryValue } from "./summary.mjs";
 
 export const NODE_TYPES = ["Origin", "Fact", "Refuted", "Intent", "Hint", "Artifact"];
@@ -627,6 +628,12 @@ function nodeText(event, type) {
  * -> same board.
  */
 export function projectBoard(events, { manifest = null } = {}) {
+	return projectBoardInternal(events, manifest, false);
+}
+
+// Prefix replay contains only proposals already accepted by this scan. Reuse
+// the same authority/effectiveness projection without recursively validating them.
+function projectBoardInternal(events, manifest, acceptedPrefix) {
 	const nodes = [];
 	const edges = [];
 	const byType = Object.fromEntries(NODE_TYPES.map((type) => [type, []]));
@@ -730,6 +737,32 @@ export function projectBoard(events, { manifest = null } = {}) {
 			continue;
 		}
 		if (!permitted) continue;
+		if (event.event_type === "proposal.submitted" && !acceptedPrefix) {
+			const priorEvents = rawEvents.slice(
+				0,
+				rawEvents.findIndex((row) => row.event_id === event.event_id),
+			);
+			const prefixBoard = projectBoardInternal(
+				priorEvents.filter((row) => row.event_type !== "proposal.submitted" || byEventId.has(row.event_id)),
+				manifest,
+				true,
+			);
+			const references = inspectProposalRefs(event.payload?.source_refs ?? [], {
+				events: priorEvents,
+				board: prefixBoard,
+				episodeId: event.episode_id,
+			});
+			const replacement = inspectProposalReplacement(
+				event.payload?.replace_event_id,
+				priorEvents,
+				event.episode_id,
+				prefixBoard,
+			);
+			if (!references.ok || !replacement.ok) {
+				rejections.push({ event_id: event.event_id, reason: references.reason ?? replacement.reason });
+				continue;
+			}
+		}
 		const normalizedRefs = (Array.isArray(event.evidence_refs) ? event.evidence_refs : [])
 			.map(normalizeRef)
 			.filter(Boolean);
@@ -765,6 +798,7 @@ export function projectBoard(events, { manifest = null } = {}) {
 								? { summary: summarizeMemoryValue(payload.final_arguments) }
 								: null),
 						response: payload.content_excerpt ?? null,
+						response_fragments: payload.response_fragments ?? null,
 						result_summary:
 							payload.result_summary ??
 							(payload.observed !== undefined ? summarizeMemoryValue(payload.observed) : null),
@@ -851,6 +885,17 @@ export function projectBoard(events, { manifest = null } = {}) {
 			node.effective_status = "current";
 		}
 	}
+	const replacedProposals = new Set(
+		normalizedEvents
+			.filter((event) => byEventId.has(event.event_id) && event.event_type === "proposal.submitted")
+			.map((event) => event.payload?.replace_event_id)
+			.filter(Boolean),
+	);
+	for (const node of nodes)
+		if (replacedProposals.has(node.origin_event_id)) {
+			node.effective = false;
+			node.effective_status = "superseded";
+		}
 	const currentByType = Object.fromEntries(
 		NODE_TYPES.map((type) => [type, byType[type].filter((node) => node.effective)]),
 	);

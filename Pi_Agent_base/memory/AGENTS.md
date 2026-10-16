@@ -3,6 +3,7 @@
 适用于 memory/。负责 Episode 记忆状态、Board、RAM、证据解析、Experience 存储/路由/编译与学习接线。
 
 - 调度/SDK/预算归 campaign/；执行授权与 Broker 归 execution/；会话替换归 session/；Oracle 归 verification/；EventLog 归 shared/。本目录不新增这些子系统。
+- 通用 bash/powershell 的命令与输出在所有领域均保持不透明观察数据；不得猜测解析为业务状态、目标成功、权限或控制结论。结构化语义必须来自已登记适配器/独立判断。
 - 保持 Observation、Claim、Intent、Artifact 和可信 Outcome 的区别；普通工具完成不能自动产生 Fact 或 active Experience。
 - 历史可审计，当前 RAM/经验使用 effective 视图；保持 Task/Episode/scope 归属、引用与失效/更正语义。
 - RAM 是按请求重建的有界投影：保留任务/权限/未决责任，明确遗漏或截断，保留可追溯身份和值。

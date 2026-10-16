@@ -31,6 +31,7 @@ export const BROKERED_TOOLS = Object.freeze(["aegis_workspace", "aegis_script"])
  */
 export const CONTROL_TOOLS_ALLOWED = Object.freeze([
 	"aegis_propose",
+	"aegis_submit_candidate",
 	"aegis_switch_session",
 	"aegis_task_decision",
 	"aegis_submit_plan",

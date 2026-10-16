@@ -3,6 +3,7 @@
 // decisions. It is rebuilt from events (plus trusted runtime/oracle payloads);
 // the LLM never writes it directly.
 
+import { projectWorkControl } from "../orchestration/work-control.mjs";
 import { digest } from "../shared/events.mjs";
 
 export function initialState() {
@@ -15,6 +16,7 @@ export function initialState() {
 		experience_decisions: [],
 		handoffs: [],
 		open_handoff: null,
+		work_state: {},
 	};
 }
 
@@ -136,6 +138,12 @@ export function projectState(events) {
 				}
 				break;
 			}
+			case "runtime.note": {
+				if (event.source?.kind === "runtime" || event.source?.kind === "human") {
+					if (event.payload?.version === "work-control-1") bump(state);
+				}
+				break;
+			}
 			case "experience.decision": {
 				state.experience_decisions.push({
 					event_id: event.event_id,
@@ -170,7 +178,11 @@ export function projectState(events) {
 			}
 			case "handoff.completed": {
 				if (state.open_handoff) {
-					state.handoffs.push({ status: "completed", to_session: payload.to_session || null, event_id: event.event_id });
+					state.handoffs.push({
+						status: "completed",
+						to_session: payload.to_session || null,
+						event_id: event.event_id,
+					});
 				}
 				// The replacement session now belongs to the same episode.
 				if (event.episode_id && state.episodes[event.episode_id]) {
@@ -184,12 +196,19 @@ export function projectState(events) {
 				break;
 		}
 	}
+	state.work_state = Object.fromEntries(
+		Object.keys(state.tasks).map((taskId) => {
+			const work = projectWorkControl(events, taskId);
+			return [taskId, { state: work.state, policy: work.policy, candidate: work.candidate }];
+		}),
+	);
 	return state;
 }
 
 export function pendingActionsFor(state, episodeId) {
 	return Object.values(state.pending_actions).filter(
-		(action) => action.status === "pending" && (!episodeId || action.episode_id === episodeId) && isSideEffectAction(action),
+		(action) =>
+			action.status === "pending" && (!episodeId || action.episode_id === episodeId) && isSideEffectAction(action),
 	);
 }
 
@@ -211,7 +230,9 @@ export function stateDigest(state) {
 	return digest({
 		version: state.version,
 		tasks: state.tasks,
-		episodes: Object.fromEntries(Object.entries(state.episodes).map(([id, ep]) => [id, { status: ep.status, prompts: ep.prompts }])),
+		episodes: Object.fromEntries(
+			Object.entries(state.episodes).map(([id, ep]) => [id, { status: ep.status, prompts: ep.prompts }]),
+		),
 		pending: Object.keys(state.pending_actions).filter((id) => state.pending_actions[id].status === "pending"),
 	});
 }

@@ -358,7 +358,7 @@ async function main() {
 	const continuationText = JSON.stringify(continuationRequest);
 	check(
 		"C2-N4 the continuation carried the preserved goal + breadcrumb in bounded RAM",
-		continuationText.includes("total_goal: C2 continuity task.") && continuationText.includes("c2-breadcrumb"),
+		continuationText.includes("C2 continuity task.") && continuationText.includes("c2-breadcrumb"),
 		"RAM did not carry goal/breadcrumb",
 	);
 	check(

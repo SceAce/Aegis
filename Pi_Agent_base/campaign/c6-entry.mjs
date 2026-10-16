@@ -35,6 +35,12 @@ import { buildRam } from "../memory/ram.mjs";
 import { projectState } from "../memory/state.mjs";
 import { createObservationServer } from "../observation/observation-server.mjs";
 import { runReportExport } from "../observation/report-entry.mjs";
+import {
+	bindWorkToolAccount,
+	createWorkController,
+	inspectWorkPermit,
+	projectWorkControl,
+} from "../orchestration/work-control.mjs";
 import { evaluateHandoff } from "../session/handoff.mjs";
 import { createSessionSupervisor } from "../session/session-supervisor.mjs";
 import { digest } from "../shared/contracts.mjs";
@@ -211,8 +217,17 @@ export function createCompositeWorker({
 			brokerWorker.bindCampaign?.(manifest);
 		},
 		async run({ task }) {
+			if (task.work_resume_event_id) buffer.reset();
 			buffer.setTask(task.task_id);
 			const planned = await modelWorker.run({ task });
+			if (
+				typeof permitEffect === "function" &&
+				permitEffect({ task })?.reasons?.some((reason) => reason.code === "waiting_external")
+			) {
+				buffer.reset();
+				return { ok: true, overview: "waiting_external" };
+			}
+			if (planned?.failure_mode === "waiting_external") return { ok: true, overview: "waiting_external" };
 			if (!planned.ok) return planned;
 			// E1: a PLANNING task returns a candidate plan (no business decision).
 			// Admission is a SEPARATE Host step; submitting a plan never executes
@@ -401,6 +416,29 @@ export async function runC6FromConfig(
 	for (const d of [cwd, agentDir, sessionDir]) mkdirSync(d, { recursive: true });
 
 	const eventLogPath = join(config.work_dir, "events.jsonl");
+	// Never append the new accounting protocol to an established legacy stream.
+	// The side-aware summary preserves historical consumption for review/migration.
+	const accountingRows = readEventsSafe(eventLogPath);
+	const legacyRequests = accountingRows.some(
+		(row) => row.payload?.kind === "c6.request" && row.payload.tool_accounting !== "durable-charge-v1",
+	);
+	const durableAccounting = accountingRows.some(
+		(row) =>
+			row.payload?.kind === "c6.tool" ||
+			(row.payload?.kind === "c6.request" && row.payload.tool_accounting === "durable-charge-v1"),
+	);
+	if (!READ_ONLY && legacyRequests && !durableAccounting) {
+		const historical = summarizeRequestLedger(accountingRows);
+		return {
+			ok: false,
+			stage: "accounting",
+			read_only: true,
+			reasons: ["migration_required: existing legacy tool accounting cannot switch protocols"],
+			consumed: historical.consumed,
+			unresolved: historical.unresolved,
+			diagnostics: historical.diagnostics,
+		};
+	}
 	// E1-CC §4.1/§4.2: a planning run's Manifest is FROZEN as an immutable,
 	// content-addressed canonical copy (file + directory fsync confirmed) BEFORE
 	// any provider request. A resume locates the copy through the first accepted
@@ -469,12 +507,14 @@ export async function runC6FromConfig(
 		"AEGIS_TASK_ID",
 		"AEGIS_PROJECTION_DIR",
 		"AEGIS_MANIFEST_FILE",
+		"AEGIS_TASK_CONTRACT_FILE",
 	];
 	const envBefore = Object.fromEntries(aegisEnvKeys.map((key) => [key, process.env[key]]));
 	const ramDir = join(config.work_dir, "ram");
 	mkdirSync(ramDir, { recursive: true });
 	const romPath = join(resolve(dirname(fileURLToPath(import.meta.url)), ".."), "agent", "ROM.md");
 	function bindObserverEnv(taskId) {
+		delete process.env.AEGIS_TASK_CONTRACT_FILE;
 		process.env.AEGIS_EVENT_LOG = eventLogPath;
 		process.env.AEGIS_RAM_DIR = ramDir;
 		process.env.AEGIS_HANDOFF_FILE = config.session.handoff_path;
@@ -486,6 +526,7 @@ export async function runC6FromConfig(
 		if (typeof taskId === "string" && taskId) process.env.AEGIS_TASK_ID = taskId;
 	}
 	function restoreObserverEnv() {
+		unbindWorkAccount();
 		for (const key of aegisEnvKeys) {
 			if (envBefore[key] === undefined) delete process.env[key];
 			else process.env[key] = envBefore[key];
@@ -661,10 +702,10 @@ export async function runC6FromConfig(
 	// request whose assistant message carried it (bound by the model worker at that
 	// message_end). Tools never guess a request identity.
 	const toolCallRegistry = createToolCallRegistry();
-	const durableTools = config.planning?.enabled === true;
+	const durableTools = true;
 	/**
-	 * Charge ONE tool unit durably before its body runs. Returns null when this run
-	 * does not use durable tool accounting (legacy in-memory admit applies).
+	 * Charge ONE tool unit durably before its body runs. Existing legacy streams
+	 * are refused at entry; new runs use the existing Host durable ledger.
 	 */
 	async function chargeUnit({ unit_id, tool_call_id, tool_name, arguments_digest }) {
 		if (!durableTools) return null;
@@ -684,6 +725,19 @@ export async function runC6FromConfig(
 		if (!binding) return { ok: false, reasons: ["invalid_tool_binding: the tool call has no dispatched request"] };
 		return hostRef.finishTool({ request_id: binding.request_id, tool_call_id, unit_id, tool_name });
 	}
+	const unbindWorkAccount = bindWorkToolAccount(eventLogPath, {
+		async admit({ tool_call_id, tool_name, arguments_digest }) {
+			const work = executionPermit({ task_id: currentTaskRef.task?.task_id, operation: "tool_unit" });
+			if (!work.ok) return { ok: false, reasons: work.reasons };
+			return (
+				(await chargeUnit({ unit_id: "call", tool_call_id, tool_name, arguments_digest })) ??
+				(ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: false, reason: "no active ledger" })
+			);
+		},
+		async finish({ tool_call_id, tool_name }) {
+			return (await finishUnit({ unit_id: "call", tool_call_id, tool_name })) ?? { ok: true };
+		},
+	});
 	const decisionCapture = {
 		tool: createDecisionCaptureTool({
 			sdk: sdkImpl,
@@ -988,6 +1042,15 @@ export async function runC6FromConfig(
 			};
 		}
 		const permit = inspectExecutionPermit({ projection, taskId: task_id, now: Date.now(), operation });
+		const work = inspectWorkPermit({ events: committedRows(), taskId: task_id });
+		if (!work.ok)
+			permit.reasons.push({
+				code: work.code,
+				field: "work_control",
+				event_id: work.work.candidate?.event_id ?? null,
+				message: "work controller withheld execution",
+			});
+		permit.ok = permit.reasons.length === 0;
 		if (durableTools && operation !== "tool_unit") {
 			const open = (projection.tool_charges ?? []).filter(
 				(entry) => entry.task_id === task_id && entry.finished !== true,
@@ -1370,7 +1433,20 @@ export async function runC6FromConfig(
 				controlResult = await host.pause("cli_pause");
 				if (controlResult.ok) runResult = await host.run();
 			} else if (scenario === "resume") {
-				controlResult = await host.resume("cli_resume");
+				controlResult = { ok: true };
+				for (const task of authorityProjection().tasks) {
+					const work = projectWorkControl(committedRows(), task.task_id);
+					if (!work.candidate) continue;
+					const controller = createWorkController({
+						events: committedRows,
+						append: (row) => sinkRef.append(row),
+						taskId: task.task_id,
+						episodeId: work.candidate.episode_id,
+					});
+					controlResult = await controller.resume("Host CLI resume", "runtime");
+					if (!controlResult.ok) break;
+				}
+				if (controlResult.ok) controlResult = await host.resume("cli_resume");
 				if (controlResult.ok) runResult = await host.run();
 			} else if (scenario === "cancel") {
 				controlResult = await host.cancel("cli_cancel");
@@ -1391,7 +1467,19 @@ export async function runC6FromConfig(
 				});
 				runResult = {
 					ok: projection.ok,
-					status: { projection, campaign_state: projection.control?.state ?? "unknown" },
+					status: {
+						projection,
+						campaign_state: projection.control?.state ?? "unknown",
+						work_control: projection.tasks.map((task) => {
+							const work = projectWorkControl(events, task.task_id);
+							return {
+								task_id: task.task_id,
+								state: work.state,
+								policy_error: work.policyError,
+								candidate_event_id: work.candidate?.event_id ?? null,
+							};
+						}),
+					},
 				};
 			} else {
 				runResult = await host.run();
@@ -1485,6 +1573,15 @@ export async function runC6FromConfig(
 		}
 
 		const status = runResult?.status ?? host.status();
+		status.work_control = (status.projection?.tasks ?? status.tasks ?? []).map((task) => {
+			const work = projectWorkControl(committedRows(), task.task_id);
+			return {
+				task_id: task.task_id,
+				state: work.state,
+				policy_error: work.policyError,
+				candidate_event_id: work.candidate?.event_id ?? null,
+			};
+		});
 		const summary = status.projection ?? status;
 		const taskStates = Object.fromEntries((summary?.tasks ?? []).map((t) => [t.task_id, t.state]));
 		out(
@@ -1505,6 +1602,7 @@ export async function runC6FromConfig(
 			campaign_id: manifest.campaign_id,
 			observation_url: server ? server.url : null,
 			task_states: taskStates,
+			work_control: status.work_control,
 			gate: assembled.gate,
 			export_dir: exportResult?.outDir ?? null,
 			measurement: measureResult,

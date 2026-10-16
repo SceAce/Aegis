@@ -324,7 +324,7 @@ async function main() {
 	const continuationRequests = captured.slice(-1)[0] || [];
 	check(
 		"the continuation request carried the preserved goal + board in RAM",
-		JSON.stringify(continuationRequests).includes("total_goal: Start the runtime handoff task.") &&
+		JSON.stringify(continuationRequests).includes("Start the runtime handoff task.") &&
 			JSON.stringify(continuationRequests).includes("handoff-breadcrumb"),
 		"RAM did not carry goal/breadcrumb",
 	);

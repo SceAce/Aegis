@@ -44,16 +44,18 @@
 //   AEGIS_TASK_ID       task binding; defaults to the Pi session id
 
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Type } from "@earendil-works/pi-ai";
 import {
+	createReadTool,
 	defineTool,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { appendContestOutcome, readContestResults, resolveContestOutcome } from "../contest/outcome-bridge.mjs";
 import {
 	createObserveActionRuntime,
@@ -67,14 +69,23 @@ import { validateResourceParams } from "../execution/script-registry.mjs";
 import { projectBoard, summarizeBoard } from "../memory/board.mjs";
 import { contributionPayload, recordStageContribution } from "../memory/contribution.mjs";
 import { normalizeExperienceDecision } from "../memory/experience.mjs";
+import { captureTextFragments } from "../memory/fragments.mjs";
 import { createLearningBridge } from "../memory/learning-bridge.mjs";
 import * as learningCommands from "../memory/learning-commands.mjs";
 import { createLearningStore } from "../memory/learning-store.mjs";
 import { proposalPayload, validateProposal } from "../memory/proposal.mjs";
+import { inspectProposalRefs, inspectProposalReplacement } from "../memory/proposal-refs.mjs";
 import { buildRam, buildRamProjection } from "../memory/ram.mjs";
 import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/state.mjs";
 import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
+import {
+	createWorkController,
+	inspectWorkPermit,
+	projectWorkControl,
+	validateWorkContract,
+	workToolAccount,
+} from "../orchestration/work-control.mjs";
 import { evaluateHandoff } from "../session/handoff.mjs";
 import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
 
@@ -308,6 +319,56 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					}
 				: null,
 		});
+	}
+
+	const workControllers = new Map();
+	function workController() {
+		if (workControllers.has(episodeId)) return workControllers.get(episodeId);
+		const boundTask = taskId,
+			boundEpisode = episodeId;
+		const controller = createWorkController({
+			events: () => log!.replay(),
+			taskId: boundTask,
+			episodeId: boundEpisode,
+			append: (row) => emit(row.event_type, row.payload, { episode_id: row.episode_id, source_kind: row.source.kind }),
+			canResume: () => ({ ok: !!log?.healthy && !auditUnavailable && workConfigurationValid() }),
+		});
+		workControllers.set(episodeId, controller);
+		return controller;
+	}
+	function currentWorkContract() {
+		const manifest = hostManifest();
+		if (manifest?.campaign_id) {
+			const queue = projectQueueFromEvents({
+				manifest,
+				campaign_id: manifest.campaign_id,
+				tasks: manifest.tasks ?? [],
+				events: log?.replay() ?? [],
+				revision: manifest.revision ?? 0,
+			});
+			const task = queue.tasks.find((row) => row.task_id === taskId)?.definition;
+			if (!task) throw new Error("current Campaign task is not accepted");
+			const checked = validateWorkContract({
+				target_ref: task.target_ref,
+				criteria: task.goal?.success_criteria ?? [],
+			});
+			if (!checked.ok) throw new Error(checked.reason);
+			return checked.contract;
+		}
+		const file = process.env.AEGIS_TASK_CONTRACT_FILE;
+		if (!file) return null;
+		const checked = validateWorkContract(JSON.parse(readFileSync(file, "utf8")));
+		if (!checked.ok) throw new Error(checked.reason);
+		return checked.contract;
+	}
+
+	function workConfigurationValid() {
+		try {
+			const frozen = projectWorkControl(log?.replay() ?? [], taskId);
+			return !frozen.policyError && digest(currentWorkContract()) === digest(frozen.policy);
+		} catch {
+			return false;
+		}
 	}
 
 	async function ensureLog(ctx: ExtensionContext): Promise<EventLog> {
@@ -565,6 +626,21 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		await handleSessionStart(ctx);
 	});
 
+	pi.on("input", async (_event, ctx) => {
+		await ensureLog(ctx);
+		refreshProjections();
+		const work = projectWorkControl(log!.replay(), process.env.AEGIS_TASK_ID || taskId || sessionKey(ctx));
+		if (work.state === "waiting_external") {
+			if (ctx.hasUI)
+				ctx.ui.notify(
+					"Aegis: awaiting external review; use /aegis work-resume or work-reject with a reason",
+					"warning",
+				);
+			return { action: "handled" as const };
+		}
+		return undefined;
+	});
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		commandCtx = ctx;
 		await ensureLog(ctx);
@@ -599,8 +675,33 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			);
 		} else {
 			episodeId = eventId();
+			const manifest = hostManifest();
+			if (manifest?.campaign_id) {
+				const queue = projectQueueFromEvents({
+					manifest,
+					campaign_id: manifest.campaign_id,
+					tasks: manifest.tasks ?? [],
+					events: log!.replay(),
+					revision: manifest.revision ?? 0,
+				});
+				const acceptedStart = queue.authority?.accepted_starts?.findLast((start) => start.task_id === taskId);
+				if (!acceptedStart?.episode_id) {
+					auditUnavailable = true;
+					ctx.abort();
+					return undefined;
+				}
+				episodeId = acceptedStart.episode_id;
+			}
 			currentPromptEventId = undefined;
 			currentGoal = event.prompt || "";
+			let contract: ReturnType<typeof currentWorkContract>;
+			try {
+				contract = currentWorkContract();
+			} catch {
+				auditUnavailable = true;
+				ctx.abort();
+				return undefined;
+			}
 			await emit(
 				"episode.started",
 				{
@@ -611,11 +712,24 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					source_kind: process.env.AEGIS_EPISODE_SOURCE_KIND || "live",
 					authorization: process.env.AEGIS_AUTHORIZATION || "unknown",
 					budget: process.env.AEGIS_BUDGET || "unknown",
+					work_contract: contract,
 				},
 				{ source_kind: "runtime" },
 			);
 		}
 		refreshProjections();
+		// Configuration may not silently replace the first frozen task contract.
+		const frozen = projectWorkControl(log!.replay(), taskId);
+		try {
+			const configured = currentWorkContract();
+			if (frozen.policyError || digest(configured) !== digest(frozen.policy)) {
+				auditUnavailable = true;
+				ctx.abort();
+			}
+		} catch {
+			auditUnavailable = true;
+			ctx.abort();
+		}
 
 		const rom = await loadRom();
 		const options = event.systemPromptOptions as { sections?: Record<string, string> } | undefined;
@@ -669,6 +783,17 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				timestamp: Date.now(),
 			},
 		];
+		if (
+			!workConfigurationValid() ||
+			projectWorkControl(log.replay(), taskId).policyError ||
+			projectWorkControl(log.replay(), taskId).state === "waiting_external"
+		) {
+			// Already-issued same-batch results remain observable. Input/tool gates
+			// stop new work; the next model call, if any sibling did not terminate,
+			// is aborted here before reaching a provider.
+			ctx.abort();
+			return undefined;
+		}
 		// Audit that this genuinely provider-bound request was projected from the
 		// committed Events: the RAM digest + state revision are recorded, and the
 		// event creates no board node and does not bump RuntimeState, so it can
@@ -729,38 +854,59 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		await emit("turn.started", { turn_index: event.turnIndex, timestamp_ms: event.timestamp });
 	});
 
-	pi.on("tool_call", async (event, ctx) => {
-		commandCtx = ctx;
-		// Aegis control tools are not workspace side effects: they must not be
-		// recorded as pending actions, or a handoff request would count itself
-		// and always refuse its own switch. They still fail closed if the audit
-		// log is unavailable (accepted below via the generic guard).
-		// `aegis_observe`/`aegis_execute` are control tools for the same reason:
-		// they record their own action INTENT via the durable `emit` (so the
-		// fsync-before-effect ordering is inside the tool, not the generic hook),
-		// and they fail closed themselves when the audit is unavailable.
-		const isControl =
-			event.toolName === "aegis_propose" ||
-			event.toolName === "aegis_switch_session" ||
-			event.toolName === "aegis_observe" ||
-			event.toolName === "aegis_execute";
-		if (!isControl) {
-			const result = await emit("action.requested", {
-				action_id: event.toolCallId,
-				tool_name: event.toolName,
-				input: summarizeToolInput(event.toolName, event.input),
-			});
-			refreshProjections();
-			if (!result.ok || auditUnavailable) {
-				if (!READ_ONLY_TOOLS.has(event.toolName)) {
-					return {
-						block: true,
-						reason: `Aegis: audit log is unavailable (${result.error || "previous write failure"}); refusing a side-effecting tool so no unlogged action runs. Read-only tools may continue.`,
-					};
+	let toolAdmission = Promise.resolve();
+	pi.on("tool_call", (event, ctx) => {
+		const next = toolAdmission.then(async () => {
+			commandCtx = ctx;
+			if (!workConfigurationValid())
+				return { block: true, terminate: true, reason: "Aegis: frozen work contract unavailable or changed" };
+			// Aegis control tools are not workspace side effects: they must not be
+			// recorded as pending actions, or a handoff request would count itself
+			// and always refuse its own switch. They still fail closed if the audit
+			// log is unavailable (accepted below via the generic guard).
+			// `aegis_observe`/`aegis_execute` are control tools for the same reason:
+			// they record their own action INTENT via the durable `emit` (so the
+			// fsync-before-effect ordering is inside the tool, not the generic hook),
+			// and they fail closed themselves when the audit is unavailable.
+			const isControl =
+				event.toolName === "aegis_submit_candidate" ||
+				event.toolName === "aegis_propose" ||
+				event.toolName === "aegis_switch_session" ||
+				event.toolName === "aegis_observe" ||
+				event.toolName === "aegis_execute";
+			if (!["aegis_submit_candidate", "aegis_switch_session"].includes(event.toolName)) {
+				const permit = inspectWorkPermit({
+					events: log?.replay() ?? [],
+					taskId,
+					toolName: event.toolName,
+					argumentsDigest: digest(event.input),
+				});
+				if (!permit.ok) return { block: true, terminate: true, reason: `Aegis work control: ${permit.code}` };
+			}
+			if (!isControl) {
+				const result = await emit("action.requested", {
+					action_id: event.toolCallId,
+					tool_name: event.toolName,
+					input: summarizeToolInput(event.toolName, event.input),
+					arguments_digest: digest(event.input),
+				});
+				refreshProjections();
+				if (!result.ok || auditUnavailable) {
+					if (!READ_ONLY_TOOLS.has(event.toolName)) {
+						return {
+							block: true,
+							reason: `Aegis: audit log is unavailable (${result.error || "previous write failure"}); refusing a side-effecting tool so no unlogged action runs. Read-only tools may continue.`,
+						};
+					}
 				}
 			}
-		}
-		return undefined;
+			return undefined;
+		});
+		toolAdmission = next.then(
+			() => undefined,
+			() => undefined,
+		);
+		return next;
 	});
 
 	pi.on("tool_result", async (event) => {
@@ -776,6 +922,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			transport: { tool_ok: !event.isError, content_chars: text.length },
 			content_digest: digest(text),
 			content_excerpt: excerpt(text),
+			response_fragments: captureTextFragments(text),
 			content_truncated: redact(text).length > MAX_EXCERPT,
 			result_summary: summarizeMemoryValue(event.details ?? null),
 			result_detail_keys: event.details && typeof event.details === "object" ? Object.keys(event.details).sort() : [],
@@ -1553,7 +1700,20 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				}),
 				scope: Type.Optional(Type.String({ description: "Optional scope label" })),
 				source_refs: Type.Optional(
-					Type.Array(Type.String(), { description: "Optional non-sensitive source references" }),
+					Type.Array(
+						Type.Union([
+							Type.String(),
+							Type.Object({
+								ref_type: Type.Union([Type.Literal("event"), Type.Literal("node"), Type.Literal("action")]),
+								ref_id: Type.String(),
+								digest: Type.Optional(Type.String()),
+							}),
+						]),
+						{ maxItems: 12, description: "Committed same-Episode event/node/action refs; not proof" },
+					),
+				),
+				replace_event_id: Type.Optional(
+					Type.String({ description: "Revise a prior same-Episode model proposal only" }),
 				),
 				when: Type.Optional(
 					Type.Array(Type.String(), {
@@ -1572,6 +1732,24 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 				await ensureLog(ctx);
 				const verdict = validateProposal(params);
+				if (verdict.accepted) {
+					refreshProjections();
+					const references = inspectProposalRefs(verdict.proposal.source_refs, {
+						events: log!.replay(),
+						board,
+						episodeId,
+					});
+					const replacement = inspectProposalReplacement(
+						(verdict.proposal as { replace_event_id?: string }).replace_event_id,
+						log!.replay(),
+						episodeId,
+						board,
+					);
+					if (!references.ok || !replacement.ok) {
+						verdict.accepted = false;
+						verdict.reason = references.reason ?? replacement.reason;
+					} else verdict.proposal.source_refs = references.refs;
+				}
 				if (!verdict.accepted) {
 					await emit(
 						"proposal.rejected",
@@ -1703,6 +1881,54 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 	// /aegis runtime command (contest uses /aegis-contest to avoid a clash).
 	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
+			name: "aegis_submit_candidate",
+			label: "Aegis: submit result for external review",
+			executionMode: "sequential",
+			description:
+				"Submit a candidate result bound to the configured task target/criterion and committed action evidence. No success is declared. Accepted submission pauses further exploration until the user/Host resumes. Ordinary claims use aegis_propose.",
+			parameters: Type.Object({
+				target_ref: Type.String(),
+				criterion_id: Type.String(),
+				evidence_event_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
+			}),
+			async execute(_id, params, _signal, _update, ctx) {
+				await ensureLog(ctx);
+				refreshProjections();
+				const account = workToolAccount(eventLogPath());
+				if (hostManifest()?.campaign_id && !account)
+					return { content: [{ type: "text", text: "Campaign tool ledger unavailable" }], details: { ok: false } };
+				const charge = account
+					? await account.admit({
+							tool_call_id: _id,
+							tool_name: "aegis_submit_candidate",
+							arguments_digest: digest(params),
+						})
+					: { ok: true };
+				if (!charge?.ok || charge.duplicate)
+					return { content: [{ type: "text", text: "Candidate call not newly admitted" }], details: { ok: false } };
+				const result = await workController().submit(params);
+				const finished = account
+					? await account.finish({ tool_call_id: _id, tool_name: "aegis_submit_candidate" })
+					: { ok: true };
+				if (!finished?.ok) {
+					auditUnavailable = true;
+					return {
+						content: [{ type: "text", text: "Candidate accounting requires reconciliation" }],
+						details: { ok: false },
+						terminate: true,
+					};
+				}
+				return {
+					content: [{ type: "text", text: JSON.stringify(result) }],
+					details: result,
+					...(result.ok ? { terminate: true } : {}),
+				};
+			},
+		}),
+	);
+
 	pi.registerCommand("aegis", {
 		description:
 			"Aegis runtime: status | board | ram | switch | close | outcome | learn | compile | route | bind | run | replay",
@@ -1717,6 +1943,102 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				else process.stderr.write(`[aegis] ${message}\n`);
 			};
 			switch (sub) {
+				case "work-status": {
+					const work = projectWorkControl(log!.replay(), taskId);
+					notify(
+						JSON.stringify({
+							state: work.state,
+							policy_error: work.policyError,
+							candidate_event_id: work.candidate?.event_id ?? null,
+						}),
+					);
+					return;
+				}
+				case "work-verify": {
+					// Commands have no SDK executeTool context. Invoke only the SDK's
+					// known read implementation, with explicit durable admission below.
+					if (hostManifest()?.campaign_id || workToolAccount(eventLogPath())) {
+						notify("work_verify_unsupported: Campaign commands have no request-bound tool ledger", "warning");
+						return;
+					}
+					try {
+						if (!pi.getActiveTools().includes("read"))
+							throw new Error("work_verify_unsupported: read is not a declared active tool");
+						const input = JSON.parse(rest.join(" "));
+						if (
+							input.tool_name !== "read" ||
+							!input.args ||
+							typeof input.args.path !== "string" ||
+							Object.keys(input).some((key) => !["tool_name", "args"].includes(key)) ||
+							Object.keys(input.args).some((key) => !["path", "offset", "limit"].includes(key)) ||
+							["offset", "limit"].some(
+								(key) => input.args[key] !== undefined && (!Number.isInteger(input.args[key]) || input.args[key] < 1),
+							)
+						)
+							throw new Error("work_verify_unsupported: expected read with path and optional positive offset/limit");
+						const work = projectWorkControl(log!.replay(), taskId);
+						if (work.state !== "waiting_external") throw new Error("work verification requires waiting_external");
+						if (!workConfigurationValid() || auditUnavailable || !log?.healthy)
+							throw new Error("work verification requires healthy audit and frozen policy");
+						const argsDigest = digest(input.args);
+						const permit = inspectWorkPermit({
+							events: log.replay(),
+							taskId,
+							toolName: "read",
+							argumentsDigest: argsDigest,
+						});
+						if (!permit.ok) throw new Error(permit.code);
+						const workspace = await realpath(ctx.cwd);
+						const target = await realpath(resolve(workspace, input.args.path));
+						const local = relative(workspace, target);
+						if (local === ".." || local.startsWith("../") || isAbsolute(local))
+							throw new Error("work verification read is outside workspace grant");
+						if (!workConfigurationValid()) throw new Error("work verification frozen policy changed");
+						const finalPermit = inspectWorkPermit({
+							events: log.replay(),
+							taskId,
+							toolName: "read",
+							argumentsDigest: argsDigest,
+						});
+						if (!finalPermit.ok) throw new Error(finalPermit.code);
+						const actionId = eventId();
+						const admitted = await emit("action.requested", {
+							action_id: actionId,
+							tool_name: "read",
+							task_id: taskId,
+							input: summarizeToolInput("read", input.args),
+							arguments_digest: argsDigest,
+						});
+						if (!admitted.ok) throw new Error("verification audit admission failed");
+						let result: Awaited<ReturnType<ReturnType<typeof createReadTool>["execute"]>>;
+						try {
+							result = await createReadTool(workspace).execute(actionId, { ...input.args, path: target });
+						} catch (error) {
+							result = { isError: true, content: [{ type: "text", text: String(error) }] };
+						}
+						const recorded = await emit("action.completed", {
+							action_id: actionId,
+							tool_name: "read",
+							task_id: taskId,
+							is_error: result.isError === true,
+							result: summarizeMemoryValue(result),
+						});
+						refreshProjections();
+						notify(
+							JSON.stringify({ ok: recorded.ok, state: "waiting_external", result }),
+							recorded.ok ? "info" : "warning",
+						);
+					} catch (error) {
+						notify(String(error), "warning");
+					}
+					return;
+				}
+				case "work-resume":
+				case "work-reject": {
+					const result = await workController().resume(rest.join(" "), "human", sub === "work-reject");
+					notify(JSON.stringify(result), result.ok ? "info" : "warning");
+					return;
+				}
 				case "board": {
 					notify(`Aegis board: ${JSON.stringify(summarizeBoard(board))}`);
 					return;

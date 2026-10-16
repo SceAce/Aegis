@@ -70,18 +70,22 @@ export function validateProposal(input) {
 		if (input.when !== undefined) {
 			if (!Array.isArray(input.when)) return { accepted: false, reason: "when must be an array of condition strings" };
 			for (const condition of input.when) {
-				if (typeof condition !== "string" || !condition.trim()) return { accepted: false, reason: "each when condition must be a non-empty string" };
-				if (condition.length > MAX_WHEN_ITEM) return { accepted: false, reason: `each when condition must be <= ${MAX_WHEN_ITEM} characters` };
+				if (typeof condition !== "string" || !condition.trim())
+					return { accepted: false, reason: "each when condition must be a non-empty string" };
+				if (condition.length > MAX_WHEN_ITEM)
+					return { accepted: false, reason: `each when condition must be <= ${MAX_WHEN_ITEM} characters` };
 			}
 			candidateShape.when = input.when.slice(0, MAX_WHEN).map((condition) => condition.trim());
 		}
 		if (input.do !== undefined) {
-			if (typeof input.do !== "string" || !input.do.trim()) return { accepted: false, reason: "do must be a non-empty string when provided" };
+			if (typeof input.do !== "string" || !input.do.trim())
+				return { accepted: false, reason: "do must be a non-empty string when provided" };
 			if (input.do.length > MAX_TEXT) return { accepted: false, reason: `do exceeds ${MAX_TEXT} characters` };
 			candidateShape.do = input.do.trim();
 		}
 		if (input.expect !== undefined) {
-			if (typeof input.expect !== "string" || !input.expect.trim()) return { accepted: false, reason: "expect must be a non-empty string when provided" };
+			if (typeof input.expect !== "string" || !input.expect.trim())
+				return { accepted: false, reason: "expect must be a non-empty string when provided" };
 			if (input.expect.length > MAX_TEXT) return { accepted: false, reason: `expect exceeds ${MAX_TEXT} characters` };
 			candidateShape.expect = input.expect.trim();
 		}
@@ -97,13 +101,34 @@ export function validateProposal(input) {
 	// {ref_type, ref_id} objects, and normalize both to the schema Ref shape so
 	// the board never has to guess what a bare string meant.
 	const sourceRefs = [];
+	if (input.source_refs !== undefined && (!Array.isArray(input.source_refs) || input.source_refs.length > 12))
+		return { accepted: false, reason: "source_refs must contain at most 12 refs" };
+	if (
+		input.replace_event_id !== undefined &&
+		(typeof input.replace_event_id !== "string" || !input.replace_event_id || input.replace_event_id.length > 200)
+	)
+		return { accepted: false, reason: "invalid replace_event_id" };
 	if (Array.isArray(input.source_refs)) {
 		for (const ref of input.source_refs) {
-			if (typeof ref === "string" && ref.trim()) {
-				sourceRefs.push({ ref_type: "external", ref_id: ref.trim() });
-			} else if (ref && typeof ref === "object" && !Array.isArray(ref) && typeof ref.ref_type === "string" && typeof ref.ref_id === "string" && ref.ref_type.trim() && ref.ref_id.trim()) {
-				sourceRefs.push({ ref_type: ref.ref_type.trim(), ref_id: ref.ref_id.trim(), ...(typeof ref.digest === "string" && ref.digest ? { digest: ref.digest } : {}) });
-			}
+			if (typeof ref === "string" && ref.trim() && ref.trim().length <= 200) {
+				sourceRefs.push({ ref_type: "event", ref_id: ref.trim() });
+			} else if (
+				ref &&
+				typeof ref === "object" &&
+				!Array.isArray(ref) &&
+				typeof ref.ref_type === "string" &&
+				typeof ref.ref_id === "string" &&
+				["event", "node", "action"].includes(ref.ref_type.trim()) &&
+				ref.ref_id.trim() &&
+				ref.ref_id.trim().length <= 200 &&
+				(ref.digest === undefined || (typeof ref.digest === "string" && ref.digest.length > 0))
+			) {
+				sourceRefs.push({
+					ref_type: ref.ref_type.trim(),
+					ref_id: ref.ref_id.trim(),
+					...(typeof ref.digest === "string" && ref.digest ? { digest: ref.digest } : {}),
+				});
+			} else return { accepted: false, reason: "source ref requires a valid event/node/action identity" };
 		}
 	}
 
@@ -114,6 +139,7 @@ export function validateProposal(input) {
 			text,
 			scope,
 			source_refs: sourceRefs,
+			...(input.replace_event_id ? { replace_event_id: input.replace_event_id } : {}),
 			...(kind === "candidate" ? candidateShape : {}),
 			// intent maps to an Intent node; claim/candidate map to Hint nodes.
 			node_kind: kind === "intent" ? "intent" : "hint",
@@ -129,7 +155,10 @@ export function proposalPayload(proposal, extra = {}) {
 		text: proposal.text,
 		scope: proposal.scope,
 		source_refs: proposal.source_refs,
-		...(proposal.kind === "candidate" ? { when: proposal.when, do: proposal.do, expect: proposal.expect, candidate: true, verified: false, proof: null } : {}),
+		...(proposal.replace_event_id ? { replace_event_id: proposal.replace_event_id } : {}),
+		...(proposal.kind === "candidate"
+			? { when: proposal.when, do: proposal.do, expect: proposal.expect, candidate: true, verified: false, proof: null }
+			: {}),
 		...extra,
 	};
 }

@@ -126,7 +126,32 @@ rendered prose. `observation.captured` nodes also carry a bounded
 `observation_summary` of their recorded value. These display fields do not
 change the existing verification gate.
 
-### Bounded tool observations and RAM selection
+### RAM v3: structured projection and explicit proposal associations
+
+RAM v3 replaces the rendered Markdown body with a parseable JSON object. It
+preserves separate facts/refutations, observed tool pairs and unverified
+proposals, complete local ref identities, task/pending responsibility, state
+revision and whole-output budget statistics. The request transport remains the
+same ephemeral user tail. The v2 selection notes below describe the prior
+baseline; the current interface is documented in
+[structured RAM and work control](STRUCTURED_RAM_AND_WORK_CONTROL.md).
+
+Text observations can add `response_fragments` with head/middle/tail samples,
+redacted-text offsets, digest and explicit missing ranges. These are mechanical
+views of text, with no HTTP/SQL/build/test/business interpretation. No wording
+in a generic bash result creates a Fact, Outcome or workflow transition.
+
+Explicit model proposals may bind event/node/action source refs from the
+committed effective Episode prefix. `replace_event_id` only revises an accepted
+effective same-Episode model proposal; it cannot revise Outcome or Fact.
+Ordinary assistant text never becomes a proposal through inference.
+
+Work control is carried by typed `runtime.note` payloads (`work-control-1`),
+including candidate waiting and trusted resume/reject transitions. It projects
+workflow state only, not an additional Outcome state. RAM displays its bounded
+view; authorization and dispatch checks remain in the Runtime/Host/execute gates.
+
+### Bounded tool observations and RAM selection (v2 baseline)
 
 Observer `action.requested.input.summary` and
 `action.completed.result_summary` contain `{value,truncated,redacted}`. They

@@ -25,7 +25,8 @@ set -euo pipefail
 #     longer duplicates it. ROM_FILE is still exported as AEGIS_ROM_FILE, which
 #     is the single source the Observer reads,
 #   * pins the tool set with --tools read,bash,edit,write,aegis_propose,
-#     aegis_switch_session so inherited settings cannot silently change the
+#     aegis_switch_session,aegis_observe,aegis_execute,aegis_submit_candidate
+#     so inherited settings cannot silently change the
 #     controlled comparison, and so the Observer's proposal/handoff control
 #     tools are actually reachable (they were previously hidden by --tools),
 #   * keeps each task's runtime audit in its OWN task-scoped directory
@@ -193,7 +194,8 @@ Controlled-comparison rule:
   controlled conditions because unknown args are refused and PI_* experiment
   state is cleared before exec. The launcher then pins the extension set to
   aegis-observer + aegis-contest, and pins --tools
-  read,bash,edit,write,aegis_propose,aegis_switch_session, so an inherited
+  read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,
+  aegis_execute,aegis_submit_candidate, so an inherited
   settings file cannot change the comparison and the Observer control tools
   remain reachable. The ROM is NOT appended at the CLI: the Observer injects it
   as the structured aegis_rom section, so the real launch does not duplicate it.
@@ -353,6 +355,6 @@ exec "$PI_TEST" \
 	--session-dir "$SESSION_DIR" \
 	-e "$OBSERVER" \
 	-e "$CONTEST" \
-	--tools read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,aegis_execute \
+	--tools read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,aegis_execute,aegis_submit_candidate \
 	--provider relay \
 	--model deepseek-v4.1-flash

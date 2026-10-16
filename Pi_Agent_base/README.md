@@ -33,6 +33,10 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
   Pi_Agent_base/campaign/c6-entry.mjs --config <config> status
 ```
 
+## 工作记忆与候选等待
+
+当前 RAM 使用 v3 结构化 JSON：Observer 机械投影、模型显式提案、Runtime 控制和独立结果判断分别负责。通用 bash/powershell 在所有领域只提供不透明命令/输出观察，不猜测业务语义。候选结果提交和等待外部复核的操作见 [接口说明](../docs/STRUCTURED_RAM_AND_WORK_CONTROL.md)，本次验证见 [实现记录](../docs/RAM_ABC_IMPLEMENTATION.md)。
+
 ## 放置规则
 
 新增代码先确定职责，再选目录。`memory/` 只接收记忆、证据和经验相关模块；调度、SDK、Broker、授权、HTTP、报告和会话管理分别归入上表目录。共用辅助函数放 `shared/`，正式模块不能依赖 `fixtures/`。新业务 adapter 放 `execution/adapters/`，不要继续增加阶段专用目录或在 `runtime/` 放源码。

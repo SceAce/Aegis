@@ -19,7 +19,7 @@
 
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-
+import { inspectWorkPermit } from "../orchestration/work-control.mjs";
 import { digest } from "../shared/contracts.mjs";
 
 /**
@@ -49,7 +49,7 @@ function samePath(a, b) {
  *   broker: {invoke: Function, registry?: any},
  *   authorization: any,
  *   plan: ActionPlan|((task: any) => ActionPlan|null),
- *   sink: {append: Function},
+ *   sink: {append: Function, replay?: Function, events?: Array<object>, rows?: Array<object>},
  *   workspaceRoot: string,
  *   artifactIndex: Map<string, {ref_id: string, digest: string, path?: string}>|Record<string, {ref_id: string, digest: string}>,
  *   actionGate?: any,
@@ -169,6 +169,22 @@ export function createBrokerWorker(
 		const episodeId = `ep-${task.task_id}`;
 		const actionEventKey = `act-${task.task_id}-${step.step_id}`;
 		const contract = broker.registry?.get(step.action_ref);
+		const workPermit = () =>
+			inspectWorkPermit({
+				events: (typeof sink.replay === "function" ? sink.replay() : (sink.events ?? sink.rows ?? [])).filter(
+					(row) =>
+						!(
+							row.event_type === "action.requested" &&
+							row.episode_id === episodeId &&
+							row.payload?.action_id === actionEventKey
+						),
+				),
+				taskId: task.task_id,
+				toolName: contract?.tool ?? step.action_ref,
+				argumentsDigest: digest(step.arguments ?? {}),
+			});
+		const initialWork = workPermit();
+		if (!initialWork.ok) return { ok: false, phase: "permit", error: initialWork.code, effect_probe: false };
 		let grant = grantCheck(task, step);
 		const requested = await commit({
 			event_type: "action.requested",
@@ -177,6 +193,7 @@ export function createBrokerWorker(
 			payload: {
 				action_id: actionEventKey,
 				action_ref: step.action_ref,
+				tool_name: contract?.tool ?? step.action_ref,
 				version: contract?.version ?? null,
 				implementation_digest: contract?.implementation_digest ?? null,
 				episode_id: episodeId,
@@ -204,6 +221,8 @@ export function createBrokerWorker(
 			// The intent append is awaited; re-check final parameters/grants at the
 			// actual execution boundary as well.
 			grant = grant.ok ? grantCheck(task, step) : grant;
+			const work = workPermit();
+			if (!work.ok) grant = { ok: false, reason: work.code };
 			result = grant.ok
 				? await broker.invoke({
 						action_ref: step.action_ref,
@@ -332,11 +351,13 @@ export function createBrokerWorker(
 					return {
 						ok: false,
 						failure_mode:
-							stepResult.phase === "rejected"
-								? "action_rejected"
-								: stepResult.phase === "intent"
-									? "intent_not_durable"
-									: "result_not_durable",
+							stepResult.phase === "permit"
+								? stepResult.error
+								: stepResult.phase === "rejected"
+									? "action_rejected"
+									: stepResult.phase === "intent"
+										? "intent_not_durable"
+										: "result_not_durable",
 						audit_degraded: stepResult.phase === "intent" || stepResult.phase === "result",
 						detail: stepResult.error,
 						effects,

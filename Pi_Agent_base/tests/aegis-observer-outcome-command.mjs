@@ -301,7 +301,7 @@ async function main() {
 			do: "run the project's lockfile refresh command, then rebuild",
 			expect: "build exits 0",
 			scope: "repo:demo",
-			source_refs: ["episode:task-outcome-001"],
+			source_refs: [{ ref_type: "event", ref_id: allOutcomes[1].event_id }],
 		})]),
 		fauxAssistantMessage("candidate recorded"),
 	]);
@@ -310,7 +310,7 @@ async function main() {
 	const candidateEvents = events.filter((e) => e.event_type === "proposal.submitted" && e.payload?.kind === "candidate");
 	check("a candidate Experience proposal was recorded", candidateEvents.length === 1, `count=${candidateEvents.length}`);
 	const candidate = candidateEvents[0]?.payload ?? {};
-	check("the candidate carries when/do/expect/scope/source_refs", Array.isArray(candidate.when) && candidate.when.length === 2 && typeof candidate.do === "string" && typeof candidate.expect === "string" && candidate.scope === "repo:demo" && Array.isArray(candidate.source_refs) && candidate.source_refs.length === 1);
+	check("the candidate carries when/do/expect/scope/source_refs", Array.isArray(candidate.when) && candidate.when.length === 2 && typeof candidate.do === "string" && typeof candidate.expect === "string" && candidate.scope === "repo:demo" && Array.isArray(candidate.source_refs) && candidate.source_refs.length === 1 && candidate.source_refs[0].ref_type === "event" && candidate.source_refs[0].ref_id === allOutcomes[1].event_id);
 	check("the candidate is explicitly UNVERIFIED and has no proof", candidate.candidate === true && candidate.verified === false && candidate.proof === null);
 	const boardAfter = projectBoard(events);
 	check("the candidate Experience is a Hint node, never a Fact/active Experience", boardAfter.byType.Hint.some((n) => n.text.includes("lockfile refresh unblocks the build")) && !boardAfter.byType.Fact.some((n) => n.text.includes("lockfile refresh")));

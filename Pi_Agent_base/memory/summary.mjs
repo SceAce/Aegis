@@ -58,7 +58,19 @@ export function summarizeMemoryValue(input, { maxChars = 900, maxDepth = 4, maxE
 		seen.add(value);
 		const entries = Object.entries(Object.getOwnPropertyDescriptors(value))
 			.filter(([key]) => !Array.isArray(value) || key !== "length")
-			.sort(([a], [b]) => (Array.isArray(value) ? Number(a) - Number(b) : a < b ? -1 : a > b ? 1 : 0));
+			.sort(([a], [b]) =>
+				Array.isArray(value)
+					? Number(a) - Number(b)
+					: a === "criterion_id"
+						? -1
+						: b === "criterion_id"
+							? 1
+							: a < b
+								? -1
+								: a > b
+									? 1
+									: 0,
+			);
 		const result = Array.isArray(value) ? [] : {};
 		for (const [index, [key, descriptor]] of entries.entries()) {
 			if (index >= maxEntries || remaining <= 0) {
@@ -82,13 +94,49 @@ export function summarizeMemoryValue(input, { maxChars = 900, maxDepth = 4, maxE
 		return result;
 	}
 	let value = visit(input, 0);
-	const encoded = JSON.stringify(value);
-	if (encoded.length > maxChars) {
-		value = memoryText(encoded, maxChars - 12);
-		while (JSON.stringify(value).length > maxChars)
-			value = `${value.slice(0, Math.max(0, value.length - 24))}${OMITTED}`;
+	// Account for JSON escaping and keys without converting containers to prose.
+	// Prefer clipping large leaves; preserve criterion identity and scalar values.
+	while (JSON.stringify(value).length > maxChars) {
 		truncated = true;
+		const leaves = [];
+		function collect(current, parent = null, key = null) {
+			if (typeof current === "string" && current.length > OMITTED.length && key !== "criterion_id")
+				leaves.push({ parent, key, value: current });
+			else if (current && typeof current === "object")
+				for (const [childKey, child] of Object.entries(current)) collect(child, current, childKey);
+		}
+		collect(value);
+		leaves.sort((a, b) => JSON.stringify(b.value).length - JSON.stringify(a.value).length);
+		if (leaves.length) {
+			const leaf = leaves[0];
+			const clipped = `${leaf.value.slice(0, Math.max(0, Math.floor(leaf.value.length / 2) - OMITTED.length))}${OMITTED}`;
+			if (leaf.parent) leaf.parent[leaf.key] = clipped;
+			else value = clipped;
+			continue;
+		}
+		if (value && typeof value === "object") {
+			const keys = Object.keys(value).filter((key) => key !== "criterion_id" && key !== "_truncated");
+			// Keys themselves may be arbitrarily large. Explicitly omit entries as
+			// the last resort, retaining the root container and identity when it fits.
+			keys.sort((a, b) => JSON.stringify([b, value[b]]).length - JSON.stringify([a, value[a]]).length);
+			if (keys.length) {
+				if (Array.isArray(value)) value.pop();
+				else {
+					delete value[keys[0]];
+					value._truncated = true;
+				}
+				continue;
+			}
+		}
+		// A single identity can exceed the requested display budget; disclose its
+		// omission instead of emitting a shortened identity that looks resolvable.
+		value = Array.isArray(value)
+			? [OMITTED]
+			: typeof value === "object" && value !== null
+				? { _truncated: true }
+				: OMITTED;
 	}
+
 	return { value, truncated, redacted };
 }
 

@@ -124,7 +124,7 @@ export async function createCampaignSdkRuntime({
 	cwd,
 	agentDir,
 	sessionDir,
-	tools = ["aegis_propose", "aegis_switch_session"],
+	tools = ["aegis_propose", "aegis_switch_session", "aegis_submit_candidate"],
 	sdk,
 	extraExtensionPaths = [],
 	decisionCapture = null,

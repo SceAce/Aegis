@@ -30,7 +30,7 @@ function node(id, text, fields = {}) {
 	return { node_id: id, origin_event_id: id, episode_id: "ep-local", text, ...fields };
 }
 function footer(text) {
-	return Number(text.match(/ram_estimated_chars: (\d+)/)[1]);
+	return JSON.parse(text).meta.ram_estimated_chars;
 }
 
 test("RP-01 complete output including footer fits budgets when mandatory context fits", () => {
@@ -69,9 +69,9 @@ test("RP-02 tiny budget preserves unknown/pending responsibility and discloses o
 	assert.equal(footer(p.text), p.text.length);
 	for (const status of ["pending", "unknown", "unresolved"]) assert.ok(p.text.includes(`action-${status}`));
 	assert.ok(!p.text.includes("FOREIGN"));
-	assert.match(p.text, /overflow: true/);
-	assert.match(p.text, /authorization:/);
-	assert.match(p.text, /budget_drops:/);
+	assert.equal(JSON.parse(p.text).meta.overflow, true);
+	assert.deepEqual(JSON.parse(p.text).task.authorization, { read: ["target.txt"] });
+	assert.equal(typeof JSON.parse(p.text).meta.budget_drops, "number");
 });
 
 test("RP-03 same prose with distinct judgment identities retains false/0/empty structured values", () => {
@@ -86,10 +86,15 @@ test("RP-03 same prose with distinct judgment identities retains false/0/empty s
 	const p = buildRamProjection({ ...f, budgetChars: 6000 });
 	assert.equal(p.sections.find((s) => s.id === "facts").shown, 4);
 	for (const i of [0, 1, 2, 3]) assert.ok(p.text.includes(`criterion-${i}`));
-	assert.ok(p.text.includes("expected=false"));
-	assert.ok(p.text.includes("expected=0"));
-	assert.ok(p.text.includes("expected=[]"));
-	assert.ok(p.text.includes("expected={}"));
+	const expected = JSON.parse(p.text).sections.facts.items.map((item) => item.criterion.expected);
+	assert.ok(expected.includes(false));
+	assert.ok(expected.includes(0));
+	assert.ok(expected.some((value) => Array.isArray(value) && value.length === 0));
+	assert.ok(
+		expected.some(
+			(value) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0,
+		),
+	);
 });
 
 test("RP-04 newest fact and tool observation survive history growth; selection is deterministic", () => {
@@ -211,7 +216,7 @@ test("RP-08 selected identity dedup and current-task relevance do not promote pr
 	assert.equal(p.sections.find((s) => s.id === "facts").total, 3);
 	assert.ok(p.text.indexOf("newest evidence") < p.text.indexOf("relevant older evidence"));
 	assert.ok(p.text.indexOf("relevant older evidence") < p.text.indexOf("unrelated prior material"));
-	const factText = p.text.split("## Verified facts")[1].split("## Refuted")[0];
+	const factText = JSON.stringify(JSON.parse(p.text).sections.facts.items);
 	assert.ok(!factText.includes("CLAIM_NOT_FACT"));
 	assert.ok(p.text.includes("NOT guidance"));
 });
@@ -240,7 +245,9 @@ test("RP-09 captured observation structure survives Board to RAM with evidence i
 	assert.ok(text.includes('"count":0'));
 	assert.ok(text.includes('"enabled":false'));
 	assert.ok(text.includes("observed-event"));
-	assert.ok(text.includes("artifact:observation-proof"));
+	assert.ok(
+		Object.values(JSON.parse(text).refs).some((ref) => ref.type === "artifact" && ref.id === "observation-proof"),
+	);
 });
 
 test("RP-11 foreign evidence and tool pairs cannot enter local or missing-Episode RAM", () => {
@@ -277,7 +284,7 @@ test("RP-10 oversized newest item does not prevent smaller older evidence from f
 		}),
 	);
 	const baseline = buildRamProjection(fixture()).estimated_chars;
-	const p = buildRamProjection({ ...f, budgetChars: baseline + 120 });
+	const p = buildRamProjection({ ...f, budgetChars: baseline + 260 });
 	assert.ok(p.text.includes("SMALL_EVIDENCE"));
-	assert.ok(p.text.length <= baseline + 120);
+	assert.ok(p.text.length <= baseline + 260);
 });

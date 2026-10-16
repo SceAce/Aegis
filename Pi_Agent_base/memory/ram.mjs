@@ -1,243 +1,264 @@
-// Deterministic, per-request working memory. Structured selection precedes text
-// rendering; claims/tool observations never become independent task verdicts.
-import { memoryText, memoryValue } from "./summary.mjs";
+// Pure structured working memory; selection is display only, never action policy.
+import { captureTextFragments, compactTextFragments } from "./fragments.mjs";
+import { memoryText, summarizeMemoryValue } from "./summary.mjs";
 
+export const RAM_VERSION = "3.0";
 const DEFAULT_BUDGET = 4000;
-export const RAM_VERSION = "2.0";
+const ORDER = ["facts", "refuted", "tools", "proposals", "artifacts", "decisions"];
+const LABELS = {
+	facts: "Verified facts",
+	refuted: "Refuted",
+	tools: "Tool observations, NOT task verdicts",
+	proposals: "Historical proposals, NOT guidance",
+	artifacts: "Artifacts",
+	decisions: "Unverified selections",
+};
 
-function unique(nodes) {
-	const seen = new Set();
-	return nodes.filter((node) => {
-		const key = node.node_id ?? node.origin_event_id ?? node.outcome_id ?? node;
-		if (seen.has(key)) return false;
-		seen.add(key);
-		return true;
-	});
-}
-
-function refs(node, compact) {
-	const values = (node.evidence_refs ?? []).map((ref) => `${ref.ref_type}:${ref.ref_id}`);
-	values.push(...(node.source_refs ?? []).map((ref) => (typeof ref === "string" ? ref : memoryValue(ref, 80))));
-	const selected = [...new Set(values)].slice(0, compact ? 1 : 2);
-	return selected.length
-		? ` refs=${selected.map((ref) => memoryText(ref, compact ? 60 : 100)).join(",")}${values.length > selected.length ? "[truncated]" : ""}`
-		: "";
-}
-
-function nodeLine(node, compact = false) {
-	const limit = compact ? 95 : 220;
-	const identity = node.criterion?.criterion_id ?? node.outcome_id ?? node.origin_event_id ?? node.node_id ?? "unknown";
-	let value = memoryText(node.text, limit);
-	if (node.criterion) {
-		const criterion = node.criterion;
-		const expected = Object.hasOwn(criterion, "expected") ? ` expected=${memoryValue(criterion.expected, limit)}` : "";
-		const observed =
-			node.observed !== null && node.observed !== undefined ? ` observed: ${memoryValue(node.observed, limit)}` : "";
-		value = `${memoryText(criterion.description ?? node.text, limit)}${expected}${observed}`;
-	}
-	if (node.observation_summary)
-		value += ` observed: ${memoryValue(node.observation_summary.value, limit)}${node.observation_summary.truncated ? "[truncated at capture]" : ""}`;
-	const bindings = [
-		node.outcome_id && node.outcome_id !== identity ? `outcome=${memoryText(node.outcome_id, 60)}` : null,
-		node.origin_event_id && node.origin_event_id !== identity ? `event=${memoryText(node.origin_event_id, 60)}` : null,
-		node.subject !== null && node.subject !== undefined
-			? `subject=${memoryValue(node.subject, compact ? 60 : 120)}`
-			: null,
-	]
-		.filter(Boolean)
-		.join(" ");
-	const why = node.downgraded_from
-		? ` downgraded=${node.downgraded_from}:${memoryText(node.downgrade_reason, 80)}`
-		: "";
-	return `- ${memoryText(identity, 80)}: ${value}${bindings ? ` ${bindings}` : ""}${why}${refs(node, compact)}`;
-}
-
-function toolLine(intent, done, compact = false) {
-	const limit = compact ? 110 : 340;
-	const input = intent?.input;
-	const inputValue = input?.summary ? input.summary.value : input;
-	const output = done?.result_summary;
-	const resultValue = output && Object.hasOwn(output, "value") ? output.value : output;
-	const inputText = inputValue === null || inputValue === undefined ? "unknown" : memoryValue(inputValue, limit);
-	const result = done ? memoryText(done.response ?? "", limit) : "unknown";
-	const details =
-		resultValue === null || resultValue === undefined ? "" : ` details=${memoryValue(resultValue, limit)}`;
-	const transport = done?.transport
-		? ` transport=${memoryValue(done.transport, compact ? 90 : 180)}`
-		: " transport=unknown";
-	const truncated =
-		intent?.input_truncated || done?.response_truncated || output?.truncated ? " [truncated at capture]" : "";
-	const event = [intent?.origin_event_id, done?.origin_event_id]
-		.filter(Boolean)
-		.map((id) => memoryText(id, 60))
-		.join(",");
-	return `- ${memoryText(intent?.tool_name ?? done?.tool_name ?? "?", 60)}(${memoryText(intent?.action_id ?? done?.action_id, 80)}) → ${done ? "completed" : "pending"}; input=${inputText}; response=${result || "unknown"}${details}${transport}${truncated} events=${event}`;
-}
-
-/**
- * Build both the request text and auditable selection metadata. The budget is
- * characters including ALL headings/omission counters/footer, not exact tokens.
- * Mandatory task/pending responsibility may exceed a tiny budget, explicitly.
- * @param {{board: any, state: any, episodeId: string, goal?: string, budgetChars?: number}} args
- * @returns {{text: string, version: string, budget_chars: number, estimated_chars: number, overflow: boolean, sections: any[]}}
- */
+/** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number}} args */
 export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET }) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
-	const originalGoal = episode?.goal?.description ?? goal ?? "(not provided)";
 	const current = board.currentByType ?? board.byType ?? {};
-	const forEpisode = (type) =>
-		unique((current[type] ?? []).filter((node) => episodeId && node.episode_id === episodeId));
-	const intents = forEpisode("Intent");
-	const artifacts = forEpisode("Artifact");
+	function nodes(type) {
+		const seen = new Set();
+		return (current[type] ?? []).filter((node) => {
+			const id = node.node_id ?? node.origin_event_id ?? node;
+			if (!episodeId || node.episode_id !== episodeId || seen.has(id)) return false;
+			seen.add(id);
+			return true;
+		});
+	}
+	const intents = nodes("Intent");
+	const artifacts = nodes("Artifact");
+	const proposals = [...nodes("Hint"), ...intents.filter((node) => !node.action_id)];
+	const associated = new Set(
+		proposals
+			.flatMap((node) => [...(node.source_refs ?? []), ...(node.evidence_refs ?? [])])
+			.map((ref) => (typeof ref === "string" ? ref : ref.ref_id)),
+	);
+	const completed = new Map(artifacts.filter((node) => node.action_id).map((node) => [node.action_id, node]));
+	const toolPairs = intents
+		.filter((node) => node.action_id)
+		.map((node) => ({ intent: node, done: completed.get(node.action_id) }));
+	const known = new Set(toolPairs.map((pair) => pair.intent.action_id));
+	for (const done of artifacts.filter((node) => node.action_id && !known.has(node.action_id)))
+		toolPairs.push({ intent: null, done });
+	const recent = [...toolPairs].reverse();
+	const referenced = recent.filter((pair) =>
+		[pair.intent, pair.done].some(
+			(node) => node && [node.node_id, node.origin_event_id, node.action_id].some((id) => associated.has(id)),
+		),
+	);
+	const diverse = [];
+	const tools = new Set();
+	for (const pair of recent) {
+		const name = pair.intent?.tool_name ?? pair.done?.tool_name;
+		if (!tools.has(name)) {
+			diverse.push(pair);
+			tools.add(name);
+		}
+	}
+	const selectedTools = [...new Set([...referenced.slice(0, 3), ...recent.slice(0, 3), ...diverse, ...recent])].slice(
+		0,
+		8,
+	);
 	const words = new Set(
 		(
-			String(goal ?? originalGoal)
+			String(goal ?? episode?.goal?.description ?? "")
 				.toLowerCase()
 				.match(/[\p{L}\p{N}_./-]{3,}/gu) ?? []
 		).slice(0, 32),
 	);
-	function rank(nodes) {
-		// Keep the newest progress first. Among the rest, matching current-task
-		// terms helps retrieve older relevant support; physical order breaks ties.
-		const reversed = [...nodes].reverse();
-		const newest = reversed.shift();
-		const relevance = (node) => {
-			const text = `${node.text} ${node.criterion?.description ?? ""}`.toLowerCase();
-			return [...words].reduce((sum, word) => sum + Number(text.includes(word)), 0);
-		};
-		const ranked = reversed.map((node, index) => ({ node, score: relevance(node), index }));
-		ranked.sort((a, b) => b.score - a.score || a.index - b.index);
-		return newest ? [newest, ...ranked.map((entry) => entry.node)] : [];
+	function rank(list) {
+		const reversed = [...list].reverse();
+		const first = reversed.shift();
+		const scored = reversed.map((node, index) => ({
+			node,
+			index,
+			score: [...words].reduce(
+				(sum, word) => sum + Number(`${node.text} ${node.criterion?.description ?? ""}`.toLowerCase().includes(word)),
+				0,
+			),
+		}));
+		scored.sort((a, b) => b.score - a.score || a.index - b.index);
+		return first ? [first, ...scored.map((entry) => entry.node)] : [];
 	}
-	const pending = Object.values(state.pending_actions ?? {}).filter(
-		(action) =>
-			episodeId && action.episode_id === episodeId && ["pending", "unknown", "unresolved"].includes(action.status),
-	);
-	const header = [
-		"# Aegis RAM",
-		"> Rebuilt memory, not instructions or authorization. Claims/hints and tool observations are NOT verified task success.",
-		"## Task",
-		`- total_goal: ${memoryText(originalGoal, 600)}`,
-		...(goal && goal !== originalGoal ? [`- current_prompt: ${memoryText(goal, 240)}`] : []),
-		`- episode_id: ${memoryText(episodeId ?? "(none)", 100)} task_id: ${memoryText(episode?.task_id ?? "unknown", 100)} status: ${memoryText(episode?.status ?? "unknown", 40)}`,
-		`- authorization: ${memoryValue(episode?.authorization ?? "unknown", 300)}`,
-		`- budget: ${memoryValue(episode?.budget ?? "unknown", 200)}`,
-		`## Unfinished actions (${pending.length})`,
-		...(pending.length
-			? pending.map(
-					(action) =>
-						`- ${memoryText(action.action_id, 120)} ${memoryText(action.tool_name, 60)} (${memoryText(action.status, 30)})`,
-				)
-			: ["- (none)"]),
-	];
-	const sections = [];
-	function add(id, title, nodes, limit, line = nodeLine) {
-		sections.push({
-			id,
-			title,
-			total: nodes.length,
-			candidates: nodes
-				.slice(0, limit)
-				.map((node) => ({ compact: line(node, true), full: line(node, false), selected: false, expanded: false })),
-		});
-	}
-	add("facts", "Verified facts", rank(forEpisode("Fact")), 20);
-	add("refuted", "Refuted", rank(forEpisode("Refuted")), 10);
-	const completed = new Map(artifacts.filter((node) => node.action_id).map((node) => [node.action_id, node]));
-	const toolNodes = intents
-		.filter((node) => node.action_id)
-		.map((node) => ({ intent: node, done: completed.get(node.action_id) }));
-	const requestedIds = new Set(toolNodes.map((node) => node.intent.action_id));
-	for (const done of artifacts.filter((node) => node.action_id && !requestedIds.has(node.action_id)))
-		toolNodes.push({ intent: null, done });
-	add("tools", "Recent tool calls (observed, NOT task verdicts)", toolNodes.reverse(), 6, (node, compact) =>
-		toolLine(node.intent, node.done, compact),
-	);
-	add(
-		"proposals",
-		"Historical proposals (pending verification, NOT guidance)",
-		rank([...forEpisode("Hint"), ...intents.filter((node) => !node.action_id)]),
-		8,
-	);
-	add(
-		"artifacts",
-		"Recent artifacts",
-		rank(artifacts.filter((node) => !node.action_id && !String(node.text).startsWith("experience decision:"))),
-		5,
-	);
-	const decisions = (state.experience_decisions ?? [])
-		.filter((row) => episodeId && row.episode_id === episodeId && row.selected)
-		.reverse();
-	const latest = new Map();
-	for (const row of decisions) {
+	const decisions = new Map();
+	for (const row of [...(state.experience_decisions ?? [])].reverse()) {
+		if (!episodeId || row.episode_id !== episodeId || !row.selected) continue;
 		const id = typeof row.selected === "string" ? row.selected : `${row.selected.id}@${row.selected.revision ?? "?"}`;
-		if (!latest.has(id))
-			latest.set(id, {
-				...row,
-				text: `${id} mode=${row.mode ?? "unknown"} ${row.reason ?? ""} [unverified hint]`,
-				origin_event_id: row.event_id,
-			});
+		if (!decisions.has(id))
+			decisions.set(id, { ...row, text: `${id} ${row.reason ?? ""}`, origin_event_id: row.event_id });
 	}
-	add("decisions", "Unknown / open decisions (historical, unverified)", [...latest.values()], 3);
-
+	const raw = {
+		facts: rank(nodes("Fact")),
+		refuted: rank(nodes("Refuted")),
+		tools: selectedTools,
+		proposals: rank(proposals),
+		artifacts: rank(
+			artifacts.filter((node) => !node.action_id && !String(node.text).startsWith("experience decision:")),
+		),
+		decisions: [...decisions.values()],
+	};
+	const totals = Object.fromEntries(ORDER.map((id) => [id, id === "tools" ? toolPairs.length : raw[id].length]));
+	const limits = { facts: 20, refuted: 10, tools: 8, proposals: 8, artifacts: 5, decisions: 3 };
+	const selected = Object.fromEntries(ORDER.map((id) => [id, []]));
+	const full = new Set();
+	const pending = Object.values(state.pending_actions ?? {}).filter(
+		(row) => episodeId && row.episode_id === episodeId && ["pending", "unknown", "unresolved"].includes(row.status),
+	);
+	const safe = (value, limit = 160) => summarizeMemoryValue(value, { maxChars: limit, maxString: limit }).value;
+	let refs = {};
+	function ref(kind, id, digest = null) {
+		if (typeof id !== "string" || !id) return null;
+		const key = JSON.stringify([kind, id, digest]);
+		let alias = Object.keys(refs).find((name) => refs[name]._key === key);
+		if (!alias) {
+			alias = `r${Object.keys(refs).length}`;
+			refs[alias] = { type: kind, id, ...(digest ? { digest } : {}), _key: key };
+		}
+		return alias;
+	}
+	function nodeData(node, expanded) {
+		const limit = expanded ? 180 : 80;
+		return {
+			ref: ref("node", node.node_id ?? `ev:${node.origin_event_id}`),
+			event: ref("event", node.origin_event_id),
+			trust: node.type === "Fact" || node.type === "Refuted" ? "verified" : "unverified",
+			text: memoryText(node.text, limit),
+			...(node.criterion
+				? {
+						criterion: {
+							criterion_id: node.criterion.criterion_id ?? null,
+							...(Object.hasOwn(node.criterion, "expected") ? { expected: safe(node.criterion.expected, limit) } : {}),
+							...(node.criterion.description !== undefined
+								? { description: memoryText(node.criterion.description, limit) }
+								: {}),
+						},
+						observed: safe(node.observed, limit),
+					}
+				: {}),
+			...(node.observation_summary ? { observation: safe(node.observation_summary.value, limit) } : {}),
+			...(node.outcome_id ? { outcome: ref("outcome", node.outcome_id) } : {}),
+			...(node.evidence_refs?.length || node.source_refs?.length
+				? {
+						sources: [...(node.evidence_refs ?? []), ...(node.source_refs ?? [])]
+							.slice(0, expanded ? 4 : 2)
+							.map((r) => ref(r.ref_type ?? "external", r.ref_id ?? r, r.digest ?? null)),
+						sources_omitted: Math.max(
+							0,
+							(node.evidence_refs?.length ?? 0) + (node.source_refs?.length ?? 0) - (expanded ? 4 : 2),
+						),
+					}
+				: {}),
+		};
+	}
+	function toolData(pair, expanded) {
+		const a = pair.intent,
+			b = pair.done;
+		const input = a?.input?.summary?.value ?? a?.input;
+		const output = b?.result_summary?.value ?? null;
+		return {
+			action: ref("action", a?.action_id ?? b?.action_id),
+			tool: memoryText(a?.tool_name ?? b?.tool_name ?? "?", 60),
+			trust: "observed",
+			state: b ? "completed" : "pending",
+			sources: [a, b].filter(Boolean).map((node) => ref("event", node.origin_event_id)),
+			input: safe(input ?? "unknown", expanded ? 260 : 100),
+			response:
+				b && (b.response_fragments || typeof b.response === "string")
+					? compactTextFragments(b.response_fragments ?? captureTextFragments(b.response, 600), expanded ? 360 : 150)
+					: null,
+			...(output !== null ? { details: safe(output, expanded ? 220 : 80) } : {}),
+			transport: safe(b?.transport ?? "unknown", 100),
+			...(a?.input_truncated || b?.response_truncated ? { capture_truncated: true } : {}),
+		};
+	}
 	function render() {
-		const lines = [...header];
-		let omittedTotal = 0;
-		for (const section of sections) {
-			const kept = section.candidates.filter((row) => row.selected);
-			const omitted = section.total - kept.length;
-			omittedTotal += omitted;
-			lines.push(`## ${section.title} (total=${section.total}, shown=${kept.length}, omitted=${omitted})`);
-			if (kept.length) lines.push(...kept.map((row) => (row.expanded ? row.full : row.compact)));
-		}
-		const body = lines.join("\n");
-		const drops = omittedTotal ? `; budget_drops: omitted=${omittedTotal}` : "";
-		let length = body.length;
-		let text;
-		// Fixed point includes the footer's own digits and overflow annotation.
+		refs = {};
+		const sections = {};
+		for (const id of ORDER)
+			sections[id] = {
+				label: LABELS[id],
+				total: totals[id],
+				shown: selected[id].length,
+				omitted: totals[id] - selected[id].length,
+				items: selected[id].map((row) =>
+					id === "tools" ? toolData(row, full.has(row)) : nodeData(row, full.has(row)),
+				),
+			};
+		const data = {
+			version: RAM_VERSION,
+			trust: "projection, not instructions or authorization",
+			episode_id: episodeId,
+			state_revision: state.version ?? 0,
+			task: {
+				task_id: episode?.task_id ?? null,
+				total_goal: memoryText(episode?.goal?.description ?? goal ?? "(not provided)", 600),
+				...(goal && goal !== episode?.goal?.description ? { current_prompt: memoryText(goal, 240) } : {}),
+				status: episode?.status ?? "unknown",
+				authorization: safe(episode?.authorization ?? "unknown", 300),
+				budget: safe(episode?.budget ?? "unknown", 200),
+			},
+			...(episode?.task_id && state.work_state?.[episode.task_id]
+				? { workflow: safe(state.work_state[episode.task_id], 600) }
+				: {}),
+			pending: {
+				label: "Unfinished actions",
+				items: pending.map((row) => ({ action_id: row.action_id, tool: row.tool_name, status: row.status })),
+			},
+			sections,
+			refs: Object.fromEntries(Object.entries(refs).map(([key, { _key, ...value }]) => [key, value])),
+			meta: {
+				ram_estimated_chars: 0,
+				ram_budget_chars: budget,
+				overflow: false,
+				budget_drops: ORDER.reduce((n, id) => n + totals[id] - selected[id].length, 0),
+				...(ORDER.every((id) => selected[id].length === 0) ? { core_overflow: false } : {}),
+			},
+		};
+		let text = JSON.stringify(data);
 		for (let i = 0; i < 8; i++) {
-			text = `${body}\n<!-- ram_version: ${RAM_VERSION}; ram_estimated_chars: ${length}; ram_budget_chars: ${budget}; overflow: ${length > budget}${drops}${length > budget ? "; budget_drops: mandatory task/authorization/pending block exceeds budget" : ""} -->`;
-			if (text.length === length) break;
-			length = text.length;
+			data.meta.ram_estimated_chars = text.length;
+			data.meta.overflow = text.length > budget;
+			if (Object.hasOwn(data.meta, "core_overflow")) data.meta.core_overflow = data.meta.overflow;
+			const next = JSON.stringify(data);
+			if (next === text) break;
+			text = next;
 		}
-		return text;
+		return { text, data };
 	}
-	const mandatoryFits = render().length <= budget;
-	function admit(row) {
-		row.selected = true;
-		if (render().length > budget) row.selected = false;
+	function admit(id, row) {
+		selected[id].push(row);
+		if (render().text.length > budget) selected[id].pop();
 	}
-	if (mandatoryFits) {
-		// Coverage pass: preserve at least one current fact/refutation/tool result
-		// when each fits, before spending the rest on a single evidence class.
-		for (const section of sections.slice(0, 3)) if (section.candidates[0]) admit(section.candidates[0]);
-		for (const section of sections) for (const row of section.candidates) if (!row.selected) admit(row);
-		// Spend remaining space on detail, never evict higher-priority records.
-		for (const section of sections)
-			for (const row of section.candidates) {
-				if (!row.selected) continue;
-				row.expanded = true;
-				if (render().length > budget) row.expanded = false;
+	if (render().text.length <= budget) {
+		for (const id of ["facts", "refuted", "proposals", "tools"]) if (raw[id][0]) admit(id, raw[id][0]);
+		for (const id of ORDER)
+			for (const row of raw[id].slice(0, limits[id])) if (!selected[id].includes(row)) admit(id, row);
+		for (const id of ORDER)
+			for (const row of selected[id]) {
+				full.add(row);
+				if (render().text.length > budget) full.delete(row);
 			}
 	}
-	const text = render();
+	const { text, data } = render();
 	return {
 		text,
+		data,
 		version: RAM_VERSION,
 		budget_chars: budget,
 		estimated_chars: text.length,
 		overflow: text.length > budget,
-		sections: sections.map((section) => ({
-			id: section.id,
-			total: section.total,
-			shown: section.candidates.filter((row) => row.selected).length,
-			omitted: section.total - section.candidates.filter((row) => row.selected).length,
+		sections: ORDER.map((id) => ({
+			id,
+			total: totals[id],
+			shown: selected[id].length,
+			omitted: totals[id] - selected[id].length,
 		})),
 	};
 }
 
-/** Compatible text-only entry for existing consumers. */
 export function buildRam(args) {
 	return buildRamProjection(args).text;
 }

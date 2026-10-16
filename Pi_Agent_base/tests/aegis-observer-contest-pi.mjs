@@ -237,7 +237,7 @@ async function main() {
 	);
 	check(
 		"dynamic RAM is carried as an ephemeral context message",
-		typeof ram1 === "string" && ram1.includes("Aegis RAM"),
+		typeof ram1 === "string" && ram1.includes('"version":"3.0"'),
 		JSON.stringify(captured[0]?.map((message) => (message.role === "custom" ? message.customType : message.role))),
 	);
 	check(
@@ -477,9 +477,7 @@ async function main() {
 	check("the resumed system prefix stays free of dynamic RAM", reqResume.aegis_ram === undefined);
 	check(
 		"the resumed RAM lists the preserved goal and pending/finished actions section",
-		typeof ramResume === "string" &&
-			/total_goal: Start the demo task\./.test(ramResume) &&
-			/Unfinished actions/.test(ramResume),
+		typeof ramResume === "string" && /Start the demo task\./.test(ramResume) && /Unfinished actions/.test(ramResume),
 	);
 
 	second.session.dispose();

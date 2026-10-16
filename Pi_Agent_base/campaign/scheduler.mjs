@@ -23,6 +23,7 @@
 //   * INT-CHECKPOINT: the checkpoint binds the committed stream offset + tail;
 //     recovery uses cache+tail when it is a verified prefix, else full replay.
 
+import { inspectWorkPermit, inspectWorkResume, projectWorkControl } from "../orchestration/work-control.mjs";
 import { digest } from "../shared/contracts.mjs";
 import {
 	evaluateToolRecord,
@@ -916,6 +917,7 @@ export function createCampaignScheduler({
 					if (controlState !== "running") break;
 					const nextReady = projection.tasks.find((task) => task.state === "ready");
 					if (!nextReady) break;
+					if (projectWorkControl(readCommittedRows(), nextReady.task_id).state === "waiting_external") break;
 					// INT-BUDGET: gate on the task's OWN reservation.
 					const permit = canDispatch({ task: nextReady, need: dispatchCost });
 					if (!permit.ok) {
@@ -990,6 +992,7 @@ export function createCampaignScheduler({
 			if (delayed.length === 0) return;
 			let advanced = false;
 			for (const row of delayed) {
+				if (!inspectWorkPermit({ events: readCommittedRows(), taskId: row.task_id }).ok) continue;
 				const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id) ?? null;
 				if (!definition) continue;
 				let judgment;
@@ -1069,6 +1072,23 @@ export function createCampaignScheduler({
 		);
 		for (const row of projection.tasks) {
 			if (row.state !== "running") continue;
+			const work = projectWorkControl(readCommittedRows(), row.task_id);
+			if (!inspectWorkPermit({ events: readCommittedRows(), taskId: row.task_id, now: clock() }).ok) continue;
+			if (work.resume && !work.resume.consumed) {
+				if (!inspectWorkResume(readCommittedRows(), row.task_id).ok) continue;
+				const permit = inspectExecutionPermit({
+					projection,
+					taskId: row.task_id,
+					now: clock(),
+					operation: "provider_request",
+				});
+				if (!permit.ok) continue;
+				const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id);
+				if (!definition) return { ok: false, reason: "work continuation definition missing" };
+				const continued = await dispatchOne({ task: { ...definition, work_resume_event_id: work.resume.event_id } });
+				if (!continued.ok) return continued;
+				continue;
+			}
 			if (row.task_outcome_status === "success") {
 				// INT-RECOVERY: result durable but completion missing → complete it.
 				const done = await commit(
@@ -1188,24 +1208,44 @@ export function createCampaignScheduler({
 	}
 
 	async function dispatchOne({ task }) {
-		const episodeId = `ep-${task.task_id}`;
-		// 1. DURABLE INTENT (+ reservation commit) FIRST.
-		const started = await commit(
-			"campaign.task.started",
-			{
-				task_id: task.task_id,
+		const control = inspectWorkPermit({ events: readCommittedRows(), taskId: task.task_id, now: clock() });
+		if (!control.ok) return { ok: false, reason: control.code };
+		const episodeId = control.work.resume?.episode_id ?? `ep-${task.task_id}`;
+		const continuation = task.work_resume_event_id ?? null;
+		if (continuation) {
+			const written = await sink.append({
+				event_type: "runtime.note",
 				episode_id: episodeId,
-				command_id: `start-${task.task_id}-${clock()}`,
-				...(planningContract
-					? {
-							manifest_revision: manifest.revision ?? 0,
-							manifest_digest: manifestDigest,
-							context_digest: planningContract.digest ?? null,
-						}
-					: {}),
-			},
-			{ kind: "runtime", actor_id: ownerId },
-		);
+				source: { kind: "runtime", actor_id: ownerId },
+				payload: {
+					kind: "work.continuation.started",
+					version: "work-control-1",
+					task_id: task.task_id,
+					resume_event_id: continuation,
+				},
+			});
+			if (!written?.ok || written.durable === false)
+				return { ok: false, reason: "work continuation intent not durable" };
+		}
+		// 1. DURABLE INTENT (+ reservation commit) FIRST.
+		const started = continuation
+			? { ok: true }
+			: await commit(
+					"campaign.task.started",
+					{
+						task_id: task.task_id,
+						episode_id: episodeId,
+						command_id: `start-${task.task_id}-${clock()}`,
+						...(planningContract
+							? {
+									manifest_revision: manifest.revision ?? 0,
+									manifest_digest: manifestDigest,
+									context_digest: planningContract.digest ?? null,
+								}
+							: {}),
+					},
+					{ kind: "runtime", actor_id: ownerId },
+				);
 		if (!started.ok) return { ok: false, reason: `durable intent failed; worker not dispatched: ${started.error}` };
 
 		// 2. Execute the injected worker.
@@ -1217,11 +1257,13 @@ export function createCampaignScheduler({
 		}
 
 		// 3. Charge the KNOWN synthetic cost (success, failure, or unknown).
-		const charged = await commit(
-			"campaign.budget.consumed",
-			{ task_id: task.task_id, command_id: `consume-${task.task_id}-${clock()}`, consumed: syntheticCost },
-			{ kind: "runtime", actor_id: ownerId },
-		);
+		const charged = continuation
+			? { ok: true }
+			: await commit(
+					"campaign.budget.consumed",
+					{ task_id: task.task_id, command_id: `consume-${task.task_id}-${clock()}`, consumed: syntheticCost },
+					{ kind: "runtime", actor_id: ownerId },
+				);
 		// INT-COMMIT: a failed charge AFTER the effect is degraded, not ok:true,[].
 		if (!charged.ok) {
 			return {
@@ -1229,6 +1271,12 @@ export function createCampaignScheduler({
 				reason: `budget charge failed after a possible effect; side effects halted: ${charged.error}`,
 			};
 		}
+
+		if (
+			run?.overview === "waiting_external" &&
+			projectWorkControl(readCommittedRows(), task.task_id).state === "waiting_external"
+		)
+			return { ok: true };
 
 		// 4. Worker failure → unknown + reconciliation (never a task failure).
 		if (!run || run.ok !== true) {
@@ -1263,6 +1311,21 @@ export function createCampaignScheduler({
 			return { ok: true };
 		}
 
+		if (continuation) {
+			const written = await sink.append({
+				event_type: "runtime.note",
+				episode_id: episodeId,
+				source: { kind: "runtime", actor_id: ownerId },
+				payload: {
+					kind: "work.continuation.completed",
+					version: "work-control-1",
+					task_id: task.task_id,
+					resume_event_id: continuation,
+				},
+			});
+			if (!written?.ok || written.durable === false)
+				return { ok: false, reason: "work continuation completion not durable" };
+		}
 		// 5. Oracle judgment (the worker's self-report is NOT a result).
 		let judgment;
 		try {
