@@ -6,7 +6,7 @@
 //
 // The Worker/Oracle are EXPLICIT SYNTHETIC test dependencies. Effects are real
 // local files (a counter + per-task sentinel). The event log is the REAL
-// `memory/runtime/events.mjs` EventLog (append + fsync + hash chain).
+// `shared/events.mjs` EventLog (append + fsync + hash chain).
 //
 // Scenario files under <workDir>:
 //   events.jsonl   real EventLog
@@ -24,8 +24,8 @@ import {
 	projectionSnapshot,
 	projectQueueFromEvents,
 	readCheckpoint,
-} from "../../memory/campaign/index.mjs";
-import { EventLog } from "../../memory/runtime/events.mjs";
+} from "../../campaign/index.mjs";
+import { EventLog } from "../../shared/events.mjs";
 
 const [workDir, scenario = "normal"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });

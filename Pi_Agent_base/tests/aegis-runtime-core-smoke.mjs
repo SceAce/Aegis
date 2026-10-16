@@ -13,13 +13,13 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EventLog, digest, eventDigest, verifyChain, LEGACY_SCHEMA_VERSION, RUNTIME_SCHEMA_VERSION } from "../memory/runtime/events.mjs";
-import { projectBoard, summarizeBoard } from "../memory/runtime/board.mjs";
-import { projectState, resolveOpenEpisode, pendingActionsFor } from "../memory/runtime/state.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { validateProposal } from "../memory/runtime/proposal.mjs";
-import { evaluateHandoff } from "../memory/runtime/handoff.mjs";
-import { appendContestOutcome, resultToOutcome, outcomeEvidenceRefs } from "../memory/runtime/contest-bridge.mjs";
+import { EventLog, digest, eventDigest, verifyChain, LEGACY_SCHEMA_VERSION, RUNTIME_SCHEMA_VERSION } from "../shared/events.mjs";
+import { projectBoard, summarizeBoard } from "../memory/board.mjs";
+import { projectState, resolveOpenEpisode, pendingActionsFor } from "../memory/state.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { validateProposal } from "../memory/proposal.mjs";
+import { evaluateHandoff } from "../session/handoff.mjs";
+import { appendContestOutcome, resultToOutcome, outcomeEvidenceRefs } from "../contest/outcome-bridge.mjs";
 
 let failures = 0;
 function check(name, condition, detail) {

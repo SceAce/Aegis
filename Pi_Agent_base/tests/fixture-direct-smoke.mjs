@@ -14,11 +14,11 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runFixtureTask, makeTask } from "../memory/fixture/host.mjs";
-import { judgeRun, replayIsolatedOutcome, validateRunRecord } from "../memory/fixture/oracle.mjs";
-import { compile } from "../memory/fixture/compiler.mjs";
-import { route } from "../memory/fixture/router.mjs";
-import { digest, readJson, readJsonl, validateEventLog } from "../memory/fixture/contracts.mjs";
+import { runFixtureTask, makeTask } from "../fixtures/host.mjs";
+import { judgeRun, replayIsolatedOutcome, validateRunRecord } from "../fixtures/oracle.mjs";
+import { compile } from "../fixtures/compiler.mjs";
+import { route } from "../fixtures/router.mjs";
+import { digest, readJson, readJsonl, validateEventLog } from "../shared/contracts.mjs";
 
 const roots = [];
 function temp(prefix) {

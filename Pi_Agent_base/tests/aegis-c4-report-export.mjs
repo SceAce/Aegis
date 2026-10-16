@@ -14,14 +14,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildAcceptanceBundle, buildCampaignReport, withoutBundleDigest } from "../memory/campaign/report.mjs";
-import { buildReportInputs, countCommitted, generateCampaignArtifacts } from "../memory/campaign/report-export.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { buildAcceptanceBundle, buildCampaignReport, withoutBundleDigest } from "../observation/report.mjs";
+import { buildReportInputs, countCommitted, generateCampaignArtifacts } from "../observation/report-export.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { EventLog } from "../shared/events.mjs";
 import { readEvents, runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
-const ENTRY = fileURLToPath(new URL("../memory/campaign/report-entry.mjs", import.meta.url));
+const ENTRY = fileURLToPath(new URL("../observation/report-entry.mjs", import.meta.url));
 
 async function exportCli(dir) {
 	const out = join(dir, "report");

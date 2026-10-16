@@ -9,10 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
-import { createCodeRepairJudge } from "../memory/campaign/code-repair-adapter.mjs";
-import { resolveProviderConfig } from "../memory/campaign/provider-config.mjs";
-import { runRegisteredTest } from "../memory/campaign/registered-test.mjs";
+import { createToolLedger } from "../campaign/c6-tool-ledger.mjs";
+import { resolveProviderConfig } from "../campaign/provider-config.mjs";
+import { createCodeRepairJudge } from "../execution/adapters/code-repair-adapter.mjs";
+import { runRegisteredTest } from "../verification/registered-test.mjs";
 
 const resolver = fileURLToPath(
 	new URL("../pi/packages/coding-agent/src/experimental/source-resolver.ts", import.meta.url),
@@ -186,7 +186,7 @@ test("C6-X8: compiled Campaign proof contains verified predicate and replay prer
 });
 test("C6-X9: observe CLI keeps its own listener alive until SIGTERM", async (t) => {
 	const r = scenario(t, "normal");
-	const entry = fileURLToPath(new URL("../memory/campaign/c6-entry.mjs", import.meta.url));
+	const entry = fileURLToPath(new URL("../campaign/c6-entry.mjs", import.meta.url));
 	const proc = spawn(
 		process.execPath,
 		["--import", resolver, entry, "--config", join(r.dir, "config.json"), "observe", "--port", "0"],

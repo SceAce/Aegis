@@ -153,7 +153,7 @@ C1只做durable调度层，进程测试可以用fake worker和临时状态，不
 ```bash
 node Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs
 node Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs
-./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json Pi_Agent_base/memory/campaign Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs
+./Pi_Agent_base/pi/node_modules/.bin/biome check --config-path=Pi_Agent_base/aegis-biome.json Pi_Agent_base/campaign Pi_Agent_base/tests/aegis-campaign-contracts-c0.mjs Pi_Agent_base/tests/aegis-campaign-fixture-c0.mjs
 ```
 
 新增脚本也加入phase runner的显式allowlist。类型检查采用主 DS添加并如实说明覆盖范围的Campaign配置，不能使用旧Batch E配置冒充覆盖Campaign。

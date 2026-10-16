@@ -36,10 +36,9 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { executableDigest } from "../memory/runtime/script-registry.mjs";
-import { syntheticElfHeader } from "../memory/runtime/workspace-info-actions.mjs";
+import { executableDigest } from "../execution/script-registry.mjs";
+import { syntheticElfHeader } from "../execution/workspace-info-actions.mjs";
+import { projectBoard } from "../memory/board.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

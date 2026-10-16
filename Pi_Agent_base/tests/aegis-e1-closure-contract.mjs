@@ -12,8 +12,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
-import { buildPlanningManifest, PLAN_READY_CRITERION, templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
+import { planDigest, validatePlanGraph } from "../campaign/e1-plan-contract.mjs";
+import { buildPlanningManifest, PLAN_READY_CRITERION, templatesFromConfig } from "../campaign/e1-planning.mjs";
 import {
 	buildPlanningContract,
 	EXECUTABLE_TASK_VERSION,
@@ -23,9 +23,9 @@ import {
 	PLANNING_CONTRACT_VERSION,
 	ROOT_GOAL_REF,
 	validatePlanningContract,
-} from "../memory/campaign/e1-planning-contract.mjs";
-import { canonicalManifestDigest, persistImmutableManifest, validateManifest } from "../memory/campaign/manifest.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
+} from "../campaign/e1-planning-contract.mjs";
+import { canonicalManifestDigest, persistImmutableManifest, validateManifest } from "../campaign/manifest.mjs";
+import { digest } from "../shared/contracts.mjs";
 import { evidenceDir, testPlanningManifest } from "./helpers/e1-closure-helpers.mjs";
 
 const out = evidenceDir("contract");

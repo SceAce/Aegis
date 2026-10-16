@@ -12,13 +12,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildAcceptanceBundle, buildCampaignReport, redactSecrets } from "../memory/campaign/report.mjs";
-import {
-	DEFAULT_LIMITS,
-	generateCampaignArtifacts,
-	validateAcceptanceBundle,
-} from "../memory/campaign/report-export.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { buildAcceptanceBundle, buildCampaignReport, redactSecrets } from "../observation/report.mjs";
+import { DEFAULT_LIMITS, generateCampaignArtifacts, validateAcceptanceBundle } from "../observation/report-export.mjs";
 
 const SECRETS = [
 	"flag{THIS_IS_A_REAL_FLAG_1234567890}",

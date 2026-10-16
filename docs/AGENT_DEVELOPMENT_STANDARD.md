@@ -67,6 +67,8 @@
 
 ### 4.1 复用当前技术栈
 
+模块按职责归属，当前目录表以 `Pi_Agent_base/README.md` 为准。`memory/` 只放记忆、证据与经验；Campaign、执行/授权、Session、Oracle、观测/报告分别放到 `campaign/`、`execution/`、`session/`、`verification/`、`observation/`。共享辅助函数归 `shared/`，正式模块不依赖 `fixtures/`；`runtime/` 只存私有运行产物。阶段编号和历史任务允许路径不改变当前模块归属。
+
 - 继续使用 Node ESM `.mjs` 和现有 TypeScript 扩展。不要为了统一样式重写已完成模块。
 - 新公共接口用 JSDoc 或 TypeScript 明确类型，尤其 enum 值、可空字段、返回结果和信任上下文。
 - 小型纯函数完成解析、准入、投影、聚合；文件/进程/Pi/网络操作放在明确的边界适配器。

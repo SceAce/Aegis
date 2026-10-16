@@ -59,7 +59,7 @@ import {
 	validateQueueItem,
 	validateReviewerVerdict,
 	validateTaskProposal,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 async function test(name, fn) {

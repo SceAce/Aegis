@@ -10,11 +10,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
-import { templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
-import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+import { planDigest, validatePlanGraph } from "../campaign/e1-plan-contract.mjs";
+import { templatesFromConfig } from "../campaign/e1-planning.mjs";
+import { createCampaignScheduler } from "../campaign/scheduler.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { verifyChain } from "../shared/events.mjs";
 import {
 	acceptedPlanningPrefix,
 	evidenceDir,

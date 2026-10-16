@@ -23,10 +23,10 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { createCampaignActionGate } from "../campaign/campaign-mode.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-reject-"));

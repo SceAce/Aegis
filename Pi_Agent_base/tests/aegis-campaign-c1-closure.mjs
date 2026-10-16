@@ -16,7 +16,7 @@ import {
 	buildFixtureCampaign,
 	projectQueueFromEvents,
 	validateCampaignEvent,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 function test(name, fn) {

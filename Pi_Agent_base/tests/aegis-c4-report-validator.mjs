@@ -11,15 +11,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { validateManifest } from "../memory/campaign/manifest.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
 import {
 	buildAcceptanceBundle,
 	buildCampaignReport,
 	REVIEWER_VERDICTS,
 	renderReviewerPrompt,
 	validateReviewerVerdict,
-} from "../memory/campaign/report.mjs";
-import { DEFAULT_LIMITS, validateAcceptanceBundle } from "../memory/campaign/report-export.mjs";
+} from "../observation/report.mjs";
+import { DEFAULT_LIMITS, validateAcceptanceBundle } from "../observation/report-export.mjs";
 
 function aManifest() {
 	return validateManifest({

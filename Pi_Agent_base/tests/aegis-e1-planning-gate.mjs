@@ -16,11 +16,11 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { artifactIndexFromEvents } from "../memory/campaign/c3-entry.mjs";
-import { planDigest } from "../memory/campaign/e1-plan-contract.mjs";
-import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
-import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+import { artifactIndexFromEvents } from "../campaign/c3-entry.mjs";
+import { planDigest } from "../campaign/e1-plan-contract.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
+import { createCampaignScheduler } from "../campaign/scheduler.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resolver = join(base, "pi/packages/coding-agent/src/experimental/source-resolver.ts");

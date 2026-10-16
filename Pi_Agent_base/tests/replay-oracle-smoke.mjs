@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const baseDir = dirname(testsDir);
-const script = join(baseDir, "memory", "replay-oracle.mjs");
+const script = join(baseDir, "verification", "replay-oracle.mjs");
 const fixture = join(baseDir, "..", "docs", "examples", "memory-teacher-trace.json");
 
 function stable(value) {

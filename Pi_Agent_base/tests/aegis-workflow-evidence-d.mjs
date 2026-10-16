@@ -20,10 +20,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { EventLog, digest } from "../memory/runtime/events.mjs";
-import { createEvidenceResolver } from "../memory/runtime/evidence-resolver.mjs";
-import { createWorkflowEngine } from "../memory/runtime/workflow-engine.mjs";
-import { ActionRegistry, createActionBroker, defineContract } from "../memory/runtime/action-contract.mjs";
+import { EventLog, digest } from "../shared/events.mjs";
+import { createEvidenceResolver } from "../memory/evidence-resolver.mjs";
+import { createWorkflowEngine } from "../orchestration/workflow-engine.mjs";
+import { ActionRegistry, createActionBroker, defineContract } from "../execution/action-contract.mjs";
 
 let failures = 0;
 function check(name, condition, detail) {

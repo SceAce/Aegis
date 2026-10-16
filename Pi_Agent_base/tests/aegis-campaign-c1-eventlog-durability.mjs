@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Aegis C1 closure — REAL EventLog durability tests.
 //
-// This suite uses the REAL `memory/runtime/events.mjs` EventLog (append + fsync +
+// This suite uses the REAL `shared/events.mjs` EventLog (append + fsync +
 // hash chain) in a real child process that is SIGKILLed, to prove the durability
 // boundary that the synthetic harness cannot:
 //   * a durable `campaign.task.started` survives a real SIGKILL;
@@ -19,8 +19,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildFixtureCampaign, createCampaignScheduler, projectQueueFromEvents } from "../memory/campaign/index.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { buildFixtureCampaign, createCampaignScheduler, projectQueueFromEvents } from "../campaign/index.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const failures = [];
 async function test(name, fn) {

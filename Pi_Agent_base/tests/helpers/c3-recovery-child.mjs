@@ -12,8 +12,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assembleCampaignHost, buildC3FixtureManifest, validateManifest } from "../../memory/campaign/index.mjs";
-import { EventLog } from "../../memory/runtime/events.mjs";
+import { assembleCampaignHost, buildC3FixtureManifest, validateManifest } from "../../campaign/index.mjs";
+import { EventLog } from "../../shared/events.mjs";
 
 const [workDir, scenario = "recover"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });

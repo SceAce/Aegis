@@ -9,10 +9,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { artifactIndexFromEvents } from "../../memory/campaign/artifact-index.mjs";
-import { requirePlanningManifest } from "../../memory/campaign/e1-planning.mjs";
-import { projectQueueFromEvents } from "../../memory/campaign/projection.mjs";
-import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
+import { artifactIndexFromEvents } from "../../campaign/artifact-index.mjs";
+import { requirePlanningManifest } from "../../campaign/e1-planning.mjs";
+import { projectQueueFromEvents } from "../../campaign/projection.mjs";
+import { buildDataRepairManifest } from "../../execution/adapters/structured-data-adapter.mjs";
 
 export const BASE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const RESOLVER = join(BASE, "pi/packages/coding-agent/src/experimental/source-resolver.ts");

@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
-const ORACLE = join(ROOT, "Pi_Agent_base", "memory", "live-oracle.mjs");
+const ORACLE = join(ROOT, "Pi_Agent_base", "verification", "live-oracle.mjs");
 
 function stable(value) {
 	if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;

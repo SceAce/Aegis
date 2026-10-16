@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
+import { createCampaignActionGate } from "../campaign/campaign-mode.mjs";
 
 const failures = [];
 function test(name, fn) {

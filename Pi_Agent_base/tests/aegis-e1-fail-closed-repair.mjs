@@ -15,12 +15,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { PLAN_BINDING_VERSION } from "../memory/campaign/authority.mjs";
-import { artifactIndexFromEvents } from "../memory/campaign/c3-entry.mjs";
-import { compilePlanAdmission, planDigest } from "../memory/campaign/e1-plan-contract.mjs";
-import { buildPlanningContract, loadPlanningAuthority } from "../memory/campaign/e1-planning-contract.mjs";
-import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
-import { projectBoard } from "../memory/runtime/board.mjs";
+import { PLAN_BINDING_VERSION } from "../campaign/authority.mjs";
+import { artifactIndexFromEvents } from "../campaign/c3-entry.mjs";
+import { compilePlanAdmission, planDigest } from "../campaign/e1-plan-contract.mjs";
+import { buildPlanningContract, loadPlanningAuthority } from "../campaign/e1-planning-contract.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
+import { projectBoard } from "../memory/board.mjs";
 
 const BASE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOLVER = join(BASE, "pi", "packages", "coding-agent", "src", "experimental", "source-resolver.ts");

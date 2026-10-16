@@ -12,9 +12,9 @@ import {
 	assembleCampaignHost,
 	buildC3FixtureManifest,
 	createProductSink,
-} from "../memory/campaign/c3-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { createWorkspaceScriptRegistration } from "../memory/campaign/script-workspace-adapter.mjs";
+} from "../campaign/c3-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { createWorkspaceScriptRegistration } from "../execution/adapters/script-workspace-adapter.mjs";
 
 async function setup(t, adjust = () => {}, options = {}) {
 	const dir = await mkdtemp(join(tmpdir(), "aegis-c3-external-"));
@@ -217,7 +217,7 @@ test("C3-PRODUCT: pause remains durable until explicit resume", async (t) => {
 test("C3-CLI: a restarted paused Campaign only executes after explicit resume", async (t) => {
 	const dir = await mkdtemp(join(tmpdir(), "aegis-c3-cli-review-"));
 	t.after(() => rm(dir, { recursive: true, force: true }));
-	const entry = fileURLToPath(new URL("../memory/campaign/c3-entry.mjs", import.meta.url));
+	const entry = fileURLToPath(new URL("../campaign/c3-entry.mjs", import.meta.url));
 	for (const operation of ["pause", "start", "resume"]) {
 		const r = spawnSync(process.execPath, [entry, dir, operation], { encoding: "utf8", timeout: 10000 });
 		assert.equal(r.status, 0, r.stderr);

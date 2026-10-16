@@ -16,8 +16,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { verifyChain } from "../memory/runtime/events.mjs";
-import { applyStagedHandoff } from "../memory/runtime/handoff-host.mjs";
+import { applyStagedHandoff } from "../session/handoff-host.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = mkdtempSync(join(tmpdir(), "aegis-ram-reaudit-sdk-"));

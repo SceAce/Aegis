@@ -21,8 +21,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { projectQueueFromEvents } from "../memory/campaign/index.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { projectQueueFromEvents } from "../campaign/index.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const failures = [];
 function test(name, fn) {

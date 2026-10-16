@@ -7,8 +7,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createCampaignScheduler, projectQueueFromEvents, resolveTaskOutcome } from "../memory/campaign/index.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { createCampaignScheduler, projectQueueFromEvents, resolveTaskOutcome } from "../campaign/index.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const campaignId = "campaign-external-boundaries";
 const episodeId = "episode-original";

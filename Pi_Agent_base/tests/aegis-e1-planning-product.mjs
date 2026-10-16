@@ -19,12 +19,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
-import { admitCandidatePlan, PLAN_READY_CRITERION, templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
-import { buildPlanningContract } from "../memory/campaign/e1-planning-contract.mjs";
-import { buildTaskGraph } from "../memory/campaign/e1-task-graph.mjs";
-import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
-import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
+import { validatePlanGraph } from "../campaign/e1-plan-contract.mjs";
+import { admitCandidatePlan, PLAN_READY_CRITERION, templatesFromConfig } from "../campaign/e1-planning.mjs";
+import { buildPlanningContract } from "../campaign/e1-planning-contract.mjs";
+import { buildTaskGraph } from "../campaign/e1-task-graph.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
+import { createCampaignScheduler } from "../campaign/scheduler.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "aegis-e1-planning-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -602,7 +602,7 @@ test("E1-PLAN: different plans produce different graphs (not hardcoded)", () => 
 });
 
 test("E1-PLAN: submitting a plan is a candidate record; it never asserts root completion", async () => {
-	const { createPlanSubmitTool } = await import("../memory/campaign/c6-model-worker.mjs");
+	const { createPlanSubmitTool } = await import("../campaign/c6-model-worker.mjs");
 	const recorded = [];
 	const tool = createPlanSubmitTool({
 		sdk: { defineTool: (x) => x },

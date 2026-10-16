@@ -38,12 +38,12 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { createObserveActionRuntime } from "../memory/runtime/action-runtime.mjs";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { createEvidenceResolver } from "../memory/runtime/evidence-resolver.mjs";
-import { createLearningBridge, proofFromOutcome } from "../memory/runtime/learning-bridge.mjs";
-import { executableDigest } from "../memory/runtime/script-registry.mjs";
-import { syntheticElfHeader } from "../memory/runtime/workspace-info-actions.mjs";
+import { createObserveActionRuntime } from "../execution/action-runtime.mjs";
+import { executableDigest } from "../execution/script-registry.mjs";
+import { syntheticElfHeader } from "../execution/workspace-info-actions.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { createEvidenceResolver } from "../memory/evidence-resolver.mjs";
+import { createLearningBridge, proofFromOutcome } from "../memory/learning-bridge.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

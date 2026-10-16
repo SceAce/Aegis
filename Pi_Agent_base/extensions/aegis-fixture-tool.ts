@@ -35,10 +35,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readJson } from "../memory/fixture/contracts.mjs";
-import { makeTask, runFixtureTask } from "../memory/fixture/host.mjs";
-import { judgeRun } from "../memory/fixture/oracle.mjs";
-import { route } from "../memory/fixture/router.mjs";
+import { makeTask, runFixtureTask } from "../fixtures/host.mjs";
+import { judgeRun } from "../fixtures/oracle.mjs";
+import { route } from "../fixtures/router.mjs";
+import { readJson } from "../shared/contracts.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TOOL_NAME = "aegis_fixture_unlock";

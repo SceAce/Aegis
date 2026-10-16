@@ -35,8 +35,8 @@ import { mkdir, readFile, stat, writeFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { projectState } from "../memory/state.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE_DIR = resolve(HERE, "..");

@@ -14,8 +14,8 @@ import { existsSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { generateCampaignArtifacts } from "../memory/campaign/report-export.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
+import { generateCampaignArtifacts } from "../observation/report-export.mjs";
+import { digest } from "../shared/contracts.mjs";
 import { readEvents, runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
 function semanticEqual(a, b) {

@@ -16,10 +16,10 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { digest, verifyChain } from "../memory/runtime/events.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { projectState } from "../memory/state.mjs";
+import { digest, verifyChain } from "../shared/events.mjs";
 
 const baseDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

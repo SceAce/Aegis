@@ -15,8 +15,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { digest, verifyChain } from "../memory/runtime/events.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectState } from "../memory/state.mjs";
+import { digest, verifyChain } from "../shared/events.mjs";
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = mkdtempSync(join(tmpdir(), "aegis-ram-cache-payload-"));

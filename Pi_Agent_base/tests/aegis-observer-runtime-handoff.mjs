@@ -37,9 +37,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { applyStagedHandoff } from "../memory/runtime/handoff-host.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { projectState } from "../memory/state.mjs";
+import { applyStagedHandoff } from "../session/handoff-host.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

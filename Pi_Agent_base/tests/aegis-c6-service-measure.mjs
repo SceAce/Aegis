@@ -23,9 +23,9 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-service-"));
@@ -168,7 +168,7 @@ try {
 		JSON.stringify(obs.observation_url),
 	);
 	// Re-open a read-only server directly on an ephemeral port to exercise routes.
-	const { createObservationServer } = await import("../memory/campaign/observation-server.mjs");
+	const { createObservationServer } = await import("../observation/observation-server.mjs");
 	const server = createObservationServer({ manifestPath, eventsPath: eventLogPath, host: "127.0.0.1", port: 0 });
 	await server.listen();
 	const url = server.url;

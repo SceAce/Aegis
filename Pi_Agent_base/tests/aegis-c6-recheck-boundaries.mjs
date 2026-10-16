@@ -6,11 +6,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createCompositeWorker, summarizeRequestLedger } from "../memory/campaign/c6-entry.mjs";
-import { createModelWorker, createObservationTool } from "../memory/campaign/c6-model-worker.mjs";
-import { runBoundedAttempts } from "../memory/campaign/c6-runner.mjs";
-import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
-import { runRegisteredTest } from "../memory/campaign/registered-test.mjs";
+import { createCompositeWorker, summarizeRequestLedger } from "../campaign/c6-entry.mjs";
+import { createModelWorker, createObservationTool } from "../campaign/c6-model-worker.mjs";
+import { runBoundedAttempts } from "../campaign/c6-runner.mjs";
+import { createToolLedger } from "../campaign/c6-tool-ledger.mjs";
+import { runRegisteredTest } from "../verification/registered-test.mjs";
 
 function setup(t) {
 	const dir = mkdtempSync(join(tmpdir(), "aegis-c6-recheck-"));

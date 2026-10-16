@@ -25,7 +25,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { buildFixtureCampaign, createCampaignScheduler, FIXTURE_SCOPE } from "../../memory/campaign/index.mjs";
+import { buildFixtureCampaign, createCampaignScheduler, FIXTURE_SCOPE } from "../../campaign/index.mjs";
 
 const [workDir, boundary = "none"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });

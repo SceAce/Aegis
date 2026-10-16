@@ -5,9 +5,9 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createHostSessionController, parseArgs, runCampaignFromConfig } from "../memory/campaign/c5-entry.mjs";
-import { loadCampaignConfig } from "../memory/campaign/campaign-config.mjs";
-import { EventLog, hostEventLog } from "../memory/runtime/events.mjs";
+import { createHostSessionController, parseArgs, runCampaignFromConfig } from "../campaign/c5-entry.mjs";
+import { loadCampaignConfig } from "../campaign/campaign-config.mjs";
+import { EventLog, hostEventLog } from "../shared/events.mjs";
 import { makeConfig, readEvents, runEntry } from "./helpers/c5-helpers.mjs";
 
 async function setup(t) {

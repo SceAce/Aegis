@@ -3,7 +3,7 @@
 //
 // Usage: node campaign-eventlog-child.mjs <workDir> [complete]
 //
-// Uses the REAL `memory/runtime/events.mjs` EventLog (append + fsync + hash
+// Uses the REAL `shared/events.mjs` EventLog (append + fsync + hash
 // chain), not a synthetic file sink. It:
 //   1. opens the log;
 //   2. appends a durable `campaign.task.started` (fsynced);
@@ -15,8 +15,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildFixtureCampaign, FIXTURE_SCOPE } from "../../memory/campaign/index.mjs";
-import { EventLog } from "../../memory/runtime/events.mjs";
+import { buildFixtureCampaign, FIXTURE_SCOPE } from "../../campaign/index.mjs";
+import { EventLog } from "../../shared/events.mjs";
 
 const [workDir, mode = "intent"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });

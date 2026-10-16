@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as sdkBase from "@earendil-works/pi-coding-agent";
 import { AuthStorage, ReadOnlyAuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { inspectMaxPilot, prepareMaxPilot } from "../memory/campaign/e1-max-pilot.mjs";
-import { resolveProviderConfig } from "../memory/campaign/provider-config.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { inspectMaxPilot, prepareMaxPilot } from "../campaign/e1-max-pilot.mjs";
+import { resolveProviderConfig } from "../campaign/provider-config.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
 
 const selection = {
 	kind: "remote-openai",
@@ -258,7 +258,7 @@ try {
 	assert.equal(requests.length, 9, "completed Pi-config attempt never dispatches again");
 	// Exercise the exact operator CLI through the real SDK, with all HTTP replaced.
 	const cliRoot = join(root, "cli");
-	const cli = "Pi_Agent_base/memory/campaign/e1-max-pilot.mjs";
+	const cli = "Pi_Agent_base/campaign/e1-max-pilot.mjs";
 	const prepareChild = spawnSync(process.execPath, [cli, "prepare", "--dir", cliRoot, "--pi-agent-dir", piDir], {
 		encoding: "utf8",
 		timeout: 60000,

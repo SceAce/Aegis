@@ -11,11 +11,10 @@
 import assert from "node:assert/strict";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
-
-import { createObservationServer } from "../memory/campaign/observation-server.mjs";
-import { buildObservationView } from "../memory/campaign/observation-view.mjs";
-import { generateCampaignArtifacts } from "../memory/campaign/report-export.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { createObservationServer } from "../observation/observation-server.mjs";
+import { buildObservationView } from "../observation/observation-view.mjs";
+import { generateCampaignArtifacts } from "../observation/report-export.mjs";
+import { EventLog } from "../shared/events.mjs";
 import { readEvents, runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
 async function start(t, src, options = {}) {

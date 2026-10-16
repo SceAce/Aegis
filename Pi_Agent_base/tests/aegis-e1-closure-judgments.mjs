@@ -9,11 +9,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildE1View } from "../memory/campaign/e1-observation.mjs";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { eventDigest, verifyChain } from "../memory/runtime/events.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { projectState } from "../memory/state.mjs";
+import { buildE1View } from "../observation/e1-observation.mjs";
+import { eventDigest, verifyChain } from "../shared/events.mjs";
 import { evidenceDir, project, runPlanningScenario } from "./helpers/e1-closure-helpers.mjs";
 
 const out = evidenceDir("judgments");

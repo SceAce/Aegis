@@ -17,8 +17,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const REPO = join(BASE_DIR, "..");
@@ -38,7 +38,7 @@ function runCli(args, env = {}) {
 		[
 			"--import",
 			join(BASE_DIR, "pi/packages/coding-agent/src/experimental/source-resolver.ts"),
-			join(BASE_DIR, "memory/campaign/c6-entry.mjs"),
+			join(BASE_DIR, "campaign/c6-entry.mjs"),
 			...args,
 		],
 		{ encoding: "utf8", cwd: REPO, env: { ...process.env, ...env } },
@@ -125,7 +125,7 @@ try {
 	check("an invalid config exits non-zero", bad.status !== 0, `status=${bad.status}`);
 
 	// The committed stream still verifies.
-	const { verifyChain } = await import("../memory/runtime/events.mjs");
+	const { verifyChain } = await import("../shared/events.mjs");
 	const events = readFileSync(join(workDir, "events.jsonl"), "utf8")
 		.split("\n")
 		.filter(Boolean)

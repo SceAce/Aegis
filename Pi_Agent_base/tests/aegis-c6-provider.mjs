@@ -22,14 +22,10 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import {
-	describeCredentialRef,
-	isLoopbackBaseUrl,
-	resolveProviderConfig,
-} from "../memory/campaign/provider-config.mjs";
+import { buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { describeCredentialRef, isLoopbackBaseUrl, resolveProviderConfig } from "../campaign/provider-config.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-provider-"));

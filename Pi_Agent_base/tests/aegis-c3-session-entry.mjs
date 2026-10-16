@@ -27,11 +27,11 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { createCampaignHost } from "../memory/campaign/host.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
-import { committedRotations, createSessionSupervisor } from "../memory/runtime/session-supervisor.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { createCampaignHost } from "../campaign/host.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { projectState } from "../memory/state.mjs";
+import { committedRotations, createSessionSupervisor } from "../session/session-supervisor.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

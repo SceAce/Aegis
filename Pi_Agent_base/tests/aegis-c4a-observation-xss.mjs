@@ -9,14 +9,14 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { createObservationServer } from "../memory/campaign/observation-server.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { createObservationServer } from "../observation/observation-server.mjs";
 import {
 	buildObservationView,
 	escapeForScriptJson,
 	escapeHtml,
 	renderObservationHtml,
-} from "../memory/campaign/observation-view.mjs";
+} from "../observation/observation-view.mjs";
 
 const XSS = "<script>alert(1)</script>";
 const ATTR = '" onmouseover="alert(2)';

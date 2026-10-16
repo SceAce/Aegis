@@ -6,6 +6,10 @@
 
 ## 当前入口
 
+当前代码结构见 [`../Pi_Agent_base/README.md`](../Pi_Agent_base/README.md)，
+源码迁移与验证记录见 [`MODULE_LAYOUT_REFACTOR.md`](MODULE_LAYOUT_REFACTOR.md)。
+历史任务书/审计报告保留各自基线的源码位置，不作为当前目录布局依据。
+
 架构讨论从 [`ARCHITECTURE_DECISIONS.md`](ARCHITECTURE_DECISIONS.md) 开始：
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
@@ -53,14 +57,14 @@ Campaign 层的统一设计与实现任务书分别见：
 | [`PROTOTYPE_TASK.md`](PROTOTYPE_TASK.md) | 用户批准的受限 JSON fixture + direct 原型任务与验收边界 |
 | [`PROTOTYPE_DESIGN.md`](PROTOTYPE_DESIGN.md) | 原型模块、Pi 适配、重放证据和非目标 |
 | [`PROTOTYPE_AUDIT.md`](PROTOTYPE_AUDIT.md) | 代码初审、修复核验、真实模型 smoke 与剩余限制 |
-| [`../Pi_Agent_base/memory/fixture/README.md`](../Pi_Agent_base/memory/fixture/README.md) | 原型运行及离线测试命令 |
+| [`../Pi_Agent_base/fixtures/README.md`](../Pi_Agent_base/fixtures/README.md) | 原型运行及离线测试命令 |
 | [`MEMORY_SCHEMA.md`](MEMORY_SCHEMA.md) | Event / Episode / Outcome / Experience 的现行数据契约、状态迁移和学习验证方案 |
 | [`PI_OBSERVER.md`](PI_OBSERVER.md) | Pi 检测器、ROM/RAM 边界、字段不确定性和测试启动顺序 |
 | [`examples/memory-teacher-trace.json`](examples/memory-teacher-trace.json) | 最小教师轨迹回放 fixture，包含 success 和 unknown 两类结果 |
 | [`../Pi_Agent_base/tests/observer-smoke.mjs`](../Pi_Agent_base/tests/observer-smoke.mjs) | 不调用模型的 observer hook、脱敏和 ROM/RAM 注入 smoke test |
 | [`../Pi_Agent_base/tests/login-relay-smoke.mjs`](../Pi_Agent_base/tests/login-relay-smoke.mjs) | 不调用网络的中转配置、密钥权限、模型替换和目录隔离测试 |
-| [`../Pi_Agent_base/memory/replay-oracle.mjs`](../Pi_Agent_base/memory/replay-oracle.mjs) | 确定性教师轨迹回放、Oracle 判定和 Experience evidence gate |
-| [`../Pi_Agent_base/memory/live-oracle.mjs`](../Pi_Agent_base/memory/live-oracle.mjs) | 将 live Pi 事件交给独立 JSON 状态 Oracle，投影 Outcome / Episode / Experience |
+| [`../Pi_Agent_base/verification/replay-oracle.mjs`](../Pi_Agent_base/verification/replay-oracle.mjs) | 确定性教师轨迹回放、Oracle 判定和 Experience evidence gate |
+| [`../Pi_Agent_base/verification/live-oracle.mjs`](../Pi_Agent_base/verification/live-oracle.mjs) | 将 live Pi 事件交给独立 JSON 状态 Oracle，投影 Outcome / Episode / Experience |
 | [`../Pi_Agent_base/tests/replay-oracle-smoke.mjs`](../Pi_Agent_base/tests/replay-oracle-smoke.mjs) | 回放、Outcome、unknown 保留和 candidate/active gate smoke test |
 | [`../Pi_Agent_base/tests/live-oracle-smoke.mjs`](../Pi_Agent_base/tests/live-oracle-smoke.mjs) | live Oracle 的 success / failure / unknown 和事件链 smoke test |
 | [`../架构.md`](../架构.md) | 完整系统规格：边界、控制循环、验证器、成长机制和安全约束 |

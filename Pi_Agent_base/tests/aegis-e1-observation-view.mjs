@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildE1View } from "../memory/campaign/e1-observation.mjs";
+import { buildE1View } from "../observation/e1-observation.mjs";
 
 let counter = 0;
 function ev(event_type, payload, { episode = "ep-task-001", kind = "oracle", evidence_refs } = {}) {

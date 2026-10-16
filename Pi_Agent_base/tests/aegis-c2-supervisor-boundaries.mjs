@@ -6,8 +6,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { EventLog } from "../memory/runtime/events.mjs";
-import { createSessionSupervisor } from "../memory/runtime/session-supervisor.mjs";
+import { createSessionSupervisor } from "../session/session-supervisor.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 async function fixture(t, { recordCompletion = true, previousSessions = 1 } = {}) {
 	const dir = await mkdtemp(join(tmpdir(), "aegis-c2-external-"));

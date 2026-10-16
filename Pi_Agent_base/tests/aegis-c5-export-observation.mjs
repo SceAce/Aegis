@@ -12,8 +12,8 @@ import assert from "node:assert/strict";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createObservationServer } from "../memory/campaign/observation-server.mjs";
-import { generateCampaignArtifacts } from "../memory/campaign/report-export.mjs";
+import { createObservationServer } from "../observation/observation-server.mjs";
+import { generateCampaignArtifacts } from "../observation/report-export.mjs";
 import { makeConfig, readEvents, runEntry } from "./helpers/c5-helpers.mjs";
 
 test("C5-E1: export and observation agree with the committed stream and stay read-only", async (t) => {

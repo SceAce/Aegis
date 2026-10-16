@@ -24,9 +24,9 @@ import {
 	FIXTURE_ADAPTER_ACTION_REF,
 	loadManifest,
 	validateManifest,
-} from "../memory/campaign/index.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+} from "../campaign/index.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const failures = [];
 async function test(name, fn) {
@@ -344,7 +344,7 @@ await test("C3-ORACLE-3: a delayed judgment blocks the dependent task, then a la
 
 await test("C3-PRODUCT: the CLI product entry runs the real loop", async () => {
 	const dir = join(root, "cli");
-	const entry = fileURLToPath(new URL("../memory/campaign/c3-entry.mjs", import.meta.url));
+	const entry = fileURLToPath(new URL("../campaign/c3-entry.mjs", import.meta.url));
 	const result = spawnSync(process.execPath, [entry, dir, "start"], { encoding: "utf8" });
 	assert.equal(result.status, 0, `CLI failed: ${result.stderr}`);
 	const summary = JSON.parse(result.stdout);

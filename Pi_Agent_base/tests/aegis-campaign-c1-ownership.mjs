@@ -26,7 +26,7 @@ import {
 	readCheckpoint,
 	releaseCampaignOwnership,
 	writeCheckpoint,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 async function test(name, fn) {
@@ -268,7 +268,7 @@ await test("OWN-SAME-PID: two schedulers with default ownerId on one PID do not 
 	const base = join(root, "same-pid");
 	// The scheduler's default ownerId includes randomness, so two instances are
 	// distinct owners even on the same PID.
-	const { createCampaignScheduler, buildFixtureCampaign } = await import("../memory/campaign/index.mjs");
+	const { createCampaignScheduler, buildFixtureCampaign } = await import("../campaign/index.mjs");
 	const fixture = buildFixtureCampaign();
 	const manifest = fixture.manifest;
 	let seq = 0;
@@ -346,7 +346,7 @@ await test("OWN-SAME-PID: two schedulers with default ownerId on one PID do not 
 });
 
 await test("OWN-REENTRANT: a run already in progress makes a second run refuse", async () => {
-	const { createCampaignScheduler, buildFixtureCampaign } = await import("../memory/campaign/index.mjs");
+	const { createCampaignScheduler, buildFixtureCampaign } = await import("../campaign/index.mjs");
 	const fixture = buildFixtureCampaign();
 	const manifest = fixture.manifest;
 	let seq = 0;

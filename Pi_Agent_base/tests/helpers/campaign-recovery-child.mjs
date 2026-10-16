@@ -19,8 +19,8 @@ import {
 	createCampaignScheduler,
 	FIXTURE_SCOPE,
 	projectQueueFromEvents,
-} from "../../memory/campaign/index.mjs";
-import { EventLog } from "../../memory/runtime/events.mjs";
+} from "../../campaign/index.mjs";
+import { EventLog } from "../../shared/events.mjs";
 
 const [workDir, scenario = "recover"] = process.argv.slice(2);
 mkdirSync(workDir, { recursive: true });

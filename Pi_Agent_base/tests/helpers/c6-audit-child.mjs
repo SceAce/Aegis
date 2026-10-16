@@ -4,20 +4,20 @@ import { join, resolve } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import * as sdkBase from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { runC6FromConfig } from "../../memory/campaign/c6-entry.mjs";
+import { runC6FromConfig } from "../../campaign/c6-entry.mjs";
+import { runBoundedAttempts } from "../../campaign/c6-runner.mjs";
+import { ActionRegistry, createActionBroker } from "../../execution/action-contract.mjs";
+import { buildCodeRepairManifest } from "../../execution/adapters/code-repair-adapter.mjs";
+import {
+	buildDataRepairManifest,
+	createStructuredDataAdapter,
+} from "../../execution/adapters/structured-data-adapter.mjs";
+import { createAuthorization } from "../../execution/authorization.mjs";
 import {
 	buildCampaignLearningBridge,
 	compileExperienceFromProofs,
 	createCampaignLearningStore,
-} from "../../memory/campaign/c6-learning.mjs";
-import { runBoundedAttempts } from "../../memory/campaign/c6-runner.mjs";
-import { buildCodeRepairManifest } from "../../memory/campaign/code-repair-adapter.mjs";
-import {
-	buildDataRepairManifest,
-	createStructuredDataAdapter,
-} from "../../memory/campaign/structured-data-adapter.mjs";
-import { ActionRegistry, createActionBroker } from "../../memory/runtime/action-contract.mjs";
-import { createAuthorization } from "../../memory/runtime/authorization.mjs";
+} from "../../memory/c6-learning.mjs";
 
 const [scenario, base] = process.argv.slice(2);
 const workspace = join(base, "workspace");

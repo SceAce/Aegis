@@ -22,8 +22,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { assembleCampaignHost, buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
+import { assembleCampaignHost, buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

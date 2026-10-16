@@ -24,8 +24,8 @@ export AEGIS_DEMO_DIR="$(mktemp -d /tmp/aegis-c5-demo.XXXXXX)"
 node --input-type=module <<'NODE'
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildC3FixtureManifest } from './Pi_Agent_base/memory/campaign/c3-entry.mjs';
-import { validateManifest } from './Pi_Agent_base/memory/campaign/manifest.mjs';
+import { buildC3FixtureManifest } from './Pi_Agent_base/campaign/c3-entry.mjs';
+import { validateManifest } from './Pi_Agent_base/campaign/manifest.mjs';
 const dir = process.env.AEGIS_DEMO_DIR;
 const workspaceRoot = join(dir, 'workspace');
 mkdirSync(workspaceRoot, { recursive: true });
@@ -41,7 +41,7 @@ writeFileSync(join(dir, 'campaign.config.json'), JSON.stringify({
 }, null, 2) + '\n');
 console.log(join(dir, 'campaign.config.json'));
 NODE
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config "$AEGIS_DEMO_DIR/campaign.config.json" run --export
+node Pi_Agent_base/campaign/c5-entry.mjs --config "$AEGIS_DEMO_DIR/campaign.config.json" run --export
 ```
 
 Keep the printed temporary directory to inspect/recover the run. The shorter
@@ -83,24 +83,24 @@ Notes:
 
 ```bash
 # Run the whole loop, then export the read-only report artifacts:
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json run --export
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json run --export
 
 # Run with the optional loopback observation board (prints the URL):
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json run --observe
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json run --observe
 
 # Read-only status (projects the committed stream, dispatches nothing):
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json status
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json status
 
 # Durable control (each writes a committed control event):
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json pause
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json resume
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json cancel
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json pause
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json resume
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json cancel
 
 # Export only (at a stop boundary), into an explicit directory:
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json export --out ./report
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json export --out ./report
 
 # Read-only observation snapshot during this invocation (no task dispatch):
-node Pi_Agent_base/memory/campaign/c5-entry.mjs --config campaign.config.json observe --port 0
+node Pi_Agent_base/campaign/c5-entry.mjs --config campaign.config.json observe --port 0
 ```
 
 Exit code is 0 on success, 1 on a run/export/validation failure, 2 on a bad CLI

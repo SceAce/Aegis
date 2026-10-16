@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { eventDigest, verifyChain } from "../memory/runtime/events.mjs";
+import { eventDigest, verifyChain } from "../shared/events.mjs";
 import { BASE, evidenceDir, project, runPlanningScenario } from "./helpers/e1-closure-helpers.mjs";
 
 const out = evidenceDir("recovery");

@@ -15,10 +15,10 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createCompositeWorker, summarizeRequestLedger } from "../memory/campaign/c6-entry.mjs";
-import { createModelWorker } from "../memory/campaign/c6-model-worker.mjs";
-import { classifyStopReason, reservedSeedForTask } from "../memory/campaign/c6-request-lifecycle.mjs";
-import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
+import { createCompositeWorker, summarizeRequestLedger } from "../campaign/c6-entry.mjs";
+import { createModelWorker } from "../campaign/c6-model-worker.mjs";
+import { classifyStopReason, reservedSeedForTask } from "../campaign/c6-request-lifecycle.mjs";
+import { createToolLedger } from "../campaign/c6-tool-ledger.mjs";
 
 const LIMIT = { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 };
 const CONTEXT = { max_total_input_chars: 100000, output_reserve_chars: 0, strategy: "bounded_ram" };

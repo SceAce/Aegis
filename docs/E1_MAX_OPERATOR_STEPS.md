@@ -21,7 +21,7 @@ OpenAI-compatible Chat Completions，`auth.json` 已有 relay 凭据。
 
 ```bash
 cd /Users/scemac/My_github/Aegis
-node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs prepare
+node Pi_Agent_base/campaign/e1-max-pilot.mjs prepare
 ```
 
 会输出`prepared: true`、所选provider/model、Pi配置目录和两份config路径。默认目录：
@@ -44,7 +44,7 @@ Pi目录还可在prepare时用 `--pi-agent-dir <绝对目录>` 明确选择。
 
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/e1-max-pilot.mjs run --run-real
+  Pi_Agent_base/campaign/e1-max-pilot.mjs run --run-real
 ```
 
 这是开始计费的命令。模型应读取`dataset.json`，通过注册动作把`name`从`??`改成`Ada`，
@@ -78,7 +78,7 @@ Ctrl-C结束进程并保留原attempt；之后先只读检查未决和产物，�
 ## 4. 只读查看与交回
 
 ```bash
-node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs status
+node Pi_Agent_base/campaign/e1-max-pilot.mjs status
 ```
 
 不调用模型、无需密钥，基于events重建状态。将这段摘要JSON交回即可，不要提交密钥、
@@ -101,8 +101,8 @@ status曾看到running、2 consumed+1 pending；退出后再次查看与run结�
 
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/e1-max-pilot.mjs run --task code --run-real
-node Pi_Agent_base/memory/campaign/e1-max-pilot.mjs status --task code
+  Pi_Agent_base/campaign/e1-max-pilot.mjs run --task code --run-real
+node Pi_Agent_base/campaign/e1-max-pilot.mjs status --task code
 ```
 
 命令会先检查smoke已完成且无未决。模型修复`solution.mjs`的`normalizeName`：去掉首尾

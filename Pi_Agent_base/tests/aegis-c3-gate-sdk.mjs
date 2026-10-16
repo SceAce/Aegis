@@ -15,9 +15,9 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
-import { createCampaignHost } from "../memory/campaign/host.mjs";
+import { buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { createCampaignActionGate } from "../campaign/campaign-mode.mjs";
+import { createCampaignHost } from "../campaign/host.mjs";
 
 const dir = await mkdtemp(join(tmpdir(), "aegis-c3-gate-sdk-"));
 let session;

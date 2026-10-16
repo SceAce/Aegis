@@ -5,16 +5,16 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { summarizeRequestLedger } from "../memory/campaign/c6-request-lifecycle.mjs";
-import { planDigest, validatePlanGraph } from "../memory/campaign/e1-plan-contract.mjs";
-import { admitCandidatePlan, buildPlanningManifest } from "../memory/campaign/e1-planning.mjs";
-import { loadPlanningAuthority, normalizeExecutableTask } from "../memory/campaign/e1-planning-contract.mjs";
-import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
-import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { EventLog, eventDigest, verifyChain } from "../memory/runtime/events.mjs";
+import { summarizeRequestLedger } from "../campaign/c6-request-lifecycle.mjs";
+import { planDigest, validatePlanGraph } from "../campaign/e1-plan-contract.mjs";
+import { admitCandidatePlan, buildPlanningManifest } from "../campaign/e1-planning.mjs";
+import { loadPlanningAuthority, normalizeExecutableTask } from "../campaign/e1-planning-contract.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
+import { createCampaignScheduler } from "../campaign/scheduler.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { EventLog, eventDigest, verifyChain } from "../shared/events.mjs";
 import {
 	evidenceDir,
 	project,

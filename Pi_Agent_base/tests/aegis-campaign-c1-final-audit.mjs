@@ -19,7 +19,7 @@ import {
 	projectQueueFromEvents,
 	resolveTaskFromOutcomes,
 	resolveTaskOutcome,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 async function test(name, fn) {
@@ -549,7 +549,7 @@ function dynamicProposal(over = {}) {
 
 await test("F5-DEF-FULL2: definition includes capabilities/budget/stop condition/expected evidence", async () => {
 	const { manifest, proposal } = dynamicProposal();
-	const { admitTaskProposal } = await import("../memory/campaign/index.mjs");
+	const { admitTaskProposal } = await import("../campaign/index.mjs");
 	const decision = admitTaskProposal({ proposal, manifest, depth: 1 });
 	assert.equal(decision.status, "admitted", decision.reasons.join("; "));
 	const events = [
@@ -585,7 +585,7 @@ await test("F5-DEF-FULL2: definition includes capabilities/budget/stop condition
 
 await test("F5-DEF-STAGEID: a duplicate generated stage id is refused (Campaign-global uniqueness)", async () => {
 	const { manifest, proposal } = dynamicProposal();
-	const { admitTaskProposal } = await import("../memory/campaign/index.mjs");
+	const { admitTaskProposal } = await import("../campaign/index.mjs");
 	const decision = admitTaskProposal({ proposal, manifest, depth: 1 });
 	const proposal2 = { ...proposal, proposed_task_id: "task-dyn-2", proposed_stage_id: "stage-collide" };
 	const proposal1 = { ...proposal, proposed_stage_id: "stage-collide" };
@@ -641,7 +641,7 @@ await test("F5-DEF-STAGEID: a duplicate generated stage id is refused (Campaign-
 
 await test("F5-DEF-DIGEST: the definition digest covers capabilities/budget/stop/evidence", async () => {
 	const { manifest, proposal } = dynamicProposal();
-	const { admitTaskProposal } = await import("../memory/campaign/index.mjs");
+	const { admitTaskProposal } = await import("../campaign/index.mjs");
 	const decision = admitTaskProposal({ proposal, manifest, depth: 1 });
 	const base = [
 		ev(
@@ -699,7 +699,7 @@ await test("F5-DEF-DIGEST: the definition digest covers capabilities/budget/stop
 
 await test("F5-DEF-RESTART: a dynamic definition is recovered identically from committed events", async () => {
 	const { manifest, proposal } = dynamicProposal();
-	const { admitTaskProposal } = await import("../memory/campaign/index.mjs");
+	const { admitTaskProposal } = await import("../campaign/index.mjs");
 	const decision = admitTaskProposal({ proposal, manifest, depth: 1 });
 	const events = [
 		ev(

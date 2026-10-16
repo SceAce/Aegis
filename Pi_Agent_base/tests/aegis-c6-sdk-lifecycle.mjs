@@ -21,12 +21,12 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { createCampaignActionGate } from "../campaign/campaign-mode.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { projectState } from "../memory/state.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-lifecycle-"));

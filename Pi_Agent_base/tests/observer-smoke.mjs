@@ -227,7 +227,7 @@ if (completed.payload.content_digest === undefined) throw new Error("result dige
 
 // Schema compatibility: legacy 1.0 events stay 1.0; runtime events are 1.1.
 const { schemaForEventType, LEGACY_SCHEMA_VERSION, RUNTIME_SCHEMA_VERSION } = await import(
-	join(base, "memory", "runtime", "events.mjs")
+	join(base, "shared", "events.mjs")
 );
 for (const event of lines) {
 	const expected = schemaForEventType(event.event_type);

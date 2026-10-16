@@ -11,8 +11,8 @@ import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { test } from "node:test";
 
-import { observationConfigFromEnv, runObservationCommand } from "../memory/campaign/observation-command.mjs";
-import { buildObservationView } from "../memory/campaign/observation-view.mjs";
+import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
+import { buildObservationView } from "../observation/observation-view.mjs";
 import { readEvents, runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
 test("C4A-8: the command reads the same view and prints a summary + URL", async (t) => {

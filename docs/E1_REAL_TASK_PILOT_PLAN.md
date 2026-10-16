@@ -148,7 +148,7 @@ context初值可用bounded_ram、24000字符窗口、4000输出预留，准备�
 ```bash
 # 仓库根目录；config由已冻结运行包提供。
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/c6-entry.mjs \
+  Pi_Agent_base/campaign/c6-entry.mjs \
   --config <本次配置绝对路径> run --export
 ```
 
@@ -234,7 +234,7 @@ B启动同一配置的run；这样run退出后页面仍可查看。`run --observ
 
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/c6-entry.mjs \
+  Pi_Agent_base/campaign/c6-entry.mjs \
   --config Pi_Agent_base/runtime/pilot/e1-max-first/code/campaign.config.json \
   observe --port 0
 ```

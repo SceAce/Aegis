@@ -1,6 +1,6 @@
 // Offline tests for the batch-C verify-first action runtime adapter.
 //
-// These tests exercise `memory/runtime/action-runtime.mjs` directly (no Pi, no
+// These tests exercise `execution/action-runtime.mjs` directly (no Pi, no
 // model, no network) and assert the negative branches the task requires:
 //   * missing / foreign / non-ELF data refs are rejected
 //   * param/version (digest) swap is refused and needs re-verification
@@ -20,9 +20,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createObserveActionRuntime, observeEventPayloads, createRefResolver, inspectScriptRegistration } from "../memory/runtime/action-runtime.mjs";
-import { executableDigest } from "../memory/runtime/script-registry.mjs";
-import { syntheticElfHeader } from "../memory/runtime/workspace-info-actions.mjs";
+import { createObserveActionRuntime, observeEventPayloads, createRefResolver, inspectScriptRegistration } from "../execution/action-runtime.mjs";
+import { executableDigest } from "../execution/script-registry.mjs";
+import { syntheticElfHeader } from "../execution/workspace-info-actions.mjs";
 
 let failures = 0;
 function check(name, condition, detail) {

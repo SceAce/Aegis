@@ -16,7 +16,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { createSessionSupervisor } from "../memory/runtime/session-supervisor.mjs";
+import { createSessionSupervisor } from "../session/session-supervisor.mjs";
 
 const base = await mkdtemp(join(tmpdir(), "aegis-c2-budget-sdk-"));
 let runtime;

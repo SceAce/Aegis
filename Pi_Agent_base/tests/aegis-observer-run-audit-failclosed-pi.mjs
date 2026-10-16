@@ -51,18 +51,14 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { ActionRegistry, createActionBroker } from "../memory/runtime/action-contract.mjs";
-import { digest, EventLog } from "../memory/runtime/events.mjs";
-import { createEvidenceResolver } from "../memory/runtime/evidence-resolver.mjs";
-import {
-	buildProductionResolver,
-	createLearningBridge,
-	loadReplayAdapter,
-} from "../memory/runtime/learning-bridge.mjs";
-import * as learningCommands from "../memory/runtime/learning-commands.mjs";
-import { createLearningStore } from "../memory/runtime/learning-store.mjs";
-import { createScriptRegistry, executableDigest, scriptContracts } from "../memory/runtime/script-registry.mjs";
-import { createWorkflowEngine } from "../memory/runtime/workflow-engine.mjs";
+import { ActionRegistry, createActionBroker } from "../execution/action-contract.mjs";
+import { createScriptRegistry, executableDigest, scriptContracts } from "../execution/script-registry.mjs";
+import { createEvidenceResolver } from "../memory/evidence-resolver.mjs";
+import { buildProductionResolver, createLearningBridge, loadReplayAdapter } from "../memory/learning-bridge.mjs";
+import * as learningCommands from "../memory/learning-commands.mjs";
+import { createLearningStore } from "../memory/learning-store.mjs";
+import { createWorkflowEngine } from "../orchestration/workflow-engine.mjs";
+import { digest, EventLog } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

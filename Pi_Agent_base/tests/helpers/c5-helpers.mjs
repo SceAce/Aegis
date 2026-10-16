@@ -6,9 +6,9 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildC3FixtureManifest } from "../../memory/campaign/c3-entry.mjs";
-import { runCampaignFromConfig } from "../../memory/campaign/c5-entry.mjs";
-import { validateManifest } from "../../memory/campaign/manifest.mjs";
+import { buildC3FixtureManifest } from "../../campaign/c3-entry.mjs";
+import { runCampaignFromConfig } from "../../campaign/c5-entry.mjs";
+import { validateManifest } from "../../campaign/manifest.mjs";
 
 /**
  * Create a temp dir with a validated Manifest and a matching trusted config.

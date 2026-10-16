@@ -12,10 +12,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createModelWorker } from "../memory/campaign/c6-model-worker.mjs";
-import { reservedSeedForTask, summarizeRequestLedger } from "../memory/campaign/c6-request-lifecycle.mjs";
-import { createToolLedger } from "../memory/campaign/c6-tool-ledger.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+import { createModelWorker } from "../campaign/c6-model-worker.mjs";
+import { reservedSeedForTask, summarizeRequestLedger } from "../campaign/c6-request-lifecycle.mjs";
+import { createToolLedger } from "../campaign/c6-tool-ledger.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const LIMIT = { model_requests: 5, tool_calls: 10, input_chars: 0, wall_time_ms: 100000 };
 const CONTEXT = { max_total_input_chars: 100000, output_reserve_chars: 0 };

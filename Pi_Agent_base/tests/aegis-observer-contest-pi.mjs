@@ -35,9 +35,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { digest } from "../memory/runtime/events.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { projectState } from "../memory/state.mjs";
+import { digest } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");
@@ -415,7 +415,7 @@ async function main() {
 	// The `read` tool call leaves an action pending only between tool_call and
 	// tool_result; instead prove the guard directly using the core function on a
 	// state with a pending real action.
-	const { pendingActionsFor } = await import("../memory/runtime/state.mjs");
+	const { pendingActionsFor } = await import("../memory/state.mjs");
 	const blockedState = JSON.parse(JSON.stringify(state));
 	blockedState.pending_actions["a-real"] = {
 		action_id: "a-real",

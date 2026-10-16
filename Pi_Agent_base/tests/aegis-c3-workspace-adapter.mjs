@@ -18,16 +18,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBrokerWorker } from "../memory/campaign/broker-worker.mjs";
-import { createCampaignHost } from "../memory/campaign/host.mjs";
-import { createHostOracle } from "../memory/campaign/host-oracle.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { createWorkspaceScriptRegistration } from "../memory/campaign/script-workspace-adapter.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { ActionRegistry, createActionBroker } from "../memory/runtime/action-contract.mjs";
-import { createAuthorization } from "../memory/runtime/authorization.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
-import { createScriptRegistry, scriptContracts } from "../memory/runtime/script-registry.mjs";
+import { createCampaignHost } from "../campaign/host.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { ActionRegistry, createActionBroker } from "../execution/action-contract.mjs";
+import { createWorkspaceScriptRegistration } from "../execution/adapters/script-workspace-adapter.mjs";
+import { createAuthorization } from "../execution/authorization.mjs";
+import { createBrokerWorker } from "../execution/broker-worker.mjs";
+import { createScriptRegistry, scriptContracts } from "../execution/script-registry.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { EventLog } from "../shared/events.mjs";
+import { createHostOracle } from "../verification/host-oracle.mjs";
 
 const failures = [];
 async function test(name, fn) {

@@ -13,8 +13,8 @@
 
 import assert from "node:assert/strict";
 
-import { createCampaignScheduler, projectionSnapshot, projectQueueFromEvents } from "../memory/campaign/index.mjs";
-import { canonicalStageOutcome, currentTaskScope } from "../memory/campaign/projection.mjs";
+import { createCampaignScheduler, projectionSnapshot, projectQueueFromEvents } from "../campaign/index.mjs";
+import { canonicalStageOutcome, currentTaskScope } from "../campaign/projection.mjs";
 
 const failures = [];
 async function test(name, fn) {

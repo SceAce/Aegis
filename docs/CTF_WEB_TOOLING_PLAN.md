@@ -16,12 +16,12 @@
 
 | 位置 | 现状 | 接入要求 |
 | --- | --- | --- |
-| `memory/campaign/c6-sdk-runtime.mjs` | 支持 `extraTools`，Session 创建及轮换时注册 | 使用真实 SDK 自定义工具，保留同一 gate |
-| `memory/campaign/c6-model-worker.mjs` | read、decision、submit 工具及 request/toolCall 绑定 | 新工具参与既有 provider gate、双侧工具收费和当前 Task 绑定 |
-| `memory/campaign/c6-entry.mjs` | 目前为 fixture/data/code family；Composite 在模型结束后执行 decision | 新 Web family 需要交互反馈模式，响应进入下一次真实模型请求 |
-| `memory/campaign/c3-entry.mjs` | 组装时 `allowNetwork: false`，工具限 workspace/script | 网络授权由冻结靶机契约显式注入，旧 family 行为保持原契约 |
-| `memory/campaign/broker-worker.mjs` | grant/target/evidence 逻辑面向文件路径 | Web target 使用明确资源类型，不能把 URL 交给文件 `resolve()` |
-| `memory/campaign/campaign-config.mjs`、`manifest.mjs`、`registries.mjs` | family、profile、adapter、Oracle 由可信代码校验 | 显式登记 Web 能力及独立结果来源，配置和模型不能自行登记实现 |
+| `campaign/c6-sdk-runtime.mjs` | 支持 `extraTools`，Session 创建及轮换时注册 | 使用真实 SDK 自定义工具，保留同一 gate |
+| `campaign/c6-model-worker.mjs` | read、decision、submit 工具及 request/toolCall 绑定 | 新工具参与既有 provider gate、双侧工具收费和当前 Task 绑定 |
+| `campaign/c6-entry.mjs` | 目前为 fixture/data/code family；Composite 在模型结束后执行 decision | 新 Web family 需要交互反馈模式，响应进入下一次真实模型请求 |
+| `campaign/c3-entry.mjs` | 组装时 `allowNetwork: false`，工具限 workspace/script | 网络授权由冻结靶机契约显式注入，旧 family 行为保持原契约 |
+| `execution/broker-worker.mjs` | grant/target/evidence 逻辑面向文件路径 | Web target 使用明确资源类型，不能把 URL 交给文件 `resolve()` |
+| `campaign/campaign-config.mjs`、`manifest.mjs`、`registries.mjs` | family、profile、adapter、Oracle 由可信代码校验 | 显式登记 Web 能力及独立结果来源，配置和模型不能自行登记实现 |
 | `contest/run.sh` | 旧赛事实验入口，工具/恢复契约不同 | 不能用旧 launcher 的 bash 权限冒充当前 E1 产品接入 |
 
 本机存在 `node`、`curl`、`python3` 和 `docker` 命令；未检查 Docker daemon、Python 包、

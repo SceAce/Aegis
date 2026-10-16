@@ -2,7 +2,7 @@
 
 This file documents the **Aegis runtime extension** on top of
 [`MEMORY_SCHEMA.md`](./MEMORY_SCHEMA.md). It exists because two runtime modules
-(`memory/runtime/events.mjs`, `memory/runtime/contest-bridge.mjs`) and the board
+(`shared/events.mjs`, `contest/outcome-bridge.mjs`) and the board
 projection add fields, source kinds, and event types that are **not** part of
 the base schema.
 

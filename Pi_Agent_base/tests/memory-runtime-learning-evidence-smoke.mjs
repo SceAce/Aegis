@@ -2,9 +2,9 @@
 // Batch B2 focused evidence-discipline smoke test.
 //
 // Scope: the DEFAULTED learning/evidence path only —
-//   memory/runtime/experience-compiler.mjs
-//   memory/runtime/contribution.mjs
-//   memory/runtime/learning-router.mjs
+//   memory/experience-compiler.mjs
+//   memory/contribution.mjs
+//   memory/learning-router.mjs
 //
 // Every test here is a MEANINGFUL NEGATIVE test for a specific way the earlier
 // Batch B implementation could be fooled into claiming verified evidence it did
@@ -29,10 +29,10 @@
 // self-reported status string alone.
 
 import assert from "node:assert/strict";
-import { digest, sha256Hex } from "../memory/fixture/contracts.mjs";
-import { compileExperience, COMPILER_VERSION, EXPERIENCE_SCHEMA_VERSION } from "../memory/runtime/experience-compiler.mjs";
-import { recordStageContribution, dataUsefulness } from "../memory/runtime/contribution.mjs";
-import { routeLearning } from "../memory/runtime/learning-router.mjs";
+import { digest, sha256Hex } from "../shared/contracts.mjs";
+import { compileExperience, COMPILER_VERSION, EXPERIENCE_SCHEMA_VERSION } from "../memory/experience-compiler.mjs";
+import { recordStageContribution, dataUsefulness } from "../memory/contribution.mjs";
+import { routeLearning } from "../memory/learning-router.mjs";
 
 const failures = [];
 function test(name, fn) {

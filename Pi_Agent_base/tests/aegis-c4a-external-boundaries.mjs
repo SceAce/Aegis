@@ -3,10 +3,10 @@
 import assert from "node:assert/strict";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
-import { runObservationCommand } from "../memory/campaign/observation-command.mjs";
-import { createObservationServer } from "../memory/campaign/observation-server.mjs";
-import { buildObservationView, OBSERVATION_LIMITS } from "../memory/campaign/observation-view.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { runObservationCommand } from "../observation/observation-command.mjs";
+import { createObservationServer } from "../observation/observation-server.mjs";
+import { buildObservationView, OBSERVATION_LIMITS } from "../observation/observation-view.mjs";
+import { EventLog } from "../shared/events.mjs";
 import { runFixtureCampaign } from "./helpers/c4-report-helpers.mjs";
 
 async function setup(t, options = {}) {

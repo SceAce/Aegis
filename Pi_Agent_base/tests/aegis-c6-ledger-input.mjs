@@ -11,8 +11,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createModelWorker } from "../memory/campaign/c6-model-worker.mjs";
-import { createToolLedger, normalizeUsage } from "../memory/campaign/c6-tool-ledger.mjs";
+import { createModelWorker } from "../campaign/c6-model-worker.mjs";
+import { createToolLedger, normalizeUsage } from "../campaign/c6-tool-ledger.mjs";
 
 test("the ledger gates provider requests before the call", () => {
 	const ledger = createToolLedger({

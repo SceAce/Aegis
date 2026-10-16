@@ -8,12 +8,12 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { before, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { artifactIndexFromEvents } from "../memory/campaign/c3-entry.mjs";
-import { summarizeRequestLedger } from "../memory/campaign/c6-request-lifecycle.mjs";
-import { buildE1View } from "../memory/campaign/e1-observation.mjs";
-import { validatePlanGraph, validatePlanShape } from "../memory/campaign/e1-plan-contract.mjs";
-import { projectQueueFromEvents } from "../memory/campaign/projection.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+import { artifactIndexFromEvents } from "../campaign/c3-entry.mjs";
+import { summarizeRequestLedger } from "../campaign/c6-request-lifecycle.mjs";
+import { validatePlanGraph, validatePlanShape } from "../campaign/e1-plan-contract.mjs";
+import { projectQueueFromEvents } from "../campaign/projection.mjs";
+import { buildE1View } from "../observation/e1-observation.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const base = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const resolver = join(base, "pi/packages/coding-agent/src/experimental/source-resolver.ts");

@@ -7,10 +7,10 @@
 //
 // Run: node tests/aegis-runtime-effective-board.mjs
 
-import { projectBoard, summarizeBoard, resolveEffective } from "../memory/runtime/board.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { evaluateHandoff } from "../memory/runtime/handoff.mjs";
+import { projectBoard, summarizeBoard, resolveEffective } from "../memory/board.mjs";
+import { projectState } from "../memory/state.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { evaluateHandoff } from "../session/handoff.mjs";
 
 let failures = 0;
 function check(name, condition, detail = "") {

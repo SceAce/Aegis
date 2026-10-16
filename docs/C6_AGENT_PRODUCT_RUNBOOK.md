@@ -31,8 +31,8 @@ Manifest 是**不可变可信输入**。可用一次性脚本生成并校验：
 cd /Users/scemac/My_github/Aegis
 node --input-type=module -e '
 import { writeFileSync } from "node:fs";
-import { buildDataRepairManifest } from "./Pi_Agent_base/memory/campaign/structured-data-adapter.mjs";
-import { validateManifest } from "./Pi_Agent_base/memory/campaign/manifest.mjs";
+import { buildDataRepairManifest } from "./Pi_Agent_base/execution/adapters/structured-data-adapter.mjs";
+import { validateManifest } from "./Pi_Agent_base/campaign/manifest.mjs";
 const ws = "/tmp/aegis-c6/workspace";
 const v = validateManifest(buildDataRepairManifest({ workspaceRoot: ws }));
 if (!v.ok) { console.error(v.reasons); process.exit(1); }
@@ -73,7 +73,7 @@ console.log("manifest ok");
 所有命令从仓库根目录运行；SDK 使用真实 source resolver。
 
 ```bash
-ENTRY=/Users/scemac/My_github/Aegis/Pi_Agent_base/memory/campaign/c6-entry.mjs
+ENTRY=/Users/scemac/My_github/Aegis/Pi_Agent_base/campaign/c6-entry.mjs
 RES=/Users/scemac/My_github/Aegis/Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts
 CFG=/tmp/aegis-c6/campaign.config.json
 run() { node --import "$RES" "$ENTRY" --config "$CFG" "$@"; }
@@ -152,7 +152,7 @@ run measure      # 测量导出
   "policy": "explicit",
   "promote_experience": false,
   "proof_ids": ["o-task-001", "o-task-002"],
-  "replay_adapter": "/abs/path/to/Pi_Agent_base/memory/campaign/isolated-replay-adapter.mjs",
+  "replay_adapter": "/abs/path/to/Pi_Agent_base/execution/adapters/isolated-replay-adapter.mjs",
   "environment": {
     "environment_fingerprint": "data-repair-env",
     "domain": "structured-data",
@@ -314,9 +314,9 @@ Host 先整图校验，再一次 durable `campaign.plan.admitted` 批量准入�
 
 ```bash
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/c6-entry.mjs --config <config> observe --port 0     # 只读，零 provider
+  Pi_Agent_base/campaign/c6-entry.mjs --config <config> observe --port 0     # 只读，零 provider
 node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
-  Pi_Agent_base/memory/campaign/c6-entry.mjs --config <config> status               # 零 provider
+  Pi_Agent_base/campaign/c6-entry.mjs --config <config> status               # 零 provider
 ```
 
 双终端：终端 A 先 `observe`（新包未 run 也显示目标/not_started）；终端 B 用同一配置 `run`（faux

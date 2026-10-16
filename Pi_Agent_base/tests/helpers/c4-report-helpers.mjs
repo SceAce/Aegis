@@ -6,8 +6,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { assembleCampaignHost, buildC3FixtureManifest } from "../../memory/campaign/c3-entry.mjs";
-import { validateManifest } from "../../memory/campaign/manifest.mjs";
+import { assembleCampaignHost, buildC3FixtureManifest } from "../../campaign/c3-entry.mjs";
+import { validateManifest } from "../../campaign/manifest.mjs";
 
 /**
  * Run the C3 fixture Host and persist the immutable Manifest + event log.

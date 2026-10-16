@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { runCampaignFromConfig } from "../../memory/campaign/c5-entry.mjs";
+import { runCampaignFromConfig } from "../../campaign/c5-entry.mjs";
 
 const [dir, mode = "recover"] = process.argv.slice(2);
 const effectsPath = join(dir, "effects.json");

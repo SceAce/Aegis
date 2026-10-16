@@ -13,8 +13,8 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { admitTaskProposal } from "../memory/campaign/dynamic-policy.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
+import { admitTaskProposal } from "../campaign/dynamic-policy.mjs";
+import { EventLog } from "../shared/events.mjs";
 import { makeConfig, readEvents, runEntry } from "./helpers/c5-helpers.mjs";
 
 async function appendEvent(ctx, type, source, payload) {
@@ -208,7 +208,7 @@ test("C5-A1: an intent-append failure prevents the effect and a rejected action 
 
 test("C5-A1b: the trusted config validator refuses unknown keys, a widened grant and a non-loopback host", async (t) => {
 	const { writeFileSync } = await import("node:fs");
-	const { loadCampaignConfig } = await import("../memory/campaign/campaign-config.mjs");
+	const { loadCampaignConfig } = await import("../campaign/campaign-config.mjs");
 	const ctx = await makeConfig();
 	t.after(() => rm(ctx.dir, { recursive: true, force: true }));
 	const base = {
@@ -253,7 +253,7 @@ test("C5-A1b: the trusted config validator refuses unknown keys, a widened grant
 
 test("C5-A1c: a symlinked workspace prefix is accepted while a genuinely different root is refused", async (t) => {
 	const { symlinkSync, mkdirSync, writeFileSync } = await import("node:fs");
-	const { loadCampaignConfig } = await import("../memory/campaign/campaign-config.mjs");
+	const { loadCampaignConfig } = await import("../campaign/campaign-config.mjs");
 	const ctx = await makeConfig();
 	t.after(() => rm(ctx.dir, { recursive: true, force: true }));
 	// A symlink that points at the real workspace directory.

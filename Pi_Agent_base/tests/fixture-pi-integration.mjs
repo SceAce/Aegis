@@ -30,11 +30,11 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 
-import { compile } from "../memory/fixture/compiler.mjs";
-import { readJson, readJsonl } from "../memory/fixture/contracts.mjs";
-import { runFixtureTask } from "../memory/fixture/host.mjs";
-import { judgeRun } from "../memory/fixture/oracle.mjs";
-import { route } from "../memory/fixture/router.mjs";
+import { compile } from "../fixtures/compiler.mjs";
+import { readJson, readJsonl } from "../shared/contracts.mjs";
+import { runFixtureTask } from "../fixtures/host.mjs";
+import { judgeRun } from "../fixtures/oracle.mjs";
+import { route } from "../fixtures/router.mjs";
 
 const TOOL_NAME = "aegis_fixture_unlock";
 const BANNED_TOOLS = ["bash", "powershell", "edit", "write", "read", "grep", "find", "ls", "mcp", "codemode"];

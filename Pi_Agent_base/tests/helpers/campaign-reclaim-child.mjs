@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { acquireCampaignOwnership } from "../../memory/campaign/ownership.mjs";
+import { acquireCampaignOwnership } from "../../campaign/ownership.mjs";
 
 const [baseDir, campaignId, ownerId] = process.argv.slice(2);
 const barrier = join(baseDir, "barrier");

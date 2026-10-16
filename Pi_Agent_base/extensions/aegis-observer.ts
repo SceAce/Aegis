@@ -3,7 +3,7 @@
 // This extension keeps the Observer's real event collection and adds the
 // event-sourced Runtime projection. It is the single writer for one run/task
 // event log (`AEGIS_EVENT_LOG`) and delegates all projection/validation to the
-// small Aegis core library under `memory/runtime/`:
+// Aegis memory, execution, session and orchestration libraries:
 //
 //   events.mjs   append-only hash-chained EventLog + replay
 //   board.mjs    Origin/Fact/Refuted/Intent/Hint/Artifact projection + write gate
@@ -32,7 +32,7 @@
 //     idempotent and never appends through a torn-down log. The switch is
 //     cancelled/failed closed without renaming the staged request (no fake
 //     success). `agent.settled` records `handoff_ready` for the thin host helper
-//     (`memory/runtime/handoff-host.mjs`) to apply on the real runtime.
+//     (`session/handoff-host.mjs`) to apply on the real runtime.
 //   * If the audit log cannot be written, side-effect tools fail closed; read
 //     tools may continue.
 //
@@ -54,7 +54,7 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { observationConfigFromEnv, runObservationCommand } from "../memory/campaign/observation-command.mjs";
+import { appendContestOutcome, readContestResults, resolveContestOutcome } from "../contest/outcome-bridge.mjs";
 import {
 	createObserveActionRuntime,
 	dataUseNote,
@@ -62,20 +62,20 @@ import {
 	observationDataNote,
 	observeEventPayloads,
 	rejectionNote,
-} from "../memory/runtime/action-runtime.mjs";
-import { projectBoard, summarizeBoard } from "../memory/runtime/board.mjs";
-import { appendContestOutcome, readContestResults, resolveContestOutcome } from "../memory/runtime/contest-bridge.mjs";
-import { contributionPayload, recordStageContribution } from "../memory/runtime/contribution.mjs";
-import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../memory/runtime/events.mjs";
-import { normalizeExperienceDecision } from "../memory/runtime/experience.mjs";
-import { evaluateHandoff } from "../memory/runtime/handoff.mjs";
-import { createLearningBridge } from "../memory/runtime/learning-bridge.mjs";
-import * as learningCommands from "../memory/runtime/learning-commands.mjs";
-import { createLearningStore } from "../memory/runtime/learning-store.mjs";
-import { proposalPayload, validateProposal } from "../memory/runtime/proposal.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { validateResourceParams } from "../memory/runtime/script-registry.mjs";
-import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/runtime/state.mjs";
+} from "../execution/action-runtime.mjs";
+import { validateResourceParams } from "../execution/script-registry.mjs";
+import { projectBoard, summarizeBoard } from "../memory/board.mjs";
+import { contributionPayload, recordStageContribution } from "../memory/contribution.mjs";
+import { normalizeExperienceDecision } from "../memory/experience.mjs";
+import { createLearningBridge } from "../memory/learning-bridge.mjs";
+import * as learningCommands from "../memory/learning-commands.mjs";
+import { createLearningStore } from "../memory/learning-store.mjs";
+import { proposalPayload, validateProposal } from "../memory/proposal.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/state.mjs";
+import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
+import { evaluateHandoff } from "../session/handoff.mjs";
+import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_VERSION = "0.2.0";

@@ -18,10 +18,10 @@ import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import * as sdkBase from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
-import { runC6FromConfig } from "../../memory/campaign/c6-entry.mjs";
-import { validateManifest } from "../../memory/campaign/manifest.mjs";
-import { buildDataRepairManifest } from "../../memory/campaign/structured-data-adapter.mjs";
-import { EventLog } from "../../memory/runtime/events.mjs";
+import { runC6FromConfig } from "../../campaign/c6-entry.mjs";
+import { validateManifest } from "../../campaign/manifest.mjs";
+import { buildDataRepairManifest } from "../../execution/adapters/structured-data-adapter.mjs";
+import { EventLog } from "../../shared/events.mjs";
 
 const [workDir, scenario = "recover"] = process.argv.slice(2);
 let sdkPersistenceFailures = 0;

@@ -4,11 +4,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { EventLog, verifyChain } from "../memory/runtime/events.mjs";
-import { evaluateHandoff } from "../memory/runtime/handoff.mjs";
-import { buildRam } from "../memory/runtime/ram.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { buildRam } from "../memory/ram.mjs";
+import { projectState } from "../memory/state.mjs";
+import { evaluateHandoff } from "../session/handoff.mjs";
+import { EventLog, verifyChain } from "../shared/events.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "aegis-ram-reaudit-"));
 const episodeId = "ep-current";

@@ -29,9 +29,9 @@ import {
 	buildPlanningPrompt,
 	validatePlanGraph,
 	validatePlanShape,
-} from "../memory/campaign/e1-plan-contract.mjs";
-import { templatesFromConfig } from "../memory/campaign/e1-planning.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+} from "../campaign/e1-plan-contract.mjs";
+import { templatesFromConfig } from "../campaign/e1-planning.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RESOLVER = join(BASE_DIR, "pi", "packages", "coding-agent", "src", "experimental", "source-resolver.ts");

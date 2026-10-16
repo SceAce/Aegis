@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PLAN_LIMITS, planDigest, validatePlanGraph, validatePlanShape } from "../memory/campaign/e1-plan-contract.mjs";
+import { PLAN_LIMITS, planDigest, validatePlanGraph, validatePlanShape } from "../campaign/e1-plan-contract.mjs";
 
 const MANIFEST = {
 	schema_version: "campaign-1.1",

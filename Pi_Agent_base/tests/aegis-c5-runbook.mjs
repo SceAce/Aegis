@@ -16,10 +16,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
+import { buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
 
-const ENTRY = fileURLToPath(new URL("../memory/campaign/c5-entry.mjs", import.meta.url));
+const ENTRY = fileURLToPath(new URL("../campaign/c5-entry.mjs", import.meta.url));
 
 function setup() {
 	const dir = mkdtempSync(join(tmpdir(), "aegis-c5-runbook-"));

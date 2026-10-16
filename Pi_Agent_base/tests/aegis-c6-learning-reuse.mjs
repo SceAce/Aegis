@@ -19,7 +19,11 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { ActionRegistry, createActionBroker } from "../execution/action-contract.mjs";
+import { buildDataRepairManifest } from "../execution/adapters/structured-data-adapter.mjs";
+import { createAuthorization } from "../execution/authorization.mjs";
 import {
 	buildCampaignLearningBridge,
 	compileExperienceFromProofs,
@@ -28,14 +32,10 @@ import {
 	rebuildExperienceStore,
 	routeBeforeModel,
 	runCampaignLearningStep,
-} from "../memory/campaign/c6-learning.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { buildDataRepairManifest } from "../memory/campaign/structured-data-adapter.mjs";
-import { ActionRegistry, createActionBroker } from "../memory/runtime/action-contract.mjs";
-import { createAuthorization } from "../memory/runtime/authorization.mjs";
-import { EventLog } from "../memory/runtime/events.mjs";
-import { buildProductionResolver } from "../memory/runtime/learning-bridge.mjs";
-import { authoritativeActiveExperiences } from "../memory/runtime/learning-store.mjs";
+} from "../memory/c6-learning.mjs";
+import { buildProductionResolver } from "../memory/learning-bridge.mjs";
+import { authoritativeActiveExperiences } from "../memory/learning-store.mjs";
+import { EventLog } from "../shared/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-learning-"));
@@ -157,7 +157,7 @@ try {
 	const events = readEvents(eventLogPath);
 
 	// The ONE bridge resolves REAL campaign outcomes from the committed stream.
-	const { createStructuredDataAdapter } = await import("../memory/campaign/structured-data-adapter.mjs");
+	const { createStructuredDataAdapter } = await import("../execution/adapters/structured-data-adapter.mjs");
 	const registry = new ActionRegistry([createStructuredDataAdapter({ workspaceRoot })]);
 	const broker = createActionBroker({ registry });
 	const authorization = createAuthorization({

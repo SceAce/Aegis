@@ -29,10 +29,6 @@
 		"types": ["node"],
 		"typeRoots": ["./pi/node_modules/@types"]
 	},
-	"include": [
-		"memory/runtime/learning-bridge.mjs",
-		"memory/runtime/learning-commands.mjs",
-		"memory/runtime/learning-store.mjs"
-	],
+	"include": ["memory/learning-bridge.mjs", "memory/learning-commands.mjs", "memory/learning-store.mjs"],
 	"exclude": ["pi/**", "node_modules/**"]
 }

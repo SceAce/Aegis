@@ -26,13 +26,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
-import { buildC3FixtureManifest } from "../memory/campaign/c3-entry.mjs";
-import { runCampaignFromConfig } from "../memory/campaign/c5-entry.mjs";
-import { createCampaignActionGate } from "../memory/campaign/campaign-mode.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
-import { committedRotations } from "../memory/runtime/session-supervisor.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
+import { buildC3FixtureManifest } from "../campaign/c3-entry.mjs";
+import { runCampaignFromConfig } from "../campaign/c5-entry.mjs";
+import { createCampaignActionGate } from "../campaign/campaign-mode.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
+import { projectState } from "../memory/state.mjs";
+import { committedRotations } from "../session/session-supervisor.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");

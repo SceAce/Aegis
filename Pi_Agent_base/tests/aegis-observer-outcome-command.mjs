@@ -42,9 +42,9 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { projectState } from "../memory/runtime/state.mjs";
-import { readContestResults, resolveContestOutcome } from "../memory/runtime/contest-bridge.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { projectState } from "../memory/state.mjs";
+import { readContestResults, resolveContestOutcome } from "../contest/outcome-bridge.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OBSERVER_PATH = join(BASE_DIR, "extensions", "aegis-observer.ts");
@@ -320,7 +320,7 @@ async function main() {
 	// (A bare string `when` is coerced to an array by Pi's tool parameter schema
 	// before the gate sees it, so the gate's own type check is covered by the
 	// direct validateProposal assertion below.)
-	const { validateProposal } = await import("../memory/runtime/proposal.mjs");
+	const { validateProposal } = await import("../memory/proposal.mjs");
 	check("the runtime gate rejects a non-array `when` (unit)", validateProposal({ kind: "candidate", text: "t", when: "not-an-array" }).accepted === false);
 	check("the runtime gate rejects `when` on a non-candidate (unit)", validateProposal({ kind: "claim", text: "t", when: ["x"] }).accepted === false);
 	check("the runtime gate accepts a well-formed candidate (unit)", validateProposal({ kind: "candidate", text: "t", when: ["a"], do: "d", expect: "e" }).accepted === true);

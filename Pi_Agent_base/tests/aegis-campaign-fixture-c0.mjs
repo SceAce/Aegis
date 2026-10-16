@@ -28,7 +28,7 @@ import {
 	persistFixtureCampaign,
 	renderCampaignReportMarkdown,
 	renderReviewerPrompt,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 function check(name, condition, detail) {
@@ -117,10 +117,7 @@ function buildArtifacts(fixture) {
 // ---------------------------------------------------------------------------
 
 const fixture = buildFixtureCampaign();
-check(
-	"fixture manifest validates",
-	(await import("../memory/campaign/manifest.mjs")).validateManifest(fixture.manifest).ok,
-);
+check("fixture manifest validates", (await import("../campaign/manifest.mjs")).validateManifest(fixture.manifest).ok);
 check(
 	"fixture is offline (network disabled, no credentials)",
 	fixture.manifest.authorization.network === "disabled" && fixture.manifest.authorization.credentials === "none",

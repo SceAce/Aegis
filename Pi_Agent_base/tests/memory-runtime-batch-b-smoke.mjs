@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { digest, sha256Hex } from "../memory/fixture/contracts.mjs";
+import { digest, sha256Hex } from "../shared/contracts.mjs";
 import {
 	ActionRegistry,
 	bindProposal,
@@ -23,19 +23,19 @@ import {
 	implementationDigest,
 	matchPermit,
 	validateContract,
-} from "../memory/runtime/action-contract.mjs";
-import { createAuthorization, authorizeAction, describeAuthorization } from "../memory/runtime/authorization.mjs";
+} from "../execution/action-contract.mjs";
+import { createAuthorization, authorizeAction, describeAuthorization } from "../execution/authorization.mjs";
 import {
 	isElfObservationCurrent,
 	parseElfHeader,
 	syntheticElfHeader,
 	identifyElfContract,
 	workspaceObservationContracts,
-} from "../memory/runtime/workspace-info-actions.mjs";
-import { buildArgv, createScriptContract, createScriptRegistry, executableDigest } from "../memory/runtime/script-registry.mjs";
-import { routeLearning } from "../memory/runtime/learning-router.mjs";
-import { compileExperience } from "../memory/runtime/experience-compiler.mjs";
-import { contributionPayload, dataUsefulness, recordStageContribution } from "../memory/runtime/contribution.mjs";
+} from "../execution/workspace-info-actions.mjs";
+import { buildArgv, createScriptContract, createScriptRegistry, executableDigest } from "../execution/script-registry.mjs";
+import { routeLearning } from "../memory/learning-router.mjs";
+import { compileExperience } from "../memory/experience-compiler.mjs";
+import { contributionPayload, dataUsefulness, recordStageContribution } from "../memory/contribution.mjs";
 
 const failures = [];
 function test(name, fn) {

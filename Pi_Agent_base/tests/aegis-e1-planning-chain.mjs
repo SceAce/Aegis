@@ -16,9 +16,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { buildE1View } from "../memory/campaign/e1-observation.mjs";
-import { verifyChain } from "../memory/runtime/events.mjs";
+import { buildE1View } from "../observation/e1-observation.mjs";
+import { verifyChain } from "../shared/events.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const RESOLVER = join(BASE_DIR, "pi", "packages", "coding-agent", "src", "experimental", "source-resolver.ts");

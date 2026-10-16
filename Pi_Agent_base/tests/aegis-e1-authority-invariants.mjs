@@ -11,13 +11,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { inspectExecutionPermit } from "../memory/campaign/authority.mjs";
-import { compilePlanAdmission } from "../memory/campaign/e1-plan-contract.mjs";
-import { loadPlanningAuthority } from "../memory/campaign/e1-planning-contract.mjs";
-import { createCampaignScheduler } from "../memory/campaign/scheduler.mjs";
-import { digest } from "../memory/fixture/contracts.mjs";
-import { projectBoard } from "../memory/runtime/board.mjs";
-import { eventDigest, verifyChain } from "../memory/runtime/events.mjs";
+import { inspectExecutionPermit } from "../campaign/authority.mjs";
+import { compilePlanAdmission } from "../campaign/e1-plan-contract.mjs";
+import { loadPlanningAuthority } from "../campaign/e1-planning-contract.mjs";
+import { createCampaignScheduler } from "../campaign/scheduler.mjs";
+import { projectBoard } from "../memory/board.mjs";
+import { digest } from "../shared/contracts.mjs";
+import { eventDigest, verifyChain } from "../shared/events.mjs";
 import {
 	acceptedPlanningPrefix,
 	evidenceDir,

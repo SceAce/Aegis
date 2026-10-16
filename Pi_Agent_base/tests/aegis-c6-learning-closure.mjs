@@ -30,13 +30,13 @@ import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 
 const sdk = { ...sdkBase, AuthStorage };
 
-import { runC6FromConfig } from "../memory/campaign/c6-entry.mjs";
-import { validateManifest } from "../memory/campaign/manifest.mjs";
+import { runC6FromConfig } from "../campaign/c6-entry.mjs";
+import { validateManifest } from "../campaign/manifest.mjs";
 import {
 	buildDataRepairLearningManifest,
 	buildDataRepairReuseManifest,
-} from "../memory/campaign/structured-data-adapter.mjs";
-import { authoritativeActiveExperiences, createLearningStore } from "../memory/runtime/learning-store.mjs";
+} from "../execution/adapters/structured-data-adapter.mjs";
+import { authoritativeActiveExperiences, createLearningStore } from "../memory/learning-store.mjs";
 
 const BASE_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const base = mkdtempSync(join(tmpdir(), "aegis-c6-closure-"));
@@ -58,7 +58,7 @@ function readEvents(path) {
 		return [];
 	}
 }
-const ADAPTER_PATH = join(BASE_DIR, "memory", "campaign", "isolated-replay-adapter.mjs");
+const ADAPTER_PATH = join(BASE_DIR, "execution", "adapters", "isolated-replay-adapter.mjs");
 
 try {
 	const workspaceRoot = join(base, "workspace");

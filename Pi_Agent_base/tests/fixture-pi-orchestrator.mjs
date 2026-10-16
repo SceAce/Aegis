@@ -34,11 +34,11 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { AuthStorage } from "@earendil-works/pi-coding-agent/core/auth-storage";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 
-import { compile } from "../memory/fixture/compiler.mjs";
-import { readJson, readJsonl } from "../memory/fixture/contracts.mjs";
-import { makeTask, runFixtureTask } from "../memory/fixture/host.mjs";
-import { judgeRun } from "../memory/fixture/oracle.mjs";
-import { runOrchestratedTask } from "../memory/fixture/orchestrator.mjs";
+import { compile } from "../fixtures/compiler.mjs";
+import { readJson, readJsonl } from "../shared/contracts.mjs";
+import { makeTask, runFixtureTask } from "../fixtures/host.mjs";
+import { judgeRun } from "../fixtures/oracle.mjs";
+import { runOrchestratedTask } from "../fixtures/orchestrator.mjs";
 
 const TOOL_NAME = "aegis_fixture_unlock";
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");

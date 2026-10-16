@@ -1,5 +1,13 @@
 # Aegis development entry
 
+Module layout: read `README.md` and `../docs/MODULE_LAYOUT_REFACTOR.md` for
+current source locations. Keep only memory/evidence/experience code in `memory/`.
+Campaign scheduling/SDK/budgets belong in `campaign/`; actions and Broker in
+`execution/`; session lifecycle in `session/`; Oracle in `verification/`;
+views/reports in `observation/`; shared helpers in `shared/`; experiments in
+`fixtures/`. `runtime/` contains private artifacts, never source. Historical
+documents below retain their baseline paths; do not recreate old source trees.
+
 Applies to Aegis-owned code under `Pi_Agent_base/`. The nested `pi/` keeps its own
 instructions and is outside the current implementation scope.
 
@@ -88,7 +96,7 @@ Broker dispatch, R13 Campaign+Task joint pre-call admission, R14 the actual
 provider transcript/tool-schema window. The focused suite is now 23 cases /
 23 pass; the five repaired groups are not reopened. A request-lifecycle
 convergence round then unified live/durable/replay settlement in
-`../memory/campaign/c6-request-lifecycle.mjs`: a partial in-memory commit is
+`campaign/c6-request-lifecycle.mjs`: a partial in-memory commit is
 never a durable success, a provider error keeps a recoverable hold and a
 durable reconciliation, per-Task pending is isolated, and a partial/mismatched
 `committed` record never settles a joint request. New focused checks:
@@ -133,7 +141,7 @@ and will execute real calls themselves. The user then authorized reading and
 reusing existing Pi model/auth config. Pilot defaults to explicit `pi-config`
 with Pi ModelRuntime and read-only auth; never print credentials or modify the
 source config. Explicit `remote-openai` SDK wiring and
-`memory/campaign/e1-max-pilot.mjs` preparation/status/run commands are available;
+`campaign/e1-max-pilot.mjs` preparation/status/run commands are available;
 see `../docs/E1_MAX_OPERATOR_STEPS.md`. Offline intercepted HTTP is verification,
 not a real max result. Do not start a paid experiment on the user's behalf.
 

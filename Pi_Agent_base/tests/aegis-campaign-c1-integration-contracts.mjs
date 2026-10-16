@@ -20,7 +20,7 @@ import {
 	parseBudgetStrict,
 	projectQueueFromEvents,
 	resolveTaskOutcome,
-} from "../memory/campaign/index.mjs";
+} from "../campaign/index.mjs";
 
 const failures = [];
 function test(name, fn) {

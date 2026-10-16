@@ -21,18 +21,18 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ActionRegistry, createActionBroker } from "../memory/runtime/action-contract.mjs";
-import { digest, EventLog } from "../memory/runtime/events.mjs";
+import { ActionRegistry, createActionBroker } from "../execution/action-contract.mjs";
+import { createScriptRegistry, executableDigest, scriptContracts } from "../execution/script-registry.mjs";
 import {
 	buildProductionResolver,
 	createLearningBridge,
 	episodeResetStatus,
 	loadReplayAdapter,
 	mapResolveRefToSupport,
-} from "../memory/runtime/learning-bridge.mjs";
-import { compile, learn, replay, route } from "../memory/runtime/learning-commands.mjs";
-import { authoritativeActiveExperiences, createLearningStore } from "../memory/runtime/learning-store.mjs";
-import { createScriptRegistry, executableDigest, scriptContracts } from "../memory/runtime/script-registry.mjs";
+} from "../memory/learning-bridge.mjs";
+import { compile, learn, replay, route } from "../memory/learning-commands.mjs";
+import { authoritativeActiveExperiences, createLearningStore } from "../memory/learning-store.mjs";
+import { digest, EventLog } from "../shared/events.mjs";
 
 let failures = 0;
 function check(name, condition, detail) {

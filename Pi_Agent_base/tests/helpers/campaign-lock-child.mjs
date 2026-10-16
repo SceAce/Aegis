@@ -8,7 +8,7 @@
 // Used by aegis-campaign-c1-ownership.mjs to prove a single writer across real
 // OS processes.
 
-import { acquireCampaignOwnership, releaseCampaignOwnership } from "../../memory/campaign/ownership.mjs";
+import { acquireCampaignOwnership, releaseCampaignOwnership } from "../../campaign/ownership.mjs";
 
 const [baseDir, campaignId, ownerId, holdMsRaw] = process.argv.slice(2);
 const holdMs = Number(holdMsRaw) || 100;
