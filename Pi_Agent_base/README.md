@@ -39,4 +39,4 @@ node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-r
 
 当前迁移保持函数和持久化契约，只改变源码位置。旧 `memory/campaign/`、`memory/runtime/`、`memory/fixture/` 已移除；不保留旧路径转发模块。旧审计报告按其基线记录历史路径，映射见 [目录迁移说明](../docs/MODULE_LAYOUT_REFACTOR.md)。使用绝对源码路径的外部 replay adapter 配置需要按新位置更新；本次不改写用户私有配置或历史运行记录。
 
-开发约束见 [AGENTS.md](AGENTS.md)，完整设计与历史材料见 [docs](../docs/README.md)。目录迁移不代表既有 E1/RAM 审计缺陷已经修复。
+开发从 [根 AGENTS.md](../AGENTS.md) 加载固定规则，再读本目录 [工程规则](AGENTS.md) 和目标模块目录的 `AGENTS.md`。完整设计与历史材料见 [docs](../docs/README.md)，按需读取；规则层级见 [说明](../docs/AGENT_RULES_LAYOUT.md)。目录迁移不代表既有 E1/RAM 审计缺陷已经修复。

@@ -39,6 +39,8 @@
 
 Aegis 主仓库必须跟踪：
 
+- 根 `AGENTS.md`、固定开发规则，以及各职责目录的 `AGENTS.md`；
+
 - `Pi_Agent_base/` 下的 `memory/`、`campaign/`、`execution/`、`session/`、`orchestration/`、`verification/`、`observation/`、`shared/`、`fixtures/`、`extensions/`、`tests/`、`contest/`、`agent/`、`README.md`、`AGENTS.md`；
 - Aegis 自有启动入口、Biome/TypeScript 配置及忽略规则；
 - `docs/` 的契约、任务、测试矩阵、审计与交付报告。

@@ -6,6 +6,10 @@
 
 ## 当前入口
 
+开发规则从 [根 AGENTS.md](../AGENTS.md) 开始，先加载 [固定规则](DEVELOPMENT_RULES.md)，
+再按目标路径读取工程/模块 AGENTS.md；规则层级与维护方式见 [AGENT_RULES_LAYOUT.md](AGENT_RULES_LAYOUT.md)。
+模块规范按需读取，下文的历史阶段记录和文档索引不是默认必读清单。
+
 当前代码结构见 [`../Pi_Agent_base/README.md`](../Pi_Agent_base/README.md)，
 源码迁移与验证记录见 [`MODULE_LAYOUT_REFACTOR.md`](MODULE_LAYOUT_REFACTOR.md)。
 历史任务书/审计报告保留各自基线的源码位置，不作为当前目录布局依据。
@@ -42,7 +46,7 @@
 - [`C1_FINAL_EXTERNAL_AUDIT_3.md`](C1_FINAL_EXTERNAL_AUDIT_3.md)：F10-F13 历史外部 red 基线及真实 Scheduler/EventLog 对照。
 - [`C1_BOUNDARY_EXTERNAL_REVIEW.md`](C1_BOUNDARY_EXTERNAL_REVIEW.md)：F10-F13 交付后的历史复核，包含 F14-F16、12 个新增用例与报告一致性检查。
 - [`C1_F14_EXTERNAL_ACCEPTANCE.md`](C1_F14_EXTERNAL_ACCEPTANCE.md)：最新 C1 限定外部通过记录及 C2 阶段移交。
-- [`../Pi_Agent_base/AGENTS.md`](../Pi_Agent_base/AGENTS.md)：Aegis-owned代码的Agent自动发现入口，不恢复已删除根目录AGENTS。
+- [`../Pi_Agent_base/AGENTS.md`](../Pi_Agent_base/AGENTS.md)：Aegis 工程通用约束；具体模块规则由其目录下的 `AGENTS.md` 提供。
 
 Campaign 层的统一设计与实现任务书分别见：
 
