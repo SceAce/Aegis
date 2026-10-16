@@ -92,7 +92,12 @@ try {
 		async execute() {
 			return {
 				content: [{ type: "text", text: "LOCAL_PROBE_COMPLETED" }],
-				details: { field: "user_id", observed: structuredMarker },
+				details: {
+					field: "user_id",
+					observed: structuredMarker,
+					access_token: "DETAIL_SECRET_917",
+					z_large: "x".repeat(20_000),
+				},
 			};
 		},
 	};
@@ -149,7 +154,11 @@ try {
 	faux.setResponses([
 		respond(
 			fauxAssistantMessage([
-				fauxToolCall("audit_probe", { url: "https://offline.invalid/probe", parameter: "user_id", value: inputMarker }),
+				fauxToolCall("audit_probe", {
+					url: "https://offline.invalid/probe?token=INPUT_SECRET_917",
+					parameter: "user_id",
+					value: inputMarker,
+				}),
 			]),
 		),
 		respond(fauxAssistantMessage([fauxToolCall("read", { path: "probe.txt" })])),
@@ -173,6 +182,15 @@ try {
 		(event) => event.event_type === "action.completed" && event.payload.tool_name === "audit_probe",
 	);
 	assert.ok(requested && completed, "real tool hooks must execute");
+	check("RS-06 captured summaries redact secrets and disclose bounded structured output", () => {
+		const captured = JSON.stringify([requested.payload, completed.payload]);
+		assert.ok(!captured.includes("INPUT_SECRET_917"));
+		assert.ok(!captured.includes("DETAIL_SECRET_917"));
+		assert.ok(captured.includes(inputMarker));
+		assert.ok(captured.includes(structuredMarker));
+		assert.equal(completed.payload.result_summary.truncated, true);
+		assert.ok(JSON.stringify(completed.payload.result_summary.value).length <= 900);
+	});
 	check("RS-01 structured input values are retained before projection", () => {
 		assert.ok(
 			JSON.stringify(requested.payload.input).includes(inputMarker),
@@ -181,6 +199,14 @@ try {
 	});
 	check("RS-02 structured output values are retained before projection", () => {
 		assert.ok(JSON.stringify(completed.payload).includes(structuredMarker), "tool details retain keys but lose values");
+	});
+	check("RS-07 actual next-request RAM carries safe structured probe input and output", () => {
+		const projected = ramText(requests[1]);
+		assert.ok(projected.includes(inputMarker));
+		assert.ok(projected.includes(structuredMarker));
+		assert.ok(projected.includes("audit_probe"));
+		assert.ok(!projected.includes("INPUT_SECRET_917"));
+		assert.ok(!projected.includes("DETAIL_SECRET_917"));
 	});
 	check("RS-03 actual read result reaches the original session continuation", () => {
 		assert.ok(

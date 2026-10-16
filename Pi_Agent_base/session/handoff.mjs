@@ -62,9 +62,15 @@ export function evaluateHandoff({ state, board, ram, episodeId, reason, requestI
 			ram: ram || "",
 			// Hand off the EFFECTIVE view only. A superseded/stale Fact must not be
 			// carried into the next short session as current support.
-			facts: (board.currentByType ?? board.byType).Fact.map((node) => node.text),
-			refuted: (board.currentByType ?? board.byType).Refuted.map((node) => node.text),
-			intents: (board.currentByType ?? board.byType).Intent.map((node) => node.text),
+			facts: (board.currentByType ?? board.byType).Fact.filter((node) => node.episode_id === episodeId).map(
+				(node) => node.text,
+			),
+			refuted: (board.currentByType ?? board.byType).Refuted.filter((node) => node.episode_id === episodeId).map(
+				(node) => node.text,
+			),
+			intents: (board.currentByType ?? board.byType).Intent.filter((node) => node.episode_id === episodeId).map(
+				(node) => node.text,
+			),
 			created_at: new Date().toISOString(),
 		},
 	};

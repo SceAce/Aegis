@@ -94,6 +94,11 @@ RAM and a handoff; history stays for audit.
   `board_digest`/`effective_digest` for the exact provider-bound RAM. It
   creates **no** board node and does **not** bump `RuntimeState.version`, so it
   can never feed back into the next projection.
+- RAM v2 adds `ram_version`, `ram_budget_chars`, `ram_overflow` and `ram_sections`
+  (`id/total/shown/omitted`) to that diagnostic payload. `ram_estimated_chars`
+  counts the complete RAM string including headings/counters/footer (UTF-16
+  code units, not provider tokens). The transport remains one ephemeral user
+  tail per provider request; it is not stored in the Session transcript.
 
 ## 4. Validation gates (what may become a verified board node)
 
@@ -115,6 +120,38 @@ RAM and a handoff; history stays for audit.
 A `Fact`/`Refuted` node states the **proposition** that was verified
 (`criterion.expected` plus the observed value), not a bare `outcome:<status>`
 word. The provenance block carries the canonical source/independent fields.
+Structured expected/observed values, including false/0/empty containers, have
+bounded display rendering; identity dedup is by node/event/Outcome rather than
+rendered prose. `observation.captured` nodes also carry a bounded
+`observation_summary` of their recorded value. These display fields do not
+change the existing verification gate.
+
+### Bounded tool observations and RAM selection
+
+Observer `action.requested.input.summary` and
+`action.completed.result_summary` contain `{value,truncated,redacted}`. They
+retain normal structured tool parameters/details after recursive redaction and
+limits (default 900 serialized characters, depth 4, 16 entries per container,
+320 per string). Existing input keys/digest/path and text excerpt fields remain;
+`content_truncated` marks capture loss. Raw tool responses still reach the
+original Session continuation through the SDK; RAM contains a bounded summary.
+Old records with no values cannot be reconstructed from digests.
+
+Board action nodes preserve input/response/result summary/transport and action
+and event identity. Tool request/result pairs enter RAM as observed data, never
+as independent task verdicts. Secret-pattern redaction is a bounded logging
+policy, not proof that arbitrary secret-looking data can always be recognized.
+
+RAM selection uses the current Episode's effective nodes only. It protects the
+task/authorization/budget/pending/unknown core, then covers current facts,
+refutations and tool observations before filling optional evidence. Within an
+evidence class the newest item is retained first, then older support is ranked
+by current-request words with recent order as a deterministic tiebreaker.
+Identity and refs survive compact rendering; omissions/truncation are explicit.
+Optional item caps and complete-output admission keep history bounded; only a
+mandatory core that cannot fit can produce an explicitly marked overflow.
+The existing provider request gate still enforces the whole request window.
+See [implementation and verification](RAM_WORKING_MEMORY_REPAIR.md).
 
 ## 5. Idempotency, supersedes, and task binding (import boundary)
 

@@ -71,8 +71,9 @@ import { createLearningBridge } from "../memory/learning-bridge.mjs";
 import * as learningCommands from "../memory/learning-commands.mjs";
 import { createLearningStore } from "../memory/learning-store.mjs";
 import { proposalPayload, validateProposal } from "../memory/proposal.mjs";
-import { buildRam } from "../memory/ram.mjs";
+import { buildRam, buildRamProjection } from "../memory/ram.mjs";
 import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/state.mjs";
+import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
 import { evaluateHandoff } from "../session/handoff.mjs";
 import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
@@ -169,10 +170,7 @@ async function loadScriptConfig(): Promise<{ scripts: unknown[] }> {
  */
 
 function redact(value) {
-	return String(value)
-		.replace(/(api[_-]?key|token|password|secret|authorization)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
-		.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1[REDACTED]")
-		.replace(/(sk-[A-Za-z0-9_-]{12,})/g, "[REDACTED_KEY]");
+	return redactMemoryText(value);
 }
 function excerpt(value, limit = MAX_EXCERPT) {
 	const text = redact(value).replaceAll("\0", "");
@@ -203,7 +201,7 @@ function source(kind = "runtime") {
 function summarizeToolInput(toolName: string, input: unknown) {
 	const value = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
 	const keys = Object.keys(value).sort();
-	const result: Record<string, unknown> = { keys, input_digest: digest(value) };
+	const result: Record<string, unknown> = { keys, input_digest: digest(value), summary: summarizeMemoryValue(value) };
 	if ((toolName === "bash" || toolName === "powershell") && typeof value.command === "string") {
 		result.command_excerpt = excerpt(value.command);
 	} else if (typeof value.path === "string") {
@@ -644,7 +642,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		const messages = event.messages;
 		if (!Array.isArray(messages) || messages.length === 0) return undefined;
 		if (messages[0]?.role !== "system") return undefined;
-		const ram = buildRam({ board, state, episodeId, goal: currentGoal });
+		const projection = buildRamProjection({ board, state, episodeId, goal: currentGoal });
+		const ram = projection.text;
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context
 		// message for the provider without changing the leading system message.
@@ -679,6 +678,10 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			{
 				ram_digest: digest(ram),
 				ram_estimated_chars: ram.length,
+				ram_version: projection.version,
+				ram_budget_chars: projection.budget_chars,
+				ram_overflow: projection.overflow,
+				ram_sections: projection.sections,
 				state_version: state.version,
 				board_digest: board.digest,
 				effective_digest: board.effective_digest,
@@ -773,6 +776,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			transport: { tool_ok: !event.isError, content_chars: text.length },
 			content_digest: digest(text),
 			content_excerpt: excerpt(text),
+			content_truncated: redact(text).length > MAX_EXCERPT,
+			result_summary: summarizeMemoryValue(event.details ?? null),
 			result_detail_keys: event.details && typeof event.details === "object" ? Object.keys(event.details).sort() : [],
 		});
 		refreshProjections();
@@ -1717,9 +1722,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					return;
 				}
 				case "ram": {
-					notify(
-						episodeId ? buildRam({ board, state, episodeId, goal: currentGoal }).slice(0, 1200) : "Aegis: no episode",
-					);
+					notify(episodeId ? buildRam({ board, state, episodeId, goal: currentGoal }) : "Aegis: no episode");
 					return;
 				}
 				case "switch": {

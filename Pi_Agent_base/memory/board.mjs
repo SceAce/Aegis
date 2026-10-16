@@ -28,6 +28,7 @@
 
 import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { digest } from "../shared/events.mjs";
+import { memoryValue, summarizeMemoryValue } from "./summary.mjs";
 
 export const NODE_TYPES = ["Origin", "Fact", "Refuted", "Intent", "Hint", "Artifact"];
 
@@ -582,13 +583,12 @@ function nodeText(event, type) {
 			// genuinely has no criterion (in which case the gate downgrades it anyway).
 			const criterion = payload.criterion;
 			const proposition = criterion?.expected ?? criterion?.description;
-			if (proposition) {
+			if (proposition !== undefined && proposition !== null) {
 				const observed = payload.observed;
-				const observedText =
-					observed === null || observed === undefined || typeof observed === "object" ? "" : String(observed);
+				const observedText = observed === undefined || observed === null ? "" : memoryValue(observed);
 				const tail = observedText ? ` [observed: ${observedText}]` : "";
 				const oracle = payload.oracle?.oracle_id ? ` (${type.toLowerCase()} by ${payload.oracle.oracle_id})` : "";
-				return `${proposition}${tail}${oracle}`;
+				return `${memoryValue(proposition)}${tail}${oracle}`;
 			}
 			return (
 				payload.text ||
@@ -748,11 +748,31 @@ export function projectBoard(events, { manifest = null } = {}) {
 			// text so the effective view is derived from data, not prose.
 			criterion: payload.criterion ?? null,
 			observed: payload.observed ?? null,
+			...(event.event_type === "observation.captured"
+				? { observation_summary: summarizeMemoryValue(payload.value ?? null) }
+				: {}),
+			subject: payload.subject ?? null,
 			task_id: payload.task_id ?? payload.provenance?.task_id ?? null,
 			outcome_id: payload.outcome_id ?? null,
 			supersedes: payload.supersedes ?? null,
 			action_id: payload.action_id ?? null,
-			tool_name: payload.tool_name ?? null,
+			tool_name: payload.tool_name ?? payload.action_ref ?? null,
+			...(event.event_type === "action.requested" || event.event_type === "action.completed"
+				? {
+						input:
+							payload.input ??
+							(payload.final_arguments !== undefined
+								? { summary: summarizeMemoryValue(payload.final_arguments) }
+								: null),
+						response: payload.content_excerpt ?? null,
+						result_summary:
+							payload.result_summary ??
+							(payload.observed !== undefined ? summarizeMemoryValue(payload.observed) : null),
+						transport: payload.transport ?? null,
+						input_truncated: payload.input?.summary?.truncated ?? false,
+						response_truncated: payload.content_truncated ?? false,
+					}
+				: {}),
 			environment_fingerprint: payload.environment_fingerprint ?? null,
 			origin_event_id: event.event_id,
 			episode_id: event.episode_id || null,
