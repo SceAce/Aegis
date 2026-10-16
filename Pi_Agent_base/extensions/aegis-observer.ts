@@ -67,6 +67,7 @@ import {
 } from "../execution/action-runtime.mjs";
 import { validateResourceParams } from "../execution/script-registry.mjs";
 import { projectBoard, summarizeBoard } from "../memory/board.mjs";
+import { contextPolicy, contextProjectionInput } from "../memory/context-policy.mjs";
 import { contributionPayload, recordStageContribution } from "../memory/contribution.mjs";
 import { normalizeExperienceDecision } from "../memory/experience.mjs";
 import { captureTextFragments } from "../memory/fragments.mjs";
@@ -559,7 +560,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	 * trusted, executable, or a verified fact. The selected rows are durable so
 	 * the same RAM can be rebuilt after a short-session handoff or restart. */
 	async function autoSelectKnowledge(query: string): Promise<void> {
-		if (!episodeId || !log?.healthy || auditUnavailable || !query.trim()) return;
+		if (!contextPolicy().knowledge || !episodeId || !log?.healthy || auditUnavailable || !query.trim()) return;
 		try {
 			const safeQuery = redactMemoryText(query);
 			const boundedQuery = safeQuery.length <= 800 ? safeQuery : `${safeQuery.slice(0, 399)} ${safeQuery.slice(-400)}`;
@@ -842,7 +843,12 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		const messages = event.messages;
 		if (!Array.isArray(messages) || messages.length === 0) return undefined;
 		if (messages[0]?.role !== "system") return undefined;
-		const projection = buildRamProjection({ board, state, episodeId, goal: currentGoal, seed: ramSeed() });
+		const policy = contextPolicy();
+		const projection = buildRamProjection({
+			...contextProjectionInput({ board, state, seed: ramSeed(), policy }),
+			episodeId,
+			goal: currentGoal,
+		});
 		const ram = projection.text;
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context
@@ -898,6 +904,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				effective_digest: board.effective_digest,
 				provider_bound: true,
 				ram_transport: "ephemeral-user-tail-v1",
+				context_policy: policy,
 			},
 			{ episode_id: episodeId, source_kind: "runtime" },
 		);
@@ -1798,6 +1805,11 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 				await ensureLog(ctx);
 				refreshProjections();
+				if (!contextPolicy().knowledge)
+					return {
+						content: [{ type: "text", text: "Knowledge retrieval is disabled for this run." }],
+						details: { ok: false, reason: "knowledge_disabled" },
+					};
 				if (!episodeId || !log?.healthy || auditUnavailable) {
 					return {
 						content: [
