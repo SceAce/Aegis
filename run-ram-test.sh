@@ -10,6 +10,7 @@ SESSION_ID=""
 SEED_FILE=""
 PROXY=""
 PREPARE=0
+COMPILE_FILE=""
 MODEL_PROXY=0
 
 usage() {
@@ -25,6 +26,7 @@ Options:
   --session-id ID    Resume/create this Pi session id; defaults to task id
   --seed FILE        Inject a bounded, unverified RAM reference JSON
   --sql-wiki         Use the committed SQL reference seed
+  --compile FILE.md  Compile Markdown to a bounded seed under runtime/seed-cache
   --prepare-sql-wiki Fetch the bounded CTF Wiki SQL page through the local proxy
   --proxy URL        Proxy used only by --prepare-sql-wiki
   --proxy-model      Also export the proxy for this Pi process (opt-in)
@@ -46,6 +48,7 @@ while (($#)); do
 		--seed) SEED_FILE="${2:-}"; shift 2 ;;
 		--sql-wiki) SEED_FILE="$SEED_DEFAULT"; shift ;;
 		--prepare-sql-wiki) PREPARE=1; shift ;;
+		--compile) COMPILE_FILE="${2:-}"; shift 2 ;;
 		--proxy) PROXY="${2:-}"; shift 2 ;;
 		--proxy-model) MODEL_PROXY=1; shift ;;
 		--no-seed) SEED_FILE=""; shift ;;
@@ -67,6 +70,13 @@ if ((PREPARE)); then
 		-o "$BASE_DIR/Pi_Agent_base/runtime/dev/wiki-fetch/sql-injection.html"
 	echo "Fetched bounded source page to ignored runtime/dev/wiki-fetch/sql-injection.html" >&2
 	SEED_FILE="$SEED_DEFAULT"
+fi
+if [[ -n "$COMPILE_FILE" ]]; then
+	[[ -f "$COMPILE_FILE" ]] || { echo "Markdown source not found: $COMPILE_FILE" >&2; exit 2; }
+	[[ "$COMPILE_FILE" = /* ]] || COMPILE_FILE="$(cd "$(dirname "$COMPILE_FILE")" && pwd)/$(basename "$COMPILE_FILE")"
+	SEED_FILE="$AEGIS_BASE/runtime/seed-cache/$(basename "${COMPILE_FILE%.*}").seed.json"
+	mkdir -p "$AEGIS_BASE/runtime/seed-cache"
+	node "$BASE_DIR/compile-document-seed.mjs" --input "$COMPILE_FILE" --output "$SEED_FILE" >&2
 fi
 if [[ -n "$SEED_FILE" ]]; then
 	[[ -f "$SEED_FILE" ]] || { echo "seed file not found: $SEED_FILE" >&2; exit 2; }

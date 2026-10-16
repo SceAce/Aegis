@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { buildRamProjection } from "../memory/ram.mjs";
 
@@ -32,6 +33,17 @@ const seed = {
 	content:
 		"Input/query boundary; boolean/error/time/union categories; encoding must be verified; observations do not prove success.",
 };
+const generated = JSON.parse(await readFile("Pi_Agent_base/runtime/dev/ram-abc/sql-injection.generated.json", "utf8"));
+test("compiled document-seed-1 is accepted as one bounded reference", () => {
+	const p = buildRamProjection({
+		...base(),
+		seed: { ...generated, source_kind: "external_reference", verified: false, action_policy: "none" },
+	});
+	const d = JSON.parse(p.text);
+	assert.equal(d.sections.external_reference.shown, 1);
+	assert.equal(d.sections.external_reference.items[0].verified, false);
+	assert.equal(d.sections.external_reference.items[0].action_policy, "none");
+});
 test("seed is a bounded unverified reference, not a fact or policy", () => {
 	const p = buildRamProjection({ ...base(), seed });
 	const d = JSON.parse(p.text);

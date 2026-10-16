@@ -236,15 +236,29 @@ function ramSeed(): Record<string, unknown> | null {
 		if (readFileSync(path).length > 120_000) return null;
 		const seed = JSON.parse(readFileSync(path, "utf8"));
 		if (!seed || typeof seed !== "object" || Array.isArray(seed)) return null;
-		if (seed.source_kind !== "external_reference" || seed.verified !== false || seed.action_policy !== "none")
-			return null;
-		if (typeof seed.source_uri !== "string" || typeof seed.topic !== "string" || typeof seed.content !== "string")
-			return null;
+		if (seed.source_kind !== "external_reference" && seed.source_kind !== "local_document") return null;
+		if (seed.verified !== false || seed.action_policy !== "none") return null;
+		if (typeof seed.source_uri !== "string" || seed.source_uri.length > 500) return null;
+		let topic = typeof seed.topic === "string" ? seed.topic : "document";
+		let content = typeof seed.content === "string" ? seed.content : "";
+		if (seed.schema_version === "document-seed-1" && Array.isArray(seed.sections)) {
+			const sections = seed.sections.filter((section) => section && typeof section.content === "string").slice(0, 8);
+			if (sections.some((section) => section.source_digest !== seed.source_digest)) return null;
+			topic = String(sections[0]?.topic ?? topic).slice(0, 200);
+			content = sections
+				.map(
+					(section) =>
+						`[${section.kind ?? "section"} ${section.line_start ?? "?"}-${section.line_end ?? "?"}]\n${section.content}`,
+				)
+				.join("\n\n");
+		}
+		if (!content || content.length > 12_000) return null;
 		return {
 			source_kind: "external_reference",
-			source_uri: seed.source_uri.slice(0, 500),
-			topic: seed.topic.slice(0, 200),
-			content: seed.content.slice(0, 12_000),
+			original_source_kind: seed.source_kind,
+			source_uri: seed.source_uri,
+			topic: topic,
+			content,
 			verified: false,
 			action_policy: "none",
 		};

@@ -15,7 +15,7 @@ const LABELS = {
 	external_reference: "External reference (unverified, no action policy)",
 };
 
-/** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number}} args */
+/** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null}} args */
 export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET, seed = null }) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
