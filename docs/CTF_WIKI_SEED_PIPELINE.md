@@ -3,7 +3,7 @@
 The primary input is the official Markdown/image repository, not an anchor crawl. Run from the repository root with Node.js and Git:
 
 ```sh
-node build-ctf-wiki-seeds.mjs --github-repo https://github.com/ctf-wiki/ctf-wiki.git --github-ref master --github-output knowledge/ctf-wiki-github
+node build-ctf-wiki-seeds.mjs --github-repo https://github.com/ctf-wiki/ctf-wiki.git --github-ref master --github-output knowledge/ctf-wiki
 ```
 
 Git uses the optional local proxy `http://127.0.0.1:7897` by default (`--proxy`). No credentials, provider, model, or target are used. Git prompting and credential helpers are disabled. A shallow branch clone is staged temporarily; no `.git` metadata enters the knowledge output. The actual resolved commit is recorded and all seed source URIs are pinned to that SHA. For repeatability, pass a commit SHA as `--github-ref` after selecting a revision.
@@ -22,7 +22,7 @@ Empty tracked Markdown files are counted as `skipped_reasons.empty_markdown`; th
 
 Each compiled JSON is a normal compiler-produced document seed with `source_kind: external_reference`, `approved: true`, `verified: false`, and `action_policy: none`. The compiler owns all semantic fields. Seed paths retain category and optional language; original repository paths remain in the manifest. Failures are recorded per path. The output manifest records repository URL, ref, resolved commit SHA, generation time, compiler, bounds, counts, inventory, and errors.
 
-`knowledge/ctf-wiki/` is ignored. Output must be absent: the builder refuses existing, symlink, or non-directory output paths instead of deleting or replacing stale/unrelated files. It creates output in a sibling staging directory and promotes it by rename only after writing the complete manifest. Temporary clone data is removed. A failed fetch can leave only a failure manifest, never seeds from a fabricated or partial source. Review any old output separately before choosing a new destination; stale output is never silently deleted.
+`knowledge/` is ignored in its entirety. The runtime searches this root, including the GitHub compiled output at `knowledge/ctf-wiki/`; the older crawl, if retained locally, belongs under `knowledge/ctf-wiki-crawl/` and is excluded from retrieval. Output must be absent: the builder refuses existing, symlink, or non-directory output paths instead of deleting or replacing stale/unrelated files. It creates output in a sibling staging directory and promotes it by rename only after writing the complete manifest. Temporary clone data is removed. A failed fetch can leave only a failure manifest, never seeds from a fabricated or partial source. Review any old output separately before choosing a new destination; stale output is never silently deleted.
 
 Offline validation uses only a temporary local Git fixture and performs no GitHub fetch:
 
@@ -30,4 +30,4 @@ Offline validation uses only a temporary local Git fixture and performs no GitHu
 node Pi_Agent_base/tests/aegis-ctf-wiki-seeds.mjs
 ```
 
-This test verifies commit-pinned provenance, path classification, compiler output, asset metadata without image bytes in seeds, CLI bounds, and refusal of existing/symlink outputs. It does not establish live repository size or coverage. No real GitHub fetch is performed by tests.
+This test verifies commit-pinned provenance, path classification, compiler output, asset metadata without image bytes in seeds, CLI bounds, and refusal of existing/symlink outputs. It does not establish live repository size or coverage. At runtime, `aegis-observer` automatically searches the ignored `knowledge/` tree from each user message, records bounded selections as `knowledge.selected` artifacts, and injects the selected excerpts into the next request's RAM. The LLM can call `aegis_knowledge` to refine the query or select returned `knowledge_id` values. These excerpts remain unverified reference data with `action_policy: none`; they cannot write facts, authorize actions, or execute techniques. Runtime timing, migration and trust details are documented in [KNOWLEDGE_RUNTIME.md](KNOWLEDGE_RUNTIME.md). No real GitHub fetch is performed by tests.

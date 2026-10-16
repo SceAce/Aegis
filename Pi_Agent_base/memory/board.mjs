@@ -354,6 +354,10 @@ export function permittedNodeType(event) {
 			return { type: "Hint" };
 		case "experience.decision":
 			return { type: "Artifact" };
+		case "runtime.note":
+			return event.payload?.kind === "knowledge.selected" && ["runtime", "human"].includes(event.source?.kind)
+				? { type: "Artifact" }
+				: null;
 		// A trusted environment change is an auditable Artifact event AND marks the
 		// related Fact/Refuted bindings stale (never deletes them).
 		case "environment.changed":
@@ -605,6 +609,9 @@ function nodeText(event, type) {
 		case "Hint":
 			return payload.text || payload.claim || payload.reason || payload.note || JSON.stringify(payload);
 		case "Artifact":
+			if (payload.kind === "knowledge.selected") {
+				return `knowledge selected: ${payload.selected?.length ?? 0} reference(s) for ${payload.mode ?? "manual"} query`;
+			}
 			if (payload.kind === "experience_injection_decision") {
 				const selected = payload.selected?.id ? `${payload.selected.id}@${payload.selected.revision ?? "?"}` : "(none)";
 				return `experience decision: mode=${payload.mode} selected=${selected} considered=${payload.considered?.length ?? 0} matched=${payload.matched?.length ?? 0} rejected=${payload.rejected?.length ?? 0} (hint only, unverified)`;
@@ -781,6 +788,23 @@ function projectBoardInternal(events, manifest, acceptedPrefix) {
 			// text so the effective view is derived from data, not prose.
 			criterion: payload.criterion ?? null,
 			observed: payload.observed ?? null,
+			...(event.event_type === "proposal.submitted" && payload.kind === "candidate"
+				? { candidate: { when: payload.when ?? [], do: payload.do ?? null, expect: payload.expect ?? null } }
+				: {}),
+			...(payload.kind === "knowledge.selected"
+				? {
+						knowledge_refs: (Array.isArray(payload.selected) ? payload.selected : [])
+							.filter((item) => item && typeof item === "object")
+							.slice(0, 8)
+							.map((item) => ({
+								knowledge_id: item.knowledge_id,
+								source_uri: item.source_uri,
+								source_digest: item.source_digest,
+								line_start: item.line_start,
+								line_end: item.line_end,
+							})),
+					}
+				: {}),
 			...(event.event_type === "observation.captured"
 				? { observation_summary: summarizeMemoryValue(payload.value ?? null) }
 				: {}),
@@ -834,6 +858,23 @@ function projectBoardInternal(events, manifest, acceptedPrefix) {
 			}
 		}
 		if (unresolvedRefs.length > 0) node.unresolved_evidence_refs = unresolvedRefs;
+		for (const ref of (Array.isArray(node.source_refs) ? node.source_refs : []).map(normalizeRef).filter(Boolean)) {
+			const target =
+				ref.ref_type === "event"
+					? byEventId.get(ref.ref_id)
+					: ref.ref_type === "node"
+						? nodes.find((prior) => prior.node_id === ref.ref_id)
+						: null;
+			if (
+				target &&
+				target.episode_id === node.episode_id &&
+				target !== node &&
+				!edges.some(
+					(edge) => edge.from === node.node_id && edge.to === target.node_id && edge.relation === "references",
+				)
+			)
+				edges.push({ from: node.node_id, to: target.node_id, relation: "references" });
+		}
 		if (event.event_type === "action.completed" && payload.action_id) {
 			edges.push({ from: node.node_id, to: `action:${payload.action_id}`, relation: "completes" });
 		}

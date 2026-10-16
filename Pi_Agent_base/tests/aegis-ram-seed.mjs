@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { compileDocumentSeed } from "../memory/document-seed.mjs";
 import { buildRamProjection } from "../memory/ram.mjs";
 
 function base() {
@@ -21,6 +21,7 @@ function base() {
 			},
 			pending_actions: {},
 			experience_decisions: [],
+			knowledge_selections: [],
 		},
 	};
 }
@@ -33,7 +34,10 @@ const seed = {
 	content:
 		"Input/query boundary; boolean/error/time/union categories; encoding must be verified; observations do not prove success.",
 };
-const generated = JSON.parse(await readFile("Pi_Agent_base/runtime/dev/ram-abc/sql-injection.generated.json", "utf8"));
+const generated = compileDocumentSeed({
+	markdown: "# Reference fixture\n\nObserve the current input boundary before testing a hypothesis.\n",
+	source: { source_uri: "https://example.invalid/reference", source_kind: "external_reference", approved: true },
+});
 test("compiled document-seed-1 is accepted as one bounded reference", () => {
 	const p = buildRamProjection({
 		...base(),
@@ -66,6 +70,35 @@ test("invalid seed shape is omitted without changing task controls", () => {
 		assert.equal(d.sections.external_reference.shown, 0);
 		assert.equal(d.task.task_id, "task");
 	}
+});
+test("selected knowledge is bounded, deduplicated, and remains unverified", () => {
+	const f = base();
+	f.state.knowledge_selections = [
+		{
+			episode_id: "ep",
+			knowledge_id: "k1",
+			source_uri: "https://example.invalid/k1",
+			source_digest: "sha256:1",
+			topic: "old",
+			section: [],
+			content: "old",
+		},
+		{
+			episode_id: "ep",
+			knowledge_id: "k1",
+			source_uri: "https://example.invalid/k1",
+			source_digest: "sha256:2",
+			topic: "new",
+			section: ["new"],
+			content: "new",
+		},
+		{ episode_id: "other", knowledge_id: "k2", source_uri: "https://example.invalid/k2", content: "foreign" },
+	];
+	const d = JSON.parse(buildRamProjection({ ...f }).text);
+	assert.equal(d.sections.knowledge.shown, 1);
+	assert.equal(d.sections.knowledge.items[0].content, "new");
+	assert.equal(d.sections.knowledge.items[0].verified, false);
+	assert.equal(d.sections.knowledge.items[0].action_policy, "none");
 });
 test("seed and observed tool data coexist without trust promotion", () => {
 	const f = base();

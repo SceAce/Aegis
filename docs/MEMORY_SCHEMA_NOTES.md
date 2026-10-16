@@ -151,6 +151,12 @@ including candidate waiting and trusted resume/reject transitions. It projects
 workflow state only, not an additional Outcome state. RAM displays its bounded
 view; authorization and dispatch checks remain in the Runtime/Host/execute gates.
 
+### Knowledge selections (additive Runtime 1.1 note)
+
+`runtime.note` may carry `kind: knowledge.selected`, `version: knowledge-selection-1`. Only runtime/human sources project this note into an Artifact and replace the same Episode's `knowledge_selections`. The payload records mode, redacted query, bounded selected content, source URI/digest/line range, and retrieval limits/unavailability. Empty selections clear the current selection. Unknown note kinds retain their existing ignore behavior; this adds no event type or Outcome authority.
+
+RAM v3 optionally displays `sections.knowledge` with `verified=false`, `action_policy=none` and selection-event refs. Board artifacts retain knowledge source refs; model candidate nodes retain `when/do/expect`, and accepted source refs produce graph associations. Current observations and unfinished responsibilities take priority over optional knowledge. Details and actual call timing are in [knowledge runtime](KNOWLEDGE_RUNTIME.md).
+
 ### Bounded tool observations and RAM selection (v2 baseline)
 
 Observer `action.requested.input.summary` and

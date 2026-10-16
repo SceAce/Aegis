@@ -22,7 +22,8 @@
 | workflow | 已提交工作控制的有界展示；不是新的权限来源 |
 | sections.facts / refuted | 当前有效的独立判断 |
 | sections.tools | 成对动作、实际参数和响应片段、transport；trust=observed |
-| sections.proposals | 显式模型提案；trust=unverified |
+| sections.proposals | 显式模型提案；trust=unverified；候选保留 when/do/expect |
+| sections.knowledge | 有选择时出现：本地知识引用及来源/行号；未验证、无行动策略 |
 | sections.artifacts / decisions | 一般产物与历史经验选择 |
 | refs | 本快照的局部引用表；别名对应完整来源身份，不以短 ID 冒充原 ID |
 | meta | 完整 JSON 字符数、字符预算、遗漏和核心 overflow |
@@ -34,6 +35,8 @@
 文本片段先脱敏，再机械采样 head/middle/tail。偏移单位为脱敏文本的 UTF-16 code units；不声称是原始字节 offset。采样缺口与截断必须可见，不承诺任意稀疏信息都能落入片段。原工具结果仍正常进入当前 Session continuation。缺失输出为 null，不把 digest 宣称为可读全文引用。
 
 注入仍是每请求一份临时 user 尾部 JSON，固定 system/ROM/tools 不随 RAM 更新，快照不累积进 Session 历史。没有更改为永久增量消息协议。
+
+本地知识文件统一位于 ignored `knowledge/`；自动召回、LLM 自主选择工具、图板关联与调用时机见 [知识库运行接口](KNOWLEDGE_RUNTIME.md)。
 
 ## 显式提案
 

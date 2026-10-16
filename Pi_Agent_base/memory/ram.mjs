@@ -4,7 +4,16 @@ import { memoryText, summarizeMemoryValue } from "./summary.mjs";
 
 export const RAM_VERSION = "3.0";
 const DEFAULT_BUDGET = 4000;
-const ORDER = ["external_reference", "facts", "refuted", "tools", "proposals", "artifacts", "decisions"];
+const SECTION_ORDER = [
+	"external_reference",
+	"knowledge",
+	"facts",
+	"refuted",
+	"tools",
+	"proposals",
+	"artifacts",
+	"decisions",
+];
 const LABELS = {
 	facts: "Verified facts",
 	refuted: "Refuted",
@@ -13,11 +22,16 @@ const LABELS = {
 	artifacts: "Artifacts",
 	decisions: "Unverified selections",
 	external_reference: "External reference (unverified, no action policy)",
+	knowledge: "Selected knowledge (unverified reference, no action policy)",
 };
 
 /** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null}} args */
 export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET, seed = null }) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
+	// Empty knowledge must not increase the mandatory footprint of legacy RAM.
+	const ORDER = SECTION_ORDER.filter(
+		(id) => id !== "knowledge" || state.knowledge_selections?.some((item) => item.episode_id === episodeId),
+	);
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
 	const current = board.currentByType ?? board.byType ?? {};
 	function nodes(type) {
@@ -95,19 +109,47 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		seed && seed.source_kind === "external_reference" && seed.verified === false && seed.action_policy === "none"
 			? [{ external_reference: true, ...seed }]
 			: [];
+	const knowledgeById = new Map();
+	for (const item of Array.isArray(state.knowledge_selections) ? state.knowledge_selections : []) {
+		if (
+			item &&
+			item.episode_id === episodeId &&
+			item.content &&
+			item.source_uri &&
+			typeof item.knowledge_id === "string"
+		) {
+			knowledgeById.delete(item.knowledge_id);
+			knowledgeById.set(item.knowledge_id, item);
+		}
+	}
+	const knowledge = [...knowledgeById.values()]
+		.slice(-6)
+		.map((item) => ({ knowledge_reference: true, ...item, verified: false, action_policy: "none" }));
 	const raw = {
 		external_reference: external,
+		knowledge,
 		facts: rank(nodes("Fact")),
 		refuted: rank(nodes("Refuted")),
 		tools: selectedTools,
 		proposals: rank(proposals),
 		artifacts: rank(
-			artifacts.filter((node) => !node.action_id && !String(node.text).startsWith("experience decision:")),
+			artifacts.filter(
+				(node) => !node.action_id && !node.knowledge_refs && !String(node.text).startsWith("experience decision:"),
+			),
 		),
 		decisions: [...decisions.values()],
 	};
 	const totals = Object.fromEntries(ORDER.map((id) => [id, id === "tools" ? toolPairs.length : raw[id].length]));
-	const limits = { external_reference: 1, facts: 20, refuted: 10, tools: 8, proposals: 8, artifacts: 5, decisions: 3 };
+	const limits = {
+		external_reference: 1,
+		knowledge: 4,
+		facts: 20,
+		refuted: 10,
+		tools: 8,
+		proposals: 8,
+		artifacts: 5,
+		decisions: 3,
+	};
 	const selected = Object.fromEntries(ORDER.map((id) => [id, []]));
 	const full = new Set();
 	const pending = Object.values(state.pending_actions ?? {}).filter(
@@ -127,11 +169,22 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	}
 	function nodeData(node, expanded) {
 		const limit = expanded ? 180 : 80;
-		if (node.external_reference)
+		if (node.external_reference || node.knowledge_reference)
 			return {
-				source_kind: "external_reference",
+				type: node.knowledge_reference ? "knowledge_reference" : "external_reference",
+				source_kind: node.source_kind ?? "external_reference",
+				...(node.event_id ? { event: ref("event", node.event_id) } : {}),
+				knowledge_id: node.knowledge_id ?? null,
 				source_uri: node.source_uri,
+				source_digest: node.source_digest ?? null,
 				topic: node.topic,
+				section: Array.isArray(node.section) ? node.section.slice(0, 6) : [],
+				...(node.knowledge_reference
+					? {
+							lines: [node.line_start ?? null, node.line_end ?? null],
+							truncated: node.truncated === true || node.content.length > (expanded ? 1800 : 900),
+						}
+					: {}),
 				verified: false,
 				action_policy: "none",
 				content: safe(node.content, expanded ? 1800 : 900),
@@ -141,6 +194,7 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 			event: ref("event", node.origin_event_id),
 			trust: node.type === "Fact" || node.type === "Refuted" ? "verified" : "unverified",
 			text: memoryText(node.text, limit),
+			...(node.candidate ? { candidate: safe(node.candidate, expanded ? 480 : 240) } : {}),
 			...(node.criterion
 				? {
 						criterion: {
@@ -252,9 +306,18 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		if (render().data.meta.overflow) selected[id].pop();
 	}
 	if (!render().data.meta.overflow) {
-		for (const id of ["external_reference", "facts", "refuted", "proposals", "tools"])
+		for (const id of ["facts", "refuted", "tools", "proposals", "external_reference"])
 			if (raw[id][0]) admit(id, raw[id][0]);
-		for (const id of ORDER)
+		// Preserve useful recent tool responses before admitting optional reference
+		// material. A short-session handoff depends on observations surviving RAM.
+		for (const row of raw.tools.slice(0, 3)) {
+			if (!selected.tools.includes(row)) admit("tools", row);
+			if (selected.tools.includes(row)) {
+				full.add(row);
+				if (render().data.meta.overflow) full.delete(row);
+			}
+		}
+		for (const id of [...ORDER.filter((id) => id !== "knowledge"), "knowledge"].filter((id) => raw[id]))
 			for (const row of raw[id].slice(0, limits[id])) if (!selected[id].includes(row)) admit(id, row);
 		for (const id of ORDER)
 			for (const row of selected[id]) {

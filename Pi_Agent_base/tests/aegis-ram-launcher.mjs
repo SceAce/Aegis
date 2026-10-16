@@ -8,7 +8,7 @@ import { join } from "node:path";
 const root = process.cwd();
 const help = spawnSync("bash", ["run-ram-test.sh", "--help"], { cwd: root, encoding: "utf8" });
 assert.equal(help.status, 0);
-assert.match(help.stdout, /--sql-wiki/);
+assert.doesNotMatch(help.stdout, /--sql-wiki|--prepare-sql-wiki/);
 assert.match(help.stdout, /--compile FILE.md/);
 const work = mkdtempSync(join(tmpdir(), "aegis-ram-launcher-"));
 const seed = join(work, "seed.json");

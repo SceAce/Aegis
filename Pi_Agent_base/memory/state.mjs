@@ -14,6 +14,7 @@ export function initialState() {
 		episodes: {},
 		pending_actions: {},
 		experience_decisions: [],
+		knowledge_selections: [],
 		handoffs: [],
 		open_handoff: null,
 		work_state: {},
@@ -141,6 +142,30 @@ export function projectState(events) {
 			case "runtime.note": {
 				if (event.source?.kind === "runtime" || event.source?.kind === "human") {
 					if (event.payload?.version === "work-control-1") bump(state);
+					if (event.payload?.kind === "knowledge.selected" && event.episode_id) {
+						const selected = Array.isArray(event.payload.selected) ? event.payload.selected.slice(0, 8) : [];
+						state.knowledge_selections = state.knowledge_selections.filter(
+							(item) => item.episode_id !== event.episode_id,
+						);
+						for (const item of selected) {
+							if (!item || typeof item !== "object" || typeof item.knowledge_id !== "string") continue;
+							state.knowledge_selections.push({
+								event_id: event.event_id,
+								episode_id: event.episode_id,
+								knowledge_id: item.knowledge_id,
+								source_kind: item.source_kind ?? "external_reference",
+								line_start: item.line_start ?? null,
+								line_end: item.line_end ?? null,
+								source_uri: item.source_uri ?? null,
+								source_digest: item.source_digest ?? null,
+								topic: item.topic ?? null,
+								section: Array.isArray(item.section) ? item.section.slice(0, 6) : [],
+								content: typeof item.content === "string" ? item.content.slice(0, 2000) : "",
+								truncated: item.truncated === true,
+							});
+						}
+						bump(state);
+					}
 				}
 				break;
 			}
