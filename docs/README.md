@@ -6,6 +6,8 @@
 
 ## 当前入口
 
+当前整体完善目标与问题清单见 [AEGIS_COMPLETION_MASTER_PLAN.md](AEGIS_COMPLETION_MASTER_PLAN.md)。该计划区分架构落实缺口、已有行为缺陷、实验缺口和后置项，并规定后续编码通过 `maxapi/deepseek-v4.1-flash` 子 Agent 完成。下文阶段状态保留其历史适用范围，当前推进以总计划及对应实现证据为准。
+
 开发规则从 [根 AGENTS.md](../AGENTS.md) 开始，先加载 [固定规则](DEVELOPMENT_RULES.md)，
 再按目标路径读取工程/模块 AGENTS.md；规则层级与维护方式见 [AGENT_RULES_LAYOUT.md](AGENT_RULES_LAYOUT.md)。
 模块规范按需读取，下文的历史阶段记录和文档索引不是默认必读清单。
