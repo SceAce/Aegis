@@ -5,7 +5,7 @@ Aegis 的默认手动入口仍然是中转配置 `maxapi/deepseek-v4.1-flash`。
 ## 官方配置
 
 ```text
-provider: deepseek
+provider: deedeepseek
 model: deepseek-flash
 name: DeepSeek V4.1 Flash
 api: openai-completions
@@ -29,13 +29,13 @@ cd /path/to/ctf-task
   --model deepseek-v4.1-flash
 ```
 
-使用官方 DeepSeek provider 时，显式指定全局 Pi agent 配置目录：
+使用官方 DeepSeek provider 时，显式指定全局 Pi agent 配置目录。注意：全局 Pi 当前实际 provider id 是 `deedeepseek`，不要写成 `deepseek`：
 
 ```bash
 cd /path/to/ctf-task
 /Users/scemac/My_github/Aegis/run-ram-test.sh \
   --task-id ctf-task-official-001 \
-  --provider deepseek \
+  --provider deedeepseek \
   --model deepseek-flash \
   --pi-agent-dir "$HOME/.pi/agent"
 ```
@@ -65,7 +65,7 @@ C6 产品入口仍通过可信 `campaign.config.json` 的 `provider` 选择模�
 {
   "provider": {
     "kind": "pi-config",
-    "provider_id": "deepseek",
+    "provider_id": "deedeepseek",
     "model": "deepseek-flash",
     "agent_dir": "/Users/your-user/.pi/agent",
     "max_output_tokens": 4096
@@ -78,6 +78,6 @@ C6 产品入口仍通过可信 `campaign.config.json` 的 `provider` 选择模�
 ## 边界
 
 - “官方 DeepSeek”只表示 endpoint/provider 元数据来自官方 API 配置；不等于本次调用已完成，也不等于账号权限有效。
-- `maxapi`/`relay` 是中转 provider，与 `deepseek/deepseek-flash` 分开记录，实验数据不能混组比较。
+- `maxapi`/`relay` 是中转 provider，与 `deedeepseek/deepseek-flash` 分开记录，实验数据不能混组比较。
 - provider、model、endpoint、thinking level 发生变化时，应创建新的 task/attempt，不要把不同模型的事件流合并。
 - 真实 provider 测试需要用户显式执行；离线测试使用 faux provider，不接触真实凭据或真实网络。

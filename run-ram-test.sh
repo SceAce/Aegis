@@ -28,7 +28,7 @@ Options:
   --seed FILE        Inject one bounded, unverified RAM reference JSON
   --compile FILE.md  Compile Markdown under knowledge/documents for reuse
   --proxy URL        Proxy used by the Pi process with --proxy-model
-  --provider NAME    Pi provider id (default: maxapi)
+  --provider NAME    Pi provider id (default: maxapi; official global config uses deedeepseek)
   --model NAME       Pi model id (default: deepseek-v4.1-flash)
   --thinking LEVEL   Pi reasoning level: off|minimal|low|medium|high|max
   --pi-agent-dir DIR Use an explicit Pi agent config/auth directory
@@ -89,6 +89,11 @@ export AEGIS_HANDOFF_FILE="$ATTEMPT/ram/handoff.json"
 export AEGIS_PROJECTION_DIR="$ATTEMPT/projections"
 export AEGIS_EXPERIENCE_DIR="$ATTEMPT/experiences"
 export AEGIS_KNOWLEDGE_DIR="${AEGIS_KNOWLEDGE_DIR:-$BASE_DIR/knowledge}"
+# Keep the selected provider/model stable across session replacement. Pi's
+# runtime recreates the session from these process-level selections; without
+# this, a restored transcript can fall back to a provider with no auth.
+export PI_PROVIDER="$PROVIDER"
+export PI_MODEL="$MODEL"
 if [[ -n "$PI_AGENT_DIR" ]]; then
 	[[ "$PI_AGENT_DIR" = /* ]] || PI_AGENT_DIR="$(cd "$PI_AGENT_DIR" && pwd)"
 	[[ -d "$PI_AGENT_DIR" ]] || { echo "Pi agent directory not found: $PI_AGENT_DIR" >&2; exit 2; }
