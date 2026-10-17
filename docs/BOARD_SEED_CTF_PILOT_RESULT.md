@@ -36,11 +36,11 @@ A=board off/seed off，B=board on/seed off，C=board off/seed on，D=board on/se
 | RSA ii | B/C/D | provider_error，首次请求失败 | 各 3～5 秒 | 各 1 / 0 |
 | 三行密码 | A/B/C | provider_error，首次请求失败 | 各 3～4 秒 | 各 1 / 0 |
 
-共 9 个 attempt、27 次请求尝试、22 次工具调用。6 次中转拒绝均为上游 HTTP 403/code 11140/request illegal，账号相关文字被截断，具体账号原因未知。没有改用其他中转、自动重试或删掉失败。完成首轮拒绝记录后停止真实推理；未继续 24 次重复样本。
+初始矩阵共 9 个 attempt、27 次请求尝试、22 次工具调用；6 次中转拒绝均为上游 HTTP 403/code 11140/request illegal，账号相关文字被截断，具体账号原因未知。随后运行一个 60 秒 easy 校准探针：请求能到达 provider，但没有解出题目，单独标为 probe，不计入正式对照。再补跑原先缺失的六组时，第一组 RSA ii / board on / seed off 立即返回 HTTP 502：`Upstream access forbidden, please contact administrator`，于是停止剩余五组。补跑总记录为 11 个 attempt；正式矩阵仍只有原来的 9 个，且有效对照仍为 0。此前 403 与本次 502 都标为 provider_error。没有换中转、自动重试或删掉失败。
 
 进程退出码 0 表示结果记录完成，不等于 task success；报表按 success/provider_error/output_limit/time_limit 分类。provider 失败的 SDK 零 usage 不作为实际零费用证明，报表记 unknown。总运行时间不能替代平台账单。
 
-四组缺少配对样本，所以不能报告图板/seed 提升率、节时百分比或结论性成功率。调用失败不能算模型不会解题；输出上限与时间上限保留为该运行预算的结果。
+四组缺少配对样本，所以不能报告图板/seed 提升率、节时百分比或结论性成功率。一次探针成功请求不等于通道稳定；随后 502 证明仍不能启动正式对照。调用失败不能算模型不会解题；输出上限与时间上限保留为该运行预算的结果。
 
 ## 直接观察到的机制问题
 
@@ -64,7 +64,7 @@ A=board off/seed off，B=board on/seed off，C=board off/seed on，D=board on/se
 node Pi_Agent_base/fixtures/ctf-board-report.mjs ~/Tmp/aegis-board-seed-pilot-20261017
 ```
 
-`rerun-matrix.py` 默认 dry-run，不发模型请求。显式 execute 后遇第一个 provider/harness 错误停止，已有证据和目录不会覆盖。provider 尚未证明恢复，本轮未调用复跑。
+`rerun-matrix.py` 默认 dry-run，不发模型请求。显式 execute 后遇第一个 provider/harness 错误停止，已有证据和目录不会覆盖。`rerun-six.py` 是本次实际补跑入口，同样在第一处 provider error 停止。provider 尚未证明稳定；恢复后应先单独探针，再重新执行正式矩阵，而不是把 probe 合并进正式统计。
 
 ## 工程验证
 
