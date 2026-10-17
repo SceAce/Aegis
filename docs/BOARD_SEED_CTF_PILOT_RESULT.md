@@ -42,6 +42,12 @@ A=board off/seed off，B=board on/seed off，C=board off/seed on，D=board on/se
 
 四组缺少配对样本，所以不能报告图板/seed 提升率、节时百分比或结论性成功率。一次探针成功请求不等于通道稳定；随后 502 证明仍不能启动正式对照。调用失败不能算模型不会解题；输出上限与时间上限保留为该运行预算的结果。
 
+## 机制修正：轮次 checkpoint 与有界 RAM
+
+根据真实 Session 的观察，`action.requested/action.completed` 并不是等 RAM 满才写入；它们每轮都在 EventLog 中落盘。问题是工具历史会继续进入 RAM，而普通模型正文不会自动形成 Board 结论。当前实现已增加 `runtime.note kind=round.checkpoint`：每个 turn 结束写入一个有界、明确未验证的 Artifact，保留本轮模型/工具摘要。RAM 只带最近 checkpoint、未决责任和最近最多两条工具对；没有 checkpoint 时不创建空节，避免增加旧任务的 RAM 核心开销。完整历史仍可从 EventLog/Board 重放，checkpoint 不升级为 Fact。
+
+该修正已通过 `aegis-round-checkpoint`、RAM projection、RAM/SDK 交接、知识 SDK 和模块布局等 11 个脚本。尚未在真实模型上复跑，因此“减少堆积、提高速度”的效果仍待新的 provider 稳定后测量。
+
 ## 直接观察到的机制问题
 
 三行密码 D 组：

@@ -5,7 +5,7 @@
 ## 责任与数据
 
 - Observer 从已提交事件机械收集工具输入、返回、transport 和引用，不调用模型总结，不读隐式推理。
-- RAM 是当前 Episode 的 JSON 派生投影，不能直接写权威状态、选择路线、授予权限或认定成功。
+- RAM 是当前 Episode 的 JSON 派生投影，不能直接写权威状态、选择路线、授予权限或认定成功。每个 turn 结束时 Observer 会写入一个有界 `runtime.note kind=round.checkpoint` Artifact；它保存本轮模型摘要/工具观察并明确标记为未验证。Board/EventLog 保留历史，RAM 只带最近 checkpoint、未决责任和最近少量工具对。
 - 模型用 `aegis_propose` 显式提交 Claim/Intent；提案保持未验证。独立 Oracle 和现有 authority 决定 Fact/Outcome。
 - Runtime 的候选等待属于工作流控制。`waiting_external` 不属于 Outcome 状态，也不表示任务成功。
 - 有效 Experience 继续走既有 Compiler/Router 门。候选结果与候选 Experience 是不同对象。
@@ -21,7 +21,8 @@
 | pending | 未完成、unknown、unresolved 行动责任 |
 | workflow | 已提交工作控制的有界展示；不是新的权限来源 |
 | sections.facts / refuted | 当前有效的独立判断 |
-| sections.tools | 成对动作、实际参数和响应片段、transport；trust=observed |
+| sections.tools | 最近有界的成对动作、实际参数和响应片段、transport；trust=observed；不再承载完整工具历史 |
+| sections.checkpoints | 最近轮次的模型/观察 checkpoint；trust=unverified；用于携带当前结论，不是 Fact |
 | sections.proposals | 显式模型提案；trust=unverified；候选保留 when/do/expect |
 | sections.knowledge | 有选择时出现：本地知识引用及来源/行号；未验证、无行动策略 |
 | sections.artifacts / decisions | 一般产物与历史经验选择 |
@@ -36,7 +37,7 @@
 
 注入仍是每请求一份临时 user 尾部 JSON，固定 system/ROM/tools 不随 RAM 更新，快照不累积进 Session 历史。没有更改为永久增量消息协议。
 
-本地知识文件统一位于 ignored `knowledge/`；自动召回、LLM 自主选择工具、图板关联与调用时机见 [知识库运行接口](KNOWLEDGE_RUNTIME.md)。
+本地知识文件统一位于 ignored `knowledge/`；自动召回、LLM 自主选择工具、图板关联与调用时机见 [知识库运行接口](KNOWLEDGE_RUNTIME.md)。轮次 checkpoint 与 RAM 历史压缩的接线见 [图板/seed 先导结果](BOARD_SEED_CTF_PILOT_RESULT.md)。
 
 ## 显式提案
 

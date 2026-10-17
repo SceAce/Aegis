@@ -1043,6 +1043,36 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			outcome_hint: event.outcome,
 			tool_result_count: event.toolResults.length,
 		});
+		// A round checkpoint is a bounded, unverified working summary. It gives the
+		// Board a durable per-turn breadcrumb without treating assistant prose as a
+		// Fact. RAM keeps only the latest checkpoints; the full EventLog remains the
+		// audit/replay source.
+		const assistantText = textFromContent(event.message?.content);
+		const toolText = event.toolResults
+			.map((result) => textFromContent(result.content))
+			.filter(Boolean)
+			.join("\n");
+		const checkpointText = excerpt(
+			[assistantText ? `model: ${assistantText}` : "", toolText ? `observations: ${toolText}` : ""]
+				.filter(Boolean)
+				.join("\n"),
+			1400,
+		);
+		if (checkpointText) {
+			await emit(
+				"runtime.note",
+				{
+					kind: "round.checkpoint",
+					version: "round-checkpoint-1",
+					turn_index: event.turnIndex,
+					text: checkpointText,
+					tool_count: event.toolResults.length,
+					state_revision: state.version,
+					trust: "unverified_model_summary",
+				},
+				{ source_kind: "runtime", causation_id: currentPromptEventId, episode_id: episodeId },
+			);
+		}
 	});
 	pi.on("agent_end", async (event) => {
 		await emit("agent.ended", { message_count: event.messages.length });

@@ -355,7 +355,8 @@ export function permittedNodeType(event) {
 		case "experience.decision":
 			return { type: "Artifact" };
 		case "runtime.note":
-			return event.payload?.kind === "knowledge.selected" && ["runtime", "human"].includes(event.source?.kind)
+			return ["knowledge.selected", "round.checkpoint"].includes(event.payload?.kind) &&
+				["runtime", "human"].includes(event.source?.kind)
 				? { type: "Artifact" }
 				: null;
 		// A trusted environment change is an auditable Artifact event AND marks the
@@ -609,6 +610,9 @@ function nodeText(event, type) {
 		case "Hint":
 			return payload.text || payload.claim || payload.reason || payload.note || JSON.stringify(payload);
 		case "Artifact":
+			if (payload.kind === "round.checkpoint") {
+				return `round ${payload.turn_index ?? "?"} checkpoint: ${String(payload.text ?? "").slice(0, 500)} (unverified model summary)`;
+			}
 			if (payload.kind === "knowledge.selected") {
 				return `knowledge selected: ${payload.selected?.length ?? 0} reference(s) for ${payload.mode ?? "manual"} query`;
 			}
@@ -790,6 +794,15 @@ function projectBoardInternal(events, manifest, acceptedPrefix) {
 			observed: payload.observed ?? null,
 			...(event.event_type === "proposal.submitted" && payload.kind === "candidate"
 				? { candidate: { when: payload.when ?? [], do: payload.do ?? null, expect: payload.expect ?? null } }
+				: {}),
+			...(payload.kind === "round.checkpoint"
+				? {
+						checkpoint: {
+							turn_index: payload.turn_index ?? null,
+							text: String(payload.text ?? "").slice(0, 1600),
+							tool_count: payload.tool_count ?? 0,
+						},
+					}
 				: {}),
 			...(payload.kind === "knowledge.selected"
 				? {

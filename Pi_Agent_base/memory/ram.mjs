@@ -7,6 +7,7 @@ const DEFAULT_BUDGET = 4000;
 const SECTION_ORDER = [
 	"external_reference",
 	"knowledge",
+	"checkpoints",
 	"facts",
 	"refuted",
 	"tools",
@@ -23,6 +24,7 @@ const LABELS = {
 	decisions: "Unverified selections",
 	external_reference: "External reference (unverified, no action policy)",
 	knowledge: "Selected knowledge (unverified reference, no action policy)",
+	checkpoints: "Recent round checkpoints (model claims, not verified facts)",
 };
 
 /** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null}} args */
@@ -30,7 +32,9 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
 	// Empty knowledge must not increase the mandatory footprint of legacy RAM.
 	const ORDER = SECTION_ORDER.filter(
-		(id) => id !== "knowledge" || state.knowledge_selections?.some((item) => item.episode_id === episodeId),
+		(id) =>
+			(id !== "knowledge" || state.knowledge_selections?.some((item) => item.episode_id === episodeId)) &&
+			(id !== "checkpoints" || state.round_checkpoints?.some((item) => item.episode_id === episodeId)),
 	);
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
 	const current = board.currentByType ?? board.byType ?? {};
@@ -73,9 +77,12 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 			tools.add(name);
 		}
 	}
-	const selectedTools = [...new Set([...referenced.slice(0, 3), ...recent.slice(0, 3), ...diverse, ...recent])].slice(
+	// Tool history is evidence, not the long-term working memory. Round
+	// checkpoints carry the current conclusion; keep only the latest two tool
+	// pairs for immediate parameter/result continuity.
+	const selectedTools = [...new Set([...referenced.slice(0, 1), ...recent.slice(0, 2), ...diverse.slice(0, 2)])].slice(
 		0,
-		8,
+		2,
 	);
 	const words = new Set(
 		(
@@ -125,16 +132,25 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	const knowledge = [...knowledgeById.values()]
 		.slice(-6)
 		.map((item) => ({ knowledge_reference: true, ...item, verified: false, action_policy: "none" }));
+	const checkpoints = (Array.isArray(state.round_checkpoints) ? state.round_checkpoints : [])
+		.filter((item) => item && item.episode_id === episodeId && typeof item.text === "string")
+		.slice(-3)
+		.map((item) => ({ checkpoint_reference: true, ...item, trust: "unverified" }));
 	const raw = {
 		external_reference: external,
 		knowledge,
+		checkpoints,
 		facts: rank(nodes("Fact")),
 		refuted: rank(nodes("Refuted")),
 		tools: selectedTools,
 		proposals: rank(proposals),
 		artifacts: rank(
 			artifacts.filter(
-				(node) => !node.action_id && !node.knowledge_refs && !String(node.text).startsWith("experience decision:"),
+				(node) =>
+					!node.action_id &&
+					!node.knowledge_refs &&
+					!node.checkpoint &&
+					!String(node.text).startsWith("experience decision:"),
 			),
 		),
 		decisions: [...decisions.values()],
@@ -143,9 +159,10 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	const limits = {
 		external_reference: 1,
 		knowledge: 4,
+		checkpoints: 3,
 		facts: 20,
 		refuted: 10,
-		tools: 8,
+		tools: 2,
 		proposals: 8,
 		artifacts: 5,
 		decisions: 3,
@@ -169,6 +186,15 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 	}
 	function nodeData(node, expanded) {
 		const limit = expanded ? 180 : 80;
+		if (node.checkpoint_reference)
+			return {
+				type: "round_checkpoint",
+				event: ref("event", node.event_id ?? node.origin_event_id),
+				trust: "unverified",
+				text: memoryText(node.text, expanded ? 700 : 360),
+				tool_count: node.tool_count ?? 0,
+				state_revision: node.state_revision ?? null,
+			};
 		if (node.external_reference || node.knowledge_reference)
 			return {
 				type: node.knowledge_reference ? "knowledge_reference" : "external_reference",
@@ -306,18 +332,15 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		if (render().data.meta.overflow) selected[id].pop();
 	}
 	if (!render().data.meta.overflow) {
-		for (const id of ["facts", "refuted", "tools", "proposals", "external_reference"])
+		for (const id of ["checkpoints", "facts", "refuted", "tools", "proposals", "external_reference"])
 			if (raw[id][0]) admit(id, raw[id][0]);
 		// Preserve useful recent tool responses before admitting optional reference
 		// material. A short-session handoff depends on observations surviving RAM.
-		for (const row of raw.tools.slice(0, 3)) {
-			if (!selected.tools.includes(row)) admit("tools", row);
-			if (selected.tools.includes(row)) {
-				full.add(row);
-				if (render().data.meta.overflow) full.delete(row);
-			}
-		}
-		for (const id of [...ORDER.filter((id) => id !== "knowledge"), "knowledge"].filter((id) => raw[id]))
+		for (const id of [
+			...ORDER.filter((id) => !["knowledge", "checkpoints"].includes(id)),
+			"checkpoints",
+			"knowledge",
+		].filter((id) => raw[id]))
 			for (const row of raw[id].slice(0, limits[id])) if (!selected[id].includes(row)) admit(id, row);
 		for (const id of ORDER)
 			for (const row of selected[id]) {

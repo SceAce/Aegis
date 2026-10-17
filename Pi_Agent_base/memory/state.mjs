@@ -15,6 +15,7 @@ export function initialState() {
 		pending_actions: {},
 		experience_decisions: [],
 		knowledge_selections: [],
+		round_checkpoints: [],
 		handoffs: [],
 		open_handoff: null,
 		work_state: {},
@@ -164,6 +165,22 @@ export function projectState(events) {
 								truncated: item.truncated === true,
 							});
 						}
+						bump(state);
+					}
+					if (event.payload?.kind === "round.checkpoint" && event.episode_id) {
+						const prior = state.round_checkpoints.filter((item) => item.episode_id !== event.episode_id);
+						prior.push({
+							event_id: event.event_id,
+							episode_id: event.episode_id,
+							turn_index: event.payload.turn_index ?? null,
+							text: typeof event.payload.text === "string" ? event.payload.text.slice(0, 1600) : "",
+							tool_count: event.payload.tool_count ?? 0,
+							state_revision: event.payload.state_revision ?? null,
+						});
+						state.round_checkpoints = [
+							...prior,
+							...state.round_checkpoints.filter((item) => item.episode_id === event.episode_id).slice(-2),
+						];
 						bump(state);
 					}
 				}
