@@ -1,5 +1,27 @@
 # Aegis Campaign — Master DS Review Report
 
+## 当前整体完善代码工作（ce0bde0 起点）
+
+状态 **blocked / changes_required，代码工作未完成**。指定中转在多次独立会话中返回 `continuation routing failed: sticky_control_unavailable`，包括一次最小 checkpoint 修复委派和最后一次有界收尾。未切换模型。工作目标与范围见 [总计划](AEGIS_COMPLETION_MASTER_PLAN.md)，分工见 [当前工作计划](CAMPAIGN_WORK_PLAN.md)，验证入口见 [当前矩阵](CAMPAIGN_TEST_MATRIX.md)。下文 C0/C1 结论为历史，不描述本轮。
+
+本轮实际委派 `maxapi/deepseek-v4.1-flash` 子 Agent：CORE、MEMORY、ARTIFACT、OBSERVATION、WEB；CORE 后拆为 context/authority/effects，另有最小 checkpoint 和有界 finish 委派。日志 assistant 字段核对为指定 provider/model；同模型子会话不等于外部审查。原始日志 `Pi_Agent_base/runtime/dev/completion-implementation/` 保持 ignored。
+
+当前未完成源码保留在工作树，**尚未通过代码审查，不作为可用功能发布**：产物存储/分页读取模块，E1 explorer/server/view/client，以及部分新增测试。CORE、知识排序、生产 checkpoint 过滤、Web 实现、共享入口接线和实验 runner 未完成。新测试也未经完整独立预期审查；import 缺失不当作产品行为 red→green。
+
+主 Agent 实际执行：
+
+| 检查 | 结果 | 私有证据 |
+| --- | --- | --- |
+| 最终显式 12 脚本 | exit 1；4 pass / 8 fail | `final-checks/results.json` |
+| 原 observation HTTP/XSS/E1 view | 3 脚本 exit 0，仅既有断言通过，不证明新功能完整 | 同上 |
+| module-layout | exit 0；初次在子 Agent编辑中遇 const 赋值构建错误，最终复跑已过 | 同上及 `observation-review/` |
+| artifact-store、新 memory/knowledge/report、四个 Web 脚本 | 8 脚本 exit 1；含未实现模块的 import 错误，不能称有效行为反例全覆盖 | 同上 |
+| 变更代码 Biome | exit 1，尚未修复 | `final-static/biome.log` |
+| Batch tsc | exit 1；186→186 条诊断 | `baseline/`、`final-static/` |
+| Campaign tsc | exit 1；189→197 条诊断，新增诊断未收尾 | 同上 |
+
+未执行真实效果实验、未修改 Pi 核心/凭据/依赖/检查规则、未放宽原断言。未完成产品代码及测试未暂存/提交，保留工作树以便指定中转恢复后续接；本次仅提交状态文档。整体完成条件未满足，不能以观察旧回归通过代替全部目标完成。
+
 Status: **internally_verified** for C0 Closure and C1; **awaiting_external_review**.
 External acceptance is performed by the user bringing this bundle back to the
 current conversation. Aegis did NOT invoke `gpt-6.1-sol`.

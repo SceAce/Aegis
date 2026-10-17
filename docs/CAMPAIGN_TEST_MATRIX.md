@@ -1,5 +1,26 @@
 # Aegis Campaign — Test Matrix (C0 Closure + C1)
 
+## 当前整体完善代码验证矩阵
+
+当前基线 ce0bde0；下表为阶段级完成矩阵，各阶段仍未完成，不能按个别脚本通过改成 pass。子任务原始命令/退出码放 `runtime/dev/completion-implementation/<role>/`。主 Agent最终显式12脚本为4 pass/8 fail（exit 1），实际清单与命令见 `final-checks/results.json`；Biome exit 1，Campaign tsc 189→197。阶段状态 blocked / changes_required；详情见当前审查报告。下文历史 pass 不作为本轮通过。
+
+| requirement | case / 独立预期 | level / evidence | 初始脚本或负责子任务 | status |
+| --- | --- | --- | --- | --- |
+| CORE-01 | SA-12 配置不能降级冻结协议；合法恢复正对照 | product/recovery；provider/tool counter/event | aegis-e1-single-authority-review；CORE | not_run |
+| CORE-02/03 | SA-01–03 联合结清、非法 charge 拒绝、消费不清零 | Host/replay；真实 ledger/event | 同上；C6 lifecycle/ledger 回归 | not_run |
+| CORE-04 | SA-04 重复工具一次入体；完整绑定可复用或 unknown hold | tool/product/recovery；counter/result | 同上；CORE 新工具组合 | not_run |
+| CORE-05 | SA-07/08 intent await 后超时/失效阻断下一效果 | product；barrier/真实 BrokerWorker | 同上；CORE | not_run |
+| CORE-06 | SA-06/10/11 冲突与失效不激活；正常 criteria 完成 | projection/product；queue/Board/learning | 同上与 authority/invariants/learning | not_run |
+| CORE-07/08 | exact retry 无二次分配；status 冻结来源；shell 非零贯通 | CLI/replay；exit/event | CORE | not_run |
+| MEM-01 | A/B/C/D 跨 turn/new Session checkpoint 无交叉污染 | pure/SDK；actual provider payload | context-policy/context-policy-sdk/round-checkpoint；MEMORY | not_run |
+| KNOW-01 | 症状/技法/不相关负例/多语言去重，明确正例不退化 | pure/SDK；独立知识 fixture 与 provider payload | knowledge/knowledge-sdk；MEMORY | not_run |
+| MEM-02 | 大产物中后部、binary、foreign/corrupt/symlink/offset 拒绝、重建 | file/product；真实 bytes/digest/owner | ARTIFACT 与后续 INTEGRATION | not_run |
+| MEM-03 | 4k 完整预算、信任/身份/省略、提案替换后新窗口 | pure/SDK；RAM/payload | RAM/proposal/reaudit 回归；MEMORY | not_run |
+| OBS-01 | E1 大图详情/分页/版本/刷新，XSS/坏链，零写入 | HTTP/UI；response/event/provider counter | OBSERVATION 新脚本与既有 observation | not_run |
+| WEB-01 | WT-01–12 本地请求字节/会话/产物、SDK 反馈、幂等/未知恢复 | loopback/SDK/recovery；实收与效果计数 | 后续 WEB 子任务 | not_run |
+| EXP 支撑 | 长短 Session 真替换、累计责任；经验策略走现有 Router | SDK/faux；session identity/ledger/Oracle | 后续 RUNNER 子任务 | not_run |
+| 交付门 | 布局、变更文件Biome、两份tsc诊断差异、原required与受影响集成 | static/integration；逐脚本exit与diff | 主 Agent 独立运行 | not_run |
+
 Status legend: `not_run` | `pass` | `fail` | `blocked`.
 `old` = expected failure on pre-fix code (regression red evidence).
 `evidence` = result | artifact | counter | process | provider_request | event_chain.

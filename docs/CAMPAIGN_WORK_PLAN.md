@@ -1,5 +1,23 @@
 # Aegis Campaign — Master Work Plan (C0 Closure → C1)
 
+## 当前整体完善代码任务（基线 ce0bde0）
+
+本节为当前执行入口，下面 C0/C1 状态保留历史范围。用户已授权完成 [整体完善计划](AEGIS_COMPLETION_MASTER_PLAN.md) 的代码工作；真实效果实验不在本次编码交付内。当前状态 blocked / changes_required：指定 maxapi 多次返回 sticky_control_unavailable，部分代码留在工作树但未通过完整检查。实际复验与未完成项见当前审查报告；内部复验与外部接受分别记录。
+
+所有实现子 Agent 固定 `maxapi/deepseek-v4.1-flash`，通过现有 Pi 独立进程委派；主 Agent 冻结契约、检查文件所有权、审查最终代码并独立集成验证。实际日志保存在 ignored `Pi_Agent_base/runtime/dev/completion-implementation/`，不采用下文历史“无子 Agent”声明描述本轮。
+
+| 任务 | 所有权与目标 | 依赖 / 验收 |
+| --- | --- | --- |
+| CORE | campaign、BrokerWorker、必要 verification/learning 消费；CORE-01–08 | 冻结上下文→请求账本→有效判断→执行幂等/permit；独立审计及受影响回归 |
+| MEMORY | context-policy、knowledge、RAM/proposal、CTF fixture/report | checkpoint 关闭、召回相关性/拒绝、fixture 停止与报告分类；纯函数及真实 SDK/faux |
+| ARTIFACT | 新增受控产物存储/读取与专属测试 | ref/owner/digest/字节分页/持久化契约；后续由独立集成子 Agent接线 |
+| OBSERVATION | observation 与专属测试 | E1 详情/分页/版本/刷新，只读与隐私回归 |
+| INTEGRATION | 在上述接口完成后串行接共享 entry/observer、Web 和实验 runner | 现有 Broker/ledger/Supervisor，不复制核心权威；本地 loopback/faux |
+
+公共约束：冻结输入由 Host/可信配置提供；模型不写授权/Outcome/active；intent durable 后才效果，unknown 不自动重发；新产物接口只接受登记 ref 和可信当前身份；界面只读。子任务先写接口/测试矩阵和旧 red，再实现；共享文件不可并行覆盖。若下游需要共享文件，通过 integration-needed 交回串行接线。
+
+不修改内嵌 Pi、凭据、依赖/lockfile、检查规则；不启动真实 CTF/provider 效果矩阵。子 Agent 编码本身使用当前明确授权的指定模型。类型与格式记录原基线和新增差异，禁止弱化断言。各阶段完成后显式暂存审查、本地提交、不 push。
+
 Status: `internally_verified` for C0; C1 tracked below.
 Owner: main DS (this session). External acceptance: pending (user brings materials back).
 
