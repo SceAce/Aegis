@@ -266,7 +266,9 @@ export async function runCtfPilot({
 				throw new Error("pilot_budget_exhausted");
 			}
 			requests++;
-			const rams = context.messages.filter((m) => m.role === "user" && text(m).startsWith("<aegis_ram>"));
+			const rams = context.messages.filter(
+				(m) => ["user", "custom"].includes(m.role) && text(m).startsWith("<aegis_ram>"),
+			);
 			if (rams.length !== 1) throw new Error("pilot_expected_one_actual_RAM");
 			const ram = JSON.parse(
 				text(rams[0])
@@ -275,7 +277,9 @@ export async function runCtfPilot({
 			);
 			if (
 				!boardEnabled &&
-				["facts", "refuted", "tools", "proposals", "artifacts", "decisions"].some((s) => ram.sections[s]?.shown > 0)
+				["facts", "refuted", "tools", "proposals", "artifacts", "decisions", "checkpoints"].some(
+					(s) => ram.sections[s]?.shown > 0,
+				)
 			)
 				throw new Error("board_off_payload_contaminated");
 			if (!knowledgeEnabled && (ram.sections.knowledge?.shown || ram.sections.external_reference?.shown))
@@ -345,7 +349,9 @@ export async function runCtfPilot({
 	try {
 		const messages = JSON.parse(readFileSync(join(dir, "assistant.json"), "utf8"));
 		lastModelStop = messages.at(-1)?.stopReason ?? null;
-		providerError = lastModelStop === "error";
+		providerError =
+			lastModelStop === "error" &&
+			!/pilot_(budget_exhausted|candidate_verified)/.test(messages.at(-1)?.errorMessage ?? error ?? "");
 	} catch {}
 	const result = {
 		...metadata,
@@ -359,6 +365,9 @@ export async function runCtfPilot({
 		error,
 		last_model_stop: lastModelStop,
 		provider_error: providerError,
+		actual_models:
+			session?.messages?.filter((m) => m.role === "assistant").map((m) => ({ provider: m.provider, model: m.model })) ??
+			[],
 		chain_ok: verifyChain(events).ok,
 		graph_counts: Object.fromEntries(Object.entries(board.byType).map(([k, v]) => [k, v.length])),
 		proposal_count: events.filter((e) => e.event_type === "proposal.submitted").length,

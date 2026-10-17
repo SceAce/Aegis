@@ -2,25 +2,34 @@
 
 ## 当前整体完善代码工作（ce0bde0 起点）
 
-状态 **blocked / changes_required，代码工作未完成**。指定中转在多次独立会话中返回 `continuation routing failed: sticky_control_unavailable`，包括一次最小 checkpoint 修复委派和最后一次有界收尾。未切换模型。工作目标与范围见 [总计划](AEGIS_COMPLETION_MASTER_PLAN.md)，分工见 [当前工作计划](CAMPAIGN_WORK_PLAN.md)，验证入口见 [当前矩阵](CAMPAIGN_TEST_MATRIX.md)。下文 C0/C1 结论为历史，不描述本轮。
+状态：**主 Agent 已完成本轮代码接手与内部验证，尚待独立外部验收；真实 Web 目标和真实效果实验未运行。** 用户取消了 max/DeepSeek 依赖，本轮由主 Agent直接修复、集成和复验。
 
-本轮实际委派 `maxapi/deepseek-v4.1-flash` 子 Agent：CORE、MEMORY、ARTIFACT、OBSERVATION、WEB；CORE 后拆为 context/authority/effects，另有最小 checkpoint 和有界 finish 委派。日志 assistant 字段核对为指定 provider/model；同模型子会话不等于外部审查。原始日志 `Pi_Agent_base/runtime/dev/completion-implementation/` 保持 ignored。
+本轮完成的范围：
 
-当前未完成源码保留在工作树，**尚未通过代码审查，不作为可用功能发布**：产物存储/分页读取模块，E1 explorer/server/view/client，以及部分新增测试。CORE、知识排序、生产 checkpoint 过滤、Web 实现、共享入口接线和实验 runner 未完成。新测试也未经完整独立预期审查；import 缺失不当作产品行为 red→green。
+- CORE-01–08：冻结运行与只读恢复、请求账本共同结清、工具重复执行保护、逐步 Broker permit、当前有效 Outcome 聚合、exact admission retry 与 runner 状态。
+- MEM-01/03：board-off 清除 round checkpoint、知识条件检索与负例、CTF 报告完整 attempt 统计。
+- MEM-02：内容寻址 artifact store、owner/ref/digest、字节分页读取、UTF-8 边界、预算、symlink/corruption/persistence fail-closed。
+- OBS-01：E1 board/graph 分页、节点/边详情、cursor filter、state revision、只读刷新客户端。
+- WEB-01 W1：本地 HTTP/session/cookie adapter、同步工具 schema、独立平台结果绑定；尚未接入 Campaign/Host 的正式共享工具注册和真实平台。
 
-主 Agent 实际执行：
+验证结果：
 
-| 检查 | 结果 | 私有证据 |
+| 检查 | 结果 | 证据 |
 | --- | --- | --- |
-| 最终显式 12 脚本 | exit 1；4 pass / 8 fail | `final-checks/results.json` |
-| 原 observation HTTP/XSS/E1 view | 3 脚本 exit 0，仅既有断言通过，不证明新功能完整 | 同上 |
-| module-layout | exit 0；初次在子 Agent编辑中遇 const 赋值构建错误，最终复跑已过 | 同上及 `observation-review/` |
-| artifact-store、新 memory/knowledge/report、四个 Web 脚本 | 8 脚本 exit 1；含未实现模块的 import 错误，不能称有效行为反例全覆盖 | 同上 |
-| 变更代码 Biome | exit 1，尚未修复 | `final-static/biome.log` |
-| Batch tsc | exit 1；186→186 条诊断 | `baseline/`、`final-static/` |
-| Campaign tsc | exit 1；189→197 条诊断，新增诊断未收尾 | 同上 |
+| E1/C6 required | 68 scripts，全部 exit 0 | `runtime/dev/completion-implementation/required-full.log` |
+| Single-authority | 13/13 pass | `takeover-final-new/aegis-e1-single-authority-review.log` |
+| 新增聚焦测试 | 产物 29/29；Web adapter/outcome/recovery/wiring pass；E1 explorer、board-off、knowledge、report pass | `takeover-final-new/`、`check-artifact-final/` |
+| Biome | exit 0；保留既有 warning/info | `final-static/biome-fix.log` |
+| Batch tsc | exit 1，186 条既有诊断 | `final-static/tsconfig.aegis.json-final.log` |
+| Campaign tsc | exit 1，189 条既有诊断，无新增诊断 | `final-static/tsconfig.aegis-campaign.json-final.log` |
+| 真实 provider/远程目标 | 未运行 | 本轮不启动真实效果实验 |
 
-未执行真实效果实验、未修改 Pi 核心/凭据/依赖/检查规则、未放宽原断言。未完成产品代码及测试未暂存/提交，保留工作树以便指定中转恢复后续接；本次仅提交状态文档。整体完成条件未满足，不能以观察旧回归通过代替全部目标完成。
+限制：
+
+- Web adapter 尚未在 Campaign `c6-sdk-runtime`/Host 白名单中注册，未建立正式 Web family、共享 ledger/Oracle/平台导入入口；当前是 W1 独立工程层。
+- artifact read 已接入 Observer 工具并使用现有 work account，但完整 artifact 原文保存的是脱敏工具文本，不是未脱敏远端原始响应；敏感原文不会被自动恢复。
+- CTF 正式矩阵、短 Session 效果、active Experience 效果、迁移实验仍未运行。
+- 未修改 Pi 核心、凭据、依赖或 lockfile；未调用真实目标网络。
 
 Status: **internally_verified** for C0 Closure and C1; **awaiting_external_review**.
 External acceptance is performed by the user bringing this bundle back to the
@@ -163,3 +172,33 @@ is recorded because a hidden file corruption would invalidate the review.
 Synthetic/faux evidence is labeled. Aegis did not automatically invoke
 gpt-6.1-sol. No real target network or credential access was used. Final external
 acceptance remains pending.`
+## 当前整体完善代码工作（ce0bde0 起点）
+
+状态：**主 Agent 已完成本轮代码接手与内部验证，尚待独立外部验收；真实 Web 目标和真实效果实验未运行。** 用户取消了 max/DeepSeek 依赖，本轮由主 Agent直接修复、集成和复验。
+
+本轮完成的范围：
+
+- CORE-01–08：冻结运行与只读恢复、请求账本共同结清、工具重复执行保护、逐步 Broker permit、当前有效 Outcome 聚合、exact admission retry 与 runner 状态。
+- MEM-01/03：board-off 清除 round checkpoint、知识条件检索与负例、CTF 报告完整 attempt 统计。
+- MEM-02：内容寻址 artifact store、owner/ref/digest、字节分页读取、UTF-8 边界、预算、symlink/corruption/persistence fail-closed。
+- OBS-01：E1 board/graph 分页、节点/边详情、cursor filter、state revision、只读刷新客户端。
+- WEB-01 W1：本地 HTTP/session/cookie adapter、同步工具 schema、独立平台结果绑定；尚未接入 Campaign/Host 的正式共享工具注册和真实平台。
+
+验证结果：
+
+| 检查 | 结果 | 证据 |
+| --- | --- | --- |
+| E1/C6 required | 68 scripts，全部 exit 0 | `runtime/dev/completion-implementation/required-full.log` |
+| Single-authority | 13/13 pass | `takeover-final-new/aegis-e1-single-authority-review.log` |
+| 新增聚焦测试 | 产物 29/29；Web adapter/outcome/recovery/wiring pass；E1 explorer、board-off、knowledge、report pass | `takeover-final-new/`、`check-artifact-final/` |
+| Biome | exit 0；保留既有 warning/info | `final-static/biome-fix.log` |
+| Batch tsc | exit 1，186 条既有诊断 | `final-static/tsconfig.aegis.json-final.log` |
+| Campaign tsc | exit 1，189 条既有诊断，无新增诊断 | `final-static/tsconfig.aegis-campaign.json-final.log` |
+| 真实 provider/远程目标 | 未运行 | 本轮不启动真实效果实验 |
+
+限制：
+
+- Web adapter 尚未在 Campaign `c6-sdk-runtime`/Host 白名单中注册，未建立正式 Web family、共享 ledger/Oracle/平台导入入口；当前是 W1 独立工程层。
+- artifact read 已接入 Observer 工具并使用现有 work account，但完整 artifact 原文保存的是脱敏工具文本，不是未脱敏远端原始响应；敏感原文不会被自动恢复。
+- CTF 正式矩阵、短 Session 效果、active Experience 效果、迁移实验仍未运行。
+- 未修改 Pi 核心、凭据、依赖或 lockfile；未调用真实目标网络。

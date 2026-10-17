@@ -65,6 +65,7 @@ import {
 	observeEventPayloads,
 	rejectionNote,
 } from "../execution/action-runtime.mjs";
+import { createArtifactReader } from "../execution/artifact-read.mjs";
 import { validateResourceParams } from "../execution/script-registry.mjs";
 import { projectBoard, summarizeBoard } from "../memory/board.mjs";
 import { contextPolicy, contextProjectionInput } from "../memory/context-policy.mjs";
@@ -89,6 +90,7 @@ import {
 	workToolAccount,
 } from "../orchestration/work-control.mjs";
 import { evaluateHandoff } from "../session/handoff.mjs";
+import { createArtifactStore } from "../shared/artifact-store.mjs";
 import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1010,6 +1012,24 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		// generic hook skips them.
 		if (["aegis_observe", "aegis_execute", "aegis_knowledge"].includes(event.toolName)) return;
 		const text = textFromContent(event.content);
+		let rawArtifact = null;
+		if (episodeId && taskId) {
+			const stored = createArtifactStore({ root: join(dirname(eventLogPath()), "artifacts") }).put({
+				bytes: Buffer.from(redact(text), "utf8"),
+				owner: { task_id: taskId, episode_id: episodeId, campaign_id: hostManifest()?.campaign_id ?? null },
+				origin: { action_id: event.toolCallId, tool_name: event.toolName },
+				encoding_hint: "utf8",
+				media_type: "text/plain",
+			});
+			rawArtifact = stored.ok
+				? {
+						ref_id: stored.ref_id,
+						digest: stored.digest,
+						byte_length: stored.byte_length,
+						transformation: "redacted-tool-text",
+					}
+				: { unavailable: true, reason: stored.reason };
+		}
 		await emit("action.completed", {
 			action_id: event.toolCallId,
 			tool_name: event.toolName,
@@ -1017,6 +1037,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			content_digest: digest(text),
 			content_excerpt: excerpt(text),
 			response_fragments: captureTextFragments(text),
+			artifact: rawArtifact,
 			content_truncated: redact(text).length > MAX_EXCERPT,
 			result_summary: summarizeMemoryValue(event.details ?? null),
 			result_detail_keys: event.details && typeof event.details === "object" ? Object.keys(event.details).sort() : [],
@@ -1120,6 +1141,60 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	});
 
 	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
+			name: "aegis_artifact_read",
+			label: "Aegis: read a recorded artifact",
+			description:
+				"Read a bounded page of recorded tool text by its committed artifact ref. Offsets are bytes in the redacted stored text. This does not verify the task outcome.",
+			parameters: Type.Object({
+				ref_id: Type.String(),
+				offset: Type.Optional(Type.Number()),
+				limit: Type.Optional(Type.Number()),
+				encoding: Type.Optional(Type.Union([Type.Literal("utf8"), Type.Literal("base64")])),
+			}),
+			async execute(id, params, _signal, _onUpdate, ctx) {
+				await ensureLog(ctx);
+				if (!episodeId || !taskId || auditUnavailable)
+					return { content: [{ type: "text", text: "Artifact read refused: no healthy current task" }], isError: true };
+				const refs = (log?.replay() ?? [])
+					.filter(
+						(e) => e.episode_id === episodeId && e.event_type === "action.completed" && e.source?.kind === "runtime",
+					)
+					.map((e) => e.payload?.artifact?.ref_id)
+					.filter(Boolean);
+				const account = workToolAccount(eventLogPath());
+				const admission = account
+					? await account.admit({
+							tool_call_id: id,
+							tool_name: "aegis_artifact_read",
+							arguments_digest: digest(params),
+						})
+					: { ok: true };
+				if (!admission?.ok || admission.duplicate)
+					return { content: [{ type: "text", text: "Artifact read held: no fresh tool allocation" }], isError: true };
+				const reader = createArtifactReader({
+					store: createArtifactStore({ root: join(dirname(eventLogPath()), "artifacts") }),
+					principal: () => ({
+						task_id: taskId,
+						episode_id: episodeId,
+						campaign_id: hostManifest()?.campaign_id ?? null,
+						authorization: { read: true, artifact_refs: refs },
+					}),
+				});
+				const result = await reader.read(params);
+				const finished = account
+					? await account.finish({ tool_call_id: id, tool_name: "aegis_artifact_read" })
+					: { ok: true };
+				return {
+					content: [{ type: "text", text: JSON.stringify(result) }],
+					details: result,
+					isError: !result.ok || finished?.ok !== true,
+				};
+			},
+		}),
+	);
+
 	// Verify-first OBSERVE action. The model names a registered action id and
 	// data-only arguments. The runtime runs the reviewed contract (real bytes
 	// parsed, never a guess) and records the observation + step Outcome. The

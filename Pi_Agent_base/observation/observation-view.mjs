@@ -11,7 +11,7 @@
 // Worker/Broker/Oracle, the model or the network, and never mutates the source.
 // A failed UI is a read-only client failure and never blocks the Host.
 
-import { buildE1View } from "./e1-observation.mjs";
+import { buildE1Explorer, buildE1StateRevision, buildE1View, E1_EXPLORER_LIMITS } from "./e1-observation.mjs";
 import { redactSecrets } from "./report.mjs";
 import { generateCampaignArtifacts, reconstructArtifactIndex } from "./report-export.mjs";
 
@@ -169,8 +169,9 @@ export function buildObservationView(
 	// E1: attach the observable board, task graph, plans and request panels from
 	// the SAME committed inputs. Best-effort: an E1 failure never breaks the base
 	// view (the base panels remain authoritative for their scope).
+	let e1 = null;
 	try {
-		const e1 = buildE1View({ manifest, events: integrityOk ? events : [], integrityOk });
+		e1 = buildE1View({ manifest, events: integrityOk ? events : [], integrityOk });
 		view.board = e1.board;
 		view.task_graph = e1.task_graph;
 		view.plans = e1.plans;
@@ -178,6 +179,34 @@ export function buildObservationView(
 		view.reconciliation = e1.task_graph.reconciliation;
 	} catch (error) {
 		view.e1_error = String(error instanceof Error ? error.message : error);
+	}
+	// OBS-01: the explicit state revision + the paged/filtered E1 explorers. A
+	// client (or the page's own refresh/paging script) compares `state_revision`
+	// across pages and refreshes; a truncated E1 panel carries a real `total` and
+	// a next cursor so the remaining nodes/edges stay reachable.
+	try {
+		const e1Inputs = e1
+			? { board: e1.board, graph: e1.task_graph, projection: e1.projection }
+			: { board: view.board ?? null, graph: view.task_graph ?? null, projection: null };
+		const stateRevision = buildE1StateRevision({
+			manifest,
+			board: e1Inputs.board,
+			graph: e1Inputs.graph,
+			projection: e1Inputs.projection,
+		});
+		view.state_revision = stateRevision.state_revision;
+		view.state = stateRevision.state;
+		const explorer = buildE1Explorer({
+			manifest,
+			events: integrityOk ? events : [],
+			board: e1Inputs.board,
+			query: { page: 0, page_size: Math.min(limits.max_page_size, 50) },
+			integrityOk,
+		});
+		if (explorer.ok) view.e1_explorer = boundedExplorerSummary(explorer);
+		else view.e1_explorer = { ok: false, errors: "errors" in explorer ? explorer.errors : [] };
+	} catch (error) {
+		view.e1_explorer_error = String(error instanceof Error ? error.message : error);
 	}
 	// Defense in depth: the whole view goes through the value-level redactor.
 	return redactSecrets(view);
@@ -281,6 +310,34 @@ function remainingFromLedger(budget) {
 		remaining[key] = Math.max(0, budget.limit[key] - (used[key] ?? 0) - (reserved[key] ?? 0));
 	}
 	return remaining;
+}
+
+/** A bounded summary of the first E1 explorer page embedded in `/api/view`. */
+function boundedExplorerSummary(explorer) {
+	return {
+		ok: true,
+		scope: explorer.scope ?? null,
+		total: explorer.total ?? null,
+		returned: explorer.returned ?? null,
+		offset: explorer.offset ?? null,
+		page_size: explorer.page_size ?? null,
+		truncated: explorer.truncated === true,
+		next_cursor: explorer.next_cursor ?? null,
+		filter_digest: explorer.filter_digest ?? null,
+		node_total: explorer.node_total ?? null,
+		edges: explorer.edges
+			? {
+					total: explorer.edges.total,
+					returned: explorer.edges.returned,
+					truncated: explorer.edges.truncated,
+					next_offset: explorer.edges.next_offset,
+				}
+			: null,
+		state_revision: explorer.version?.state_revision ?? null,
+		dangling_edges: (explorer.dangling_edges ?? []).length,
+		diagnostics: (explorer.diagnostics ?? []).length,
+		limits: E1_EXPLORER_LIMITS,
+	};
 }
 
 /** A short human-readable summary for Pi commands. */
@@ -394,7 +451,9 @@ ${reqBlock}
 <ul>${boardRows}</ul>
 <ul>${nodeRows || "<li>(empty board)</li>"}</ul>
 <h2>E1 API</h2>
-<ul><li><a href="/api/board">/api/board</a></li><li><a href="/api/task-graph">/api/task-graph</a></li><li><a href="/api/plans">/api/plans</a></li><li><a href="/api/requests">/api/requests</a></li></ul>`;
+<ul><li><a href="/api/board">/api/board</a></li><li><a href="/api/task-graph">/api/task-graph</a></li><li><a href="/api/plans">/api/plans</a></li><li><a href="/api/requests">/api/requests</a></li></ul>
+<h2>E1 exploration API (bounded, paged, same committed state)</h2>
+<ul><li><a href="/api/e1/state">/api/e1/state</a> — state revision and page summary</li><li><a href="/api/e1/board?page_size=25">/api/e1/board</a> — board nodes (type/status/task/episode/q filters, cursor paging)</li><li><a href="/api/e1/graph?page_size=25">/api/e1/graph</a> — task nodes + edges (paged; edge list bounded separately)</li></ul>`;
 }
 
 /** Render the bounded observation view as a static, escaped HTML page. */
@@ -456,6 +515,7 @@ ${integrityNote}
 ${rows}
 </tbody></table>
 ${renderE1Panels(view)}
+${renderE1ExplorerPanel(view)}
 <h2>Budget and Sessions</h2>
 <pre>${escapeHtml(JSON.stringify({ budget: view.budget, sessions: view.committed_counts?.sessions }, null, 2))}</pre>
 <h2>Dynamic proposals</h2><ul>${proposalRows}</ul>
@@ -472,6 +532,52 @@ ${renderE1Panels(view)}
 <ul><li><a href="/api/view">/api/view</a></li><li><a href="/api/tasks">/api/tasks</a></li><li><a href="/api/actions">/api/actions</a></li><li><a href="/api/faults">/api/faults</a></li></ul>
 <p>This page is read-only. It never pauses, cancels or authorizes anything.</p>
 </body></html>`;
+}
+
+/**
+ * OBS-01: the E1 exploration panel + its client script.
+ *
+ * The script ONLY issues GET requests to the read-only E1 exploration API. It can
+ * refresh on demand, refresh on an interval, STOP refreshing, page forward/back
+ * with the cursor, filter, and open a node/edge detail. It never POSTs, never
+ * writes, and never calls a model. Every dynamic value is inserted with
+ * `textContent`/`createElement` (never `innerHTML`). The script is served as a
+ * SEPARATE static asset (`/e1-explorer.js`, `E1_EXPLORER_CLIENT_JS`) so the page
+ * itself contains no inline script — the same invariant the XSS tests assert.
+ */
+function renderE1ExplorerPanel(view) {
+	const summary = view.e1_explorer ?? null;
+	const revision = typeof view.state_revision === "string" ? view.state_revision : null;
+	// The client reads this bootstrap JSON; it carries no secret and is escaped so
+	// it cannot close its own <script> element.
+	const bootstrap = {
+		state_revision: revision,
+		truncated: summary?.truncated === true,
+		node_total: summary?.node_total ?? null,
+		edge_total: summary?.edges?.total ?? null,
+		page_size: summary?.page_size ?? null,
+	};
+	return `
+<h2>E1 exploration (bounded, paged, read-only)</h2>
+<p>State revision: <code id="e1-revision">${escapeHtml(revision ?? "unavailable")}</code>
+ — committed offset <code>${escapeHtml(view.state?.last_committed_offset ?? UNKNOWN)}</code>,
+ board digest <code>${escapeHtml(view.state?.board_digest ?? UNKNOWN)}</code>.</p>
+<p id="e1-truncation">${summary?.truncated ? `Nodes are truncated at ${escapeHtml(summary.page_size)} of ${escapeHtml(summary.node_total)}; use “Next” or a filter to continue.` : "All E1 nodes fit on this page."}</p>
+<div><label for="e1-kind">view</label>
+<select id="e1-kind"><option value="graph">task graph</option><option value="board">whiteboard</option></select>
+<label for="e1-filter">filter</label><input id="e1-filter" type="text" size="18" placeholder="task id, type, text">
+<label for="e1-status">state</label><input id="e1-status" type="text" size="10" placeholder="e.g. ready">
+<label for="e1-page-size">page size</label><input id="e1-page-size" type="number" min="1" max="200" value="${escapeHtml(summary?.page_size ?? 50)}">
+<button id="e1-apply" type="button">Apply</button>
+<button id="e1-prev" type="button" disabled>Previous</button>
+<button id="e1-next" type="button" disabled>Next</button>
+<button id="e1-refresh" type="button">Refresh now</button>
+<label><input id="e1-auto" type="checkbox"> auto-refresh</label>
+<button id="e1-stop" type="button">Stop refresh</button></div>
+<p id="e1-status-line" aria-live="polite">idle</p>
+<pre id="e1-detail" hidden></pre>
+<ul id="e1-rows"></ul>
+<p id="e1-bootstrap" hidden data-bootstrap="${escapeHtml(escapeForScriptJson(bootstrap))}"></p>`;
 }
 
 export { reconstructArtifactIndex };

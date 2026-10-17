@@ -344,8 +344,9 @@ export function summarizeRequestLedger(events = [], { toolCharges = null } = {})
 		Array.isArray(toolCharges) ||
 		rows.some(
 			(event) =>
-				event?.payload?.kind === "c6.tool" ||
-				(event?.payload?.kind === "c6.request" && event.payload.tool_accounting === TOOL_ACCOUNTING_DURABLE),
+				event?.source?.kind === "runtime" &&
+				event?.payload?.kind === "c6.request" &&
+				event.payload.tool_accounting === TOOL_ACCOUNTING_DURABLE,
 		);
 	if (durable) {
 		for (const record of records)
@@ -415,10 +416,23 @@ export const TOOL_ACCOUNTING_DURABLE = "durable-charge-v1";
  */
 function chargesFromEvents(rows) {
 	const seen = new Map();
+	const start = rows.find(
+		(event) =>
+			event.source?.kind === "runtime" &&
+			event.payload?.kind === "campaign.task.started" &&
+			event.payload.context_digest,
+	);
 	for (const event of rows) {
 		const p = event?.payload;
 		if (event?.event_type !== "runtime.note" || p?.kind !== "c6.tool" || p.phase !== "charged") continue;
 		if (event.source?.kind !== "runtime" || p.version !== "e1-tool-charge-1.0") continue;
+		if (
+			!start ||
+			p.context_digest !== start.payload.context_digest ||
+			p.manifest_digest !== start.payload.manifest_digest ||
+			p.campaign_id !== start.payload.campaign_id
+		)
+			continue;
 		if (![p.request_id, p.tool_call_id, p.unit_id, p.task_id].every(isRequestId)) continue;
 		const key = [p.campaign_id, p.task_id, p.episode_id ?? "-", p.request_id, p.tool_call_id, p.unit_id].join("|");
 		if (!seen.has(key)) seen.set(key, { task_id: p.task_id });

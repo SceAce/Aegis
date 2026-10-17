@@ -315,7 +315,12 @@ export function projectQueueFromEvents({
 			const stageRecords = [...outcomeRecords.values()].filter(
 				(r) => r.accepted && r.task_id === taskId && r.stage_id === stage.stage_id && r.effective,
 			);
-			if (outcomeRecords.size > 0 && taskOk !== null && !stageRecords.some((r) => r.status === "success")) return false;
+			if (
+				outcomeRecords.size > 0 &&
+				taskOk !== null &&
+				(!stageRecords.some((r) => r.status === "success") || stageRecords.some((r) => r.status !== "success"))
+			)
+				return false;
 		}
 		return true;
 	};
@@ -706,6 +711,9 @@ function applyEvent({
 		case "campaign.task.completed": {
 			const item = byId.get(envelope.task_id);
 			if (!item) return { ok: false, reason: `unknown task ${envelope.task_id}` };
+			const current = outcomeRecords.get(item.task_outcome_ref);
+			if (current && (!current.accepted || !current.effective || current.status !== "success"))
+				return { ok: false, reason: "completion requires a current effective task result" };
 			return completeTaskIfVerified({
 				item,
 				outcomeId: envelope.outcome_id ?? null,
@@ -833,7 +841,7 @@ function applyEvent({
 			if (!item) return { ok: false, reason: `unknown planning task ${envelope.task_id}` };
 			const readyBinding = checkPlanBinding({ envelope, ctx, planningTaskId: envelope.task_id, phase: "completed" });
 			if (!readyBinding.ok) return readyBinding;
-			if (item.state !== "completed")
+			if (!isSatisfied(item.task_id))
 				return {
 					ok: false,
 					reason: `plan-ready gate requires the planning task ${envelope.task_id} to be completed, not ${item.state}`,

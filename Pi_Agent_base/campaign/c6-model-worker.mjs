@@ -230,9 +230,14 @@ export function createObservationTool(
 					tool_name: "aegis_read",
 					arguments_digest: digest({ unit_id: "call", path: params?.path ?? null }),
 				}).catch((error) => ({ ok: false, reasons: [String(error)] }));
-				if (permit && permit.ok !== true)
+				if (permit && (permit.ok !== true || permit.duplicate === true))
 					return {
-						content: [{ type: "text", text: "Aegis refused the read: the task tool allocation does not permit it" }],
+						content: [
+							{
+								type: "text",
+								text: "Aegis refused the read: no fresh executable tool allocation (duplicate results require reconciliation)",
+							},
+						],
 						details: { ok: false, reason: "tool_not_charged" },
 					};
 				if (permit) {
@@ -500,7 +505,8 @@ export function createDecisionCaptureTool({
 				if (permit == null && typeof admitTool === "function") {
 					permit = admitTool({ tool_name: unit.action_ref ?? "aegis_task_decision" });
 				}
-				if (permit && permit.ok !== true) {
+				if (permit && (permit.ok !== true || permit.duplicate === true)) {
+					if (permit.duplicate && state) state.tool_finish_failed = true;
 					refusedUnits += 1;
 					continue;
 				}
@@ -625,10 +631,13 @@ export function createPlanSubmitTool({
 					tool_name: "aegis_submit_plan",
 					arguments_digest: digest({ unit_id: "call", params: params ?? null }),
 				}).catch((error) => ({ ok: false, reasons: [String(error)] }));
-				if (permit && permit.ok !== true)
+				if (permit && (permit.ok !== true || permit.duplicate === true))
 					return {
 						content: [
-							{ type: "text", text: "Aegis refused the plan submission: the tool allocation does not permit it" },
+							{
+								type: "text",
+								text: "Aegis refused the plan submission: no fresh executable allocation; duplicate requires reconciliation",
+							},
 						],
 						details: { ok: false, reason: "tool_not_charged" },
 					};

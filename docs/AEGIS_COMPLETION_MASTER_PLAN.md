@@ -4,7 +4,7 @@
 
 基线：主仓库 `00108c30891c5fb5f0c29e9377b2cdff6338fdcf`，分支 `feat/structured-ram-and-exploration-control`，整理开始时工作树干净。本文汇总截至本次会话可核对的已知问题，不宣称已经穷尽所有潜在缺陷。
 
-当前用户要求：先形成整体目标文档；后续编码遵守项目规范，由子 Agent 使用 **`maxapi/deepseek-v4.1-flash`** 完成。本文不以历史授权代替真实实验、新依赖、Pi 核心修改等具体范围的授权。
+当前用户要求已更新：先前指定 `maxapi/deepseek-v4.1-flash` 子 Agent 编码；该中转反复中断后，用户明确要求当前主 Agent 直接完成未完成代码和测试，**不再依赖 max/DeepSeek**。后续实现遵守同一项目规范。本文不以历史授权代替真实实验、新依赖、Pi 核心修改等具体范围的授权。
 
 ## 1. 整体目标和完成边界
 
@@ -246,7 +246,7 @@ completion、plan ready、依赖、执行 permit、Board Fact、RAM、观察/rep
 
 ## 9. 实施任务图与子 Agent 分工
 
-后续编码必须由子 Agent 使用 `maxapi/deepseek-v4.1-flash`。主 Agent 负责范围、契约、文件所有权、证据核对、集成和最终审查；不以自己直接编写产品代码代替委派。不得未经用户同意切换模型/provider；通道不可用时保留状态并报告，主 Agent 可继续不依赖模型的只读检查。
+执行方式按最新用户指令：主 Agent 直接完成代码、测试、集成和审查，不依赖 max/DeepSeek。以下子 Agent 分工是原计划的职责划分，当前可由主 Agent按同样边界执行；不伪称仍有子 Agent 委派或外部独立审查。
 
 ```text
 P0 基线 / 证据校正 / 冻结接口与矩阵

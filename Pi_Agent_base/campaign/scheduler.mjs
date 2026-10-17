@@ -433,6 +433,26 @@ export function createCampaignScheduler({
 				reasons: [`planning_context_conflict: ${authority.reasons.join("; ")}`],
 			});
 		let projection = project();
+		const accepted = projection.plans.find(
+			(entry) =>
+				entry.id === pid &&
+				entry.digest === pd &&
+				entry.status === "admitted" &&
+				entry.planning_task_id === planningTaskId,
+		);
+		if (accepted)
+			return planResult({
+				...base,
+				ok: true,
+				status: "duplicate",
+				submittedEventId: accepted.event_id ?? null,
+				transitionEventId: accepted.admitted_event_id ?? null,
+				committedPrefix: {
+					offset: accepted.admitted_offset ?? -1,
+					event_id: accepted.admitted_event_id ?? null,
+					event_digest: accepted.admitted_event_digest ?? null,
+				},
+			});
 		const binding = planningBinding(projection, planningTaskId);
 		if (!binding.ok) return planResult({ ...base, ok: false, status: "rejected", reasons: [binding.reason] });
 		const envelopeBase = {

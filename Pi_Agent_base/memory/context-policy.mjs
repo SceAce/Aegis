@@ -14,7 +14,7 @@ export function contextProjectionInput({ board, state, seed, policy }) {
 			["Origin", "Fact", "Refuted", "Hint", "Intent", "Artifact"].map((type) => [type, []]),
 		);
 		board = { ...board, byType: empty, currentByType: empty };
-		state = { ...state, experience_decisions: [] };
+		state = { ...state, experience_decisions: [], round_checkpoints: [] };
 	}
 	if (!policy.knowledge) {
 		state = { ...state, knowledge_selections: [] };

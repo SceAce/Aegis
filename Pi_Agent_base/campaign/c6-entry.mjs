@@ -261,6 +261,7 @@ export function createCompositeWorker({
 					};
 			}
 			// Execute the model's admitted decision through the existing Broker.
+			brokerWorker.setExecutionPermit?.(permitEffect);
 			const result = await brokerWorker.run({ task });
 			// A safe settle boundary: the caller may rotate the Session here. The
 			// caller only rotates when idle/settled/committed with no pending effect
@@ -313,11 +314,17 @@ export async function runC6FromConfig(
 	// Campaign root goal container and the Host planning task (built by the
 	// run-package helper via `buildPlanningManifest`). Business tasks are created
 	// ONLY from an admitted plan batch. This module only tracks the templates.
-	const manifest = loaded.manifest;
+	let manifest = loaded.manifest;
 	let planningTemplates = null;
 	let planningContext = null;
 	let e1Planning = null;
 	const READ_ONLY_SCENARIO = ["status", "export", "observe", "measure"].includes(scenario);
+	if (manifest.planning_contract && config.planning?.enabled !== true && !READ_ONLY_SCENARIO)
+		return {
+			ok: false,
+			stage: "config",
+			reasons: ["planning_context_conflict: frozen planning protocol cannot be disabled"],
+		};
 	if (config.planning?.enabled === true) {
 		e1Planning = await import("./e1-planning.mjs");
 		// E1-CC §4.2: the trusted planning context is the contract FROZEN in the
@@ -472,12 +479,13 @@ export async function runC6FromConfig(
 				};
 			const frozen = await loadImmutableManifest(manifestDir, bound);
 			if (!frozen.ok) return { ok: false, reasons: [`planning_context_conflict: ${frozen.reason}`], stage: "config" };
-			if (bound !== runDigest)
+			if (bound !== runDigest && !READ_ONLY_SCENARIO)
 				return {
 					ok: false,
 					reasons: ["planning_context_conflict: the configured Manifest differs from the run's frozen Manifest"],
 					stage: "config",
 				};
+			if (READ_ONLY_SCENARIO) manifest = frozen.manifest;
 			canonicalManifestPath = frozen.path;
 		} else if (!READ_ONLY_SCENARIO) {
 			const persisted = await persistImmutableManifest(manifest, manifestDir);
@@ -640,7 +648,20 @@ export async function runC6FromConfig(
 		unresolved: unresolvedRequestCount,
 		diagnostics: rebuildDiagnostics,
 		records: rebuiltRecords,
-	} = summarizeRequestLedger(readEventsSafe(eventLogPath));
+	} = summarizeRequestLedger(
+		readEventsSafe(eventLogPath),
+		durableAccounting
+			? {
+					toolCharges: projectQueueFromEvents({
+						campaign_id: manifest.campaign_id,
+						tasks: manifest.tasks,
+						events: readEventsSafe(eventLogPath),
+						manifest,
+						artifacts: Object.fromEntries(artifactIndexFromEvents(readEventsSafe(eventLogPath))),
+					}).tool_charges,
+				}
+			: {},
+	);
 	Object.assign(persistedUsage, rebuiltConsumed);
 	for (const [taskId, dims] of rebuiltByTask) persistedByTask.set(taskId, dims);
 	persistedLedgerRecords.push(...rebuiltRecords);
@@ -739,46 +760,50 @@ export async function runC6FromConfig(
 		},
 	});
 	const decisionCapture = {
-		tool: createDecisionCaptureTool({
-			sdk: sdkImpl,
-			buffer,
-			type: TypeSchema ?? undefined,
-			state: decisionState,
-			admitTool: ({ tool_name }) => (ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true }),
-			// E1-CC §7.2: in a durable-charge run each decision UNIT is charged by the
-			// Host (actual accepted Task/Episode, real SDK tool call id, producing
-			// request) BEFORE it is buffered, and finished after the body returns.
-			chargeUnit,
-			finishUnit,
-			remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
-		}),
+		tool: READ_ONLY
+			? null
+			: createDecisionCaptureTool({
+					sdk: sdkImpl,
+					buffer,
+					type: TypeSchema ?? undefined,
+					state: decisionState,
+					admitTool: ({ tool_name }) =>
+						ledgerHolder.ledger ? ledgerHolder.ledger.admitTool({ tool_name }) : { ok: true },
+					// E1-CC §7.2: in a durable-charge run each decision UNIT is charged by the
+					// Host (actual accepted Task/Episode, real SDK tool call id, producing
+					// request) BEFORE it is buffered, and finished after the body returns.
+					chargeUnit,
+					finishUnit,
+					remainingRequests: () => (ledgerHolder.ledger ? ledgerHolder.ledger.remaining().model_requests : 1),
+				}),
 		buffer,
 	};
 	// X11: an authorized, read-only observation path so the model can inspect the
 	// real target before deciding. It performs NO effect; the Broker remains the
 	// only effect path.
-	const observationTool = TypeSchema
-		? createObservationTool({
-				sdk: sdkImpl,
-				type: TypeSchema,
-				workspaceRoot: config.workspace_root,
-				chargeUnit,
-				finishUnit,
-				// X5/X11: the read grant is the CURRENT task's own target(s), resolved
-				// against the real workspace location. The whole-Manifest target set is
-				// NOT used as a fallback, so task A cannot read task B's file.
-				grantProvider: () => ({
-					task_id: currentTaskRef.task?.task_id ?? null,
-					targets: currentTaskRef.task
-						? [currentTaskRef.task.target_ref, currentTaskRef.task.definition?.target_ref].filter(Boolean)
-						: [],
-				}),
-			})
-		: null;
+	const observationTool =
+		!READ_ONLY && TypeSchema
+			? createObservationTool({
+					sdk: sdkImpl,
+					type: TypeSchema,
+					workspaceRoot: config.workspace_root,
+					chargeUnit,
+					finishUnit,
+					// X5/X11: the read grant is the CURRENT task's own target(s), resolved
+					// against the real workspace location. The whole-Manifest target set is
+					// NOT used as a fallback, so task A cannot read task B's file.
+					grantProvider: () => ({
+						task_id: currentTaskRef.task?.task_id ?? null,
+						targets: currentTaskRef.task
+							? [currentTaskRef.task.target_ref, currentTaskRef.task.definition?.target_ref].filter(Boolean)
+							: [],
+					}),
+				})
+			: null;
 	const extraTools = observationTool ? [observationTool] : [];
 	// E1: the structured plan submission tool. It records a candidate plan only;
 	// admission is a separate Host step. Active only when planning is enabled.
-	if (config.planning?.enabled === true && TypeSchema) {
+	if (!READ_ONLY && config.planning?.enabled === true && TypeSchema) {
 		const { createPlanSubmitTool } = await import("./c6-model-worker.mjs");
 		const { PLAN_LIMITS } = await import("./e1-plan-contract.mjs");
 		extraTools.push(

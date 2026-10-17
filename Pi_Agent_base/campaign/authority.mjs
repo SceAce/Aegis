@@ -13,6 +13,7 @@
 // No I/O, no clock, no mutable config: every input is an argument.
 
 import { digest } from "../shared/contracts.mjs";
+import { validateCommittedRecord } from "./c6-request-lifecycle.mjs";
 
 export const PLAN_BINDING_VERSION = "e1-plan-binding-1.0";
 export const TOOL_CHARGE_VERSION = "e1-tool-charge-1.0";
@@ -249,7 +250,13 @@ export function indexRequestRecord(requests, raw, offset) {
 	const prior = requests.get(p.request_id) ?? null;
 	if (p.phase === "reserved") {
 		if (!prior)
-			requests.set(p.request_id, { task_id: p.task_id ?? null, phase: "reserved", provider_status: null, offset });
+			requests.set(p.request_id, {
+				task_id: p.task_id ?? null,
+				phase: "reserved",
+				provider_status: null,
+				reservation: p,
+				offset,
+			});
 		return;
 	}
 	if (p.phase === "committed") {
@@ -258,7 +265,8 @@ export function indexRequestRecord(requests, raw, offset) {
 		if (prior && prior.task_id !== (p.task_id ?? null)) return;
 		requests.set(p.request_id, {
 			task_id: p.task_id ?? null,
-			phase: "committed",
+			phase: prior && validateCommittedRecord(p, prior.reservation).valid ? "committed" : "reconciliation_required",
+			reservation: prior?.reservation ?? null,
 			provider_status: p.provider_status ?? null,
 			offset,
 		});

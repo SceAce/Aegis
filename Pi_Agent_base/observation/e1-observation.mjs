@@ -14,13 +14,31 @@
 // It reuses `projectBoard`, `projectQueueFromEvents` and
 // `summarizeRequestLedger`; it never treats a snapshot, HTML or report as the
 // authoritative source and never mutates anything.
+//
+// OBS-01: the same inputs are also handed to `e1-explorer.mjs` (paged board/graph
+// exploration, node/edge detail, explicit state revision and cursor paging) so a
+// truncated view stays continuable. The E1 view returns the projection it used so
+// the explorer never re-derives a second, potentially drifting state.
 
 import { artifactIndexFromEvents } from "../campaign/c3-entry.mjs";
 import { summarizeRequestLedger } from "../campaign/c6-request-lifecycle.mjs";
 import { buildTaskGraph } from "../campaign/e1-task-graph.mjs";
 import { projectQueueFromEvents } from "../campaign/projection.mjs";
 import { projectBoard, summarizeBoard } from "../memory/board.mjs";
+import { stateIdentity } from "./e1-explorer.mjs";
 import { redactSecrets } from "./report.mjs";
+
+// Re-exported so callers (HTTP server, Pi command, extensions) share ONE import
+// surface for the E1 read-only exploration; the implementation lives in
+// ./e1-explorer.mjs.
+export {
+	buildE1Explorer,
+	compareStateRevisions,
+	E1_EXPLORER_LIMITS,
+	E1_EXPLORER_VERSION,
+	parseExplorerQuery,
+	stateIdentity,
+} from "./e1-explorer.mjs";
 
 export const E1_VIEW_VERSION = "1.0.0";
 
@@ -147,6 +165,7 @@ export function buildE1View(
 		schema_version: E1_VIEW_VERSION,
 		integrity: { event_chain_ok: integrityOk, board_digest: boardDigest, board_effective_digest: boardEffectiveDigest },
 		board: {
+			digest: boardDigest,
 			nodes: boardNodes,
 			by_type: Object.fromEntries(Object.entries(board.currentByType).map(([type, list]) => [type, list.length])),
 			history_by_type: Object.fromEntries(Object.entries(board.byType).map(([type, list]) => [type, list.length])),
@@ -157,5 +176,23 @@ export function buildE1View(
 		task_graph: graph,
 		plans: { admitted: planRows, candidates },
 		requests,
+		// The exact projection the graph/board were derived from. Consumers (the
+		// explorer) reuse it instead of running a second, potentially different replay.
+		projection,
+	};
+}
+
+/**
+ * The explicit identity of the committed state an E1 view/explorer page came
+ * from. Two pages belong to the same state iff their `state_revision` matches;
+ * a client that crosses a change must refresh instead of stitching pages.
+ *
+ * @param {{manifest?: any, board?: any, graph?: any, projection?: any}} args
+ */
+export function buildE1StateRevision({ manifest = null, board = null, graph = null, projection = null } = {}) {
+	const identity = stateIdentity({ projection, graph, boardDigest: board?.digest ?? null });
+	return {
+		state: { campaign_id: manifest?.campaign_id ?? null, ...identity },
+		state_revision: identity.revision,
 	};
 }

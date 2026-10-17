@@ -16,6 +16,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { loadManifest } from "../campaign/manifest.mjs";
 import { parseJsonl, verifyChain } from "../shared/events.mjs";
+import { buildE1Explorer } from "./e1-explorer.mjs";
+import { E1_EXPLORER_CLIENT_JS } from "./e1-explorer-client.mjs";
 import {
 	buildObservationView,
 	escapeHtml,
@@ -41,7 +43,42 @@ const READONLY_ROUTES = new Set([
 	"/api/task-graph",
 	"/api/plans",
 	"/api/requests",
+	// OBS-01: bounded, continuable E1 exploration (still read-only).
+	"/api/e1/board",
+	"/api/e1/graph",
+	"​/api/e1/node",
+	"/api/e1/edge",
+	"/api/e1/state",
+	// OBS-01: the read-only exploration client (a static, fixed asset).
+	"/e1-explorer.js",
 ]);
+
+/** The fixed JS asset routes. No other asset can ever be requested. */
+const STATIC_ASSETS = new Map([
+	["/e1-explorer.js", { type: "text/javascript; charset=utf-8", body: E1_EXPLORER_CLIENT_JS }],
+]);
+
+/**
+ * The ONLY query keys any route accepts. Everything else is a 400, never a
+ * silently ignored parameter: an unknown key cannot reach a file or a command.
+ */
+const ALLOWED_QUERY_KEYS = new Set([
+	"page",
+	"page_size",
+	"type",
+	"status",
+	"task_id",
+	"episode_id",
+	"relation",
+	"q",
+	"cursor",
+	"since_state_revision",
+	"kind",
+	"edge_offset",
+]);
+
+/** E1 explorer routes reuse ONE view: the page summary is part of `/api/view`. */
+const E1_ROUTES = new Set(["/api/e1/board", "/api/e1/graph", "/api/e1/node", "/api/e1/edge", "/api/e1/state"]);
 
 function json(res, status, body) {
 	const text = `${JSON.stringify(body, null, 2)}\n`;
@@ -120,7 +157,13 @@ async function readView({ manifestPath, eventsPath, artifactsPath, runtimePath, 
 			errors: chain.errors.slice(0, 5),
 		};
 	}
-	return { ok: chain.ok, reason: chain.ok ? null : "event chain integrity failed", view };
+	return {
+		ok: chain.ok,
+		reason: chain.ok ? null : "event chain integrity failed",
+		view,
+		manifest: loaded.manifest,
+		events: rows,
+	};
 }
 
 export function unavailableView(reason) {
@@ -160,6 +203,9 @@ export function unavailableView(reason) {
 		task_graph: { root: null, nodes: [], edges: [], counts: {}, diagnostics: [] },
 		plans: { admitted: [], candidates: [] },
 		requests: { consumed: {}, by_task: {}, campaign_pending: [], task_pending: [], unresolved: 0, diagnostics: [] },
+		state_revision: null,
+		state: null,
+		e1_explorer: null,
 	};
 }
 
@@ -194,6 +240,7 @@ export function createObservationServer(
 		});
 		// Serve an explicit unavailable view on error; do not retain an unused
 		// cache or claim that stale successful data is being served.
+		if (!params.withInputs) return { ...result, manifest: undefined, events: undefined };
 		return result;
 	}
 
@@ -218,13 +265,30 @@ export function createObservationServer(
 		}
 		const path = url.pathname;
 		if (!READONLY_ROUTES.has(path)) return json(res, 404, { ok: false, error: "not found", path });
-		// Query params may ONLY page/limit. Any other key is ignored, never a path.
-		const page = Number.parseInt(url.searchParams.get("page") ?? "", 10);
-		const pageSize = Number.parseInt(url.searchParams.get("page_size") ?? "", 10);
+		// Query params are a WHITELIST. An unknown key is an explicit 400 (never a
+		// silently ignored parameter that a client could mistake for an applied
+		// filter), and no parameter can ever name a file or a command.
+		const params = {};
+		const unknownParams = [];
+		for (const [key] of url.searchParams) {
+			if (!ALLOWED_QUERY_KEYS.has(key)) unknownParams.push(key.slice(0, 64));
+		}
+		for (const key of ALLOWED_QUERY_KEYS) {
+			const value = url.searchParams.get(key);
+			if (value !== null) params[key] = value;
+		}
+		// An unknown key is IGNORED (never reaches a file or a command) on the
+		// legacy routes. The E1 exploration routes are stricter: they reject an
+		// unknown key so a client cannot mistake an unapplied filter for one that
+		// took effect.
+		if (unknownParams.length > 0 && E1_ROUTES.has(path))
+			return json(res, 400, { ok: false, error: "unknown query parameter", parameters: unknownParams });
 
 		const result = await view({
-			page: Number.isNaN(page) ? 0 : page,
-			page_size: Number.isNaN(pageSize) ? null : pageSize,
+			page: params.page === undefined ? 0 : Number.parseInt(params.page, 10),
+			page_size: params.page_size === undefined ? null : Number.parseInt(params.page_size, 10),
+			// E1 explorer routes need the SAME loaded inputs the view used.
+			withInputs: E1_ROUTES.has(path),
 		});
 		const v = result.view;
 		if (path === "/healthz") return json(res, 200, { ok: result.ok, integrity: v.integrity?.status ?? "unknown" });
@@ -237,6 +301,16 @@ export function createObservationServer(
 					? page
 					: "<!doctype html><p>Observation page exceeds the configured byte limit. Use a bounded API page.</p>",
 			);
+		}
+		if (STATIC_ASSETS.has(path)) {
+			const asset = STATIC_ASSETS.get(path);
+			res.writeHead(200, {
+				"content-type": asset.type,
+				"content-length": Buffer.byteLength(asset.body),
+				"cache-control": "no-store",
+				"x-content-type-options": "nosniff",
+			});
+			return res.end(asset.body);
 		}
 		if (path === "/api/view") return json(res, 200, bounded(v));
 		if (path === "/api/tasks")
@@ -277,7 +351,57 @@ export function createObservationServer(
 		if (path === "/api/plans") return json(res, 200, bounded({ integrity: v.integrity, plans: v.plans }));
 		if (path === "/api/requests")
 			return json(res, 200, bounded({ integrity: v.integrity, requests: v.requests, budget: v.budget }));
+		if (E1_ROUTES.has(path)) return e1Route(path, params, result, res);
 		return json(res, 404, { ok: false, error: "not found" });
+	}
+
+	/**
+	 * OBS-01 E1 exploration routes. All of them are read-only projections of the
+	 * SAME committed state. A foreign/unknown node or edge is an explicit 404 with
+	 * `foreign_reference: true`; it never resolves to another task's data.
+	 */
+	function e1Route(path, params, result, res) {
+		const v = result.view;
+		if (path === "/api/e1/state")
+			return json(
+				res,
+				200,
+				bounded({
+					ok: result.ok,
+					integrity: v.integrity,
+					state_revision: v.state_revision ?? null,
+					state: v.state ?? null,
+					e1: v.e1_explorer ?? null,
+				}),
+			);
+		if (!result.ok || !result.manifest)
+			return json(res, 200, {
+				ok: false,
+				status: "unavailable",
+				integrity: v.integrity,
+				errors: [result.reason ?? "observation source unavailable"],
+			});
+		const query = { ...params, kind: path === "/api/e1/board" ? "board" : "graph" };
+		if (path === "/api/e1/node" || path === "/api/e1/edge") {
+			if (!query.task_id && !query.q) {
+				return json(res, 400, { ok: false, error: "task_id (node) or q=<from->to> (edge) is required" });
+			}
+			if (path === "/api/e1/edge" && !query.relation) query.relation = "depends_on";
+		}
+		const explorer = buildE1Explorer({
+			manifest: result.manifest,
+			events: result.events ?? [],
+			board: v.board ?? null,
+			query,
+			integrityOk: true,
+		});
+		if (explorer.ok) return json(res, 200, bounded(explorer));
+		if ("status" in explorer && explorer.status === "not_found") return json(res, 404, bounded(explorer));
+		return json(
+			res,
+			400,
+			bounded({ ok: false, errors: "errors" in explorer ? explorer.errors : [], error: "invalid query" }),
+		);
 	}
 
 	function bounded(value) {

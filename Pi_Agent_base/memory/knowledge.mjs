@@ -129,10 +129,26 @@ function sectionRecord(path, seed, section, index, root) {
 	};
 }
 
+// General workflow terms are useful only when the query contains no task terms.
+const WORKFLOW_WORDS = new Set(
+	"python script scripts cli bash shell stdout stderr install run running command code local file files output executes exit fails handout supplied inspect save read write".split(
+		" ",
+	),
+);
+const HAN_FROM = "條爾當頁據種響應恢復數觀兩時";
+const HAN_TO = "条尔当页据种响应恢复数观两时";
+function canonicalText(value) {
+	return value
+		.toLowerCase()
+		.replace(/[條爾當頁據種響應恢復數觀兩時]/g, (c) => HAN_TO[HAN_FROM.indexOf(c)])
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
 function score(record, words) {
-	const topic = record.topic.toLowerCase();
-	const heading = record.section.join(" ").toLowerCase();
-	const body = record.content.toLowerCase();
+	const topic = canonicalText(record.topic);
+	const heading = canonicalText(record.section.join(" "));
+	const body = canonicalText(record.content);
 	const path = record.knowledge_id.toLowerCase();
 	let value = 0;
 	for (const word of words) {
@@ -207,7 +223,9 @@ export async function selectKnowledge({
 		}
 	}
 	const byId = new Map(records.map((record) => [record.knowledge_id, record]));
-	const words = terms(query);
+	const allWords = terms(canonicalText(query));
+	const taskWords = allWords.filter((word) => !WORKFLOW_WORDS.has(word));
+	const words = taskWords.length ? taskWords : allWords;
 	const ranked =
 		ids.length > 0
 			? [...new Set(ids)].map((id) => byId.get(id)).filter(Boolean)
@@ -218,8 +236,32 @@ export async function selectKnowledge({
 					.map((entry) => entry.record);
 	let remaining = maxChars;
 	const selected = [];
-	for (const record of ranked.slice(0, maxResults)) {
-		if (remaining <= 0) break;
+	const seenContent = new Set();
+	for (const record of ranked) {
+		if (remaining <= 0 || selected.length >= (taskWords.length ? maxResults : 1)) break;
+		const contentKey = canonicalText(record.content);
+		if (
+			record.kind === "heading" &&
+			ranked.some(
+				(other) =>
+					other.kind !== "heading" &&
+					other.source_uri === record.source_uri &&
+					canonicalText(other.section.join(" ")).startsWith(canonicalText(record.section.join(" "))),
+			)
+		)
+			continue;
+		if (seenContent.has(contentKey)) continue;
+		if (
+			record.kind === "heading" &&
+			ranked.some(
+				(other) =>
+					other.kind !== "heading" &&
+					other.source_uri === record.source_uri &&
+					canonicalText(other.section.join(" ")) === canonicalText(record.section.join(" ")),
+			)
+		)
+			continue;
+		seenContent.add(contentKey);
 		const content = record.content.slice(0, remaining);
 		remaining -= content.length;
 		selected.push({ ...record, content, truncated: record.truncated || content.length !== record.content.length });

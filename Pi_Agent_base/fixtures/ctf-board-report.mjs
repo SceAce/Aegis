@@ -20,12 +20,15 @@ export function reportCtfPilot(root) {
 		if (!existsSync(runRoot)) continue;
 		for (const entry of readdirSync(runRoot, { withFileTypes: true }).filter((x) => x.isDirectory())) {
 			const dir = join(runRoot, entry.name);
-			const result = read(join(dir, "result.json"), null);
-			if (!result) continue;
+			const persistedResult = read(join(dir, "result.json"), null);
+			const experiment = read(join(dir, "experiment.json"), {});
+			const result = persistedResult ?? { ...experiment, task: task.name, attempt_id: entry.name, requests: null };
 			const assistants = read(join(dir, "assistant.json"), []);
 			const requests = read(join(dir, "requests.json"), []);
 			const operations = read(join(dir, "operations.json"), []);
-			const events = readFileSync(join(dir, "events.jsonl"), "utf8").split("\n").filter(Boolean).map(JSON.parse);
+			const events = existsSync(join(dir, "events.jsonl"))
+				? readFileSync(join(dir, "events.jsonl"), "utf8").split("\n").filter(Boolean).map(JSON.parse)
+				: [];
 			const codes = operations.map((op) => hash(op.code));
 			const seen = new Set();
 			const duplicateCode = codes.reduce((n, code) => {
@@ -38,19 +41,25 @@ export function reportCtfPilot(root) {
 				.map((m) => m.usage)
 				.filter(Boolean);
 			const last = assistants.at(-1);
-			const outcome = result.verified_success
-				? "success"
-				: last?.stopReason === "error"
-					? "provider_error"
-					: last?.stopReason === "length"
-						? "output_limit"
-						: result.stop === "wall_time"
-							? "time_limit"
-							: result.stop === "budget"
-								? "request_limit"
-								: result.error
-									? "harness_error"
-									: "unsolved";
+			const harnessBudget =
+				result.stop === "budget" || /pilot_budget_exhausted/.test(result.error ?? last?.errorMessage ?? "");
+			const outcome = !persistedResult
+				? "debug_incomplete"
+				: result.verified_success
+					? "success"
+					: harnessBudget
+						? "request_limit"
+						: last?.stopReason === "error"
+							? "provider_error"
+							: last?.stopReason === "length"
+								? "output_limit"
+								: result.stop === "wall_time"
+									? "time_limit"
+									: result.stop === "budget"
+										? "request_limit"
+										: result.error
+											? "harness_error"
+											: "unsolved";
 			const turns = assistants.map((m) => ({
 				stop_reason: m.stopReason,
 				error: m.errorMessage ?? null,
@@ -60,7 +69,9 @@ export function reportCtfPilot(root) {
 				task: result.task,
 				mode: result.mode,
 				attempt_id: result.attempt_id,
-				verified_success: result.verified_success,
+				verified_success: result.verified_success === true,
+				has_result: persistedResult !== null,
+				provider_error: outcome === "provider_error",
 				outcome,
 				provider_error_code: last?.stopReason === "error" && /11140/.test(last.errorMessage ?? "") ? "11140" : null,
 				verified_at_ms: result.verified_at_ms,
@@ -107,9 +118,13 @@ export function reportCtfPilot(root) {
 		attempts,
 		totals: {
 			attempts: attempts.length,
+			attempts_with_result: attempts.filter((a) => a.has_result).length,
+			incomplete_attempts: attempts.filter((a) => !a.has_result).length,
+			budget_stops: attempts.filter((a) => a.outcome === "request_limit").length,
 			verified_success: attempts.filter((a) => a.verified_success).length,
 			provider_errors: attempts.filter((a) => a.outcome === "provider_error").length,
 			effect_comparison_valid: false,
+			effect_comparison_reason: attempts.length ? "paired_conditions_not_verified" : "no_attempts",
 			requests: sum(attempts, "requests"),
 			tool_calls: sum(attempts, "tool_calls"),
 			elapsed_ms_sum: sum(attempts, "elapsed_ms"),

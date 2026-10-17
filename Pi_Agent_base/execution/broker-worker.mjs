@@ -75,6 +75,7 @@ export function createBrokerWorker(
 	if (!broker || typeof broker.invoke !== "function") throw new Error("createBrokerWorker requires a broker.invoke");
 	if (!sink || typeof sink.append !== "function") throw new Error("createBrokerWorker requires a sink with append()");
 	let campaignManifest = null;
+	let executionPermit = null;
 
 	function grantCheck(task, step) {
 		if (!campaignManifest) return { ok: false, reason: "no trusted Campaign grant bound to Worker" };
@@ -223,6 +224,11 @@ export function createBrokerWorker(
 			grant = grant.ok ? grantCheck(task, step) : grant;
 			const work = workPermit();
 			if (!work.ok) grant = { ok: false, reason: work.code };
+			if (executionPermit) {
+				const latest = await executionPermit({ task, step });
+				if (latest?.ok !== true)
+					grant = { ok: false, reason: latest?.reasons?.map((r) => r.code).join("; ") || "execution_not_permitted" };
+			}
 			result = grant.ok
 				? await broker.invoke({
 						action_ref: step.action_ref,
@@ -327,6 +333,9 @@ export function createBrokerWorker(
 		 * Oracle decides success. A failure is `{ok:false, failure_mode}` for the
 		 * scheduler, which records unknown + reconciliation (never a task failure).
 		 */
+		setExecutionPermit(check) {
+			executionPermit = check;
+		},
 		async run({ task }) {
 			const steps = planFor(task);
 			if (!steps || !Array.isArray(steps.steps) || steps.steps.length === 0) {
