@@ -6,7 +6,7 @@
 
 ## 当前入口
 
-当前整体完善目标与问题清单见 [AEGIS_COMPLETION_MASTER_PLAN.md](AEGIS_COMPLETION_MASTER_PLAN.md)。该计划区分架构落实缺口、已有行为缺陷、实验缺口和后置项，并记录当前由主 Agent直接完成代码与测试的执行方式（用户已取消对 max/DeepSeek 的依赖）。下文阶段状态保留其历史适用范围，当前推进以总计划及对应实现证据为准。
+当前整体完善目标与问题清单见 [AEGIS_COMPLETION_MASTER_PLAN.md](AEGIS_COMPLETION_MASTER_PLAN.md)；Pi 内主 TUI 与辅助 HTTP WebUI 的接口边界见 [AEGIS_TUI_INTERFACE_DESIGN.md](AEGIS_TUI_INTERFACE_DESIGN.md)。该计划区分架构落实缺口、已有行为缺陷、实验缺口和后置项，并记录当前由主 Agent直接完成代码与测试的执行方式（用户已取消对 max/DeepSeek 的依赖）。下文阶段状态保留其历史适用范围，当前推进以总计划及对应实现证据为准。
 
 开发规则从 [根 AGENTS.md](../AGENTS.md) 开始，先加载 [固定规则](DEVELOPMENT_RULES.md)，
 再按目标路径读取工程/模块 AGENTS.md；规则层级与维护方式见 [AGENT_RULES_LAYOUT.md](AGENT_RULES_LAYOUT.md)。
