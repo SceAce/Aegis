@@ -126,6 +126,9 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 			setHeader: () => {
 				calls.header += 1;
 			},
+			setWidget: () => {
+				calls.widget = (calls.widget ?? 0) + 1;
+			},
 		},
 	};
 	try {
@@ -134,6 +137,7 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 		assert.equal(calls.topBar, 1);
 		assert.equal(calls.sidebar, 1);
 		assert.equal(calls.header, 1);
+		assert.equal(calls.widget, 1);
 		assert.equal(calls.custom, 0);
 	} finally {
 		for (const [key, value] of saved) {

@@ -46,6 +46,30 @@ export class AegisBlank implements Component {
 	invalidate(): void {}
 }
 
+/** One-line label above Pi's native editor: keeps the composer identity visible. */
+export class AegisComposerBar implements Component {
+	private readonly theme: Theme;
+
+	constructor(theme: Theme) {
+		this.theme = theme;
+	}
+
+	render(width: number): string[] {
+		const line = [
+			this.theme.fg("accent", "▌ INPUT"),
+			this.theme.fg("text", "Enter 发送"),
+			this.theme.fg("dim", "·"),
+			this.theme.fg("muted", "/aegis ui 详情"),
+			this.theme.fg("dim", "·"),
+			this.theme.fg("muted", "状态只读"),
+		].join("  ");
+		return [this.theme.bg("toolPendingBg", pad(line, width))];
+	}
+
+	invalidate(): void {}
+	dispose(): void {}
+}
+
 /** One-line Aegis status bar pinned above Pi's native transcript. */
 export class AegisTopBar implements Component {
 	private readonly theme: Theme;
@@ -73,17 +97,17 @@ export class AegisTopBar implements Component {
 			line = [
 				this.theme.style("◆ AEGIS", { fg: "accent", bold: true }),
 				`${this.theme.fg("dim", "task ")}${this.theme.fg("text", text(current.taskId))}`,
-				this.theme.fg(stateTone(state), `[${state.toUpperCase()}]`),
+				this.theme.style(` ${state.toUpperCase()} `, { fg: stateTone(state), bold: true }),
 				`${this.theme.fg("dim", "pending ")}${this.theme.fg("text", String(snapshot.pending?.length ?? 0))}`,
 				`${this.theme.fg("dim", "budget ")}${this.theme.fg("text", `${number(budgets.consumed?.tool_calls)}/${number(budgets.reserved?.task)}/${number(budgets.unresolved)}`)}`,
 				`${this.theme.fg("dim", "rev ")}${this.theme.fg("text", short(text(snapshot.revision), 18))}`,
-				this.theme.fg(integrity.ok === true ? "success" : "error", `[${status}]`),
+				this.theme.style(` ${status} `, { fg: integrity.ok === true ? "success" : "error", bold: true }),
 				snapshot.campaign?.id
 					? `${this.theme.fg("dim", "campaign ")}${this.theme.fg("text", short(text(snapshot.campaign.id), 30))}`
 					: "",
 			]
 				.filter(Boolean)
-				.join("  ");
+				.join(this.theme.fg("dim", " │ "));
 		} catch (error) {
 			line = `${this.theme.fg("error", "AEGIS UNAVAILABLE")}  ${this.theme.fg("muted", error instanceof Error ? error.message : String(error))}`;
 		}
@@ -117,7 +141,12 @@ export class AegisSidebar implements Component {
 			const steps = this.source.evidence().steps ?? [];
 			lines.push(this.head("CONTEXT", "read-only"));
 			lines.push(this.compose("task", text(current.taskId)));
-			lines.push(this.compose("state", text(current.state)));
+			lines.push(
+				`${this.theme.fg("dim", "state      ")}${this.theme.style(` ${text(current.state).toUpperCase()} `, {
+					fg: stateTone(text(current.state)),
+					bold: true,
+				})}`,
+			);
 			lines.push(this.compose("episode", short(text(current.episodeId), 18)));
 			lines.push(this.compose("pending", String(snapshot.pending?.length ?? 0)));
 			lines.push(this.compose("unresolved", number(snapshot.budgets?.unresolved)));
@@ -127,7 +156,7 @@ export class AegisSidebar implements Component {
 				lines.push(this.theme.fg("error", integrity.status === "manifest_unavailable" ? "NO MANIFEST" : "UNAVAILABLE"));
 				lines.push(this.theme.fg("muted", "set AEGIS_MANIFEST_FILE"));
 			}
-			lines.push(this.theme.fg("muted", "/aegis ui  details"));
+			lines.push(this.theme.fg("accent", "/aegis ui  details"));
 			lines.push(this.theme.fg("muted", "Esc stays in chat"));
 			lines.push("");
 			lines.push(this.head("BOARD"));
@@ -170,7 +199,7 @@ export class AegisSidebar implements Component {
 	}
 
 	private head(title: string, meta = ""): string {
-		const left = this.theme.fg("muted", title);
+		const left = this.theme.fg("accent", `▌ ${title}`);
 		return meta ? this.compose(left, this.theme.fg("dim", meta)) : left;
 	}
 

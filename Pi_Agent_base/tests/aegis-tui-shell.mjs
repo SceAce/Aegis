@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { AegisBlank, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
+import { AegisBlank, AegisComposerBar, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
 
 const manifest = {
 	campaign_id: "campaign-shell",
@@ -96,6 +96,16 @@ test("missing manifest is visible in shell chrome and blank header is empty", ()
 	}));
 	assert.match(sidebar.render(32).join("\n"), /NO MANIFEST/);
 	assert.deepEqual(new AegisBlank().render(120), []);
+});
+
+test("Aegis composer label keeps the input identity visible", () => {
+	const bar = new AegisComposerBar(theme);
+	for (const width of [80, 120]) {
+		const lines = bar.render(width);
+		assert.equal(lines.length, 1);
+		assert.equal(visibleWidth(lines[0]), width);
+		assert.match(lines[0], /INPUT/);
+	}
 });
 
 test("shell components never mutate the committed source", () => {
