@@ -297,6 +297,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	let episodeId: string | undefined;
 	/** Latest RAM ref aliases (r0, r1, ...) so a proposal can cite what it saw. */
 	let ramAliases: Record<string, { type?: string; id?: string; digest?: string }> | null = null;
+	/** One procedure hint per episode/experience revision (read-only). */
+	let lastExperienceHintKey = "";
 	let currentGoal = "";
 	let currentPromptEventId: string | undefined;
 	let cliWorkspace = "";
@@ -908,11 +910,62 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		});
 		ramAliases = projection.data.refs ?? null;
 		const ram = projection.text;
+		// Read-only Router preview: an active, resolver-verified PROCEDURE can be
+		// shown once as a hint. It never executes and never changes the request's
+		// authorization. A missing bridge/store or an unresolved support simply
+		// produces no hint; routing must not block the model request.
+		let experienceMessage: Record<string, unknown> | null = null;
+		try {
+			const bridge = await learningBridgeFor();
+			const store = createLearningStore({ dir: experienceDir() });
+			const decision = await learningCommands.route({
+				store,
+				bridge,
+				task: { task_id: taskId, task_types: [], permissions: ["workspace-script"], arguments: {} },
+				currentState: undefined,
+				currentStateRef: null,
+				episodeId: episodeId ?? null,
+			});
+			const hint = learningCommands.experienceHint(decision);
+			if (hint) {
+				const key = `${episodeId ?? "none"}:${hint.key}`;
+				if (lastExperienceHintKey !== key) {
+					lastExperienceHintKey = key;
+					experienceMessage = {
+						role: "custom" as const,
+						customType: "aegis_experience_context",
+						content: sectionWrapped(
+							"aegis_experience",
+							[
+								"Read-only procedure hint. It is NOT an executed action, NOT authorization, and NOT a task result.",
+								`experience: ${hint.experience_id ?? "unknown"} rev ${hint.revision}`,
+								`router: hint (${hint.reason})`,
+								hint.text,
+								"Confirm the current conditions before reusing it.",
+							].join("\n"),
+						),
+						display: false,
+						details: { experience_id: hint.experience_id, revision: hint.revision, route: "hint" },
+						timestamp: Date.now(),
+					};
+				}
+			}
+		} catch {
+			// Routing is an optimization; a failure leaves the request unchanged.
+		}
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context
 		// message for the provider without changing the leading system message.
 		const withoutEphemeralRam = messages
-			.filter((message) => !(message.role === "custom" && message.customType === "aegis_ram_context"))
+			.filter(
+				(message) =>
+					!(
+						message.role === "custom" &&
+						["aegis_ram_context", "aegis_experience_context"].includes(
+							String((message as { customType?: string }).customType ?? ""),
+						)
+					),
+			)
 			.map((message) => {
 				// Resuming a pre-migration session must not revive its stale system RAM.
 				// Strip only the Observer-owned section in the request-local copy; leave
@@ -924,6 +977,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			});
 		const projectedMessages = [
 			...withoutEphemeralRam,
+			...(experienceMessage ? [experienceMessage] : []),
 			{
 				role: "custom" as const,
 				customType: "aegis_ram_context",

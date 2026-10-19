@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { compileExperience } from "../memory/experience-compiler.mjs";
-import { procedureFromCandidateEvent } from "../memory/learning-commands.mjs";
+import { experienceHint, procedureFromCandidateEvent } from "../memory/learning-commands.mjs";
 import { routeLearning } from "../memory/learning-router.mjs";
 
 const SCOPE = {
@@ -120,6 +120,23 @@ test("the router hints a procedure and never goes direct", () => {
 	assert.equal(route.route, "hint", JSON.stringify(route.reason));
 	assert.notEqual(route.route, "direct");
 	assert.match(route.hint, /Nested-keyword SQLi/);
+});
+
+test("a hint decision becomes a bounded procedure hint", () => {
+	const compiled = compile();
+	const route = routeLearning({
+		experiences: [compiled.experience],
+		task: {},
+		environment: SCOPE,
+		currentState: { env: { kind: "ctf" } },
+		registry: null,
+		resolveSupport: resolver,
+	});
+	const hint = experienceHint(route);
+	assert.ok(hint);
+	assert.equal(hint.experience_id, compiled.experience.experience_id);
+	assert.match(hint.text, /Nested-keyword SQLi/);
+	assert.equal(experienceHint({ route: "deliberate" }), null);
 });
 
 test("only a candidate proposal can supply a procedure", () => {

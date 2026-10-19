@@ -180,6 +180,12 @@ export function resultToOutcome(row, { episodeId = null } = {}) {
 		},
 		evidence_refs: evidenceRefs,
 		transport,
+		// Structured conditions/expectations attached by the independent result
+		// import. They are only inputs to the procedure compiler's two-proof gate;
+		// they never replace `status`/`observed`/`oracle`.
+		...(row.scope && typeof row.scope === "object" ? { scope: row.scope } : {}),
+		...(Array.isArray(row.when) ? { when: row.when } : {}),
+		...(Array.isArray(row.expect) ? { expect: row.expect } : {}),
 		failure_mode: status === "failure" || status === "unknown" ? failure_mode || "insufficient_evidence" : null,
 		// Preconditions must be independently verified before a failure may refute
 		// a method. This is separate from `status` (the task verdict).

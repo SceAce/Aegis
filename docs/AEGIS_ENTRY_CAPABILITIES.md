@@ -39,6 +39,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 - 状态：`$AEGIS_HOME`（默认 `~/.Aegis/`）下的 agent/sessions/server/runtime；不读写 `$HOME/.pi`。
 - Observer 提供：`aegis_artifact_read`、`aegis_observe`、`aegis_execute`、`aegis_knowledge`、`aegis_propose`、`aegis_switch_session`、`aegis_submit_candidate`；`/aegis` 人工命令（ui/status/board/ram/switch/close/outcome/learn/compile/route/bind/run/replay）。
 - 只读界面：默认顶栏 + 右侧 rail + composer 提示；`F6`/`F7`/`F8`/`F9` 打开只读 Inspector（graph/board/evidence）。
+- 学习提示：若经验库中存在 active procedure，`context_with_system` 在每个 episode 首次命中 `hint` 时注入一次 `<aegis_experience>` 只读提示；它不执行动作、不授予权限，也不替代当前观测。
 - 边界：没有 Campaign Scheduler、请求/工具账本、独立 Oracle；工具退出码和模型文本不构成任务结果。
 
 ### 3.2 `run-pi.sh`（bundle 入口）

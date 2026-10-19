@@ -290,6 +290,9 @@ they are never a substitute for `status`/`observed`/`oracle`.
 | `preconditions_verified` | boolean | Whether the preconditions for the attempt were independently verified. Defaults to `false` (unknown) and is never assumed from a bare status. A `failure` may only become a `Refuted` board node when this is `true` AND `failure_mode` is `postcondition_failed`. |
 | `provenance` | object | `{source, independent, task_id, session_id, group, card, evidence_summary, recorded_note, row_digest, conflict?, supersedes?, superseding_note?}`. `independent` is true only when the source is not the model, an exit code, or `agent_settled`. |
 | `supersedes` | id | Present on a corrected import: the earlier `outcome_id` this judgement replaces. A correction is NOT a new independent attempt and never inflates independence counts. |
+| `scope` | object | Procedure scope attached by the independent result import (`environment_fingerprint`, `domain`, `permissions`, `task_types`). The compiler/router compare it exactly with the current environment; it is not a grant. |
+| `when` | object[] | Structured preconditions attached by the result import (`{path, op, value, verified_by[]}`). Only inputs to the procedure compiler's two-proof gate; the compiler still drops predicates that do not hold in every supporting episode. |
+| `expect` | object[] | Structured expected postconditions (`{path, op, value}`) from the result import. They are not a verdict and do not replace `status`/`observed`. |
 
 The runtime NEVER infers `success`, never invents evidence, and never marks a
 result independent without the source row saying so. A transport failure

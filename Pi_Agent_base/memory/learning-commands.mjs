@@ -259,6 +259,29 @@ export async function replay({ outcomeId, bridge, adapterPath, importModule = un
 	return { ...result, configured: true };
 }
 
+/**
+ * Reduce a Router decision to a bounded, read-only experience hint. Only an
+ * ACTIVE procedure can produce it; a candidate, an action rule, or a non-hint
+ * route returns null. The hint never executes anything and is not a result.
+ *
+ * @param {any} decision result of `route`
+ * @returns {{key:string, experience_id:string|null, revision:number, text:string, reason:string}|null}
+ */
+export function experienceHint(decision) {
+	if (!decision || decision.route !== "hint") return null;
+	const experience = decision.experience;
+	if (!experience || experience.do?.kind !== "procedure") return null;
+	const text = typeof decision.hint === "string" ? decision.hint.trim() : "";
+	if (!text) return null;
+	return {
+		key: `${experience.experience_id ?? "unknown"}@${experience.revision ?? 1}`,
+		experience_id: experience.experience_id ?? null,
+		revision: experience.revision ?? 1,
+		text: text.slice(0, 800),
+		reason: String(decision.reason ?? "").slice(0, 300),
+	};
+}
+
 /** Reduce a bridge/engine result to the fields the command surface reports. */
 export function describe(result) {
 	if (!result || typeof result !== "object") return { ok: false, reason: "no result" };

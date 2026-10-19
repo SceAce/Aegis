@@ -26,6 +26,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validatePredicate } from "../shared/contracts.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE_DIR = resolve(HERE, "..");
@@ -96,6 +97,13 @@ add options:
   --evidence <text>  SHORT non-sensitive evidence reference/summary
                      (required for success/failure)
   --notes <text>     SHORT free-text note (no flags/secrets)
+  --scope <json>     procedure scope, exactly matched by the compiler:
+                     {"environment_fingerprint":"local","domain":"ctf-web",
+                      "permissions":["workspace"],"task_types":["ctf"]}
+  --when <json>      structured preconditions for a procedure Experience:
+                     [{"path":"env.kind","op":"eq","value":"ctf","verified_by":["..."]}, ...]
+  --expect <json>    structured expected postconditions:
+                     [{"path":"flag.found","op":"eq","value":true}, ...]
   --at <iso8601>     override timestamp (default: now)
 
 Environment:
@@ -106,6 +114,68 @@ Safety:
   never records raw tool output; missing --result defaults to unknown;
   success/failure without platform/human provenance + evidence is refused.
 `;
+}
+
+/** Parse the procedure scope: exact-match fields, no wildcards. */
+function parseScope(raw) {
+	if (raw === undefined) return { ok: true, value: null };
+	if (typeof raw !== "string" || !raw.trim() || raw.length > 2000)
+		return { ok: false, error: "--scope must be a JSON object of at most 2000 characters" };
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		return { ok: false, error: `--scope is not valid JSON: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+		return { ok: false, error: "--scope must be an object" };
+	const allowed = new Set(["environment_fingerprint", "domain", "permissions", "task_types"]);
+	for (const key of Object.keys(parsed)) {
+		if (!allowed.has(key)) return { ok: false, error: `--scope has an unknown key: ${key}` };
+	}
+	for (const key of ["environment_fingerprint", "domain"]) {
+		if (typeof parsed[key] !== "string" || !parsed[key].trim())
+			return { ok: false, error: `--scope.${key} must be a non-empty string` };
+	}
+	for (const key of ["permissions", "task_types"]) {
+		if (!Array.isArray(parsed[key]) || !parsed[key].every((value) => typeof value === "string" && value))
+			return { ok: false, error: `--scope.${key} must be an array of non-empty strings` };
+	}
+	return { ok: true, value: parsed };
+}
+
+/**
+ * Parse a structured predicate array. `when` additionally needs at least one
+ * `verified_by` ref: the compiler drops/refuses predicates that no record
+ * verifies. This only validates shape; it does not make the predicates true.
+ */
+function parsePredicates(raw, flag, { requireVerifiedBy }) {
+	if (raw === undefined) return { ok: true, value: null };
+	if (typeof raw !== "string" || !raw.trim() || raw.length > 6000)
+		return { ok: false, error: `${flag} must be a JSON array of at most 6000 characters` };
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		return { ok: false, error: `${flag} is not valid JSON: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 12)
+		return { ok: false, error: `${flag} must contain 1..12 predicates` };
+	for (const [index, predicate] of parsed.entries()) {
+		try {
+			validatePredicate(predicate, `${flag}[${index}]`);
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : String(error) };
+		}
+		if (
+			requireVerifiedBy &&
+			(!Array.isArray(predicate.verified_by) ||
+				predicate.verified_by.length === 0 ||
+				!predicate.verified_by.every((ref) => typeof ref === "string" && ref.length > 0 && ref.length <= 200))
+		)
+			return { ok: false, error: `${flag}[${index}] requires a non-empty verified_by[] ref list` };
+	}
+	return { ok: true, value: parsed };
 }
 
 async function add(flags) {
@@ -130,6 +200,12 @@ async function add(flags) {
 	const notes = typeof flags.notes === "string" ? flags.notes.trim().slice(0, 500) : "";
 	const at = typeof flags.at === "string" && flags.at.trim() ? flags.at.trim() : new Date().toISOString();
 	if (Number.isNaN(Date.parse(at))) return { ok: false, error: "--at is not a valid ISO-8601 timestamp" };
+	const scope = parseScope(flags.scope);
+	if (!scope.ok) return scope;
+	const when = parsePredicates(flags.when, "--when", { requireVerifiedBy: true });
+	if (!when.ok) return when;
+	const expect = parsePredicates(flags.expect, "--expect", { requireVerifiedBy: false });
+	if (!expect.ok) return expect;
 
 	// Refuse to persist anything that looks sensitive.
 	for (const [field, value] of Object.entries({ evidence, notes, card, source })) {
@@ -174,6 +250,9 @@ async function add(flags) {
 		// true only when a platform/human judgement with an evidence reference
 		// backs this row; never inferred from agent behavior.
 		independent,
+		...(scope.value ? { scope: scope.value } : {}),
+		...(when.value ? { when: when.value } : {}),
+		...(expect.value ? { expect: expect.value } : {}),
 	};
 
 	await mkdir(dirname(RESULTS_PATH), { recursive: true });
