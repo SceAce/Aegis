@@ -295,6 +295,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	let sessionId = "unknown-session";
 	let taskId = "";
 	let episodeId: string | undefined;
+	/** Latest RAM ref aliases (r0, r1, ...) so a proposal can cite what it saw. */
+	let ramAliases: Record<string, { type?: string; id?: string; digest?: string }> | null = null;
 	let currentGoal = "";
 	let currentPromptEventId: string | undefined;
 	let cliWorkspace = "";
@@ -904,6 +906,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			episodeId,
 			goal: currentGoal,
 		});
+		ramAliases = projection.data.refs ?? null;
 		const ram = projection.text;
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context
@@ -2107,7 +2110,11 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 								digest: Type.Optional(Type.String()),
 							}),
 						]),
-						{ maxItems: 12, description: "Committed same-Episode event/node/action refs; not proof" },
+						{
+							maxItems: 12,
+							description:
+								"Committed same-Episode event/node/action refs, or a RAM ref alias (r0, r1, ...) from the current request; not proof",
+						},
 					),
 				),
 				replace_event_id: Type.Optional(
@@ -2136,6 +2143,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						events: log!.replay(),
 						board,
 						episodeId,
+						aliases: ramAliases,
 					});
 					const replacement = inspectProposalReplacement(
 						(verdict.proposal as { replace_event_id?: string }).replace_event_id,

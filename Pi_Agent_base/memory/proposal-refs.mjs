@@ -1,11 +1,43 @@
 // Proposal references are display associations, never proof or execution grants.
+
+/**
+ * Resolve one RAM reference alias (`r0`, `r1`, ...) to a committed
+ * event/node/action ref. The model sees the alias in RAM; without this it
+ * cannot cite its own observations, and every proposal is rejected as a
+ * foreign/unknown id.
+ */
+function resolveAlias(rawRef, aliases, { events, nodes, episodeId }) {
+	if (typeof rawRef !== "string" || !aliases || !Object.hasOwn(aliases, rawRef)) return rawRef;
+	const alias = aliases[rawRef];
+	if (!alias || typeof alias.id !== "string" || !alias.id) return rawRef;
+	if (alias.type === "event" || alias.type === "action")
+		return { ref_type: alias.type, ref_id: alias.id, ...(alias.digest ? { digest: alias.digest } : {}) };
+	if (alias.type === "node" || alias.type === "outcome") {
+		const node = nodes.find(
+			(entry) =>
+				entry.node_id === alias.id ||
+				entry.origin_event_id === alias.id ||
+				`ev:${entry.origin_event_id}` === alias.id ||
+				(alias.type === "outcome" && entry.outcome_id === alias.id),
+		);
+		const eventId = node?.origin_event_id;
+		if (!eventId) return rawRef;
+		const event = events.find((entry) => entry.event_id === eventId && entry.episode_id === episodeId);
+		return event
+			? { ref_type: "event", ref_id: eventId, ...(event.event_digest ? { digest: event.event_digest } : {}) }
+			: rawRef;
+	}
+	return rawRef;
+}
+
 /** Validate refs against THIS committed Episode prefix and effective Board. */
-export function inspectProposalRefs(refs, { events, board, episodeId }) {
+export function inspectProposalRefs(refs, { events, board, episodeId, aliases = null }) {
 	if (!Array.isArray(refs) || refs.length > 12)
 		return { ok: false, reason: "source_refs must be an array of at most 12 refs", refs: [] };
 	const nodes = board?.nodes ?? [];
 	const out = [];
-	for (const ref of refs) {
+	for (const rawRef of refs) {
+		const ref = resolveAlias(rawRef, aliases, { events, nodes, episodeId });
 		const kind = typeof ref === "string" ? "event" : ref?.ref_type;
 		const id = typeof ref === "string" ? ref : ref?.ref_id;
 		if (!["event", "node", "action"].includes(kind) || typeof id !== "string" || !id || id.length > 200)
