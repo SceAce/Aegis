@@ -38,12 +38,39 @@ function stateTone(state: string): "success" | "accent" | "error" | "muted" {
 	}
 }
 
-/** Empty component used to suppress Pi's built-in startup header when the Aegis shell is active. */
-export class AegisBlank implements Component {
-	render(): string[] {
-		return [];
+/** Large startup wordmark shown above Pi's initial empty transcript. */
+export class AegisLogoHeader implements Component {
+	private readonly theme: Theme;
+
+	constructor(theme: Theme) {
+		this.theme = theme;
 	}
+
+	render(width: number): string[] {
+		const mark = [
+			" █████╗ ███████╗ ██████╗ ██╗███████╗",
+			"██╔══██╗██╔════╝██╔════╝ ██║██╔════╝",
+			"███████║█████╗  ██║  ███╗██║███████╗",
+			"██╔══██║██╔══╝  ██║   ██║██║╚════██║",
+			"██║  ██║███████╗╚██████╔╝██║███████║",
+			"╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝",
+		];
+		const subtitle = "AEGIS · work control · committed projection · read-only";
+		const lines = mark.map((line) => this.theme.fg("accent", center(line, width)));
+		lines.push("");
+		lines.push(this.theme.fg("muted", center(subtitle, width)));
+		lines.push("");
+		return lines;
+	}
+
 	invalidate(): void {}
+	dispose(): void {}
+}
+
+function center(value: string, width: number): string {
+	const clipped = truncateToWidth(value, Math.max(0, width), "…", false);
+	const padding = Math.max(0, Math.floor((width - visibleWidth(clipped)) / 2));
+	return " ".repeat(padding) + clipped;
 }
 
 /** One-line label above Pi's native editor: keeps the composer identity visible. */

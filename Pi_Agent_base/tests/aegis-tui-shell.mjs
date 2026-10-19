@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { AegisBlank, AegisComposerBar, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
+import { AegisComposerBar, AegisLogoHeader, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
 
 const manifest = {
 	campaign_id: "campaign-shell",
@@ -95,7 +95,10 @@ test("missing manifest is visible in shell chrome and blank header is empty", ()
 		sessionId: null,
 	}));
 	assert.match(sidebar.render(32).join("\n"), /NO MANIFEST/);
-	assert.deepEqual(new AegisBlank().render(120), []);
+	const logo = new AegisLogoHeader(theme).render(120);
+	assert.ok(logo.length >= 8);
+	assert.match(logo.join("\n"), /AEGIS/);
+	for (const line of logo) assert.ok(visibleWidth(line) <= 120);
 });
 
 test("Aegis composer label keeps the input identity visible", () => {

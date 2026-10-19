@@ -83,7 +83,7 @@ import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/s
 import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
 import { openAegisTui } from "../observation/tui/session.ts";
-import { AegisBlank, AegisComposerBar, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
+import { AegisComposerBar, AegisLogoHeader, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
 import {
 	createWorkController,
 	inspectWorkPermit,
@@ -732,7 +732,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		commandCtx = ctx;
 		await handleSessionStart(ctx);
 		if (ctx.mode === "tui" && process.env.AEGIS_TUI_SHELL === "1") {
-			ctx.ui.setHeader(() => new AegisBlank());
+			ctx.ui.setHeader((_tui, theme) => new AegisLogoHeader(theme));
 			ctx.ui.setTopBar((tui, theme) => new AegisTopBar(tui, theme, readTuiSource));
 			ctx.ui.setSidebar((tui, theme) => new AegisSidebar(tui, theme, readTuiSource));
 			ctx.ui.setWidget("aegis-shell-composer", (_tui, theme) => new AegisComposerBar(theme), {
