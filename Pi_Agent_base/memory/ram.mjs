@@ -332,6 +332,11 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 		if (render().data.meta.overflow) selected[id].pop();
 	}
 	if (!render().data.meta.overflow) {
+		// A selected knowledge row is a DELIBERATE retrieval (auto-recall or an
+		// explicit aegis_knowledge query). Reserve one row before optional
+		// checkpoints/tool history, otherwise a full RAM can silently drop exactly
+		// what the model just asked for. Facts/pending stay in the mandatory core.
+		if (raw.knowledge[0]) admit("knowledge", raw.knowledge[0]);
 		for (const id of ["checkpoints", "facts", "refuted", "tools", "proposals", "external_reference"])
 			if (raw[id][0]) admit(id, raw[id][0]);
 		// Preserve useful recent tool responses before admitting optional reference

@@ -49,6 +49,10 @@ const env = {
 	AEGIS_TASK_CONTRACT_FILE: policy,
 	AEGIS_MANIFEST_FILE: "",
 	AEGIS_ROM_FILE: resolve("Pi_Agent_base/agent/ROM.md"),
+	// This fixture is about RAM/ABC only: do not auto-recall the user's private
+	// knowledge/ tree (the test must not depend on local knowledge content).
+	AEGIS_KNOWLEDGE_ENABLED: "off",
+	AEGIS_KNOWLEDGE_DIR: join(root, "knowledge"),
 };
 const before = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
 Object.assign(process.env, env);
