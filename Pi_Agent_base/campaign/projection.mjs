@@ -1014,6 +1014,12 @@ function applyOracleResult({
 			return { ok: false, duplicate: true, reason: `duplicate of rejected outcome: ${prior.reason}` };
 		return { ok: true, duplicate: true };
 	}
+	// F12: a checkpoint seeds `appliedOutcomes` from the accepted rows it cached
+	// (and from rejected ids), so a repeated Outcome id in the tail must not be
+	// applied twice. The checkpoint does not carry the content digest, so this
+	// boundary keeps first-wins semantics instead of reporting an identity
+	// conflict it cannot prove.
+	if (appliedOutcomes.has(envelope.outcome_id)) return { ok: true, duplicate: true };
 	const isTaskOracle = envelope.task_oracle === true;
 	// The envelope names the Stage; `outer ?? inner` never fabricates a binding.
 	const stepId = isTaskOracle ? null : (envelope.step_id ?? null);
