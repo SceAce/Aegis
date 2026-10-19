@@ -31,6 +31,7 @@ const module = await createJiti(import.meta.url, {
 		// smoke test does not need a built dist. typebox resolves from pi/node_modules.
 		"@earendil-works/pi-ai": join(piPackages, "ai", "src", "index.ts"),
 		"@earendil-works/pi-coding-agent": join(piPackages, "coding-agent", "src", "core", "extensions", "types.ts"),
+		"@earendil-works/pi-tui": join(piPackages, "tui", "src", "index.ts"),
 	},
 }).import(observerPath);
 const handlers = new Map();
