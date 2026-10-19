@@ -180,8 +180,12 @@ try {
 		);
 		const f = await fixture(rows);
 		const minimal = await fixture([rows[0]]);
-		const budgetChars = 1500;
-		assert.ok(buildRam({ ...minimal, budgetChars }).length <= budgetChars, "one fact fits including the budget footer");
+		const budgetChars = 1700;
+		// Precondition: with THIS budget one fact really fits (a 1500 budget cannot
+		// hold the shared RAM skeleton plus a fact, so it would test nothing).
+		const minimalRam = buildRam({ ...minimal, budgetChars });
+		assert.ok(minimalRam.length <= budgetChars, "one fact fits including the budget footer");
+		assert.ok(minimalRam.includes("BUDGET_FACT_0"), "the single fact is present, not silently dropped");
 		const ram = buildRam({ ...f, budgetChars });
 		assert.ok(ram.includes("BUDGET_FACT_"), "shrinking abandons all evidence before trying a smaller fact count");
 	});
