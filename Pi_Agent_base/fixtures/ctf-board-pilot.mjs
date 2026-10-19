@@ -6,8 +6,9 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appendContestOutcome } from "../contest/outcome-bridge.mjs";
 import { projectBoard } from "../memory/board.mjs";
-import { verifyChain } from "../shared/events.mjs";
+import { EventLog, verifyChain } from "../shared/events.mjs";
 
 const BASE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const AEGIS_HOME = resolve(process.env.AEGIS_HOME || join(process.env.HOME || BASE, ".Aegis"));
@@ -95,6 +96,68 @@ export function pythonCli(workspace, code, signal, timeoutMs = 20000) {
 	});
 }
 
+/**
+ * Build the canonical Outcome row for one bounded attempt. Pure: no IO, no
+ * clock unless `assessedAt` is supplied. The expected flag is never included;
+ * only digests and the matched source.
+ *
+ * A verified match may come from `candidate.txt` OR from the assistant's final
+ * text (the same independent check), so the row records which one matched.
+ */
+export function buildPilotOutcomeRow({
+	verified,
+	candidateText = "",
+	expected,
+	taskId,
+	sessionId = null,
+	attemptId,
+	stop,
+	requests = 0,
+	toolCalls = 0,
+	providerError = false,
+	elapsedMs = 0,
+	expectedSha256 = null,
+	resultDigest = null,
+	assessedAt = null,
+}) {
+	const matchedIn = verified ? (candidateText === expected ? "candidate.txt" : "assistant_output") : null;
+	const evidence = verified
+		? `independent exact flag match in ${matchedIn}; expected_sha256=${expectedSha256}; matched_sha256=${hash(candidateText || expected)}`
+		: `no independent exact flag match; stop=${stop}; requests=${requests}; tool_calls=${toolCalls}; provider_error=${providerError}`;
+	return {
+		task_id: taskId,
+		session_id: sessionId,
+		attempt_id: attemptId,
+		result: verified ? "success" : "unknown",
+		source: "oracle",
+		independent: true,
+		evidence,
+		criterion: {
+			criterion_id: "ctf-flag-exact",
+			description: "the recovered flag equals the private expected flag",
+			expected: "candidate.txt or the final assistant text equals the private expected flag",
+		},
+		observed: verified
+			? { matched: true, matched_in: matchedIn, matched_sha256: hash(candidateText || expected) }
+			: { matched: false, stop, requests, tool_calls: toolCalls },
+		transport: { tool_ok: providerError !== true, timed_out: stop === "wall_time", duration_ms: elapsedMs },
+		failure_mode: verified
+			? null
+			: providerError
+				? "provider_error"
+				: stop === "wall_time"
+					? "timeout"
+					: stop === "budget"
+						? "budget_exhausted"
+						: stop === "output_limit"
+							? "output_limit"
+							: "no_verified_candidate",
+		preconditions_verified: false,
+		evidence_refs: [{ ref_type: "artifact", ref_id: `attempt:${attemptId}`, digest: resultDigest }],
+		assessed_at: assessedAt ?? new Date().toISOString(),
+	};
+}
+
 /** Explicit user invocation only; no credentials or external answer in tool context. */
 export async function runCtfPilot({
 	taskDir,
@@ -105,11 +168,17 @@ export async function runCtfPilot({
 	wallMs = 240000,
 	provider = "maxapi",
 	modelId = "deepseek-v4.1-flash",
+	maxOutputTokens = 8192,
+	taskBinding = null,
 }) {
 	if (!["A", "B", "C", "D"].includes(mode)) throw new Error("mode must be A/B/C/D");
 	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/.test(attemptId)) throw new Error("invalid attempt id");
 	const boardEnabled = ["B", "D"].includes(mode),
 		knowledgeEnabled = ["C", "D"].includes(mode);
+	const provenance = JSON.parse(readFileSync(join(taskDir, "provenance.json"), "utf8"));
+	// The Episode is bound to the CHALLENGE id (stable across attempts); the
+	// attempt id only names the run directory and the private evidence.
+	const taskId = typeof taskBinding === "string" && taskBinding ? taskBinding : provenance.id;
 	const dir = join(resolve(taskDir), "runs", attemptId);
 	if (existsSync(dir)) throw new Error("attempt already exists");
 	const workspace = join(dir, "workspace");
@@ -120,7 +189,8 @@ export async function runCtfPilot({
 	const expected = expectedFlag(taskDir);
 	const environment = {
 		AEGIS_EVENT_LOG: join(dir, "events.jsonl"),
-		AEGIS_TASK_ID: attemptId,
+		AEGIS_TASK_ID: taskId,
+		AEGIS_ATTEMPT_ID: attemptId,
 		AEGIS_RAM_DIR: join(dir, "ram"),
 		AEGIS_PROJECTION_DIR: join(dir, "projections"),
 		AEGIS_EXPERIENCE_DIR: join(dir, "experiences"),
@@ -140,6 +210,7 @@ export async function runCtfPilot({
 	Object.assign(process.env, environment);
 	const start = Date.now();
 	let session,
+		sessionId = null,
 		requests = 0,
 		toolCalls = 0,
 		verified = false,
@@ -151,13 +222,17 @@ export async function runCtfPilot({
 		usage = [];
 	const modelConfigDir = AGENT_DIR;
 	const metadata = {
-		task: JSON.parse(readFileSync(join(taskDir, "provenance.json"), "utf8")).id,
+		task: provenance.id,
+		category: provenance.category ?? null,
+		difficulty: provenance.difficulty ?? null,
+		task_binding: `AEGIS_TASK_ID=${taskId}`,
 		mode,
 		board_enabled: boardEnabled,
 		knowledge_enabled: knowledgeEnabled,
 		attempt_id: attemptId,
 		provider,
 		model: modelId,
+		max_output_tokens: maxOutputTokens,
 		max_requests: maxRequests,
 		max_tool_calls: maxTools,
 		wall_ms: wallMs,
@@ -190,7 +265,7 @@ export async function runCtfPilot({
 		const configured = modelRuntime.getModel(provider, modelId);
 		if (!configured || !(await modelRuntime.getAuth(configured)))
 			throw new Error("selected model or credential unavailable");
-		const model = { ...configured, maxTokens: Math.min(configured.maxTokens, 4096) };
+		const model = { ...configured, maxTokens: Math.min(configured.maxTokens, maxOutputTokens) };
 		const cli = {
 			name: "cli",
 			label: "Local Python CLI",
@@ -259,6 +334,7 @@ export async function runCtfPilot({
 		});
 		if (services.diagnostics?.extensions?.errors?.length) throw new Error("Observer extension failed to load");
 		session = created.session;
+		sessionId = session.sessionId ?? null;
 		await session.bindExtensions({ mode: "print" });
 		const original = session.agent.streamFunction;
 		session.agent.streamFunction = async (selectedModel, context, options) => {
@@ -316,7 +392,7 @@ export async function runCtfPilot({
 				}
 			}
 		});
-		const prompt = `Solve the supplied local CTF cryptography challenge. Inspect the handout files, derive a reproducible solution, and save the recovered flag alone to candidate.txt. You may use the local Python CLI (standard library only). Do not search the internet or other directories. Do not fabricate a result. Record concise meaningful hypotheses/progress with aegis_propose rather than every thought. Knowledge retrieval is ${knowledgeEnabled ? "available: decide which reference is relevant from the actual task observations" : "unavailable for this run"}. Board feedback is ${boardEnabled ? "available in RAM" : "disabled; ordinary tool history remains"}. Files: ${readdirSync(workspace).join(", ")}. ${metadata.task.includes("three-line") ? "The original plaintext is English text containing the flag." : "The supplied generator source and output belong to the same instance."}`;
+		const prompt = `Solve the supplied local CTF ${metadata.category ?? "challenge"} challenge (${metadata.difficulty ?? "unknown"}). Inspect the handout files, derive a reproducible solution, and save the recovered flag alone to candidate.txt. You may use the local Python CLI (standard library only); it can read the handout bytes but cannot run other programs or use the network. Do not search the internet or other directories. Do not fabricate a result. Record concise meaningful hypotheses/progress with aegis_propose rather than every thought. Knowledge retrieval is ${knowledgeEnabled ? "available: decide which reference is relevant from the actual task observations" : "unavailable for this run"}. Board feedback is ${boardEnabled ? "available in RAM" : "disabled; ordinary tool history remains"}. Files: ${readdirSync(workspace).join(", ")}. ${metadata.task.includes("three-line") ? "The original plaintext is English text containing the flag." : "The flag format is DUCTF{...}."}`;
 		writeFileSync(join(dir, "prompt.txt"), prompt);
 		const timer = setTimeout(
 			() => {
@@ -355,6 +431,13 @@ export async function runCtfPilot({
 			lastModelStop === "error" &&
 			!/pilot_(budget_exhausted|candidate_verified)/.test(messages.at(-1)?.errorMessage ?? error ?? "");
 	} catch {}
+	// A model output-length stop is not "settled": it is a bounded stop whose
+	// missing answer must be visible as such (the pilot used the same category).
+	if (!verified && stop === "settled" && lastModelStop === "length") stop = "output_limit";
+	// The wall timer can race a prompt that resolves at the same millisecond.
+	// Classify a settled run that already consumed the whole wall budget as a
+	// wall stop, so a budget/stop report never hides the limit that ended it.
+	if (!verified && stop === "settled" && Date.now() - start >= wallMs) stop = "wall_time";
 	const result = {
 		...metadata,
 		verified_success: verified,
@@ -385,6 +468,62 @@ export async function runCtfPilot({
 		expected_flag_sha256: hash(expected),
 		output_dir: dir,
 	};
+	// Route-B closure: the independent check is a host-side oracle, so record the
+	// Outcome in the SAME committed EventLog the Board/RAM read. A bounded attempt
+	// that produced no match is `unknown` (not a task failure): budget/timeout/
+	// provider stops do not prove the challenge is unsolvable.
+	const outcomeRow = buildPilotOutcomeRow({
+		verified,
+		candidateText: existsSync(join(workspace, "candidate.txt"))
+			? readFileSync(join(workspace, "candidate.txt"), "utf8").trim()
+			: "",
+		expected,
+		taskId,
+		sessionId,
+		attemptId,
+		stop: result.stop,
+		requests,
+		toolCalls,
+		providerError,
+		elapsedMs: result.elapsed_ms,
+		expectedSha256: result.expected_flag_sha256,
+		resultDigest: `sha256:${hash(JSON.stringify(result))}`,
+		assessedAt: new Date().toISOString(),
+	});
+	let recorded = { ok: false, reason: "no episode to bind the outcome to" };
+	const episodeId =
+		events.find((event) => event.event_type === "episode.started" && event.episode_id)?.episode_id ?? null;
+	if (episodeId) {
+		const log = new EventLog(environment.AEGIS_EVENT_LOG);
+		const opened = await log.open();
+		if (opened?.ok === false) recorded = { ok: false, reason: opened.error ?? "event log open failed" };
+		else {
+			try {
+				recorded = await appendContestOutcome(log, outcomeRow, { episodeId });
+			} catch (appendError) {
+				recorded = { ok: false, reason: String(appendError) };
+			}
+			await log.close();
+		}
+	}
+	result.outcome = {
+		recorded: recorded.ok === true,
+		reason: recorded.ok === true ? null : (recorded.reason ?? null),
+		outcome_id: recorded.ok === true ? (recorded.outcome?.outcome_id ?? null) : null,
+		status: recorded.ok === true ? (recorded.outcome?.status ?? null) : null,
+		episode_id: episodeId,
+		session_id: sessionId,
+	};
+	try {
+		const after = projectBoard(
+			readFileSync(environment.AEGIS_EVENT_LOG, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse),
+		);
+		result.graph_counts_after_outcome = Object.fromEntries(Object.entries(after.byType).map(([k, v]) => [k, v.length]));
+		result.fact_count_after_outcome = (after.currentByType?.Fact ?? []).length;
+		result.refuted_count_after_outcome = (after.currentByType?.Refuted ?? []).length;
+	} catch (boardError) {
+		result.graph_counts_after_outcome = { error: String(boardError) };
+	}
 	writeFileSync(join(dir, "result.json"), JSON.stringify(result, null, 2));
 	console.log(
 		JSON.stringify({
@@ -395,6 +534,8 @@ export async function runCtfPilot({
 			tool_calls: toolCalls,
 			stop: result.stop,
 			error,
+			outcome: result.outcome,
+			facts: result.fact_count_after_outcome ?? null,
 		}),
 	);
 	return result;
@@ -404,5 +545,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	const [taskDir, mode, attemptId, requests = "14", seconds = "240"] = process.argv.slice(2);
 	if (!taskDir || !mode || !attemptId)
 		throw new Error("Usage: ctf-board-pilot.mjs TASK_DIR A|B|C|D ATTEMPT_ID [MAX_REQUESTS] [SECONDS]");
-	await runCtfPilot({ taskDir, mode, attemptId, maxRequests: Number(requests), wallMs: Number(seconds) * 1000 });
+	await runCtfPilot({
+		taskDir,
+		mode,
+		attemptId,
+		maxRequests: Number(requests),
+		wallMs: Number(seconds) * 1000,
+		provider: process.env.AEGIS_PILOT_PROVIDER || "maxapi",
+		modelId: process.env.AEGIS_PILOT_MODEL || "deepseek-v4.1-flash",
+		maxOutputTokens: Number(process.env.AEGIS_PILOT_MAX_OUTPUT || 8192),
+	});
 }
