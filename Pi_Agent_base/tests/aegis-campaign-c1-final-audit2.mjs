@@ -342,9 +342,15 @@ await test("F8-PREFIX-FULL: prefix+tail equals the full replay across the comple
 		events: all,
 		artifacts: ARTIFACTS,
 		priorState: {
+			// Mirror the CURRENT checkpoint shape (scheduler persistCheckpoint).
+			// F12 requires the episode binding to survive, otherwise the tail
+			// Outcome is rejected as unbound instead of being deduplicated.
 			queue: prefix.tasks.map((t) => ({
 				task_id: t.task_id,
 				state: t.state,
+				episode_id: t.episode_id ?? null,
+				session_id: t.session_id ?? null,
+				attempt_id: t.attempt_id ?? null,
 				depends_on: t.depends_on,
 				order: t.order,
 				reservation: t.reservation,
@@ -357,8 +363,12 @@ await test("F8-PREFIX-FULL: prefix+tail equals the full replay across the comple
 				task_outcome_ref: t.task_outcome_ref,
 				task_outcomes: t.task_outcomes,
 				stage_outcomes: t.stage_outcomes,
+				applied_command_ids: t.applied_command_ids ?? [],
+				applied_command_keys: t.applied_command_keys ?? [],
 				stop_reason: t.stop_reason,
 				reconciliation_state: t.reconciliation_state,
+				reconciliation_ref: t.reconciliation_ref ?? null,
+				reconciliation_reason: t.reconciliation_reason ?? null,
 			})),
 			budget: prefix.budget,
 			control: prefix.control,
@@ -369,6 +379,10 @@ await test("F8-PREFIX-FULL: prefix+tail equals the full replay across the comple
 				proposal: e.proposal,
 			})),
 			outcomes: [...prefix.outcomes.entries()].map(([id, outcome]) => ({ id, outcome })),
+			applied_commands: prefix.applied_commands ?? [],
+			applied_outcomes: prefix.applied_outcomes ?? [],
+			accepted_outcomes: prefix.accepted_outcomes ?? [],
+			tool_charges: prefix.tool_charges ?? [],
 			tail_offset: 1,
 		},
 	});

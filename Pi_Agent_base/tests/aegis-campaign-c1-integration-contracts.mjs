@@ -176,7 +176,7 @@ test("ORDER-NULL: mixed null/int sequence reduces in append order", () => {
 
 test("ORDER-TAIL: tail is the last committed record even when it is rejected", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 		ev(
 			1,
 			"campaign.oracle.result",
@@ -210,8 +210,8 @@ test("ORDER-AUTHORITATIVE: a bad chain is refused by the EventLog (structural)",
 
 test("ORDER-DEDUP: the same command id is applied once", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A, command_id: "c1" }),
-		ev(1, "campaign.task.started", { task_id: TASK_A, command_id: "c1" }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP, command_id: "c1" }),
+		ev(1, "campaign.task.started", { task_id: TASK_A, episode_id: EP, command_id: "c1" }),
 	];
 	const p = projectQueueFromEvents({ campaign_id: CAMPAIGN, tasks: [taskA], events });
 	assert.equal(p.tasks[0].state, "running");
@@ -247,7 +247,7 @@ test("OUT-POS: a fully bound trusted success completes and frees the dependency"
 test("OUT-FOREIGN: a foreign episode/task outcome does not complete", () => {
 	for (const override of [{ episode_id: "ep-foreign" }, { task_id: "task-foreign" }]) {
 		const events = [
-			ev(0, "campaign.task.started", { task_id: TASK_A }),
+			ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 			ev(
 				1,
 				"campaign.oracle.result",
@@ -267,7 +267,7 @@ test("OUT-CRITERION: a wrong criterion/expected is refused", () => {
 		{ criterion_id: "goal-a", expected: "different" },
 	]) {
 		const events = [
-			ev(0, "campaign.task.started", { task_id: TASK_A }),
+			ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 			ev(
 				1,
 				"campaign.oracle.result",
@@ -293,7 +293,7 @@ test("OUT-NOREF: missing/unresolvable evidence is not success", () => {
 		boundOutcome({ observed: null }),
 	]) {
 		const events = [
-			ev(0, "campaign.task.started", { task_id: TASK_A }),
+			ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 			ev(
 				1,
 				"campaign.oracle.result",
@@ -309,7 +309,7 @@ test("OUT-NOREF: missing/unresolvable evidence is not success", () => {
 
 test("OUT-CURRENT: completion referencing a non-current outcome is refused", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 		ev(
 			1,
 			"campaign.oracle.result",
@@ -324,7 +324,7 @@ test("OUT-CURRENT: completion referencing a non-current outcome is refused", () 
 
 test("OUT-SOURCE: a self-reported runtime oracle is refused at the boundary", () => {
 	const events = [
-		ev(0, "campaign.task.started", { task_id: TASK_A }),
+		ev(0, "campaign.task.started", { task_id: TASK_A, episode_id: EP }),
 		ev(
 			1,
 			"campaign.oracle.result",
