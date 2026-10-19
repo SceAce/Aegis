@@ -16,12 +16,16 @@
 // create and that dirsync can lose the whole new file, which is why a fresh
 // log's first append also dir-syncs before reporting ok.
 //
-// Writes are serialized inside one EventLog instance. Concurrent writers to the
-// same file from separate OS processes are NOT coordinated; each run/task MUST
-// use its own log path.
+// Writes are serialized inside one EventLog instance and across processes by
+// an adjacent `<log>.lock` file. Before every append the writer revalidates the
+// current file tail and adopts any rows committed by another writer, so two Pi
+// sessions sharing one campaign log cannot fork the hash chain. A stale lock is
+// recoverable only when its owner is demonstrably gone (same host) or the lock
+// is older than the stale threshold.
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, resolve } from "node:path";
 
 /**
@@ -238,6 +242,12 @@ export function bindHostEventLog(path, log) {
 	};
 }
 
+const LOCK_RETRY_MS = 20;
+const LOCK_TIMEOUT_MS = 15_000;
+const LOCK_STALE_MS = 30_000;
+
+const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+
 export class EventLog {
 	/**
 	 * @param {string} path append-only JSONL path
@@ -253,6 +263,12 @@ export class EventLog {
 		this.opened = false;
 		this.auditError = null;
 		this.queue = Promise.resolve();
+		// Last observed on-disk size/mtime. Used under the write lock to detect
+		// rows committed by a different EventLog instance/process and reload them
+		// before choosing the next prev_event_digest and episode sequence.
+		this.diskSize = 0;
+		this.diskMtimeMs = 0;
+		this.diskExists = false;
 		this.onError = typeof options.onError === "function" ? options.onError : null;
 		// Open file descriptor reused for every durable append. `null` means the
 		// log has not been opened for writing yet or was closed on failure.
@@ -271,19 +287,146 @@ export class EventLog {
 	/** Load and verify an existing log. A corrupt log refuses further writes. */
 	async open() {
 		this.opened = true;
-		let text = "";
 		try {
-			text = await readFile(this.path, "utf8");
+			return await this.withFileLock(async () => {
+				const disk = await this.statLog();
+				if (disk === null) {
+					this.healthy = true;
+					this.diskSize = 0;
+					this.diskMtimeMs = 0;
+					this.diskExists = false;
+					return { ok: true, created: true };
+				}
+				const text = await readFile(this.path, "utf8");
+				return this.adoptLogText(text, disk.size, disk.mtimeMs);
+			});
 		} catch (error) {
-			if (error && error.code === "ENOENT") {
-				this.healthy = true;
-				return { ok: true, created: true };
-			}
 			this.healthy = false;
-			this.auditError = `event log unreadable at ${this.path}: ${String(error)}`;
+			this.auditError = `event log could not be opened at ${this.path}: ${String(error)}`;
 			this.report(this.auditError);
 			return { ok: false, error: this.auditError };
 		}
+	}
+
+	/**
+	 * Serialize a read/append operation against every other EventLog instance
+	 * using an adjacent exclusive lock file. The lock is held only for the
+	 * operation, never for the lifetime of the instance, so a crashed session
+	 * cannot permanently block the campaign log.
+	 */
+	async withFileLock(fn) {
+		const lock = await this.acquireFileLock();
+		try {
+			return await fn();
+		} finally {
+			await this.releaseFileLock(lock);
+		}
+	}
+
+	async acquireFileLock() {
+		const lockPath = `${this.path}.lock`;
+		await mkdir(dirname(this.path), { recursive: true });
+		const token = randomUUID();
+		const deadline = Date.now() + LOCK_TIMEOUT_MS;
+		for (;;) {
+			let created = false;
+			try {
+				const handle = await open(lockPath, "wx");
+				created = true;
+				try {
+					await handle.write(
+						JSON.stringify({ token, pid: process.pid, host: hostname(), at: Date.now() }),
+						null,
+						"utf8",
+					);
+				} finally {
+					await handle.close().catch(() => undefined);
+				}
+				return { lockPath, token };
+			} catch (error) {
+				// If this attempt created the lock but failed before returning it,
+				// remove our own orphan; never remove an EEXIST holder's file.
+				if (created) await unlink(lockPath).catch(() => undefined);
+				if (error?.code !== "EEXIST") {
+					throw new Error(`event log lock could not be created at ${lockPath}: ${String(error)}`);
+				}
+				if (await this.breakStaleFileLock(lockPath)) continue;
+				if (Date.now() >= deadline) {
+					throw new Error(`timed out waiting for event log lock at ${lockPath}`);
+				}
+				await sleep(LOCK_RETRY_MS);
+			}
+		}
+	}
+
+	async breakStaleFileLock(lockPath) {
+		let owner = null;
+		let mtimeMs = 0;
+		try {
+			const [raw, info] = await Promise.all([readFile(lockPath, "utf8"), stat(lockPath)]);
+			mtimeMs = info.mtimeMs;
+			try {
+				owner = JSON.parse(raw);
+			} catch {
+				// A writer may have created the lock but not written its owner record yet.
+			}
+		} catch (error) {
+			// The holder released while we were inspecting it; retry immediately.
+			return error?.code === "ENOENT";
+		}
+		const ownerAt = Number(owner?.at);
+		const age = Date.now() - (Number.isFinite(ownerAt) ? ownerAt : mtimeMs);
+		const sameHost = owner?.host === hostname();
+		let alive = null;
+		if (sameHost && Number.isInteger(owner?.pid)) {
+			try {
+				process.kill(owner.pid, 0);
+				alive = true;
+			} catch (error) {
+				// EPERM means the process exists but belongs to another user.
+				alive = error?.code === "EPERM";
+			}
+		}
+		// Never steal a lock whose owner is alive on this host, even if a slow
+		// fsync takes longer than the fallback age threshold. For a remote/unknown
+		// owner, age is the only liveness signal available.
+		const stale = sameHost ? alive === false : age > LOCK_STALE_MS;
+		if (stale) {
+			try {
+				await unlink(lockPath);
+				return true;
+			} catch (error) {
+				return error?.code === "ENOENT";
+			}
+		}
+		return false;
+	}
+
+	async releaseFileLock(lock) {
+		try {
+			const owner = JSON.parse(await readFile(lock.lockPath, "utf8"));
+			// Never unlink a lock that a stale-recovery competitor now owns.
+			if (owner?.token === lock.token) await unlink(lock.lockPath);
+		} catch {
+			// Already released or replaced; nothing to do.
+		}
+	}
+
+	async statLog() {
+		try {
+			const info = await stat(this.path);
+			return { size: info.size, mtimeMs: info.mtimeMs };
+		} catch (error) {
+			if (error?.code === "ENOENT") return null;
+			throw error;
+		}
+	}
+
+	/**
+	 * Adopt a verified on-disk snapshot. Called under the file lock during open
+	 * and whenever an append observes that another writer changed the file.
+	 */
+	adoptLogText(text, size, mtimeMs) {
 		const { rows, errors: parseErrors } = parseJsonl(text);
 		const verification = verifyChain(rows);
 		if (!verification.ok) {
@@ -303,8 +446,33 @@ export class EventLog {
 		this.sequences = verification.sequences;
 		this.ids = verification.ids;
 		this.lastDigest = verification.lastDigest;
+		this.diskSize = size;
+		this.diskMtimeMs = mtimeMs;
+		this.diskExists = true;
 		this.healthy = true;
 		return { ok: true, recovered: rows.length };
+	}
+
+	/**
+	 * Re-read the log if another writer appended since our last observation.
+	 * The caller must hold the file lock. A changed-but-corrupt tail is fatal,
+	 * never silently appended over.
+	 */
+	async refreshFromDisk() {
+		const disk = await this.statLog();
+		if (disk === null) {
+			// A never-created log is still valid: the first append creates it while
+			// holding this lock. Once a file has existed, disappearance is corruption
+			// and must not be papered over by starting a new chain.
+			if (!this.diskExists && this.diskSize === 0) return { ok: true };
+			this.healthy = false;
+			this.auditError = `event log disappeared at ${this.path}`;
+			this.report(this.auditError);
+			return { ok: false, error: this.auditError };
+		}
+		if (disk.size === this.diskSize && disk.mtimeMs === this.diskMtimeMs) return { ok: true };
+		const text = await readFile(this.path, "utf8");
+		return this.adoptLogText(text, disk.size, disk.mtimeMs);
 	}
 
 	/**
@@ -317,7 +485,7 @@ export class EventLog {
 			await mkdir(dirname(this.path), { recursive: true });
 			const existed = await readFile(this.path, "utf8").then(
 				() => true,
-				(error) => (error && error.code === "ENOENT" ? false : true),
+				(error) => !(error && error.code === "ENOENT"),
 			);
 			const handle = await open(this.path, "a");
 			this.handle = handle;
@@ -405,73 +573,101 @@ export class EventLog {
 			if (!this.healthy) {
 				return { ok: false, error: this.auditError || "event log is not healthy" };
 			}
-			const now = new Date().toISOString();
-			const event = {
-				schema_version: effectiveSchema,
-				event_id: eventId(),
-				event_type,
-				episode_id: episode_id || null,
-				sequence: episode_id ? (this.sequences.get(episode_id) ?? 0) : null,
-				occurred_at: occurred_at || now,
-				recorded_at: now,
-				source,
-				payload,
-				correlation_id: episode_id || "session",
-				...(causation_id ? { causation_id } : {}),
-				evidence_refs,
-				...(this.lastDigest ? { prev_event_digest: this.lastDigest } : {}),
-			};
-			event.event_digest = eventDigest(event);
-			// Durable write: create/open the handle, append the row, fsync the file,
-			// and (for a newly created log) fsync the parent directory. Only then is
-			// the caller allowed to treat the audit row as persisted.
-			const opened = await this.openHandle();
-			if (!opened.ok) {
-				this.auditError = opened.error;
-				this.healthy = false;
-				this.report(this.auditError);
-				return { ok: false, error: this.auditError };
-			}
 			try {
-				await opened.handle.write(`${JSON.stringify(event)}\n`, null, "utf8");
-				await this.syncFile(opened.handle);
-			} catch (error) {
-				this.auditError = `event log write/fsync failed at ${this.path}: ${String(error)}`;
-				this.healthy = false;
-				try {
-					await opened.handle.close();
-				} catch {
-					// ignore
-				}
-				this.handle = null;
-				this.report(this.auditError);
-				return { ok: false, error: this.auditError };
-			}
-			// First creation: fsync the directory entry so the file itself survives.
-			if (!this.dirSynced) {
-				const dir = await this.ensureDirDurable();
-				if (!dir.ok) {
-					// The row IS written and file-synced, but the new directory entry is
-					// not durable. Do NOT return before recording the row in-memory: a
-					// retry would otherwise reuse this event's sequence/prev_digest and
-					// append a second row that corrupts the on-disk chain. Record the
-					// event, then fail closed so no caller treats it as durable, and no
-					// further append is attempted on this log.
+				return await this.withFileLock(async () => {
+					// Another process may have committed rows after we opened. Adopt
+					// that tail BEFORE choosing the event's prev digest/sequence.
+					const refreshed = await this.refreshFromDisk();
+					if (!refreshed.ok) return refreshed;
+					const now = new Date().toISOString();
+					const event = {
+						schema_version: effectiveSchema,
+						event_id: eventId(),
+						event_type,
+						episode_id: episode_id || null,
+						sequence: episode_id ? (this.sequences.get(episode_id) ?? 0) : null,
+						occurred_at: occurred_at || now,
+						recorded_at: now,
+						source,
+						payload,
+						correlation_id: episode_id || "session",
+						...(causation_id ? { causation_id } : {}),
+						evidence_refs,
+						...(this.lastDigest ? { prev_event_digest: this.lastDigest } : {}),
+					};
+					event.event_digest = eventDigest(event);
+					// Durable write: create/open the handle, append the row, fsync the file,
+					// and (for a newly created log) fsync the parent directory. Only then is
+					// the caller allowed to treat the audit row as persisted.
+					const opened = await this.openHandle();
+					if (!opened.ok) {
+						this.auditError = opened.error;
+						this.healthy = false;
+						this.report(this.auditError);
+						return { ok: false, error: this.auditError };
+					}
+					try {
+						await opened.handle.write(`${JSON.stringify(event)}\n`, null, "utf8");
+						await this.syncFile(opened.handle);
+					} catch (error) {
+						this.auditError = `event log write/fsync failed at ${this.path}: ${String(error)}`;
+						this.healthy = false;
+						try {
+							await opened.handle.close();
+						} catch {
+							// ignore
+						}
+						this.handle = null;
+						this.report(this.auditError);
+						return { ok: false, error: this.auditError };
+					}
+					// Refresh the on-disk size/mtime used by the next writer. If stat
+					// fails, keep the old values: the next append will notice a size
+					// mismatch and re-read the tail rather than reusing this digest.
+					try {
+						const disk = await this.statLog();
+						if (disk) {
+							this.diskSize = disk.size;
+							this.diskMtimeMs = disk.mtimeMs;
+							this.diskExists = true;
+						}
+					} catch {
+						// A stat failure must not turn a committed row into a retryable
+						// failure; the next refresh will re-read the file.
+					}
+					// First creation: fsync the directory entry so the file itself survives.
+					if (!this.dirSynced) {
+						const dir = await this.ensureDirDurable();
+						if (!dir.ok) {
+							// The row IS written and file-synced, but the new directory entry is
+							// not durable. Do NOT return before recording the row in-memory: a
+							// retry would otherwise reuse this event's sequence/prev_digest and
+							// append a second row that corrupts the on-disk chain. Record the
+							// event, then fail closed so no caller treats it as durable, and no
+							// further append is attempted on this log.
+							this.rows.push(event);
+							this.ids.add(event.event_id);
+							if (event.episode_id)
+								this.sequences.set(event.episode_id, (this.sequences.get(event.episode_id) ?? 0) + 1);
+							this.lastDigest = event.event_digest;
+							this.auditError = dir.error;
+							this.healthy = false;
+							this.report(this.auditError);
+							return { ok: false, error: this.auditError, event, durable: false };
+						}
+					}
 					this.rows.push(event);
 					this.ids.add(event.event_id);
 					if (event.episode_id) this.sequences.set(event.episode_id, (this.sequences.get(event.episode_id) ?? 0) + 1);
 					this.lastDigest = event.event_digest;
-					this.auditError = dir.error;
-					this.healthy = false;
-					this.report(this.auditError);
-					return { ok: false, error: this.auditError, event, durable: false };
-				}
+					return { ok: true, event, durable: true };
+				});
+			} catch (error) {
+				this.auditError = `event log append failed at ${this.path}: ${String(error)}`;
+				this.healthy = false;
+				this.report(this.auditError);
+				return { ok: false, error: this.auditError };
 			}
-			this.rows.push(event);
-			this.ids.add(event.event_id);
-			if (event.episode_id) this.sequences.set(event.episode_id, (this.sequences.get(event.episode_id) ?? 0) + 1);
-			this.lastDigest = event.event_digest;
-			return { ok: true, event, durable: true };
 		});
 		this.queue = run.then(
 			() => undefined,
