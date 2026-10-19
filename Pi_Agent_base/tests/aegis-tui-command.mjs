@@ -1,3 +1,4 @@
+// aegis-resolver: required (imports the observer extension, which imports Pi packages)
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";

@@ -15,7 +15,10 @@ for (const name of names) {
 	const testPath = `Pi_Agent_base/tests/${name}.mjs`;
 	// SDK tests need the source resolver; plain node tests must NOT load it (it
 	// changes module resolution and can surface unrelated GC finalizer errors).
-	const needsResolver = /@earendil-works\/pi-/.test(readFileSync(testPath, "utf8"));
+	// A test that imports an extension transitively needs it too; such a test
+	// declares `// aegis-resolver: required` so detection is not a content guess.
+	const source = readFileSync(testPath, "utf8");
+	const needsResolver = /@earendil-works\/pi-|aegis-resolver:\s*required/.test(source);
 	const args = needsResolver ? ["--import", resolver, testPath] : [testPath];
 	const run = spawnSync(process.execPath, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 	const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
