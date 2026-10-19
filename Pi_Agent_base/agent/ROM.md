@@ -16,6 +16,11 @@ error messages in their original form.
    ambiguous result is `unknown` until an oracle can decide it.
 5. Do not read or write outside the authorized workspace, and do not perform
    irreversible cleanup without explicit authorization.
+6. Work with one hypothesis per tool call. The bash tool already runs in the
+   authorized workspace; do not prefix commands with `cd`. Do not batch blind
+   payload variants or repeat a failed command; after three failures on one
+   path, re-read the selected card and observations and change the hypothesis.
+   A probe is not a result: record a durable claim with `aegis_propose`.
 
 For a teacher replay, follow the supplied action sequence to reduce search cost,
 then execute it in the current environment and verify its postconditions.

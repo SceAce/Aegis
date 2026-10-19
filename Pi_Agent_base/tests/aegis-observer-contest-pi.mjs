@@ -308,6 +308,13 @@ async function main() {
 	check("the accepted proposal source kind is llm", proposals[0]?.source?.kind === "llm");
 	const rejections = events.filter((e) => e.event_type === "proposal.rejected");
 	check(
+		"a control proposal records no orphan action.completed",
+		events.filter((e) => e.event_type === "action.completed" && e.payload?.tool_name === "aegis_propose").length === 0,
+		JSON.stringify(
+			events.filter((e) => e.event_type === "action.completed" && e.payload?.tool_name === "aegis_propose"),
+		),
+	);
+	check(
 		"the malicious fact/active/authorization proposal was rejected",
 		rejections.length >= 1 && /model-immutable/.test(rejections[0]?.payload?.rejection_reason || ""),
 	);

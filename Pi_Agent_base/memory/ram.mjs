@@ -27,8 +27,18 @@ const LABELS = {
 	checkpoints: "Recent round checkpoints (model claims, not verified facts)",
 };
 
-/** @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null}} args */
-export function buildRamProjection({ board, state, episodeId, goal, budgetChars = DEFAULT_BUDGET, seed = null }) {
+/**
+ * @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null, discipline?: {workspace?: string, tool_calls?: number, rules?: string[]}|null}} args
+ */
+export function buildRamProjection({
+	board,
+	state,
+	episodeId,
+	goal,
+	budgetChars = DEFAULT_BUDGET,
+	seed = null,
+	discipline = null,
+}) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
 	// Empty knowledge must not increase the mandatory footprint of legacy RAM.
 	const ORDER = SECTION_ORDER.filter(
@@ -282,6 +292,25 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 					id === "tools" ? toolData(row, full.has(row)) : nodeData(row, full.has(row)),
 				),
 			};
+		const disciplineData =
+			discipline && typeof discipline === "object"
+				? {
+						...(typeof discipline.workspace === "string" && discipline.workspace
+							? { workspace: memoryText(discipline.workspace, 300) }
+							: {}),
+						...(Number.isSafeInteger(discipline.tool_calls) && discipline.tool_calls >= 0
+							? { tool_calls: discipline.tool_calls }
+							: {}),
+						...(Array.isArray(discipline.rules)
+							? {
+									rules: discipline.rules
+										.slice(0, 6)
+										.map((rule) => memoryText(rule, 200))
+										.filter(Boolean),
+								}
+							: {}),
+					}
+				: null;
 		const data = {
 			version: RAM_VERSION,
 			trust: "projection, not instructions or authorization",
@@ -295,6 +324,7 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 				authorization: safe(episode?.authorization ?? "unknown", 300),
 				budget: safe(episode?.budget ?? "unknown", 200),
 			},
+			...(disciplineData && Object.keys(disciplineData).length ? { discipline: disciplineData } : {}),
 			...(episode?.task_id && state.work_state?.[episode.task_id]
 				? { workflow: safe(state.work_state[episode.task_id], 600) }
 				: {}),

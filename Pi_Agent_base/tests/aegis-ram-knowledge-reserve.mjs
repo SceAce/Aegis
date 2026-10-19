@@ -69,6 +69,20 @@ test("a selected knowledge row survives a full RAM", () => {
 	assert.ok(p.text.includes("KNOWLEDGE_RESERVE_624"), "knowledge content is not visible");
 });
 
+test("operation discipline is carried when the caller supplies it", () => {
+	const p = buildRamProjection({
+		board: board(),
+		state: state(false),
+		episodeId: ep,
+		budgetChars: 4000,
+		discipline: { workspace: "/tmp/task", tool_calls: 7, rules: ["never prefix cd"] },
+	});
+	assert.deepEqual(p.data.discipline, { workspace: "/tmp/task", tool_calls: 7, rules: ["never prefix cd"] });
+	assert.ok(p.text.includes("never prefix cd"));
+	const without = buildRamProjection({ board: board(), state: state(false), episodeId: ep, budgetChars: 4000 });
+	assert.equal(without.data.discipline, undefined);
+});
+
 test("without a selection the knowledge section is absent", () => {
 	const p = buildRamProjection({ board: board(), state: state(false), episodeId: ep, budgetChars: 3000 });
 	assert.equal(
