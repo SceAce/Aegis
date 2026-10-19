@@ -103,14 +103,17 @@ const MAX_EXCERPT = 800;
 // audit log is unavailable; everything else fails closed.
 const READ_ONLY_TOOLS = new Set(["read", "ls", "grep", "find", "glob", "webfetch", "websearch", "aegis_observe"]);
 
+function aegisHome() {
+	return process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
+}
 function eventLogPath() {
-	return process.env.AEGIS_EVENT_LOG || join(BASE_DIR, "runtime", "events.jsonl");
+	return process.env.AEGIS_EVENT_LOG || join(aegisHome(), "runtime", "events.jsonl");
 }
 function romPath() {
 	return process.env.AEGIS_ROM_FILE || join(BASE_DIR, "agent", "ROM.md");
 }
 function ramDir() {
-	return process.env.AEGIS_RAM_DIR || join(BASE_DIR, "runtime", "ram");
+	return process.env.AEGIS_RAM_DIR || join(aegisHome(), "runtime", "ram");
 }
 function handoffPath() {
 	return process.env.AEGIS_HANDOFF_FILE || join(ramDir(), "handoff.json");
@@ -119,7 +122,7 @@ function projectionDir() {
 	return process.env.AEGIS_PROJECTION_DIR || join(dirname(eventLogPath()), "projections");
 }
 function contestResultsPath() {
-	return process.env.AEGIS_CONTEST_RESULTS || join(BASE_DIR, "runtime", "contest", "results.jsonl");
+	return process.env.AEGIS_CONTEST_RESULTS || join(aegisHome(), "runtime", "contest", "results.jsonl");
 }
 
 // --- Batch E: controlled learning-loop configuration ----------------------
@@ -2326,6 +2329,24 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			},
 		}),
 	);
+
+	for (const [shortcut, panel] of [
+		["f6", "graph"],
+		["f7", "graph"],
+		["f8", "board"],
+		["f9", "evidence"],
+	] as const) {
+		pi.registerShortcut(shortcut, {
+			description: `Open Aegis ${panel} panel`,
+			handler: async (ctx) => {
+				if (ctx.mode !== "tui") {
+					if (ctx.hasUI) ctx.ui.notify("Aegis Inspector requires interactive TUI mode", "warning");
+					return;
+				}
+				await openAegisTui(ctx as ExtensionCommandContext, readTuiSource, panel);
+			},
+		});
+	}
 
 	pi.registerCommand("aegis", {
 		description:

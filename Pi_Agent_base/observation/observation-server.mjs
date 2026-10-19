@@ -46,7 +46,7 @@ const READONLY_ROUTES = new Set([
 	// OBS-01: bounded, continuable E1 exploration (still read-only).
 	"/api/e1/board",
 	"/api/e1/graph",
-	"​/api/e1/node",
+	"/api/e1/node",
 	"/api/e1/edge",
 	"/api/e1/state",
 	// OBS-01: the read-only exploration client (a static, fixed asset).

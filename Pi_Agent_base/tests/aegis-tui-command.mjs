@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -51,6 +51,9 @@ const tui = { terminal: { rows: 24, columns: 80 }, requestRender() {} };
 test("Aegis source launcher forwards --help using isolated state paths", () => {
 	const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 	const temporary = mkdtempSync(join(tmpdir(), "aegis-runner-test-"));
+	const ctfVenv = join(temporary, "ctf-venv");
+	mkdirSync(join(ctfVenv, "bin"), { recursive: true });
+	writeFileSync(join(ctfVenv, "bin", "python"), "");
 	try {
 		const result = spawnSync("bash", [join(repoRoot, "Pi_Agent_base/run-aegis.sh"), "--help"], {
 			cwd: repoRoot,
@@ -58,15 +61,15 @@ test("Aegis source launcher forwards --help using isolated state paths", () => {
 			timeout: 30_000,
 			env: {
 				...process.env,
-				AEGIS_PI_AGENT_DIR: join(temporary, "agent"),
-				AEGIS_PI_SESSION_DIR: join(temporary, "sessions"),
-				AEGIS_PI_SERVER_DIR: join(temporary, "server"),
-				AEGIS_EVENT_LOG: join(temporary, "runtime", "events.jsonl"),
-				AEGIS_RAM_DIR: join(temporary, "runtime", "ram"),
+				AEGIS_HOME: join(temporary, "aegis-home"),
+				AEGIS_CTF_VENV: ctfVenv,
 			},
 		});
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /Usage:/);
+		assert.equal(existsSync(join(temporary, "aegis-home", "agent")), true);
+		for (const dir of ["agent", "sessions", "server", "runtime", "runtime/ram"])
+			assert.equal(existsSync(join(temporary, "aegis-home", dir)), true, `missing ${dir}`);
 	} finally {
 		rmSync(temporary, { recursive: true, force: true });
 	}
@@ -99,11 +102,13 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 		process.env[key] = value;
 	}
 	const handlers = new Map();
+	const shortcuts = new Map();
 	const calls = { topBar: 0, sidebar: 0, header: 0, custom: 0 };
 	const api = {
 		on: (event, handler) => handlers.set(event, handler),
 		registerTool() {},
 		registerCommand() {},
+		registerShortcut: (key, options) => shortcuts.set(key, options),
 		getActiveTools: () => ["read"],
 		events: { on: () => () => {} },
 	};
@@ -139,6 +144,12 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 		assert.equal(calls.header, 1);
 		assert.equal(calls.widget, 1);
 		assert.equal(calls.custom, 0);
+		for (const key of ["f6", "f7", "f8", "f9"])
+			assert.equal(shortcuts.has(key), true, `missing ${key}`);
+		assert.match(shortcuts.get("f8").description, /board/i);
+		for (const key of ["f6", "f7", "f8", "f9"])
+			await shortcuts.get(key).handler(context);
+		assert.equal(calls.custom, 4);
 	} finally {
 		for (const [key, value] of saved) {
 			if (value === undefined) delete process.env[key];
@@ -170,6 +181,7 @@ test("Observer stays in the chat/input screen when no Campaign Manifest is confi
 		on: (event, handler) => handlers.set(event, handler),
 		registerTool() {},
 		registerCommand() {},
+		registerShortcut() {},
 		getActiveTools: () => ["read"],
 		events: { on: () => () => {} },
 	};
@@ -231,6 +243,7 @@ test("Observer autostarts the full-screen Inspector on a corrupt log without mod
 		on: (event, handler) => handlers.set(event, handler),
 		registerTool() {},
 		registerCommand() {},
+		registerShortcut() {},
 		getActiveTools: () => ["read"],
 		events: { on: () => () => {} },
 	};

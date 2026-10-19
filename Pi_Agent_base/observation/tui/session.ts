@@ -251,12 +251,20 @@ export class AegisInspector implements Component {
 	private lastWidth = 80;
 	private disposed = false;
 
-	constructor(tui: TUI, theme: Theme, keybindings: KeybindingsManager, source: DataSource, done: () => void) {
+	constructor(
+		tui: TUI,
+		theme: Theme,
+		keybindings: KeybindingsManager,
+		source: DataSource,
+		done: () => void,
+		initialTab: Tab = "graph",
+	) {
 		this.tui = tui;
 		this.theme = theme;
 		this.keybindings = keybindings;
 		this.source = source;
 		this.done = done;
+		this.tab = initialTab;
 		this.load();
 	}
 
@@ -584,7 +592,7 @@ export class AegisInspector implements Component {
 		if (snapshot?.campaign?.id) {
 			fields.push(`${this.dim("campaign ")}${this.theme.fg("text", shortValue(snapshot.campaign.id, 28))}`);
 		}
-		return [this.theme.style("◆ AEGIS INSPECT", { fg: "accent", bold: true }), ...fields].join("  ");
+		return [this.theme.style("◆ AEGIS INSPECT · F6", { fg: "accent", bold: true }), ...fields].join("  ");
 	}
 
 	private headerLines(width: number): string[] {
@@ -606,7 +614,7 @@ export class AegisInspector implements Component {
 				});
 			return this.muted(label);
 		}).join("  ");
-		const tabLine = this.compose(`${tabs}   ${crumbs}`, this.muted("Esc 返回对话输入"), Math.max(0, width - 4));
+		const tabLine = this.compose(`${tabs}   ${crumbs}`, this.muted("Esc 返回对话输入 · F7/F8/F9 面板"), Math.max(0, width - 4));
 		return [
 			this.topLine(this.summary(), width),
 			this.border("│ ") + this.fill(tabLine, Math.max(0, width - 4)) + this.border(" │"),
@@ -629,7 +637,7 @@ export class AegisInspector implements Component {
 		const clippedBody = body.slice(0, bodyHeight).map((line) => this.bodyLine(line, safeWidth));
 		const focus = this.showDetail && safeWidth < 100 ? "DETAIL" : "MASTER";
 		const help = this.muted(
-			`FOCUS ${focus}  ↑↓ select · Enter detail · PgUp/PgDn page · 1/2/3 tabs · F5 refresh · Esc 返回输入`,
+			`FOCUS ${focus}  1 Graph · 2 Board · 3 Evidence · ↑↓ select · Enter detail · PgUp/PgDn · F5 refresh · Esc 返回`,
 		);
 		const meta = this.dim(`read-only · rev ${shortRevision(text(this.revision, "unknown"))} · ${safeWidth}×${rows}`);
 		const footer = this.compose(help, meta, Math.max(0, inner - 4));
@@ -1111,14 +1119,18 @@ export class AegisInspector implements Component {
 }
 
 /** Open the full-screen Aegis Inspector without taking ownership of Pi's editor. */
-export async function openAegisTui(ctx: ExtensionContext, readCommitted: () => unknown): Promise<void> {
+export async function openAegisTui(
+	ctx: ExtensionContext,
+	readCommitted: () => unknown,
+	initialTab: Tab = "graph",
+): Promise<void> {
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify("/aegis ui 需要 Pi 交互式 TUI 模式", "warning");
 		return;
 	}
 	const source = createAegisTuiDataSource(readCommitted as Parameters<typeof createAegisTuiDataSource>[0]);
 	await ctx.ui.custom<void>(
-		(tui, theme, keybindings, done) => new AegisInspector(tui, theme, keybindings, source, done),
+		(tui, theme, keybindings, done) => new AegisInspector(tui, theme, keybindings, source, done, initialTab),
 		{
 			overlay: true,
 			overlayOptions: {

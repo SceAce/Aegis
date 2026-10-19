@@ -142,6 +142,7 @@ try {
 			'printf "FAKE_PI cwd=%s\\n" "$(pwd -P)"\n' +
 			'printf "FAKE_PI task=%s mode=%s ws=%s\\n" "$AEGIS_CONTEST_TASK_ID" "$AEGIS_CONTEST_MODE" "$AEGIS_CONTEST_WORKSPACE"\n' +
 			'printf "FAKE_PI args=%s\\n" "$*"\n' +
+			'printf "FAKE_AGENT_DIR=%s\\n" "$PI_CODING_AGENT_DIR"\n' +
 			'printf "FAKE_TASK_DIR=%s\\n" "$AEGIS_EVENT_LOG" "$AEGIS_RAM_DIR" "$AEGIS_HANDOFF_FILE"\n' +
 			'printf "FAKE_ROM=%s\\n" "$AEGIS_ROM_FILE"\n',
 	);
@@ -154,6 +155,19 @@ try {
 	const realDefault = realpathSync(defaultWorkspace);
 	const realExplicit = realpathSync(explicitWorkspace);
 	const realOther = realpathSync(otherCwd);
+
+	// AEGIS_HOME controls all default Pi and runtime state paths.
+	const isolatedHome = join(realpathSync(fakeRoot), "aegis-home");
+	r = runLauncher({
+		script: fakeRun,
+		cwd: realDefault,
+		taskId: "task-home",
+		env: { AEGIS_HOME: isolatedHome },
+	});
+	check("AEGIS_HOME launch exits 0", r.status === 0, r.stderr);
+	check("Pi agent dir uses AEGIS_HOME", r.stdout.includes(`FAKE_AGENT_DIR=${isolatedHome}/agent`), r.stdout);
+	check("Pi session dir uses AEGIS_HOME", r.stdout.includes(`--session-dir ${isolatedHome}/sessions`), r.stdout);
+	check("task runtime uses AEGIS_HOME", r.stdout.includes(`${isolatedHome}/runtime/contest/tasks/task-home/events.jsonl`), r.stdout);
 
 	// Default: workspace == caller cwd.
 	r = runLauncher({ script: fakeRun, cwd: realDefault, taskId: "task-default" });

@@ -24,7 +24,13 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 
 - Campaign CLI：`campaign/c6-entry.mjs`，支持 `run/status/pause/resume/cancel/export/observe/rotate/measure`。
 - 受限 pilot 准备和状态：`campaign/e1-max-pilot.mjs`。真实调用仍必须由用户显式执行。
-- Aegis Pi TUI 启动：`./run-aegis.sh`（源码入口，默认 `AEGIS_TUI_SHELL=1`：固定 Aegis 顶部状态栏 + 右侧上下文 rail，保留 Pi 原生 chat/editor，因此输入框始终可见；配置 `AEGIS_MANIFEST_FILE` 或 `AEGIS_CAMPAIGN_MANIFEST` 后 rail/状态显示 Campaign 数据，未配置时显示 `NO MANIFEST` 但不会遮挡输入。配置、会话、EventLog 与 RAM 默认隔离在 `Pi_Agent_base/config/` 和 `Pi_Agent_base/runtime/`；不自动构建或访问网络）。例如 `./run-aegis.sh --model <provider/model>` 可指定模型。`AEGIS_TUI_SHELL=0` 恢复原生 Pi 布局；`/aegis ui` 仍可打开只读 Inspector 详情 overlay。可用 `AEGIS_PI_AGENT_DIR`、`AEGIS_PI_SESSION_DIR`、`AEGIS_EVENT_LOG`、`AEGIS_RAM_DIR`、`AEGIS_MANIFEST_FILE` 覆盖隔离路径。
+- Aegis Pi TUI 启动：`./run-aegis.sh`（源码入口，默认 `AEGIS_TUI_SHELL=1`：保留 Pi 原生 chat/editor，显示 Aegis 顶栏和右侧上下文 rail）。私有配置与运行数据默认存放在 `~/.Aegis/`：`agent/`（Pi settings、models、auth、MCP 配置）、`sessions/`（Pi 会话）、`server/`（Pi server 状态）、`runtime/`（EventLog、RAM、投影和产物）。可用 `AEGIS_HOME` 更换根目录，用 `AEGIS_PI_AGENT_DIR`、`AEGIS_PI_SESSION_DIR`、`AEGIS_PI_SERVER_DIR`、`AEGIS_EVENT_LOG`、`AEGIS_RAM_DIR` 单独覆盖；Manifest 使用 `AEGIS_MANIFEST_FILE` 或 `AEGIS_CAMPAIGN_MANIFEST` 指向你的 Campaign 文件。启动不自动迁移仓库里的旧配置，也不自动访问模型/工具网络。`./run-aegis.sh --model <provider/model>` 可指定模型；凭据放在 `~/.Aegis/agent/` 的 Pi auth 配置或环境变量中，不要提交。
+
+  面板操作：`F6` 打开只读 Inspector；`F7` 直达 Task Graph，`F8` 直达 Board，`F9` 直达 Evidence。Inspector 内也可用 `1/2/3` 切换视图，`↑/↓` 选择、`Enter` 详情、`PgUp/PgDn` 分页、`F5` 刷新、`Esc` 返回对话。也可输入 `/aegis ui` 打开。Pi 原生快捷键用 `/hotkeys` 查看。
+
+  MCP 配置放在 `~/.Aegis/agent/mcp.json`（与 Pi 的 `~/.pi/agent/mcp.json` 格式相同）；启动后用 `/mcp` 查看连接与 exposure，修改配置后 `/reload` 或重启。工具按 server 分组，默认用 `codemode` 或 `deferred`；只有明确选出的高频只读工具才用 `direct`。接入记录应先写明 server 身份/版本、传输方式、工具清单、读写与外网范围、认证来源、数据边界、超时/预算和验证命令；生成配置时默认 `enabled: false`，核对无凭据泄漏和权限范围后再启用。Pi 的 MCP exposure 和 server 声明的 `readOnlyHint` 都不是 Aegis work permit；实际调用仍须满足当前 Campaign 的工具 allowlist 与预算。不要把所有工具设为 `direct`，也不要在仓库或提交中保存 token。
+
+  CTF 工具发现清单位于 `~/.Aegis/tools/ctf/tool-inventory.json`。`run-aegis.sh` 默认将 `/Users/scemac/Tools/PyVenv/CTF/bin` 加到 Pi 子进程 PATH；可用 `AEGIS_CTF_VENV` 更改 venv 根目录。PATH 可见只表示 CLI 可被本机 shell 找到，不表示它已成为模型可调用的 Aegis action 或 MCP server。要执行工具，仍需按任务固定 argv、约束工作区/目标、配置独立检查，并由当前 work permit 授权。
 - 预构建 Pi bundle 隔离启动：`./run-pi.sh`（要求 bundle 与 Pi 源码一致）。
 - 手动任务启动：仓库根 `./run-ram-test.sh`；默认使用 `maxapi/deepseek-v4.1-flash`，可显式切换到官方 DeepSeek 配置，见 [模型配置](../docs/DEEPSEEK_MODEL_REFERENCE.md)。
 - 本地知识库：根目录 ignored `knowledge/`；自动候选召回和 `aegis_knowledge` 模型选择接入 Board/RAM，迁移与调用时机见 [知识库接口](../docs/KNOWLEDGE_RUNTIME.md)。

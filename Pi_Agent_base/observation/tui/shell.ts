@@ -86,7 +86,7 @@ export class AegisComposerBar implements Component {
 			this.theme.fg("accent", "▌ INPUT"),
 			this.theme.fg("text", "Enter 发送"),
 			this.theme.fg("dim", "·"),
-			this.theme.fg("muted", "/aegis ui 详情"),
+			this.theme.fg("muted", "F7/F8/F9 面板"),
 			this.theme.fg("dim", "·"),
 			this.theme.fg("muted", "状态只读"),
 		].join("  ");
@@ -183,7 +183,7 @@ export class AegisSidebar implements Component {
 				lines.push(this.theme.fg("error", integrity.status === "manifest_unavailable" ? "NO MANIFEST" : "UNAVAILABLE"));
 				lines.push(this.theme.fg("muted", "set AEGIS_MANIFEST_FILE"));
 			}
-			lines.push(this.theme.fg("accent", "/aegis ui  details"));
+			lines.push(this.theme.fg("accent", "F7/F8/F9 检查器"));
 			lines.push(this.theme.fg("muted", "Esc stays in chat"));
 			lines.push("");
 			lines.push(this.head("BOARD"));

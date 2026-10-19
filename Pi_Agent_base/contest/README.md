@@ -24,15 +24,15 @@ Nothing here:
 Runtime data (git-ignored, never commit):
 
 ```
-Pi_Agent_base/runtime/contest/decisions.jsonl   # extension metadata (task/session linking)
-Pi_Agent_base/runtime/contest/results.jsonl     # independent outcomes
-Pi_Agent_base/runtime/contest/reports/          # daily reports
-Pi_Agent_base/config/sessions/                  # raw Pi session JSONL (may contain flags/task text)
+~/.Aegis/runtime/contest/decisions.jsonl   # extension metadata (task/session linking)
+~/.Aegis/runtime/contest/results.jsonl     # independent outcomes
+~/.Aegis/runtime/contest/reports/          # daily reports
+~/.Aegis/sessions/                         # raw Pi session JSONL (may contain flags/task text)
 ```
 
 > Sessions and decisions may contain flags, answer text, or credentials. Keep
-> `runtime/` and `config/` private; do not copy them into `docs/` or a public
-> repo. The metadata log never stores raw tool output or credential material.
+> `~/.Aegis/` private; do not copy it into `docs/` or a public repo. The
+> metadata log never stores raw tool output or credential material.
 
 ## 1. Launch a contest task (one new session per task)
 
@@ -74,7 +74,7 @@ AEGIS_CONTEST_CARDS=/abs/path/Pi_Agent_base/contest/cards.sample.json \
   before Pi starts. The cwd is **not** an OS sandbox.
 
 `--help` lists all env knobs. The launcher isolates Pi state under
-`Pi_Agent_base/config` via `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
+`~/.Aegis` via `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
 and `PI_SERVER_DIR`; it does not touch `$HOME/.pi`. It accepts **no Pi
 passthrough flags at all** (not even after `--`) and clears inherited `PI_*`
 experiment state, so `off` and `hint` always share the same

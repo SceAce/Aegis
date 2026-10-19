@@ -21,7 +21,7 @@
 //
 // Env:
 //   AEGIS_CONTEST_RESULTS   results JSONL path
-//                           (default: <base>/runtime/contest/results.jsonl)
+//                           (default: ~/.Aegis/runtime/contest/results.jsonl)
 
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -29,7 +29,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE_DIR = resolve(HERE, "..");
-const RESULTS_PATH = process.env.AEGIS_CONTEST_RESULTS || join(BASE_DIR, "runtime", "contest", "results.jsonl");
+const AEGIS_HOME = process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
+const RESULTS_PATH = process.env.AEGIS_CONTEST_RESULTS || join(AEGIS_HOME, "runtime", "contest", "results.jsonl");
 
 // The results log may reference task evidence; keep NEW files owner-only.
 process.umask(0o077);
@@ -98,7 +99,7 @@ add options:
   --at <iso8601>     override timestamp (default: now)
 
 Environment:
-  AEGIS_CONTEST_RESULTS  results JSONL path (default: ${join(BASE_DIR, "runtime", "contest", "results.jsonl")})
+  AEGIS_CONTEST_RESULTS  results JSONL path (default: ${join(AEGIS_HOME, "runtime", "contest", "results.jsonl")})
 
 Safety:
   refuses values that look like flags/credentials; never reads auth.json;

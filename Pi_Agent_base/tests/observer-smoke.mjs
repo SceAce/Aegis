@@ -44,6 +44,7 @@ const pi = {
 		tools.set(tool.name, tool);
 	},
 	registerCommand() {},
+	registerShortcut() {},
 };
 module.default(pi);
 

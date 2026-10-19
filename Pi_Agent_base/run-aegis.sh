@@ -9,11 +9,13 @@ CLI="$PI_DIR/packages/coding-agent/src/cli.ts"
 SOURCE_RESOLVER="$PI_DIR/packages/coding-agent/src/experimental/source-resolver.ts"
 OBSERVER="$BASE_DIR/extensions/aegis-observer.ts"
 ROM_FILE="$BASE_DIR/agent/ROM.md"
-CONFIG_DIR="$BASE_DIR/config"
-RUNTIME_DIR="$BASE_DIR/runtime"
-AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR/agent}"
-SESSION_DIR="${AEGIS_PI_SESSION_DIR:-$CONFIG_DIR/sessions}"
-SERVER_DIR="${AEGIS_PI_SERVER_DIR:-$CONFIG_DIR/server}"
+AEGIS_HOME="${AEGIS_HOME:-$HOME/.Aegis}"
+AEGIS_CTF_VENV="${AEGIS_CTF_VENV:-/Users/scemac/Tools/PyVenv/CTF}"
+CONFIG_DIR="${AEGIS_HOME}/agent"
+RUNTIME_DIR="${AEGIS_HOME}/runtime"
+AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR}"
+SESSION_DIR="${AEGIS_PI_SESSION_DIR:-${AEGIS_HOME}/sessions}"
+SERVER_DIR="${AEGIS_PI_SERVER_DIR:-${AEGIS_HOME}/server}"
 EVENT_LOG="${AEGIS_EVENT_LOG:-$RUNTIME_DIR/events.jsonl}"
 RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 
@@ -31,6 +33,12 @@ fi
 
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
+export AEGIS_HOME
+if [[ -x "$AEGIS_CTF_VENV/bin/python" ]]; then
+	PATH="$AEGIS_CTF_VENV/bin:$PATH"
+	export PATH
+	export AEGIS_CTF_VENV
+fi
 export PI_CODING_AGENT_DIR="$AGENT_DIR"
 export PI_CODING_AGENT_SESSION_DIR="$SESSION_DIR"
 export PI_SERVER_DIR="$SERVER_DIR"

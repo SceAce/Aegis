@@ -14,8 +14,8 @@ set -euo pipefail
 #     it) and chdirs into the workspace before exec,
 #   * sets `umask 077` so every NEW private dir/file is owner-only, and warns
 #     (never chmods) about pre-existing group/world-accessible state,
-#   * isolates all mutable Pi state under Pi_Agent_base/config (agent/sessions/
-#     server), never $HOME/.pi,
+#   * isolates all mutable Pi state under $HOME/.Aegis (agent/sessions/server),
+#     never $HOME/.pi,
 #   * disables extension discovery, MCP, skills, prompt templates, themes, and
 #     context files, and loads ONLY the aegis-contest extension,
 #   * does NOT pass --append-system-prompt: the Observer injects the stable ROM
@@ -78,14 +78,15 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CHECKOUT_ROOT="$(cd "$BASE_DIR/.." && pwd -P)"
 PI_TEST="$BASE_DIR/pi/pi-test.sh"
 SELF="$BASE_DIR/contest/run.sh"
-CONFIG_DIR="$BASE_DIR/config"
+AEGIS_HOME="${AEGIS_HOME:-$HOME/.Aegis}"
+CONFIG_DIR="$AEGIS_HOME"
 AGENT_DIR="$CONFIG_DIR/agent"
 SESSION_DIR="$CONFIG_DIR/sessions"
 SERVER_DIR="$CONFIG_DIR/server"
 CONTEST="$BASE_DIR/extensions/aegis-contest.ts"
 OBSERVER="$BASE_DIR/extensions/aegis-observer.ts"
 ROM_FILE="$BASE_DIR/agent/ROM.md"
-RUNTIME_DIR="$BASE_DIR/runtime"
+RUNTIME_DIR="$AEGIS_HOME/runtime"
 CONTEST_DIR="$RUNTIME_DIR/contest"
 CARDS_FILE="${AEGIS_CONTEST_CARDS:-$CONTEST_DIR/cards.json}"
 CONTEST_LOG="${AEGIS_CONTEST_LOG:-$CONTEST_DIR/decisions.jsonl}"
@@ -322,6 +323,7 @@ if [[ "$TASK_RUNTIME_REAL" != "$CONTEST_DIR"/* ]]; then
 	exit 2
 fi
 
+export AEGIS_HOME
 export PI_CODING_AGENT_DIR="$AGENT_DIR"
 export PI_CODING_AGENT_SESSION_DIR="$SESSION_DIR"
 export PI_SERVER_DIR="$SERVER_DIR"

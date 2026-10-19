@@ -26,10 +26,10 @@
 //   node Pi_Agent_base/contest/daily.mjs --help
 //
 // Env:
-//   AEGIS_CONTEST_LOG        decisions JSONL (default: <base>/runtime/contest/decisions.jsonl)
-//   AEGIS_CONTEST_RESULTS    results JSONL   (default: <base>/runtime/contest/results.jsonl)
-//   AEGIS_CONTEST_SESSION_DIR Pi session dir (default: <base>/config/sessions)
-//   AEGIS_CONTEST_REPORT_DIR report output   (default: <base>/runtime/contest/reports)
+//   AEGIS_CONTEST_LOG        decisions JSONL (default: ~/.Aegis/runtime/contest/decisions.jsonl)
+//   AEGIS_CONTEST_RESULTS    results JSONL   (default: ~/.Aegis/runtime/contest/results.jsonl)
+//   AEGIS_CONTEST_SESSION_DIR Pi session dir (default: ~/.Aegis/sessions)
+//   AEGIS_CONTEST_REPORT_DIR report output   (default: ~/.Aegis/runtime/contest/reports)
 
 import { mkdir, readFile, stat, writeFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -40,6 +40,7 @@ import { projectState } from "../memory/state.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE_DIR = resolve(HERE, "..");
+const AEGIS_HOME = process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
 
 // Reports may quote task evidence; keep NEW report files owner-only.
 process.umask(0o077);
@@ -49,15 +50,15 @@ function envPath(name, fallback) {
 	return value && value.trim() ? value : fallback;
 }
 
-const DECISIONS_PATH = envPath("AEGIS_CONTEST_LOG", join(BASE_DIR, "runtime", "contest", "decisions.jsonl"));
-const RESULTS_PATH = envPath("AEGIS_CONTEST_RESULTS", join(BASE_DIR, "runtime", "contest", "results.jsonl"));
-const SESSION_DIR = envPath("AEGIS_CONTEST_SESSION_DIR", join(BASE_DIR, "config", "sessions"));
-const REPORT_DIR = envPath("AEGIS_CONTEST_REPORT_DIR", join(BASE_DIR, "runtime", "contest", "reports"));
+const DECISIONS_PATH = envPath("AEGIS_CONTEST_LOG", join(AEGIS_HOME, "runtime", "contest", "decisions.jsonl"));
+const RESULTS_PATH = envPath("AEGIS_CONTEST_RESULTS", join(AEGIS_HOME, "runtime", "contest", "results.jsonl"));
+const SESSION_DIR = envPath("AEGIS_CONTEST_SESSION_DIR", join(AEGIS_HOME, "sessions"));
+const REPORT_DIR = envPath("AEGIS_CONTEST_REPORT_DIR", join(AEGIS_HOME, "runtime", "contest", "reports"));
 // Task-scoped runtime audit dir written by the launcher: one events.jsonl per
 // task. The daily report reads it ONLY to surface stage activity and the current
 // effective Outcome view; it never re-derives a competing "truth" and never
 // promotes anything.
-const TASK_RUNTIME_DIR = envPath("AEGIS_CONTEST_TASK_DIR", join(BASE_DIR, "runtime", "contest", "tasks"));
+const TASK_RUNTIME_DIR = envPath("AEGIS_CONTEST_TASK_DIR", join(AEGIS_HOME, "runtime", "contest", "tasks"));
 
 function usage() {
 	return `Aegis contest daily read-only review report

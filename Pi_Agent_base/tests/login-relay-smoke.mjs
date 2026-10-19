@@ -35,7 +35,7 @@ function run(args, key = secret) {
 	);
 	const result = spawnSync(process.execPath, [fixtureScript, ...args], {
 		encoding: "utf8",
-		env: { ...environment, PI_RELAY_API_KEY: key },
+		env: { ...environment, AEGIS_HOME: join(fixtureDir, "config"), PI_RELAY_API_KEY: key },
 	});
 	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 	assert.ok(!`${result.stdout}${result.stderr}`.includes(key), "command output leaked the API key");
@@ -143,10 +143,10 @@ try {
 	symlinkSync(escapedDir, agentDir, "dir");
 	const rejected = spawnSync(process.execPath, [fixtureScript, "--show"], {
 		encoding: "utf8",
-		env: process.env,
+		env: { ...process.env, AEGIS_HOME: join(fixtureDir, "config") },
 	});
 	assert.notEqual(rejected.status, 0);
-	assert.match(rejected.stderr, /Refusing configuration outside Pi_Agent_base/);
+	assert.match(rejected.stderr, /Refusing configuration outside AEGIS_HOME/);
 	rmSync(escapedDir, { recursive: true, force: true });
 
 	console.log("login relay smoke ok");
