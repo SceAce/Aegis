@@ -10,6 +10,8 @@ import { projectBoard } from "../memory/board.mjs";
 import { verifyChain } from "../shared/events.mjs";
 
 const BASE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const AEGIS_HOME = resolve(process.env.AEGIS_HOME || join(process.env.HOME || BASE, ".Aegis"));
+const AGENT_DIR = resolve(process.env.AEGIS_PI_AGENT_DIR || join(AEGIS_HOME, "agent"));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const text = (message) =>
 	typeof message?.content === "string"
@@ -147,7 +149,7 @@ export async function runCtfPilot({
 	const providerRequests = [],
 		operations = [],
 		usage = [];
-	const modelConfigDir = join(BASE, "config", "agent");
+	const modelConfigDir = AGENT_DIR;
 	const metadata = {
 		task: JSON.parse(readFileSync(join(taskDir, "provenance.json"), "utf8")).id,
 		mode,

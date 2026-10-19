@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # Run the checked-in Pi sources with Aegis isolated state. No build, install,
 # bundle fallback, network setup, or user-default Pi directory is used here.
@@ -9,15 +10,8 @@ CLI="$PI_DIR/packages/coding-agent/src/cli.ts"
 SOURCE_RESOLVER="$PI_DIR/packages/coding-agent/src/experimental/source-resolver.ts"
 OBSERVER="$BASE_DIR/extensions/aegis-observer.ts"
 ROM_FILE="$BASE_DIR/agent/ROM.md"
-AEGIS_HOME="${AEGIS_HOME:-$HOME/.Aegis}"
-AEGIS_CTF_VENV="${AEGIS_CTF_VENV:-/Users/scemac/Tools/PyVenv/CTF}"
-CONFIG_DIR="${AEGIS_HOME}/agent"
-RUNTIME_DIR="${AEGIS_HOME}/runtime"
-AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR}"
-SESSION_DIR="${AEGIS_PI_SESSION_DIR:-${AEGIS_HOME}/sessions}"
-SERVER_DIR="${AEGIS_PI_SERVER_DIR:-${AEGIS_HOME}/server}"
-EVENT_LOG="${AEGIS_EVENT_LOG:-$RUNTIME_DIR/events.jsonl}"
-RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
+AEGIS_HOME="${AEGIS_HOME:-${HOME:-$BASE_DIR}/.Aegis}"
+AEGIS_CTF_VENV="${AEGIS_CTF_VENV:-}"
 
 for file in "$CLI" "$SOURCE_RESOLVER" "$OBSERVER" "$ROM_FILE"; do
 	if [[ ! -f "$file" ]]; then
@@ -26,18 +20,32 @@ for file in "$CLI" "$SOURCE_RESOLVER" "$OBSERVER" "$ROM_FILE"; do
 	fi
 done
 
-if ! command -v node >/dev/null 2>&1; then
+NODE_BIN="$(command -v node || true)"
+if [[ -z "$NODE_BIN" ]]; then
 	printf 'Node.js is required to run Pi from source.\n' >&2
 	exit 1
 fi
 
+mkdir -p "$AEGIS_HOME"
+AEGIS_HOME="$(cd "$AEGIS_HOME" && pwd -P)"
+CONFIG_DIR="$AEGIS_HOME/agent"
+RUNTIME_DIR="$AEGIS_HOME/runtime"
+AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR}"
+SESSION_DIR="${AEGIS_PI_SESSION_DIR:-$AEGIS_HOME/sessions}"
+SERVER_DIR="${AEGIS_PI_SERVER_DIR:-$AEGIS_HOME/server}"
+EVENT_LOG="${AEGIS_EVENT_LOG:-$RUNTIME_DIR/events.jsonl}"
+RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
 export AEGIS_HOME
-if [[ -x "$AEGIS_CTF_VENV/bin/python" ]]; then
+if [[ -n "$AEGIS_CTF_VENV" ]]; then
+	if [[ ! -x "$AEGIS_CTF_VENV/bin/python" ]]; then
+		printf 'AEGIS_CTF_VENV must contain an executable bin/python: %s\n' "$AEGIS_CTF_VENV" >&2
+		exit 2
+	fi
+	AEGIS_CTF_VENV="$(cd "$AEGIS_CTF_VENV" && pwd -P)"
 	PATH="$AEGIS_CTF_VENV/bin:$PATH"
-	export PATH
-	export AEGIS_CTF_VENV
+	export PATH AEGIS_CTF_VENV
 fi
 export PI_CODING_AGENT_DIR="$AGENT_DIR"
 export PI_CODING_AGENT_SESSION_DIR="$SESSION_DIR"
@@ -52,8 +60,8 @@ export AEGIS_TUI_AUTOSTART="${AEGIS_TUI_AUTOSTART:-0}"
 # always load the Aegis observer extension.
 case "${1:-}" in
 	install | remove | uninstall | update | list | config | auth)
-		exec node --import "$SOURCE_RESOLVER" "$CLI" "$@"
+		exec "$NODE_BIN" --import "$SOURCE_RESOLVER" "$CLI" "$@"
 		;;
 esac
 
-exec node --import "$SOURCE_RESOLVER" "$CLI" --extension "$OBSERVER" "$@"
+exec "$NODE_BIN" --import "$SOURCE_RESOLVER" "$CLI" --extension "$OBSERVER" "$@"

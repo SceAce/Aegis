@@ -18,7 +18,9 @@ import { resolveProviderConfig } from "./provider-config.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DEFAULT_ROOT = join(REPO, "Pi_Agent_base", "runtime", "pilot", "e1-max-first");
-const DEFAULT_PI_DIR = join(REPO, "Pi_Agent_base", "config", "agent");
+const DEFAULT_PI_DIR = resolve(
+	process.env.AEGIS_PI_AGENT_DIR || join(process.env.AEGIS_HOME || join(process.env.HOME || REPO, ".Aegis"), "agent"),
+);
 const SOURCE = "export function normalizeName(value) {\n  return value.trim();\n}\n";
 const TEST = [
 	'import assert from "node:assert/strict";',

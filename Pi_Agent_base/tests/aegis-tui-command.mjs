@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -53,7 +53,9 @@ test("Aegis source launcher forwards --help using isolated state paths", () => {
 	const temporary = mkdtempSync(join(tmpdir(), "aegis-runner-test-"));
 	const ctfVenv = join(temporary, "ctf-venv");
 	mkdirSync(join(ctfVenv, "bin"), { recursive: true });
-	writeFileSync(join(ctfVenv, "bin", "python"), "");
+	const ctfPython = join(ctfVenv, "bin", "python");
+	writeFileSync(ctfPython, "");
+	chmodSync(ctfPython, 0o755);
 	try {
 		const result = spawnSync("bash", [join(repoRoot, "Pi_Agent_base/run-aegis.sh"), "--help"], {
 			cwd: repoRoot,
@@ -68,8 +70,11 @@ test("Aegis source launcher forwards --help using isolated state paths", () => {
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /Usage:/);
 		assert.equal(existsSync(join(temporary, "aegis-home", "agent")), true);
-		for (const dir of ["agent", "sessions", "server", "runtime", "runtime/ram"])
-			assert.equal(existsSync(join(temporary, "aegis-home", dir)), true, `missing ${dir}`);
+		for (const dir of ["agent", "sessions", "server", "runtime", "runtime/ram"]) {
+			const path = join(temporary, "aegis-home", dir);
+			assert.equal(existsSync(path), true, `missing ${dir}`);
+			assert.equal(statSync(path).mode & 0o777, 0o700, `insecure mode for ${dir}`);
+		}
 	} finally {
 		rmSync(temporary, { recursive: true, force: true });
 	}
@@ -103,7 +108,7 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 	}
 	const handlers = new Map();
 	const shortcuts = new Map();
-	const calls = { topBar: 0, sidebar: 0, header: 0, custom: 0 };
+	const calls = { topBar: 0, sidebar: 0, header: 0, custom: 0, panels: [] };
 	const api = {
 		on: (event, handler) => handlers.set(event, handler),
 		registerTool() {},
@@ -119,8 +124,11 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 		sessionManager: { getSessionId: () => "session-shell-start" },
 		ui: {
 			notify() {},
-			custom: async () => {
+			custom: async (factory) => {
 				calls.custom += 1;
+				const component = factory(tui, theme, keybindings, () => {});
+				calls.panels.push(component.render(80).join("\n"));
+				component.dispose();
 			},
 			setTopBar: () => {
 				calls.topBar += 1;
@@ -144,12 +152,14 @@ test("Aegis shell registers top bar/sidebar and does not open the Inspector over
 		assert.equal(calls.header, 1);
 		assert.equal(calls.widget, 1);
 		assert.equal(calls.custom, 0);
-		for (const key of ["f6", "f7", "f8", "f9"])
-			assert.equal(shortcuts.has(key), true, `missing ${key}`);
+		for (const key of ["f6", "f7", "f8", "f9"]) assert.equal(shortcuts.has(key), true, `missing ${key}`);
 		assert.match(shortcuts.get("f8").description, /board/i);
-		for (const key of ["f6", "f7", "f8", "f9"])
-			await shortcuts.get(key).handler(context);
+		for (const key of ["f6", "f7", "f8", "f9"]) await shortcuts.get(key).handler(context);
 		assert.equal(calls.custom, 4);
+		assert.match(calls.panels[0], /\[1\] Graph/);
+		assert.match(calls.panels[1], /\[1\] Graph/);
+		assert.match(calls.panels[2], /\[2\] Board/);
+		assert.match(calls.panels[3], /EVIDENCE/);
 	} finally {
 		for (const [key, value] of saved) {
 			if (value === undefined) delete process.env[key];

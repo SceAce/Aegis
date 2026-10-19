@@ -16,13 +16,13 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const BASE_DIR = dirname(fileURLToPath(import.meta.url));
-const AEGIS_HOME = process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
-const AGENT_DIR = join(AEGIS_HOME, "agent");
+const AEGIS_HOME = resolve(process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis"));
+const AGENT_DIR = resolve(process.env.AEGIS_PI_AGENT_DIR || join(AEGIS_HOME, "agent"));
 const MODELS_PATH = join(AGENT_DIR, "models.json");
 const AUTH_PATH = join(AGENT_DIR, "auth.json");
 const SETTINGS_PATH = join(AGENT_DIR, "settings.json");
@@ -76,12 +76,14 @@ function fail(message) {
 	throw new Error(message);
 }
 
+process.umask(0o077);
+
 function ensureIsolatedAgentDir() {
 	mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
-	const expected = join(realpathSync(AEGIS_HOME), "agent");
+	const expected = join(realpathSync(dirname(AGENT_DIR)), basename(AGENT_DIR));
 	const actual = realpathSync(AGENT_DIR);
 	if (actual !== expected) {
-		fail(`Refusing configuration outside AEGIS_HOME: ${actual}`);
+		fail(`Refusing configuration outside AEGIS_HOME or through a symbolic link: ${actual}`);
 	}
 	for (const path of [MODELS_PATH, AUTH_PATH, SETTINGS_PATH]) {
 		if (existsSync(path) && lstatSync(path).isSymbolicLink()) {

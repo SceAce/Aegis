@@ -123,7 +123,7 @@ Pi planner, driven by the configured real `relay`/`deepseek-v4.1-flash` model,
 actually calls the single Aegis tool and is verified by the Oracle. It requires
 the explicit `--run-real` flag (otherwise it refuses and exits 2), supports
 `--output-dir` and a conservative `--timeout-ms`, and reads the credential from
-the isolated `Pi_Agent_base/config/agent` directory without ever printing it.
+the isolated `${AEGIS_HOME:-~/.Aegis}/agent` directory without ever printing it. Set `AEGIS_PI_AGENT_DIR` to an alternate isolated agent directory when needed.
 
 ```bash
 node --import Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \

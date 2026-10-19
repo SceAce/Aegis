@@ -46,7 +46,8 @@ const MODEL_ID = "deepseek-v4.1-flash";
 const MAX_PROVIDER_REQUESTS = 2;
 const BANNED_TOOLS = ["bash", "powershell", "edit", "write", "read", "grep", "find", "ls", "mcp", "codemode"];
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const AGENT_DIR = join(BASE_DIR, "config", "agent");
+const AEGIS_HOME = resolve(process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis"));
+const AGENT_DIR = resolve(process.env.AEGIS_PI_AGENT_DIR || join(AEGIS_HOME, "agent"));
 const EXTENSION_PATH = join(BASE_DIR, "extensions", "aegis-fixture-tool.ts");
 
 const USAGE = `Aegis optional real-model A/B runner (makes real provider calls).

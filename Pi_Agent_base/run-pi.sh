@@ -1,22 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
-# This entry point keeps every Pi-owned mutable file below Pi_Agent_base.
+# This entry point keeps every Pi-owned mutable file below AEGIS_HOME.
 # It intentionally runs the built bundle so source changes cannot be used
 # accidentally without an explicit offline rebuild.
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PI_DIR="$BASE_DIR/pi"
 BUNDLE="$PI_DIR/packages/coding-agent/dist/bundle/cli.js"
-CONFIG_DIR="$BASE_DIR/config"
-AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR/agent}"
-SESSION_DIR="${AEGIS_PI_SESSION_DIR:-$CONFIG_DIR/sessions}"
-SERVER_DIR="${AEGIS_PI_SERVER_DIR:-$CONFIG_DIR/server}"
 OBSERVER="$BASE_DIR/extensions/aegis-observer.ts"
 ROM_FILE="$BASE_DIR/agent/ROM.md"
-RUNTIME_DIR="$BASE_DIR/runtime"
-EVENT_LOG="${AEGIS_EVENT_LOG:-$RUNTIME_DIR/events.jsonl}"
-RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
+CALLER_PWD="$(pwd -P)"
+AEGIS_HOME="${AEGIS_HOME:-${HOME:-$BASE_DIR}/.Aegis}"
+if [[ "$AEGIS_HOME" != /* ]]; then AEGIS_HOME="$CALLER_PWD/$AEGIS_HOME"; fi
 
 if [[ ! -f "$BUNDLE" ]]; then
 	printf 'Pi bundle is missing. Build it with:\n  cd %q && npm run build:offline\n' "$PI_DIR" >&2
@@ -40,8 +37,18 @@ if [[ -n "$STALE_SOURCE" ]]; then
 	exit 1
 fi
 
+mkdir -p "$AEGIS_HOME"
+AEGIS_HOME="$(cd "$AEGIS_HOME" && pwd -P)"
+CONFIG_DIR="$AEGIS_HOME/agent"
+AGENT_DIR="${AEGIS_PI_AGENT_DIR:-$CONFIG_DIR}"
+SESSION_DIR="${AEGIS_PI_SESSION_DIR:-$AEGIS_HOME/sessions}"
+SERVER_DIR="${AEGIS_PI_SERVER_DIR:-$AEGIS_HOME/server}"
+RUNTIME_DIR="$AEGIS_HOME/runtime"
+EVENT_LOG="${AEGIS_EVENT_LOG:-$RUNTIME_DIR/events.jsonl}"
+RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
+export AEGIS_HOME
 export PI_CODING_AGENT_DIR="$AGENT_DIR"
 export PI_CODING_AGENT_SESSION_DIR="$SESSION_DIR"
 export PI_SERVER_DIR="$SERVER_DIR"
