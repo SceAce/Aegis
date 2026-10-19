@@ -1,0 +1,1710 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis TUI · 4 套配色方案视觉设计对比稿</title>
+<style>
+/* ==========================================================================
+   Aegis TUI Design System Tokens
+   严格遵循字符终端约束：
+   - 0px 圆角、无毛玻璃、无渐变、无投射阴影、无漂浮卡片
+   - 等宽字体网格、清晰的字符边框与背景色块
+   - 强调色克制使用，绝不在大面积正文或常规输出中泛滥
+   - 状态必须包含显式中文标签，色彩不作为唯一识别机制
+   - 核心原则：工具执行退出码 0 [工具完成] 绝不混同于独立验收通过 [已验证]
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   方案 A: Tokyo Night (东京夜 · 冷静清晰的蓝黑色系)
+   设计理由：
+   - 极具现代开发者辨识度的 Neovim / 终端经典色调；
+   - 冷黑略带靛紫的背景 (#1a1b26)，配高对比度冷白文字，字形边缘极其清晰锐利；
+   - 蓝、冰青与紫色的层次感分明，但大面积冷色需克制警示信息，避免淹没核心风险。
+   -------------------------------------------------------------------------- */
+:root, [data-theme="tokyo-night"] {
+  --theme-id: "tokyo-night";
+  --theme-name: "Tokyo Night (东京夜)";
+  --theme-desc: "冷静、清晰的蓝黑色系 · 经典终端极客风格";
+
+  --bg: #1a1b26;
+  --panel-bg: #16161e;
+  --overlay-bg: #13141c;
+  --border: #292e42;
+  --border-subtle: #1f2335;
+  --border-focus: #7aa2f7;
+  --text: #c0caf5;
+  --text-secondary: #9aa5ce;
+  --text-muted: #565f89;
+  --accent: #7aa2f7;
+  --accent-dim: #232a42;
+  --accent-text: #ffffff;
+  --selection-bg: #283457;
+  --selection-text: #ffffff;
+
+  /* 状态语义 Token */
+  --status-verified: #9ece6a;      /* 已验证 (Oracle 独立断言通过) - 春草绿 */
+  --status-verified-bg: #1b2820;
+  --status-tool-ok: #7dcfff;       /* 工具完成 (退出码 0 物理执行成功) - 冰青蓝 */
+  --status-tool-ok-bg: #152633;
+  --status-warn: #e0af68;          /* 待处理 / 未验证 - 暖金琥珀 */
+  --status-warn-bg: #2d2417;
+  --status-error: #f7768e;         /* 错误 / 拒绝 / 故障 - 珊瑚红 */
+  --status-error-bg: #2d1822;
+  --status-unknown: #bb9af7;       /* 未知 UNKNOWN - 薰衣草冷紫 */
+  --status-unknown-bg: #251c33;
+  --status-proposal: #ff9e64;      /* 模型提案 (主观推断，待核验) - 橙彩 */
+  --status-proposal-bg: #2d1e16;
+}
+
+/* --------------------------------------------------------------------------
+   方案 B: Catppuccin Mocha (摩卡深灰蓝 · 柔和低疲劳的护眼系)
+   设计理由：
+   - 降低了背景与前景的极端反差，柔和哑光质感，长时间盯盘眼疲劳极低；
+   - 偏向粉调马卡龙的深灰底色 (#1e1e2e)，各色相经过饱和度收敛，极为和谐；
+   - 适合高密度日志排查与长任务监控，但警告与错误的刺眼度稍弱，需更强的文字标签辅助。
+   -------------------------------------------------------------------------- */
+[data-theme="catppuccin-mocha"] {
+  --theme-id: "catppuccin-mocha";
+  --theme-name: "Catppuccin Mocha (摩卡深灰蓝)";
+  --theme-desc: "柔和、低疲劳的深灰蓝 · 长时间注视低眼压";
+
+  --bg: #1e1e2e;
+  --panel-bg: #181825;
+  --overlay-bg: #11111b;
+  --border: #313244;
+  --border-subtle: #262738;
+  --border-focus: #89b4fa;
+  --text: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #6c7086;
+  --accent: #89b4fa;
+  --accent-dim: #2a2e46;
+  --accent-text: #11111b;
+  --selection-bg: #45475a;
+  --selection-text: #ffffff;
+
+  /* 状态语义 Token */
+  --status-verified: #a6e3a1;      /* 已验证 - 柔羽绿 */
+  --status-verified-bg: #1c2b22;
+  --status-tool-ok: #89dceb;       /* 工具完成 - 天空青蓝 */
+  --status-tool-ok-bg: #182830;
+  --status-warn: #f9e2af;          /* 待处理 - 奶黄 */
+  --status-warn-bg: #2d291c;
+  --status-error: #f38ba8;         /* 错误 / 拒绝 - 柔红 */
+  --status-error-bg: #2d1c24;
+  --status-unknown: #b4befe;       /* 未知 - 浅淡薰衣草 */
+  --status-unknown-bg: #222238;
+  --status-proposal: #fab387;      /* 模型提案 - 柔蜜桃 */
+  --status-proposal-bg: #2e211d;
+}
+
+/* --------------------------------------------------------------------------
+   方案 C: One Dark (原子深色 · 克制中性专业的工程工具系)
+   设计理由：
+   - 业界基石级终端 / 编辑器调色，中性铅灰石底色 (#21252b)，零浮夸感；
+   - 灰度过渡极其细腻平滑，代码与数据呈现极具专业工业质感；
+   - 严肃纯粹，工具属性极强；缺点是品牌辨识度较为同质化，与其他命令行工具不易拉开差距。
+   -------------------------------------------------------------------------- */
+[data-theme="one-dark"] {
+  --theme-id: "one-dark";
+  --theme-name: "One Dark (原子深色)";
+  --theme-desc: "克制、中性、专业的工程工具风格 · 极度耐看";
+
+  --bg: #21252b;
+  --panel-bg: #1b1d23;
+  --overlay-bg: #16181d;
+  --border: #333842;
+  --border-subtle: #282c34;
+  --border-focus: #61afef;
+  --text: #abb2bf;
+  --text-secondary: #828997;
+  --text-muted: #5c6370;
+  --accent: #61afef;
+  --accent-dim: #252e3c;
+  --accent-text: #ffffff;
+  --selection-bg: #3e4451;
+  --selection-text: #ffffff;
+
+  /* 状态语义 Token */
+  --status-verified: #98c379;      /* 已验证 - 橄榄青绿 */
+  --status-verified-bg: #20291f;
+  --status-tool-ok: #56b6c2;       /* 工具完成 - 蓝青 */
+  --status-tool-ok-bg: #19272b;
+  --status-warn: #e5c07b;          /* 待处理 - 赭石黄 */
+  --status-warn-bg: #2c2519;
+  --status-error: #e06c75;         /* 错误 / 拒绝 - 砖红 */
+  --status-error-bg: #2c1c1f;
+  --status-unknown: #c678dd;       /* 未知 - 灰紫 */
+  --status-unknown-bg: #271c2c;
+  --status-proposal: #d19a66;      /* 模型提案 - 陶土金 */
+  --status-proposal-bg: #2c2018;
+}
+
+/* --------------------------------------------------------------------------
+   方案 D: Aegis Basalt & Bronze (玄武古铜 · 推荐原创方案)
+   设计理由：
+   - 契合 Aegis（神话防御之盾、不变量审计、责任闭环引擎）的核心内核；
+   - 底色采用深沉的玄武黑曜玄铁底 (#0d1112)，带极轻微的冷绿石墨矿物色温，比生硬纯黑更深邃舒适；
+   - 强调色提取为「锻造古铜金」(--accent: #e2a348)，具有机械钟表、军规仪器与法典印章的厚重威严；
+   - 验证通过独占「荧光薄荷绿」(#34d399)，工具完成则严格采用「遥测冷青」(#38bdf8)，
+     彻底破除开发者「脚本跑通(0)=业务逻辑已通过验收」的习惯性误判；
+   - 极具视觉记忆点，一眼即可认出是 Aegis 终端，摆脱泛滥的蓝紫 AI 网页审美。
+   -------------------------------------------------------------------------- */
+[data-theme="aegis-bronze"] {
+  --theme-id: "aegis-bronze";
+  --theme-name: "Aegis Basalt & Bronze (玄武古铜 · 官方推荐)";
+  --theme-desc: "战术玄武墨底 + 锻造古铜金 · 盾牌与不变量审计的硬核隐喻";
+
+  --bg: #0d1112;                   /* 深玄武黑曜石底色 */
+  --panel-bg: #121719;             /* 钛铁矿深色面板 */
+  --overlay-bg: #090c0d;           /* 极深遮罩背景 */
+  --border: #243033;               /* 冷淬钢灰框线 */
+  --border-subtle: #192224;
+  --border-focus: #e2a348;         /* 锻造古铜金 - 焦点高亮 */
+  --text: #dbe4e2;                 /* 钛白正文，字字清晰 */
+  --text-secondary: #8a9c99;       /* 风化镍银次级文字 */
+  --text-muted: #536461;           /* 石墨灰弱化文字 */
+  --accent: #e2a348;               /* 主强调色: 古铜金 */
+  --accent-dim: #262013;
+  --accent-text: #0d1112;
+  --selection-bg: #1c3336;         /* 铜绿浸润钢灰 */
+  --selection-text: #ffffff;
+
+  /* 状态语义 Token */
+  --status-verified: #34d399;      /* 已验证 (Oracle 独立断言) - 荧光薄荷绿 */
+  --status-verified-bg: #10261f;
+  --status-tool-ok: #38bdf8;       /* 工具完成 (退出码 0 观测证据) - 遥测冷青 */
+  --status-tool-ok-bg: #102533;
+  --status-warn: #fbbf24;          /* 待处理 / 未验证 - 警告琥珀金 */
+  --status-warn-bg: #2a200f;
+  --status-error: #f43f5e;         /* 拒绝 / 故障 - 警报赤红 */
+  --status-error-bg: #2a1016;
+  --status-unknown: #a78bfa;       /* 未知 UNKNOWN - 探索冷紫 */
+  --status-unknown-bg: #1e1830;
+  --status-proposal: #f59e0b;      /* 模型提案 (主观猜想) - 暖褐金 */
+  --status-proposal-bg: #2b1d0a;
+}
+
+/* ==========================================================================
+   全局基础布局 & TUI 字符约束
+   ========================================================================== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: #020405;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+button, input {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   顶部切换控制条 (用于评测对比 4 套方案、切换 80 列窄屏、打开 Overlay)
+   -------------------------------------------------------------------------- */
+.eval-control-bar {
+  height: 38px;
+  background: #06090a;
+  border-bottom: 1px solid #202b30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 12px;
+  z-index: 100;
+  user-select: none;
+}
+
+.eval-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eval-title {
+  color: #718096;
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-right: 2px;
+  font-weight: 700;
+}
+
+.eval-btn {
+  background: #11171a;
+  border: 1px solid #2d3b40;
+  color: #94a3b8;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eval-btn:hover {
+  background: #1c272c;
+  color: #ffffff;
+  border-color: #4b5e66;
+}
+
+.eval-btn.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: bold;
+}
+
+.eval-btn.shortcut-btn {
+  border-style: dashed;
+}
+
+/* --------------------------------------------------------------------------
+   终端整体容器 (支持标准宽屏 120+ 列与 80 列窄终端仿真模式)
+   -------------------------------------------------------------------------- */
+.terminal-wrapper {
+  height: calc(100vh - 38px);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: #040607;
+  overflow: hidden;
+  transition: padding 0.15s ease;
+}
+
+/* 80 列窄终端模式：强制限制视口在 720px 宽度内，自动隐藏右侧栏 */
+.terminal-wrapper.is-80col {
+  padding: 10px 0;
+}
+
+.terminal-wrapper.is-80col .terminal-root {
+  max-width: 720px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.terminal-wrapper.is-80col .app-rail {
+  display: none !important;
+}
+
+.terminal-wrapper.is-80col .top-status-bar .hide-in-80col {
+  display: none;
+}
+
+/* TUI 主应用视口 */
+.terminal-root {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr) auto 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   1. 顶部紧凑状态栏 (Top Compact Status Bar)
+   ========================================================================== */
+.top-status-bar {
+  height: 28px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.status-left-cluster, .status-right-cluster {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-badge {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-metric {
+  color: var(--text-secondary);
+}
+
+.status-metric .m-label {
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.status-metric .m-val {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.budget-val {
+  color: var(--status-warn);
+}
+
+.tui-tag-running {
+  background: var(--status-tool-ok-bg);
+  color: var(--status-tool-ok);
+  border: 1px solid var(--status-tool-ok);
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-weight: bold;
+}
+
+/* ==========================================================================
+   中间主网格 (Main Viewport: 左侧 Transcript + 右侧可收起 Rail)
+   ========================================================================== */
+.viewport-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 285px;
+  position: relative;
+}
+
+.viewport-grid.rail-hidden {
+  grid-template-columns: minmax(0, 1fr) 0px;
+}
+
+.viewport-grid.rail-hidden .app-rail {
+  display: none;
+}
+
+/* ==========================================================================
+   2. 对话 Transcript 区域 (Conversation Stream)
+   ========================================================================== */
+.transcript-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 25px minmax(0, 1fr);
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.transcript-header-bar {
+  height: 25px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.transcript-header-bar strong {
+  color: var(--text-secondary);
+}
+
+.transcript-flow {
+  overflow-y: auto;
+  padding: 12px 14px;
+  scroll-behavior: smooth;
+}
+
+/* 轮次消息 */
+.chat-turn {
+  margin-bottom: 16px;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+}
+
+.chat-turn.user-turn {
+  border-left-color: var(--accent);
+}
+
+.chat-turn.aegis-turn {
+  border-left-color: var(--border);
+}
+
+.turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  margin-bottom: 4px;
+}
+
+.role-badge {
+  font-weight: 700;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.role-badge.user {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.role-badge.aegis {
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.turn-timestamp {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.turn-content {
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.turn-content p {
+  margin-bottom: 6px;
+}
+
+.turn-content code {
+  color: var(--accent);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-subtle);
+  padding: 0 4px;
+}
+
+/* 模型提案块 (Model Proposal) */
+.proposal-callout {
+  margin: 7px 0;
+  border: 1px dashed var(--status-proposal);
+  background: var(--status-proposal-bg);
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.proposal-callout .proposal-title {
+  color: var(--status-proposal);
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+/* 工具调用折叠块 (Tool Row) */
+.tui-tool-box {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  font-size: 11.5px;
+}
+
+.tool-row-header {
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: var(--panel-bg);
+  user-select: none;
+}
+
+.tool-row-header:hover {
+  background: var(--accent-dim);
+}
+
+.tool-info-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.tool-info-left .tool-caret {
+  color: var(--text-muted);
+  font-weight: bold;
+  width: 10px;
+}
+
+.tool-cmd-name {
+  color: var(--text);
+  font-weight: bold;
+}
+
+.tool-cmd-args {
+  color: var(--text-muted);
+}
+
+.tool-badge-pill {
+  font-weight: 700;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  border: 1px solid;
+}
+
+/* 核心原则：工具成功(tool-ok)是冷青/冰蓝，绝不使用代表独立验收成功的绿！ */
+.tag-tool-success {
+  color: var(--status-tool-ok);
+  background: var(--status-tool-ok-bg);
+  border-color: var(--status-tool-ok);
+}
+
+.tag-tool-failed {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  border-color: var(--status-error);
+}
+
+.tool-body-details {
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.tool-body-details.is-hidden {
+  display: none;
+}
+
+.stdout-block {
+  background: var(--overlay-bg);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 8px;
+  margin-top: 4px;
+  color: var(--text);
+  overflow-x: auto;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* 架构规范警示条：工具成功 ≠ 业务验证通过 */
+.invariant-warning-box {
+  margin: 7px 0;
+  padding: 5px 9px;
+  background: var(--status-unknown-bg);
+  border-left: 3px solid var(--status-unknown);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.invariant-warning-box strong {
+  color: var(--status-unknown);
+}
+
+/* 7 种系统状态徽章演示栏 */
+.state-tag-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.state-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid;
+}
+
+.badge-verified {
+  color: var(--status-verified);
+  background: var(--status-verified-bg);
+  border-color: var(--status-verified);
+}
+
+.badge-unverified {
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn);
+}
+
+.badge-unknown {
+  color: var(--status-unknown);
+  background: var(--status-unknown-bg);
+  border-color: var(--status-unknown);
+}
+
+.badge-pending {
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn);
+}
+
+.badge-unresolved {
+  color: var(--status-warn);
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn);
+}
+
+.badge-rejected {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  border-color: var(--status-error);
+}
+
+.badge-failure {
+  color: var(--status-error);
+  background: var(--status-error-bg);
+  border-color: var(--status-error);
+}
+
+/* ==========================================================================
+   3. 原生终端编辑器风格输入区 (Native Terminal Editor Composer)
+   ========================================================================== */
+.editor-composer {
+  border-top: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 6px 10px 8px;
+  user-select: none;
+}
+
+.editor-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.mode-indicator {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: bold;
+  padding: 0 5px;
+}
+
+.editor-input-frame {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  padding: 5px 8px;
+  transition: border-color 0.1s ease;
+}
+
+.editor-input-frame.focused-state {
+  border-color: var(--border-focus);
+  outline: 1px solid var(--border-focus);
+}
+
+.editor-prompt-symbol {
+  color: var(--accent);
+  font-weight: 800;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.real-input-element {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.submit-key-btn {
+  background: var(--accent-dim);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.submit-key-btn:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.editor-subtext-tips {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ==========================================================================
+   4. 右侧 Aegis 状态栏 (Collapsible Rail)
+   ========================================================================== */
+.app-rail {
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel-bg);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow-y: auto;
+  user-select: none;
+}
+
+.rail-section {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 9px 10px;
+}
+
+.rail-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 7px;
+}
+
+.rail-section-head .click-hint {
+  font-size: 10.5px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.rail-section-head .click-hint:hover {
+  text-decoration: underline;
+}
+
+/* 状态度量四宫格 */
+.metric-grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.metric-card {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+  padding: 4px 7px;
+}
+
+.metric-card .lbl {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.metric-card .val {
+  font-size: 15px;
+  font-weight: bold;
+  margin-top: 1px;
+}
+
+/* 列表项与选中项 */
+.rail-row {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.rail-row:hover {
+  background: var(--accent-dim);
+}
+
+.rail-row.is-selected {
+  background: var(--selection-bg);
+  border-left: 2px solid var(--accent);
+}
+
+.rail-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rail-row-bottom {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   5. 底部快捷键提示行 (Bottom Shortcut Bar)
+   ========================================================================== */
+.bottom-shortcut-bar {
+  height: 24px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.shortcut-group {
+  display: flex;
+  gap: 12px;
+}
+
+.shortcut-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.shortcut-capsule kbd {
+  color: var(--accent);
+  font-weight: bold;
+  font-family: inherit;
+}
+
+/* ==========================================================================
+   6. 终端原生风格 Overlay (Terminal Modal / Overlay)
+   ========================================================================== */
+.terminal-overlay-layer {
+  display: none;
+  position: absolute;
+  inset: 28px 0 24px 0;
+  background: rgba(0, 0, 0, 0.78);
+  z-index: 50;
+  padding: 16px;
+}
+
+.terminal-overlay-layer.is-visible {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-terminal-window {
+  width: 100%;
+  max-width: 860px;
+  height: 88%;
+  background: var(--overlay-bg);
+  border: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: 32px minmax(0, 1fr) 28px;
+}
+
+.overlay-win-header {
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.overlay-win-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 1px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.overlay-win-close:hover {
+  background: var(--status-error-bg);
+  color: var(--status-error);
+  border-color: var(--status-error);
+}
+
+.overlay-win-body {
+  overflow-y: auto;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.overlay-win-footer {
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ASCII 字符树展示 */
+.ascii-tree-canvas {
+  white-space: pre;
+  font-family: inherit;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.ascii-tree-canvas .tnode-verified {
+  color: var(--status-verified);
+  font-weight: bold;
+}
+
+.ascii-tree-canvas .tnode-running {
+  color: var(--status-tool-ok);
+  font-weight: bold;
+}
+
+.ascii-tree-canvas .tnode-ready {
+  color: var(--accent);
+}
+
+.ascii-tree-canvas .tnode-unknown {
+  color: var(--status-unknown);
+}
+
+/* 参数规格表格 */
+.param-spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  margin-top: 8px;
+}
+
+.param-spec-table th, .param-spec-table td {
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.param-spec-table th {
+  background: var(--panel-bg);
+  color: var(--text-secondary);
+}
+
+.swatch-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  vertical-align: middle;
+  border: 1px solid #444;
+  margin-right: 5px;
+}
+</style>
+</head>
+<body data-theme="aegis-bronze">
+
+  <!-- 顶部交互控制栏 -->
+  <header class="eval-control-bar">
+    <div class="eval-group">
+      <span class="eval-title">切换配色 [1-4]:</span>
+      <button class="eval-btn" data-theme="tokyo-night" onclick="setTheme('tokyo-night')">A. Tokyo Night</button>
+      <button class="eval-btn" data-theme="catppuccin-mocha" onclick="setTheme('catppuccin-mocha')">B. Catppuccin Mocha</button>
+      <button class="eval-btn" data-theme="one-dark" onclick="setTheme('one-dark')">C. One Dark</button>
+      <button class="eval-btn active" data-theme="aegis-bronze" onclick="setTheme('aegis-bronze')">D. 玄武古铜 (推荐)</button>
+    </div>
+
+    <div class="eval-group">
+      <span class="eval-title">终端宽度 [W/N]:</span>
+      <button class="eval-btn active" id="btnModeWide" onclick="setTerminalMode('wide')">标准宽屏 (120列+)</button>
+      <button class="eval-btn" id="btnModeNarrow" onclick="setTerminalMode('narrow')">80 列窄终端</button>
+    </div>
+
+    <div class="eval-group">
+      <button class="eval-btn shortcut-btn" onclick="toggleAllTools()">折叠/展开工具 (Ctrl+R)</button>
+      <button class="eval-btn shortcut-btn" onclick="triggerOverlay('graph')">任务图 (Ctrl+J)</button>
+      <button class="eval-btn shortcut-btn" onclick="triggerOverlay('board')">看板 (Ctrl+B)</button>
+      <button class="eval-btn shortcut-btn" onclick="triggerOverlay('detail')">详情 (Ctrl+D)</button>
+      <button class="eval-btn shortcut-btn" onclick="triggerOverlay('specs')">变量表与取舍 (Ctrl+S)</button>
+    </div>
+  </header>
+
+  <!-- 终端外框包装 (支持窄屏居中) -->
+  <div class="terminal-wrapper" id="terminalWrapper">
+    <div class="terminal-root" id="terminalRoot">
+
+      <!-- 1. 顶部紧凑状态栏 -->
+      <header class="top-status-bar">
+        <div class="status-left-cluster">
+          <span class="brand-badge"><span>🛡</span>AEGIS</span>
+          <span class="status-metric"><span class="m-label">TASK</span><span class="m-val">verify-input-contract</span></span>
+          <span class="status-metric hide-in-80col"><span class="m-label">MODEL</span><span class="m-val">pi-claude-3-7-sonnet</span></span>
+          <span class="status-metric"><span class="m-label">SESSION</span><span class="m-val">sess_8f29</span></span>
+        </div>
+        <div class="status-right-cluster">
+          <span class="status-metric budget-val"><span class="m-label">BUDGET</span><span class="m-val">14/40 (35%)</span></span>
+          <span class="status-metric hide-in-80col"><span class="m-label">EP</span><span class="m-val">ep-17 · rev 42</span></span>
+          <span class="tui-tag-running">[运行中 RUNNING]</span>
+        </div>
+      </header>
+
+      <!-- 中间视口 (Transcript + Collapsible Rail) -->
+      <main class="viewport-grid" id="viewportGrid">
+
+        <!-- 2. 中间大面积对话 Transcript -->
+        <section class="transcript-pane">
+          <div class="transcript-header-bar">
+            <span><strong>对话历史</strong> · Session sess_8f29 (已提交事件: 42 条)</span>
+            <span>严格状态机控制 · 工具退出 ≠ 任务验收</span>
+          </div>
+
+          <div class="transcript-flow" id="transcriptFlow">
+
+            <!-- Turn 1: 用户消息 -->
+            <article class="chat-turn user-turn">
+              <div class="turn-meta">
+                <span class="role-badge user">[用户]</span>
+                <span class="turn-timestamp">19:10:04</span>
+              </div>
+              <div class="turn-content">请执行 `scripts/verify-schema.sh` 检查当前 input.json 契约，核实预算上限并准备提交。</div>
+            </article>
+
+            <!-- Turn 2: Agent 回复 + 模型提案 + 工具调用 -->
+            <article class="chat-turn aegis-turn">
+              <div class="turn-meta">
+                <span class="role-badge aegis">[AEGIS]</span>
+                <span class="turn-timestamp">19:10:06 · 耗时 1.2s</span>
+              </div>
+              <div class="turn-content">
+                <p>已接收任务指令。正在调用本地环境校验脚本。依 Aegis 固定规则：<strong>工具退出码为 0 仅代表执行观测正常，不代表任务通过独立验收。</strong></p>
+
+                <!-- 模型提案块 -->
+                <div class="proposal-callout">
+                  <span class="proposal-title">[模型提案 · 待独立验证]</span> 推断 input.json 结构满足 schema v2 规范，计划通过字段观测后进入外部 Oracle 审计环节。
+                </div>
+
+                <!-- 工具调用行 1: Bash -->
+                <div class="tui-tool-box">
+                  <div class="tool-row-header" onclick="toggleToolItem(this)">
+                    <div class="tool-info-left">
+                      <span class="tool-caret">▼</span>
+                      <span class="tool-cmd-name">bash</span>
+                      <span class="tool-cmd-args">scripts/verify-schema.sh --input=input.json</span>
+                    </div>
+                    <span class="tool-badge-pill tag-tool-success">[工具完成 · exit 0]</span>
+                  </div>
+                  <div class="tool-body-details">
+                    <div style="margin-bottom:3px; color:var(--text-muted);">
+                      工作目录: <code>/workspace</code> · 耗时: <code>142ms</code> · 观测签名: <code>sha256:7c8b41df...</code>
+                    </div>
+                    <pre class="stdout-block">[STDOUT] Loading schema definition: contracts/schema.v2.json
+[STDOUT] Parsing target payload: input.json
+[STDOUT] Structural inspection: 8 required fields observed.
+[EXIT CODE] 0 (NORMAL)</pre>
+                  </div>
+                </div>
+
+                <!-- 核心架构防混淆提示 -->
+                <div class="invariant-warning-box">
+                  <strong>[状态裁定: 未知 UNKNOWN]</strong> 虽然工具执行正常退出（exit 0），但该输出仅为传输层已观测证据（Observed）；系统 Outcome 仍处于未结清状态。
+                </div>
+              </div>
+            </article>
+
+            <!-- Turn 3: 用户追问 -->
+            <article class="chat-turn user-turn">
+              <div class="turn-meta">
+                <span class="role-badge user">[用户]</span>
+                <span class="turn-timestamp">19:11:15</span>
+              </div>
+              <div class="turn-content">触发 Oracle 契约检查，核验预算和状态机不变量。</div>
+            </article>
+
+            <!-- Turn 4: Agent 报告验证状态与 7 种状态演示 -->
+            <article class="chat-turn aegis-turn">
+              <div class="turn-meta">
+                <span class="role-badge aegis">[AEGIS]</span>
+                <span class="turn-timestamp">19:11:18</span>
+              </div>
+              <div class="turn-content">
+                <p>已触发独立 Oracle 判定。契约断言未通过，当前责任已被显式记录：</p>
+
+                <!-- 工具调用行 2: 独立 Oracle 拒绝 -->
+                <div class="tui-tool-box">
+                  <div class="tool-row-header" onclick="toggleToolItem(this)">
+                    <div class="tool-info-left">
+                      <span class="tool-caret">▼</span>
+                      <span class="tool-cmd-name">aegis_oracle</span>
+                      <span class="tool-cmd-args">assert --contract=budget_cap --observed=14</span>
+                    </div>
+                    <span class="tool-badge-pill tag-tool-failed">[拒绝 REJECTED · 契约不满足]</span>
+                  </div>
+                  <div class="tool-body-details">
+                    <pre class="stdout-block" style="color:var(--status-error);">[ORACLE FAILURE] Invariant violated: single_step_budget_cap <= 10.
+Observed value: 14 calls.
+Decision: REJECTED (责任未闭环: 需经人工授权或削减探索分支)</pre>
+                  </div>
+                </div>
+
+                <!-- 7 种状态演示区 -->
+                <p style="margin-top: 8px;">状态机分类看板投影（包含规范要求的全部状态区分）：</p>
+                <div class="state-tag-strip">
+                  <span class="state-badge badge-verified">[已验证 VERIFIED] 3项</span>
+                  <span class="state-badge badge-unverified">[未验证 UNVERIFIED] 1项</span>
+                  <span class="state-badge badge-unknown">[未知 UNKNOWN] 1项</span>
+                  <span class="state-badge badge-pending">[待处理 PENDING] 2项</span>
+                  <span class="state-badge badge-unresolved">[未解决 UNRESOLVED] 0项</span>
+                  <span class="state-badge badge-rejected">[拒绝 REJECTED] 1项</span>
+                  <span class="state-badge badge-failure">[故障 FAILURE] 0项</span>
+                </div>
+                <p style="color:var(--text-secondary); font-size:12px;">已锁定下游任务进展，请在下方编辑器输入指令，选择放宽配额或回滚变更。</p>
+              </div>
+            </article>
+
+          </div>
+        </section>
+
+        <!-- 4. 右侧可收起 Aegis 状态栏 -->
+        <aside class="app-rail" id="appRail">
+          <!-- 区域 1: 汇总状态 -->
+          <div class="rail-section">
+            <div class="rail-section-head">
+              <span>AEGIS 状态摘要</span>
+              <span class="click-hint" onclick="toggleRailCollapse()">[收起 ◀]</span>
+            </div>
+            <div class="metric-grid-2x2">
+              <div class="metric-card">
+                <div class="lbl">已验证 Facts</div>
+                <div class="val" style="color:var(--status-verified);">3</div>
+              </div>
+              <div class="metric-card">
+                <div class="lbl">模型提案</div>
+                <div class="val" style="color:var(--status-proposal);">1</div>
+              </div>
+              <div class="metric-card">
+                <div class="lbl">待处理责任</div>
+                <div class="val" style="color:var(--status-warn);">2</div>
+              </div>
+              <div class="metric-card">
+                <div class="lbl">未解决冲突</div>
+                <div class="val" style="color:var(--status-tool-ok);">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 区域 2: 任务进度 (Task Graph) -->
+          <div class="rail-section">
+            <div class="rail-section-head">
+              <span>任务进度 (Task Graph)</span>
+              <span class="click-hint" onclick="triggerOverlay('graph')">[展开图]</span>
+            </div>
+            <div class="rail-row">
+              <div class="rail-row-top">
+                <span style="font-weight:bold;">1. plan-context</span>
+                <span class="state-badge badge-verified">[已验证]</span>
+              </div>
+              <div class="rail-row-bottom">依赖: none · 耗时 320ms</div>
+            </div>
+            <div class="rail-row is-selected">
+              <div class="rail-row-top">
+                <span style="font-weight:bold; color:var(--accent);">▶ 2. verify-input</span>
+                <span class="state-badge badge-unknown">[未知]</span>
+              </div>
+              <div class="rail-row-bottom">依赖: [1] · 等待 Oracle 结清</div>
+            </div>
+            <div class="rail-row">
+              <div class="rail-row-top">
+                <span>3. parse-payload</span>
+                <span class="state-badge badge-pending">[就绪]</span>
+              </div>
+              <div class="rail-row-bottom">依赖: [2] · 暂停等待中</div>
+            </div>
+            <div class="rail-row">
+              <div class="rail-row-top">
+                <span>4. seal-checkpoint</span>
+                <span class="state-badge badge-pending">[阻塞]</span>
+              </div>
+              <div class="rail-row-bottom">依赖: [3] · 必须独立验收</div>
+            </div>
+          </div>
+
+          <!-- 区域 3: 看板与待处理责任 (Board & Obligations) -->
+          <div class="rail-section" style="border-bottom:none;">
+            <div class="rail-section-head">
+              <span>看板与未决责任</span>
+              <span class="click-hint" onclick="triggerOverlay('board')">[看板]</span>
+            </div>
+            <div class="rail-row is-selected">
+              <div class="rail-row-top">
+                <span style="font-weight:bold;">[责任 #01] 预算超限裁定</span>
+                <span class="state-badge badge-rejected">[拒绝]</span>
+              </div>
+              <div class="rail-row-bottom">budget_cap 14 > 10 · 需人工覆写</div>
+            </div>
+            <div class="rail-row">
+              <div class="rail-row-top">
+                <span>[责任 #02] 提交签名结清</span>
+                <span class="state-badge badge-pending">[待处理]</span>
+              </div>
+              <div class="rail-row-bottom">等待 Task 2 Oracle 签名</div>
+            </div>
+            <div class="rail-row">
+              <div class="rail-row-top">
+                <span>[事实] Schema v2 匹配</span>
+                <span class="state-badge badge-verified">[已验证]</span>
+              </div>
+              <div class="rail-row-bottom">8 字段符合校验基准</div>
+            </div>
+          </div>
+        </aside>
+
+      </main>
+
+      <!-- 3. 底部原生终端编辑器风格输入区 -->
+      <footer class="editor-composer">
+        <div class="editor-info-header">
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span class="mode-indicator" id="modeIndicator">-- INSERT --</span>
+            <span>编码: UTF-8</span>
+            <span>会话: sess_8f29</span>
+          </span>
+          <span style="color:var(--text-muted);" id="cursorPosIndicator">第 1 行，第 28 字符 · [终端输入焦点处于最高优先级]</span>
+        </div>
+        <div class="editor-input-frame focused-state" id="inputFrame">
+          <span class="editor-prompt-symbol">AEGIS ❯</span>
+          <input type="text" class="real-input-element" id="realInput" value="允许单次执行预算超限至 15，并重试 Oracle 验证" onfocus="handleInputFocus(true)" onblur="handleInputFocus(false)" onkeydown="handleInputKeyDown(event)">
+          <button class="submit-key-btn" onclick="executeSubmit()">发送 (Enter)</button>
+        </div>
+        <div class="editor-subtext-tips">
+          <span>Pi 终端主要交互入口 · 原生编辑器编辑流 · 输入区焦点状态最明确</span>
+          <span>Tab 切换焦点 · Enter 提交指令</span>
+        </div>
+      </footer>
+
+      <!-- 5. 底部快捷键状态行 -->
+      <footer class="bottom-shortcut-bar">
+        <div class="shortcut-group">
+          <span class="shortcut-capsule"><kbd>Ctrl+J</kbd> 任务图</span>
+          <span class="shortcut-capsule"><kbd>Ctrl+B</kbd> 看板</span>
+          <span class="shortcut-capsule"><kbd>Ctrl+D</kbd> 详情</span>
+          <span class="shortcut-capsule"><kbd>Ctrl+S</kbd> 配色参数</span>
+          <span class="shortcut-capsule"><kbd>Ctrl+R</kbd> 折叠工具</span>
+          <span class="shortcut-capsule"><kbd>Esc</kbd> 关闭面板</span>
+        </div>
+        <div class="hide-in-80col">
+          <span>终端模式: POSIX Raw TUI · 24-bit TrueColor</span>
+        </div>
+      </footer>
+
+      <!-- 6. 终端原生风格 Overlay (Modal 弹窗) -->
+      <div class="terminal-overlay-layer" id="overlayLayer" onclick="handleOverlayBgClick(event)">
+        <div class="overlay-terminal-window">
+          <div class="overlay-win-header">
+            <span id="overlayWinTitle">┌─ 任务拓扑图 (Task Graph) ──────────────────────────┐</span>
+            <button class="overlay-win-close" onclick="closeOverlayWindow()">Esc 关闭</button>
+          </div>
+          <div class="overlay-win-body" id="overlayWinBody">
+            <!-- 动态注入内容 -->
+          </div>
+          <div class="overlay-win-footer">
+            <span>↑↓ 导航 · Enter 查看明细 · r 刷新 committed 投影 · 不直接执行破坏性操作</span>
+            <span>Aegis Terminal Overlay</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+/* ==========================================================================
+   纯原生交互脚本 (0 外部依赖，离线直接运行)
+   ========================================================================== */
+
+let activeTheme = "aegis-bronze";
+let toolsCollapsed = false;
+
+function setTheme(themeId) {
+  activeTheme = themeId;
+  document.body.setAttribute("data-theme", themeId);
+  document.querySelectorAll(".eval-btn[data-theme]").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-theme") === themeId);
+  });
+}
+
+function setTerminalMode(mode) {
+  const wrapper = document.getElementById("terminalWrapper");
+  const btnWide = document.getElementById("btnModeWide");
+  const btnNarrow = document.getElementById("btnModeNarrow");
+
+  if (mode === "narrow") {
+    wrapper.classList.add("is-80col");
+    btnNarrow.classList.add("active");
+    btnWide.classList.remove("active");
+  } else {
+    wrapper.classList.remove("is-80col");
+    btnWide.classList.add("active");
+    btnNarrow.classList.remove("active");
+  }
+}
+
+function toggleRailCollapse() {
+  document.getElementById("viewportGrid").classList.toggle("rail-hidden");
+}
+
+function toggleToolItem(headerEl) {
+  const details = headerEl.nextElementSibling;
+  const caret = headerEl.querySelector(".tool-caret");
+  const isHidden = details.classList.toggle("is-hidden");
+  caret.textContent = isHidden ? "▶" : "▼";
+}
+
+function toggleAllTools() {
+  toolsCollapsed = !toolsCollapsed;
+  document.querySelectorAll(".tool-body-details").forEach(box => {
+    box.classList.toggle("is-hidden", toolsCollapsed);
+    const caret = box.previousElementSibling.querySelector(".tool-caret");
+    if (caret) caret.textContent = toolsCollapsed ? "▶" : "▼";
+  });
+}
+
+function handleInputFocus(isFocused) {
+  const frame = document.getElementById("inputFrame");
+  const mode = document.getElementById("modeIndicator");
+  const posIndicator = document.getElementById("cursorPosIndicator");
+
+  if (isFocused) {
+    frame.classList.add("focused-state");
+    mode.textContent = "-- INSERT --";
+    mode.style.background = "var(--accent)";
+    posIndicator.textContent = "第 1 行，第 " + document.getElementById("realInput").value.length + " 字符 · [终端输入焦点处于最高优先级]";
+  } else {
+    frame.classList.remove("focused-state");
+    mode.textContent = "-- NORMAL --";
+    mode.style.background = "var(--border)";
+    posIndicator.textContent = "已离开编辑模式 · 按 Tab 或点击激活输入焦点";
+  }
+}
+
+function handleInputKeyDown(e) {
+  if (e.key === "Enter") {
+    executeSubmit();
+  }
+}
+
+function executeSubmit() {
+  const input = document.getElementById("realInput");
+  const val = input.value.trim();
+  if (!val) return;
+  alert("已在原生终端输入区向 Aegis 发送指令：\n「" + val + "」\n指令将记录入不可变 EventLog 并受契约不变量审计。");
+}
+
+/* Overlay 弹窗体系 */
+function triggerOverlay(type) {
+  const layer = document.getElementById("overlayLayer");
+  const title = document.getElementById("overlayWinTitle");
+  const body = document.getElementById("overlayWinBody");
+
+  if (type === "graph") {
+    title.textContent = "┌─ 任务拓扑图 (Task Graph Overlay) ───────────────────────────────────┐";
+    body.innerHTML = `
+      <div style="margin-bottom:12px; color:var(--text-secondary);">
+        当前 Campaign: <b>campaign-demo</b> · 聚焦节点: <b>verify-input</b> (执行中)
+      </div>
+      <div class="ascii-tree-canvas">
+┌── [root] 根执行上下文
+│   ├── <span class="tnode-verified">● [1] plan-context</span>  [已验证 VERIFIED]
+│   │   └── 产物: sha256:d8a9... · 规则基准已确认
+│   │
+│   ├── <span class="tnode-running">▶ [2] verify-input</span>  [运行中 / 状态: 未知 UNKNOWN]
+│   │   ├── 依赖: [1]
+│   │   ├── 工具调用: bash scripts/verify-schema.sh -> <span style="color:var(--status-tool-ok);">[exit 0]</span>
+│   │   └── 外部验证: aegis_oracle -> <span style="color:var(--status-error);">[REJECTED: 预算断言超出]</span>
+│   │
+│   ├── <span class="tnode-ready">○ [3] parse-payload</span>  [等待依赖 READY]
+│   │   └── 依赖: [2]
+│   │
+│   └── <span class="tnode-unknown">◇ [4] seal-checkpoint</span> [未决 UNRESOLVED]
+│       └── 依赖: [3] · 必须通过最终独立验收
+      </div>
+      <div style="margin-top:14px; padding:8px; border:1px solid var(--border); background:var(--panel-bg); font-size:11.5px;">
+        <span style="color:var(--accent); font-weight:bold;">说明:</span> 严格使用纯 ASCII 框线符号构建，完全符合真实终端渲染能力。绿色节点仅在独立 Oracle 验证通过后呈现。
+      </div>
+    `;
+  } else if (type === "board") {
+    title.textContent = "┌─ Aegis 事实与责任看板 (Board Projection) ─────────────────────────────┐";
+    body.innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div style="border:1px solid var(--border); padding:10px; background:var(--panel-bg);">
+          <div style="font-weight:bold; color:var(--status-verified); margin-bottom:8px;">● 权威已确认事实 (Committed Facts)</div>
+          <div style="font-size:11.5px; line-height:1.7;">
+            <div>[F-101] <span class="state-badge badge-verified">VERIFIED</span> 路径隔离检查通过</div>
+            <div>[F-102] <span class="state-badge badge-verified">VERIFIED</span> Schema v2 八字段格式完整</div>
+            <div>[F-103] <span class="state-badge badge-verified">VERIFIED</span> EventLog 顺序不可篡改性核验无误</div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border); padding:10px; background:var(--panel-bg);">
+          <div style="font-weight:bold; color:var(--status-proposal); margin-bottom:8px;">▲ 模型推断与假设 (Hypotheses)</div>
+          <div style="font-size:11.5px; line-height:1.7;">
+            <div>[H-201] <span class="state-badge badge-unverified">UNVERIFIED</span> 假设单次放宽预算至15可通过后续阶段</div>
+            <div>[H-202] <span class="state-badge badge-unknown">UNKNOWN</span> 最终输出对下游消费方兼容性未知</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; border:1px solid var(--border); padding:10px; background:var(--panel-bg);">
+        <div style="font-weight:bold; color:var(--status-error); margin-bottom:8px;">■ 待处理责任清单 (Pending Obligations)</div>
+        <table class="param-spec-table">
+          <thead>
+            <tr><th>责任编号</th><th>关联目标</th><th>阻断状态</th><th>恢复要求</th></tr>
+          </thead>
+          <tbody>
+            <tr style="background:var(--selection-bg);">
+              <td>OBL-082</td>
+              <td>verify-input / budget_cap</td>
+              <td><span class="state-badge badge-rejected">[拒绝 REJECTED]</span></td>
+              <td>等待用户输入覆写授权或削减中间阶段开销</td>
+            </tr>
+            <tr>
+              <td>OBL-083</td>
+              <td>seal-checkpoint</td>
+              <td><span class="state-badge badge-pending">[待处理 PENDING]</span></td>
+              <td>需 Oracle 生成有效最终 Outcome 签名</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else if (type === "detail") {
+    title.textContent = "┌─ 任务节点详情与审计存证 (Task Details & Evidence) ────────────────────┐";
+    body.innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div style="border:1px solid var(--border); padding:10px; background:var(--panel-bg);">
+          <div style="font-weight:bold; color:var(--accent); margin-bottom:8px;">任务元数据</div>
+          <div style="font-size:11.5px; line-height:1.7;">
+            <div>任务标识: <code>verify-input-contract</code></div>
+            <div>隶属 Episode: <code>ep-17</code></div>
+            <div>当前状态: <span class="state-badge badge-unknown">[未知 UNKNOWN]</span></div>
+            <div>前置依赖: <code>plan-context (已完成)</code></div>
+            <div>执行沙箱: <code>pi-sandbox-env (Read-Write Isolation)</code></div>
+            <div>已耗费预算: <code>14 / 40 calls (单步阈值: 10)</code></div>
+          </div>
+        </div>
+
+        <div style="border:1px solid var(--border); padding:10px; background:var(--panel-bg);">
+          <div style="font-weight:bold; color:var(--status-tool-ok); margin-bottom:8px;">观测证据链 (Observed Evidences)</div>
+          <div style="font-size:11.5px; line-height:1.7;">
+            <div>观测摘要: <code>sha256:7c8b41df0a88e99b2c...</code></div>
+            <div>工具通道: <code>bash (exit code: 0)</code></div>
+            <div>断言结果: <span class="state-badge badge-rejected">[拒绝 REJECTED]</span></div>
+            <div>信任源: <code>Independent Invariant Oracle</code></div>
+            <div>裁定原因: <code>Budget invariant threshold exceeded</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; border:1px solid var(--border); padding:8px 10px; background:var(--panel-bg); font-size:11.5px;">
+        <span style="color:var(--status-warn); font-weight:bold;">固定开发规则审计警示:</span>
+        模型输出是提案。工具退出码、transport 成功或模型文本不能替代独立 Outcome、授权或预算结清。
+      </div>
+    `;
+  } else if (type === "specs") {
+    title.textContent = "┌─ 4 套配色方案参数表与设计取舍 (Design Specifications) ────────────────┐";
+    body.innerHTML = `
+      <div style="color:var(--text-secondary); margin-bottom:10px;">
+        为 Aegis 终端应用定制的 4 套 TUI 配色方案完整 CSS 变量矩阵。所有色彩均经对比度校验，严格符合字符终端无拟物约束。
+      </div>
+
+      <table class="param-spec-table">
+        <thead>
+          <tr>
+            <th>CSS 变量 Token</th>
+            <th>A. Tokyo Night</th>
+            <th>B. Catppuccin Mocha</th>
+            <th>C. One Dark</th>
+            <th>D. 玄武古铜 (推荐)</th>
+            <th>设计职责与语义说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--bg</code></td>
+            <td><span class="swatch-dot" style="background:#1a1b26"></span>#1a1b26</td>
+            <td><span class="swatch-dot" style="background:#1e1e2e"></span>#1e1e2e</td>
+            <td><span class="swatch-dot" style="background:#21252b"></span>#21252b</td>
+            <td><span class="swatch-dot" style="background:#0d1112"></span>#0d1112</td>
+            <td>终端主视口背景 (避免刺眼纯黑#000)</td>
+          </tr>
+          <tr>
+            <td><code>--panel-bg</code></td>
+            <td><span class="swatch-dot" style="background:#16161e"></span>#16161e</td>
+            <td><span class="swatch-dot" style="background:#181825"></span>#181825</td>
+            <td><span class="swatch-dot" style="background:#1b1d23"></span>#1b1d23</td>
+            <td><span class="swatch-dot" style="background:#121719"></span>#121719</td>
+            <td>状态栏、侧栏、输入区背景</td>
+          </tr>
+          <tr>
+            <td><code>--overlay-bg</code></td>
+            <td><span class="swatch-dot" style="background:#13141c"></span>#13141c</td>
+            <td><span class="swatch-dot" style="background:#11111b"></span>#11111b</td>
+            <td><span class="swatch-dot" style="background:#16181d"></span>#16181d</td>
+            <td><span class="swatch-dot" style="background:#090c0d"></span>#090c0d</td>
+            <td>终端悬浮层、对话弹窗底层</td>
+          </tr>
+          <tr>
+            <td><code>--border</code></td>
+            <td><span class="swatch-dot" style="background:#292e42"></span>#292e42</td>
+            <td><span class="swatch-dot" style="background:#313244"></span>#313244</td>
+            <td><span class="swatch-dot" style="background:#333842"></span>#333842</td>
+            <td><span class="swatch-dot" style="background:#243033"></span>#243033</td>
+            <td>TUI 1px 字符网格框线</td>
+          </tr>
+          <tr>
+            <td><code>--text</code></td>
+            <td><span class="swatch-dot" style="background:#c0caf5"></span>#c0caf5</td>
+            <td><span class="swatch-dot" style="background:#cdd6f4"></span>#cdd6f4</td>
+            <td><span class="swatch-dot" style="background:#abb2bf"></span>#abb2bf</td>
+            <td><span class="swatch-dot" style="background:#dbe4e2"></span>#dbe4e2</td>
+            <td>主正文 (高对比度钛白/青白，清晰锋利)</td>
+          </tr>
+          <tr>
+            <td><code>--text-secondary</code></td>
+            <td><span class="swatch-dot" style="background:#9aa5ce"></span>#9aa5ce</td>
+            <td><span class="swatch-dot" style="background:#a6adc8"></span>#a6adc8</td>
+            <td><span class="swatch-dot" style="background:#828997"></span>#828997</td>
+            <td><span class="swatch-dot" style="background:#8a9c99"></span>#8a9c99</td>
+            <td>次级文字、说明、路径</td>
+          </tr>
+          <tr>
+            <td><code>--text-muted</code></td>
+            <td><span class="swatch-dot" style="background:#565f89"></span>#565f89</td>
+            <td><span class="swatch-dot" style="background:#6c7086"></span>#6c7086</td>
+            <td><span class="swatch-dot" style="background:#5c6370"></span>#5c6370</td>
+            <td><span class="swatch-dot" style="background:#536461"></span>#536461</td>
+            <td>时间戳、辅助快捷键 (清晰可辨，不暗沉)</td>
+          </tr>
+          <tr>
+            <td><code>--accent</code></td>
+            <td><span class="swatch-dot" style="background:#7aa2f7"></span>#7aa2f7</td>
+            <td><span class="swatch-dot" style="background:#89b4fa"></span>#89b4fa</td>
+            <td><span class="swatch-dot" style="background:#61afef"></span>#61afef</td>
+            <td><span class="swatch-dot" style="background:#e2a348"></span>#e2a348</td>
+            <td>主强调色 / 焦点指示色</td>
+          </tr>
+          <tr>
+            <td><code>--selection-bg</code></td>
+            <td><span class="swatch-dot" style="background:#283457"></span>#283457</td>
+            <td><span class="swatch-dot" style="background:#45475a"></span>#45475a</td>
+            <td><span class="swatch-dot" style="background:#3e4451"></span>#3e4451</td>
+            <td><span class="swatch-dot" style="background:#1c3336"></span>#1c3336</td>
+            <td>键盘光标选中行背景色块</td>
+          </tr>
+          <tr>
+            <td><code>--status-verified</code></td>
+            <td><span class="swatch-dot" style="background:#9ece6a"></span>#9ece6a</td>
+            <td><span class="swatch-dot" style="background:#a6e3a1"></span>#a6e3a1</td>
+            <td><span class="swatch-dot" style="background:#98c379"></span>#98c379</td>
+            <td><span class="swatch-dot" style="background:#34d399"></span>#34d399</td>
+            <td>[已验证] 独立验收唯一通过色</td>
+          </tr>
+          <tr>
+            <td><code>--status-tool-ok</code></td>
+            <td><span class="swatch-dot" style="background:#7dcfff"></span>#7dcfff</td>
+            <td><span class="swatch-dot" style="background:#89dceb"></span>#89dceb</td>
+            <td><span class="swatch-dot" style="background:#56b6c2"></span>#56b6c2</td>
+            <td><span class="swatch-dot" style="background:#38bdf8"></span>#38bdf8</td>
+            <td>[工具完成] 退出码0 (遥测冷青/绝非绿)</td>
+          </tr>
+          <tr>
+            <td><code>--status-warn</code></td>
+            <td><span class="swatch-dot" style="background:#e0af68"></span>#e0af68</td>
+            <td><span class="swatch-dot" style="background:#f9e2af"></span>#f9e2af</td>
+            <td><span class="swatch-dot" style="background:#e5c07b"></span>#e5c07b</td>
+            <td><span class="swatch-dot" style="background:#fbbf24"></span>#fbbf24</td>
+            <td>[待处理 / 未验证] 暖琥珀</td>
+          </tr>
+          <tr>
+            <td><code>--status-error</code></td>
+            <td><span class="swatch-dot" style="background:#f7768e"></span>#f7768e</td>
+            <td><span class="swatch-dot" style="background:#f38ba8"></span>#f38ba8</td>
+            <td><span class="swatch-dot" style="background:#e06c75"></span>#e06c75</td>
+            <td><span class="swatch-dot" style="background:#f43f5e"></span>#f43f5e</td>
+            <td>[拒绝 / 故障] 警报赤红</td>
+          </tr>
+          <tr>
+            <td><code>--status-unknown</code></td>
+            <td><span class="swatch-dot" style="background:#bb9af7"></span>#bb9af7</td>
+            <td><span class="swatch-dot" style="background:#b4befe"></span>#b4befe</td>
+            <td><span class="swatch-dot" style="background:#c678dd"></span>#c678dd</td>
+            <td><span class="swatch-dot" style="background:#a78bfa"></span>#a78bfa</td>
+            <td>[未知 UNKNOWN] 探索冷紫</td>
+          </tr>
+          <tr>
+            <td><code>--status-proposal</code></td>
+            <td><span class="swatch-dot" style="background:#ff9e64"></span>#ff9e64</td>
+            <td><span class="swatch-dot" style="background:#fab387"></span>#fab387</td>
+            <td><span class="swatch-dot" style="background:#d19a66"></span>#d19a66</td>
+            <td><span class="swatch-dot" style="background:#f59e0b"></span>#f59e0b</td>
+            <td>[模型提案] 主观推断标识</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:14px; line-height:1.6; font-size:12px;">
+        <div style="font-weight:bold; color:var(--accent);">推荐结论与设计取舍 (Recommendation & Trade-offs):</div>
+        <div>
+          我们明确推荐 <b>方案 D (Aegis Basalt & Bronze · 玄武古铜)</b> 作为 Aegis 的基准配色。<br>
+          <b>核心取舍考量：</b><br>
+          1. <b>品牌与产品定位共鸣:</b> Aegis 的核心价值在于防御失控、不变量断言与状态责任闭环。方案 D 以玄武黑曜与锻造古铜为基调，传达出「护盾、防御、可信」的战术级终端质感，与普通通用对话 Agent 的千篇一律蓝紫风形成鲜明区隔；<br>
+          2. <b>严格的认知防误判设计:</b> 绝大多数开发者习惯将绿色等同于「成功」。方案 D 严禁在工具退出码 0 上使用绿色，而是赋予其冷峻的「遥测冷青」（#38bdf8），只有通过独立 Oracle 校验的真正事实才享有「荧光薄荷绿」（#34d399），在视觉通道上筑牢严谨性；<br>
+          3. <b>长时间高密度工程耐受度:</b> 钛白正文（#dbe4e2）在玄铁底上对比度达到 13.5:1，字形如机械激光雕刻般清晰，同时弱化了纯黑纯白的刺目晕影，兼顾极致信息密度与长时间编码注视的舒适度。
+        </div>
+      </div>
+    `;
+  }
+
+  layer.classList.add("is-visible");
+}
+
+function closeOverlayWindow() {
+  document.getElementById("overlayLayer").classList.remove("is-visible");
+}
+
+function handleOverlayBgClick(e) {
+  if (e.target.id === "overlayLayer") {
+    closeOverlayWindow();
+  }
+}
+
+/* 键盘快捷键监听 */
+document.addEventListener("keydown", (e) => {
+  // Esc: 关闭弹窗
+  if (e.key === "Escape") {
+    closeOverlayWindow();
+    return;
+  }
+
+  // 数字键 1-4 快速切换配色
+  if (!e.ctrlKey && !e.metaKey && document.activeElement.tagName !== "INPUT") {
+    if (e.key === "1") setTheme("tokyo-night");
+    if (e.key === "2") setTheme("catppuccin-mocha");
+    if (e.key === "3") setTheme("one-dark");
+    if (e.key === "4") setTheme("aegis-bronze");
+    if (e.key === "w" || e.key === "W") setTerminalMode("wide");
+    if (e.key === "n" || e.key === "N") setTerminalMode("narrow");
+  }
+
+  // Ctrl+快捷键
+  if (e.ctrlKey) {
+    const k = e.key.toLowerCase();
+    if (k === "j") { e.preventDefault(); triggerOverlay("graph"); }
+    if (k === "b") { e.preventDefault(); triggerOverlay("board"); }
+    if (k === "d") { e.preventDefault(); triggerOverlay("detail"); }
+    if (k === "s") { e.preventDefault(); triggerOverlay("specs"); }
+    if (k === "r") { e.preventDefault(); toggleAllTools(); }
+  }
+});
+</script>
+</body>
+</html>

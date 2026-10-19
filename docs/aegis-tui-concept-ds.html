@@ -1,0 +1,1696 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="aegis">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Aegis TUI · Inspector 架构原型</title>
+<style>
+html[data-theme="tokyo"]{
+  --bg-app:#1a1b26; --bg-panel:#16161e; --bg-elevated:#1f2335; --bg-overlay:#1b1e2c;
+  --border:#30364a; --border-soft:#262b3b; --border-focus:#7aa2f7;
+  --text:#c8d3f5; --text-secondary:#a9b1d6; --text-dim:#878fbb;
+  --accent:#7aa2f7; --selection-bg:#2c3557;
+  --user:#73daca; --user-bg:#1c2a35; --assistant:#7aa2f7; --tool-bg:#1e2030;
+  --verified:#9ece6a; --pending:#e0af68; --error:#f7768e;
+  --proposal:#bb9af7; --refuted:#e0a0a8;
+}
+
+/* B. Catppuccin Mocha */
+html[data-theme="mocha"]{
+  --bg-app:#1e1e2e; --bg-panel:#181825; --bg-elevated:#262637; --bg-overlay:#222233;
+  --border:#3e3e57; --border-soft:#2c2c3f; --border-focus:#b4befe;
+  --text:#cdd6f4; --text-secondary:#b6bfdc; --text-dim:#939cc0;
+  --accent:#89b4fa; --selection-bg:#343a5c;
+  --user:#94e2d5; --user-bg:#262c40; --assistant:#89b4fa; --tool-bg:#232336;
+  --verified:#a6e3a1; --pending:#f9e2af; --error:#f38ba8;
+  --proposal:#cba6f7; --refuted:#e7a0b4;
+}
+
+/* C. One Dark */
+html[data-theme="onedark"]{
+  --bg-app:#282c34; --bg-panel:#21252b; --bg-elevated:#2c313a; --bg-overlay:#24282f;
+  --border:#3e4451; --border-soft:#333842; --border-focus:#61afef;
+  --text:#b3bac6; --text-secondary:#9aa4b2; --text-dim:#929cab;
+  --accent:#61afef; --selection-bg:#3a4150;
+  --user:#56b6c2; --user-bg:#2a323c; --assistant:#61afef; --tool-bg:#23272e;
+  --verified:#98c379; --pending:#e5c07b; --error:#e68992;
+  --proposal:#c678dd; --refuted:#d99aa1;
+}
+
+/* D. Aegis Iron (original) */
+html[data-theme="aegis"]{
+  --bg-app:#14171a; --bg-panel:#191d21; --bg-elevated:#20252a; --bg-overlay:#1b2024;
+  --border:#333a40; --border-soft:#262c31; --border-focus:#e6b566;
+  --text:#d8dbd8; --text-secondary:#b0b6b4; --text-dim:#8b938f;
+  --accent:#e6b566; --selection-bg:#3a3327;
+  --user:#8ab4d8; --user-bg:#212a31; --assistant:#e6b566; --tool-bg:#1d2126;
+  --verified:#93b98a; --pending:#d98f5a; --error:#d9746a;
+  --proposal:#b7a6e0; --refuted:#c99a86;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg-app);color:var(--text);
+  font-family:"SFMono-Regular","SF Mono",Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",ui-monospace,monospace;
+  font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+button,input{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:1px solid var(--border-focus);outline-offset:-1px}
+::selection{background:var(--selection-bg);color:var(--text)}
+*{scrollbar-width:none}
+::-webkit-scrollbar{display:none;width:0;height:0}
+.cell-measure{position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;font-size:13.5px}
+
+.terminal{height:100vh;height:100dvh;display:grid;grid-template-rows:1.8em minmax(0,1fr) 1.8em;background:var(--bg-app);overflow:hidden;position:relative}
+
+/* ---------- runtime bar ---------- */
+.top{
+  display:flex;align-items:center;justify-content:space-between;gap:1ch;
+  height:1.8em;padding:0 1ch;border-bottom:1px solid var(--border);background:var(--bg-panel);
+  font-size:11.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;
+}
+.top-group{display:flex;align-items:center;gap:1ch;min-width:0;overflow:hidden;white-space:nowrap}
+.brand{color:var(--accent);font-weight:700;letter-spacing:.12em}
+.brand:before{content:"◆ ";color:var(--accent);font-weight:400}
+.ctx{color:var(--text-secondary);white-space:nowrap}
+.ctx .k{color:var(--text-dim)}
+.ctx b{color:var(--text);font-weight:500}
+.budget{color:var(--text-secondary);white-space:nowrap}
+.budget b{color:var(--pending);font-weight:500}
+.budget .k{color:var(--text-dim)}
+.rev{color:var(--text-dim);white-space:nowrap}
+.integrity{white-space:nowrap}
+
+/* ---------- main ---------- */
+.main{position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:0 .5ch;min-height:0;min-width:0;padding:.25em .5ch}
+.terminal.cols-100 .main{grid-template-columns:minmax(0,1fr) 32ch}
+.conversation{display:flex;flex-direction:column;gap:.35em;min-width:0;min-height:0}
+.chat-panel{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);background:var(--bg-panel);position:relative}
+
+/* frame corners: real terminal would print ╭ ╮ ╰ ╯ in the cells */
+.tui-frame{position:relative}
+.corner{position:absolute;z-index:4;display:flex;align-items:center;justify-content:center;width:1ch;height:1em;font-size:1.15em;line-height:1;color:var(--text-dim);background:transparent;pointer-events:none}
+.inspector-frame .corner{color:var(--border-focus)}
+.corner.tl{top:-.5em;left:-.5ch}
+.corner.tr{top:-.5em;right:-.5ch}
+.corner.bl{bottom:-.5em;left:-.5ch}
+.corner.br{bottom:-.5em;right:-.5ch}
+.composer:focus-within .corner{color:var(--border-focus)}
+
+/* ---------- conversation chrome ---------- */
+.conv-bar{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:1ch;
+  height:1.8em;padding:0 1ch;border-bottom:1px solid var(--border-soft);
+  background:var(--bg-elevated);
+  font-size:10.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;
+}
+.conv-title{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.conv-title b{color:var(--text);font-weight:600}
+.mode-tag{color:var(--accent);letter-spacing:.06em;margin-right:.5ch}
+.mode-tag:before{content:"[";color:var(--text-dim)}
+.mode-tag:after{content:"]";color:var(--text-dim)}
+.sep{color:var(--text-dim)}
+.conv-actions{display:flex;align-items:center;gap:1ch;flex:0 0 auto}
+.inspect-btn{color:var(--accent);font-size:10.5px;padding:0 .25ch}
+.inspect-btn .kbd{color:var(--text-dim)}
+.ghost-btn{color:var(--text-dim);font-size:10.5px;padding:0 .25ch}
+.ghost-btn:hover,.inspect-btn:hover{text-decoration:underline}
+.kbd{color:var(--text-dim)}
+
+.mobile-context{
+  display:none;flex:0 0 auto;align-items:center;gap:1ch;height:1.7em;padding:0 1ch;
+  border-bottom:1px solid var(--border-soft);font-size:10.5px;color:var(--text-secondary);
+  white-space:nowrap;overflow:hidden;background:var(--bg-panel);
+}
+.terminal:not(.cols-100) .mobile-context{display:flex}
+.mobile-context .m-task{color:var(--text)}
+.mobile-context .inline-ref{margin-left:auto}
+
+/* ---------- transcript ---------- */
+.transcript{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:.85em 2ch;scroll-behavior:auto}
+.demo-strip{
+  max-width:140ch;margin:0 auto .7em;padding-left:1ch;
+  border-left:2px solid var(--accent);color:var(--text-secondary);font-size:10px;
+}
+.demo-strip b{color:var(--accent);letter-spacing:.08em}
+.turn{max-width:140ch;margin:0 auto .9em}
+.turn:last-child{margin-bottom:0}
+.turn-head{display:flex;align-items:baseline;gap:.75ch;margin-bottom:.15em;font-size:11px;white-space:nowrap;overflow:hidden}
+.role{font-weight:600;font-size:11.5px;letter-spacing:.02em}
+.role.user{color:var(--user)}
+.role:before{content:"▌ ";color:currentColor}
+.role.aegis{color:var(--assistant)}
+.role-mark{color:var(--text-dim);font-size:10px}
+.turn-meta{color:var(--text-dim);font-size:10px;margin-left:auto;white-space:nowrap}
+.turn-body{
+  color:var(--text);font-size:14px;line-height:1.62;white-space:normal;overflow-wrap:anywhere;
+  border-left:1px solid var(--border-soft);padding-left:1ch;
+}
+.turn.user .turn-body{white-space:pre-wrap;background:var(--user-bg);border-left:1px solid var(--user);padding:.25em 1ch}
+.turn-body p{margin:0 0 .45em}
+.turn-body p:last-child{margin-bottom:0}
+.turn-body > .tool:first-child,.turn-body > .claim:first-child{margin-top:0}
+
+.inline-ref{display:inline;border:0;padding:0 .25ch;background:none;color:inherit;font-size:inherit;line-height:inherit;border-bottom:1px dotted currentColor}
+.inline-ref:hover{color:var(--accent)}
+.inline-ref:after{content:" ↗";font-size:.85em;color:var(--text-dim)}
+
+.tool{margin:.5em 0 0;border-left:1px solid var(--border);padding-left:1ch}
+.tool-head{display:flex;flex-wrap:wrap;align-items:center;gap:.25ch .75ch;width:100%;padding:0;text-align:left;font-size:11px;color:var(--text-secondary)}
+.tool-head:hover{color:var(--text)}
+.tool-caret{color:var(--text-dim);width:1ch;display:inline-block}
+.tool-name{color:var(--proposal);font-weight:600}
+.tool-arg{color:var(--text)}
+.tool-tag{margin-left:auto;color:var(--pending);font-size:10px;white-space:nowrap}
+.tool-tag:before{content:"[";color:var(--text-dim)}
+.tool-tag:after{content:"]";color:var(--text-dim)}
+.tool-body{padding:.2em 0 0 1ch;font-size:11.5px;color:var(--text-secondary)}
+.tool[data-open="false"] .tool-body{display:none}
+.tool-line{padding:0;overflow-wrap:anywhere}
+.tool-line .k{display:inline-block;min-width:9ch;color:var(--text-dim)}
+.tool-line .v{color:var(--text)}
+.tool-warn{margin-top:.3em;padding-top:.2em;border-top:1px dashed var(--border);color:var(--text-secondary)}
+.tool-warn b{color:var(--pending);font-weight:600}
+
+.claim{margin:.5em 0 0;padding-left:1ch;border-left:2px solid var(--proposal)}
+.claim.is-fact{border-left-color:var(--verified)}
+.claim.is-unknown{border-left-color:var(--pending)}
+.claim-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.75ch;margin-bottom:.1em}
+.claim-type{font-weight:600;font-size:11.5px;color:var(--proposal)}
+.claim.is-fact .claim-type{color:var(--verified)}
+.claim.is-unknown .claim-type{color:var(--pending)}
+.claim-src{color:var(--text-dim);font-size:10px}
+.claim-text{margin:0;color:var(--text-secondary);font-size:11.5px;overflow-wrap:anywhere}
+.claim-text b{color:var(--text);font-weight:500}
+
+.trace{margin:.5em 0 0;padding-left:1ch;border-left:1px solid var(--border)}
+.trace-head{display:flex;align-items:center;gap:.75ch;width:100%;padding:0;text-align:left;font-size:10.5px;color:var(--text-secondary)}
+.trace-head:hover{color:var(--text)}
+.trace-caret{color:var(--text-dim);width:1ch;display:inline-block}
+.trace-meta{margin-left:auto;color:var(--text-dim);font-size:9.5px;white-space:nowrap}
+.trace-body{padding:.15em 0 0 1ch;display:grid;gap:0;font-size:11px}
+.trace[data-open="false"] .trace-body{display:none}
+.trace-line{display:flex;align-items:baseline;gap:.75ch;color:var(--text-secondary);overflow-wrap:anywhere}
+.trace-k{color:var(--text-dim);min-width:5ch;font-size:10px}
+.trace-line .chip{margin-left:auto}
+
+/* terminal status chips are bracketed text, not rounded pills */
+.chip{display:inline;border:0;padding:0 .5ch;font-size:10px;line-height:1.5;letter-spacing:.02em;white-space:nowrap;font-weight:500;color:inherit;background:var(--bg-overlay)}
+.chip.t-verified{color:var(--verified)}
+.chip.t-pending{color:var(--pending)}
+.chip.t-error{color:var(--error)}
+.chip.t-proposal{color:var(--proposal)}
+.chip.t-accent{color:var(--accent)}
+.chip.t-refuted{color:var(--refuted)}
+.chip.t-dim{color:var(--text-dim)}
+.top .chip.t-pending,.task-top .chip.t-pending{background:var(--pending);color:var(--bg-app)}
+.t-verified{color:var(--verified)}
+.t-pending{color:var(--pending)}
+.t-error{color:var(--error)}
+.t-proposal{color:var(--proposal)}
+.t-accent{color:var(--accent)}
+.t-user{color:var(--user)}
+.t-refuted{color:var(--refuted)}
+.t-dim{color:var(--text-dim)}
+
+.gate{display:grid;grid-template-columns:16ch minmax(0,1fr);gap:0 .75ch;margin:.45em 0 0;padding-left:1ch;border-left:1px solid var(--border);font-size:10.5px}
+.gate .gk{color:var(--text-dim);white-space:nowrap}
+.gate .gv{color:var(--text-secondary)}
+.session-summary{max-width:140ch;margin:.4em auto 0;padding-top:.35em;border-top:1px dashed var(--border);color:var(--text-dim);font-size:9.5px;line-height:1.55;display:grid;gap:.1em}
+
+/* ---------- composer ---------- */
+.composer{flex:0 0 auto;border:1px solid var(--border);background:var(--bg-panel);padding:.1em 1ch .15em;position:relative}
+.composer:focus-within{border-color:var(--border-focus)}
+.composer-head{display:flex;align-items:center;gap:1ch;font-size:9.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden}
+.composer-label{color:var(--text-secondary)}
+.focus-state .fs-focus{display:none;color:var(--accent)}
+.composer:focus-within .fs-blur{display:none}
+.composer:focus-within .fs-focus{display:inline}
+.demo-note{margin-left:auto;color:var(--text-dim)}
+.composer-row{display:flex;align-items:center;gap:.75ch;height:1.6em}
+.prompt{color:var(--text-dim);font-weight:700}
+.composer:focus-within .prompt{color:var(--accent)}
+.composer input{flex:1;min-width:0;border:0;background:transparent;color:var(--text);outline:0;padding:0;font-size:13.5px;caret-color:var(--accent)}
+.composer input:focus-visible{outline:0}
+.composer input::placeholder{color:var(--text-dim)}
+.send{color:var(--accent);font-size:11px;padding:0 .5ch;white-space:nowrap}
+.send:before{content:"[";color:var(--text-dim)}
+.send:after{content:"]";color:var(--text-dim)}
+.send:hover{text-decoration:underline}
+.composer-note{font-size:9.5px;color:var(--text-dim);padding-left:2ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composer-note b{color:var(--text-secondary);font-weight:500}
+
+/* ---------- context rail ---------- */
+.rail{display:none;flex-direction:column;min-height:0;width:32ch;margin:.25em 0;border:1px solid var(--border);background:var(--bg-panel);overflow:hidden;position:relative}
+.terminal.cols-100 .rail{display:flex}
+.rail-sec{flex:0 0 auto;border-bottom:1px solid var(--border-soft);padding:.45em 1ch;font-size:10.5px;min-width:0}
+.rail-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5ch;margin-bottom:.25em;font-size:9.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden}
+.rail-head b{color:var(--text);font-weight:600;font-size:10px;letter-spacing:.02em}
+.readonly{color:var(--text-dim);font-size:9px;letter-spacing:.04em;white-space:nowrap}
+.current-task{border-left:2px solid var(--accent);padding-left:1ch}
+.task-top{display:flex;align-items:center;justify-content:space-between;gap:.5ch}
+.task-top b{font-weight:600;color:var(--text)}
+.task-meta{color:var(--text-dim);font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meter{display:inline-flex;align-items:baseline;gap:0;color:var(--border);white-space:nowrap}
+.meter .on{color:var(--accent)}
+.task-meter{display:flex;align-items:center;gap:.75ch;margin-top:.2em;font-size:9.5px;color:var(--text-dim)}
+.task-meter .on{color:var(--accent)}
+.dep-chain{display:flex;flex-wrap:wrap;gap:0 .5ch;margin-top:.2em;font-size:9.5px;color:var(--text-secondary)}
+.dep-chain .arrow{color:var(--text-dim)}
+.task-note{color:var(--text-secondary);font-size:9.5px;margin-top:.2em;border-top:1px dashed var(--border-soft);padding-top:.2em}
+.glance{display:grid;grid-template-columns:1fr 1fr;gap:0 1ch;margin-top:.3em}
+.glance div{min-width:0}
+.glance span{display:block;color:var(--text-dim);font-size:9px;letter-spacing:.04em}
+.glance b{font-size:12px;font-weight:500;color:var(--text)}
+.glance .meter{display:block;margin-top:.1em;font-size:9px}
+.glance .t-verified{color:var(--verified)}
+.glance .t-pending{color:var(--pending)}
+
+.inspect-row{display:flex;align-items:center;gap:.5ch;width:100%;text-align:left;padding:.15em 0;border:0;border-bottom:1px solid var(--border-soft);color:var(--text);font-size:10.5px;white-space:nowrap}
+.inspect-row:hover{color:var(--accent)}
+.inspect-row .num{color:var(--text-dim);font-size:9.5px;width:2ch;flex:0 0 auto}
+.inspect-row .label{flex:1;min-width:0;overflow:hidden}
+.inspect-row .label b{display:block;font-weight:500;color:var(--text);font-size:10.5px}
+.inspect-row .label small{display:block;color:var(--text-dim);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inspect-row .count{color:var(--text-secondary);font-size:10px}
+.rail-list{flex:1;overflow-y:auto;min-height:0;border-bottom:0}
+.event-row{display:flex;align-items:flex-start;gap:.5ch;width:100%;text-align:left;padding:.1em 0;border:0;color:var(--text);font-size:10px;white-space:nowrap}
+.event-row:hover{color:var(--accent)}
+.event-dot{font-size:8px;line-height:1.6;flex:0 0 auto}
+.event-main{flex:1;min-width:0;color:var(--text-secondary)}
+.event-main b{display:block;color:var(--text);font-weight:500;font-size:9.5px}
+.event-main small{display:block;color:var(--text-dim);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.event-meta{font-size:8.5px;color:var(--text-dim);white-space:nowrap}
+.legend{list-style:none;margin:0;padding:0;font-size:9.5px}
+.legend li{display:flex;justify-content:space-between;gap:.5ch;padding:.1em 0;border-bottom:1px solid var(--border-soft);white-space:nowrap}
+.legend li span:last-child{color:var(--text-dim);text-align:right}
+.rail-foot{padding-top:.25em;color:var(--text-dim);font-size:9px;line-height:1.45}
+
+/* ---------- footer ---------- */
+.status-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:1ch;
+  height:1.8em;padding:0 1ch;border-top:1px solid var(--border);background:var(--bg-panel);
+  font-size:9.5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;
+}
+.footer-left,.footer-right{display:flex;align-items:center;gap:1ch;min-width:0;overflow:hidden}
+.focus-zone{color:var(--accent);white-space:nowrap}
+.focus-zone[data-zone="DEMO"]{color:var(--text-secondary)}
+.keys{display:flex;align-items:center;gap:1ch;color:var(--text-dim);white-space:nowrap}
+.keys b{color:var(--text-secondary);font-weight:400}
+.demo-tag{color:var(--text-dim);letter-spacing:.06em}
+.demo-tag:before{content:"[";color:var(--border)}
+.demo-tag:after{content:"]";color:var(--border)}
+.term-size{color:var(--text-dim);white-space:nowrap}
+.theme-switch{display:flex;align-items:center;gap:.5ch}
+.theme-label{color:var(--text-dim);font-size:9px;white-space:nowrap}
+.theme-btn{color:var(--text-secondary);font-size:10px;padding:0 .25ch;line-height:1.4}
+.theme-btn:before{content:"[";color:var(--text-dim)}
+.theme-btn:after{content:"]";color:var(--text-dim)}
+.theme-btn:hover{color:var(--text)}
+.theme-btn[aria-pressed="true"]{color:var(--accent)}
+.theme-btn[aria-pressed="true"]:before,.theme-btn[aria-pressed="true"]:after{color:var(--accent)}
+
+/* ---------- inspector (alternate screen, no scrim) ---------- */
+.inspector{position:absolute;inset:0;z-index:20;display:none;background:var(--bg-app);padding:.25em .5ch}
+.inspector.open{display:block}
+.inspector-frame{height:100%;display:flex;flex-direction:column;background:var(--bg-panel);border:1px solid var(--border-focus);position:relative;min-height:0}
+.inspector-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:1ch;height:1.8em;padding:0 1ch;border-bottom:1px solid var(--border);background:var(--bg-elevated);white-space:nowrap;overflow:hidden}
+.crumbs{display:flex;align-items:baseline;gap:.5ch;min-width:0;font-size:10.5px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis}
+.crumb-root{color:var(--accent);letter-spacing:.06em;font-weight:600}
+.crumb-sep{color:var(--text-dim)}
+#inspectorTitle{color:var(--text);font-weight:600}
+.crumb-leaf{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis}
+.crumb-leaf:not(:empty):before{content:" / ";color:var(--border)}
+.tabs{display:flex;align-items:center;gap:.5ch;flex:0 0 auto}
+.tab{color:var(--text-secondary);font-size:10.5px;padding:0 .5ch;border:0;line-height:1.6;white-space:nowrap}
+.tab:before{content:"[";color:var(--text-dim)}
+.tab:after{content:"]";color:var(--text-dim)}
+.tab:hover{color:var(--text)}
+.tab[aria-selected="true"]{background:var(--selection-bg);color:var(--accent)}
+.tab[aria-selected="true"]:before,.tab[aria-selected="true"]:after{color:var(--accent)}
+.tab-num{color:var(--text-dim);font-size:9.5px;margin-right:.25ch}
+.tab[aria-selected="true"] .tab-num{color:var(--accent)}
+.inspector-close{color:var(--text-secondary);font-size:10px;padding:0 .5ch;white-space:nowrap}
+.inspector-close:hover{color:var(--text)}
+.inspector-body{flex:1;min-height:0;overflow:hidden}
+.inspector-body:focus{outline:none}
+.inspector-foot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:1ch;height:1.6em;padding:0 1ch;border-top:1px solid var(--border);color:var(--text-dim);font-size:9px;white-space:nowrap;overflow:hidden}
+
+.inspector-split{display:grid;grid-template-columns:40ch minmax(0,1fr);height:100%;min-height:0}
+.terminal.cols-120 .inspector-split{grid-template-columns:40ch minmax(0,1fr) 32ch}
+.master{overflow-y:auto;min-height:0;border-right:1px solid var(--border);padding:.35em 1ch;background:var(--bg-panel)}
+.detail{overflow-y:auto;min-height:0;padding:.35em 1ch;background:var(--bg-app)}
+.inspector-aside{display:none;flex-direction:column;overflow-y:auto;min-height:0;border-left:1px solid var(--border);padding:.35em 1ch;background:var(--bg-elevated);gap:.5em}
+.terminal.cols-120 .inspector-aside{display:flex}
+.master-sec{margin-bottom:.5em}
+.master-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5ch;padding-bottom:.1em;margin-bottom:.15em;border-bottom:1px solid var(--border-soft);font-size:9.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden}
+.master-head b{color:var(--text);font-size:10px;font-weight:600}
+.master-note{color:var(--text-dim);font-size:9.5px;margin:.25em 0 0;white-space:pre-wrap}
+.narrow-context{display:none;margin-top:.6em;border-top:1px solid var(--border-soft);padding-top:.35em}
+.terminal:not(.cols-120) .narrow-context{display:block}
+.master-row{display:flex;align-items:flex-start;gap:.5ch;width:100%;text-align:left;padding:.1em .5ch;border:0;border-left:1px solid transparent;color:var(--text);font-size:10.5px}
+.master-row:hover{color:var(--accent)}
+.master-row[aria-pressed="true"]{background:var(--selection-bg);border-left-color:var(--accent)}
+.row-tree{color:var(--text-dim);white-space:pre;font-size:10px;flex:0 0 auto}
+.row-main{flex:1;min-width:0}
+.row-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 .5ch}
+.row-id{color:var(--text);font-weight:600}
+.row-desc{color:var(--text-secondary)}
+.row-text{display:block;color:var(--text);font-size:10.5px;overflow-wrap:anywhere}
+.row-meta{display:block;color:var(--text-dim);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node-type{font-weight:600}
+.master-row > .chip{flex:0 0 auto}
+
+.dep-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:0 .5ch;padding:.1em .5ch;border-bottom:1px solid var(--border-soft);font-size:9.5px;color:var(--text-secondary)}
+.dep-path{min-width:0;overflow-wrap:anywhere}
+.dep-path .from{color:var(--text)}
+.dep-path .arrow{color:var(--text-dim)}
+.dep-path .to{color:var(--text-secondary)}
+
+.detail-back{display:none;color:var(--accent);padding:0 .5ch;font-size:10px;margin-bottom:.25em}
+.detail-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5ch;font-size:12.5px;font-weight:600;color:var(--text);margin:0}
+.detail-sub{color:var(--text-secondary);font-size:10.5px;margin:.1em 0 .3em}
+.detail-section{margin-top:.5em;padding-top:.35em;border-top:1px solid var(--border-soft)}
+.detail-section h4{margin:0 0 .2em;font-size:9.5px;color:var(--text-secondary);letter-spacing:.04em;font-weight:600}
+.kv{display:grid;grid-template-columns:12ch minmax(0,1fr);gap:0 .5ch;margin:0;font-size:10.5px}
+.kv dt{color:var(--text-dim);white-space:nowrap}
+.kv dd{margin:0;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.note-box{border-left:1px solid var(--border);padding-left:1ch;margin-top:.35em;color:var(--text-secondary);font-size:9.5px;white-space:pre-wrap}
+.note-box b{color:var(--text);font-weight:500}
+.detail-actions{display:flex;flex-wrap:wrap;gap:.5ch;margin-top:.35em}
+.action-btn{color:var(--accent);font-size:9.5px;padding:0 .25ch;border:0}
+.action-btn:before{content:"[";color:var(--text-dim)}
+.action-btn:after{content:"]";color:var(--text-dim)}
+.action-btn:hover{text-decoration:underline}
+.ladder-mini{display:flex;flex-wrap:wrap;gap:.5ch;margin:.2em 0 0}
+.ladder-pill{color:var(--text-dim);font-size:9px;white-space:nowrap}
+.ladder-pill:before{content:"[";color:var(--text-dim)}
+.ladder-pill:after{content:"]";color:var(--text-dim)}
+.ladder-pill.done{color:var(--verified)}
+.ladder-pill.current{color:var(--pending)}
+.ladder-pill.done:before,.ladder-pill.done:after{color:var(--verified)}
+.ladder-pill.current:before,.ladder-pill.current:after{color:var(--pending)}
+.ladder-blocked{border-left:1px solid var(--border);padding-left:1ch;color:var(--text-secondary);font-size:9.5px;margin:.3em 0 0}
+
+/* evidence */
+.evidence{height:100%;overflow-y:auto;padding:.35em 1ch}
+.evidence-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5ch;padding-bottom:.25em;border-bottom:1px solid var(--border)}
+.evidence-title{display:flex;flex-wrap:wrap;align-items:center;gap:.5ch;margin:0;font-size:12px;color:var(--text)}
+.evidence-sub{color:var(--text-secondary);font-size:9.5px;margin:.1em 0 0}
+.evidence-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:1ch;align-items:start;margin-top:.4em}
+.ladder-step{display:grid;grid-template-columns:3ch minmax(0,1fr);gap:.5ch;padding:.25em 0;border-bottom:1px solid var(--border-soft)}
+.step-no{color:var(--text-dim);font-size:9.5px;padding-top:.1em}
+.step-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:0 .5ch}
+.step-head b{font-size:10px;letter-spacing:.04em;color:var(--text)}
+.step-text{color:var(--text);font-size:10.5px;margin:.1em 0 0;overflow-wrap:anywhere}
+.step-note{color:var(--text-secondary);font-size:9.5px;margin:.1em 0 0;overflow-wrap:anywhere}
+.ladder-step[data-state="done"] .step-no{color:var(--verified)}
+.ladder-step[data-state="current"] .step-no{color:var(--pending)}
+.evidence-side{border-left:1px solid var(--border);padding-left:1ch}
+.evidence-side h3{margin:0 0 .2em;font-size:10px;color:var(--accent);letter-spacing:.04em}
+.boundary{list-style:none;margin:0;padding:0;font-size:9.5px}
+.boundary li{padding:.1em 0;border-bottom:1px solid var(--border-soft);color:var(--text-secondary)}
+.boundary li:last-child{border-bottom:0}
+.boundary b{color:var(--text);font-weight:500}
+.evidence-side .kv{margin-top:.25em}
+.evidence-refs{display:flex;flex-wrap:wrap;gap:.5ch;margin-top:.3em}
+.evidence-lower{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:1ch;margin-top:.5em;align-items:start}
+.lower-card{border-top:1px solid var(--border-soft);padding-top:.25em}
+.lower-card h3{margin:0 0 .2em;font-size:9.5px;color:var(--text-secondary);letter-spacing:.04em;font-weight:600}
+.coverage-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 1ch}
+.coverage-cell{padding:.1em 0}
+.coverage-cell > span:first-child{display:block;color:var(--text-dim);font-size:9px}
+.coverage-cell b{display:block;color:var(--text);font-size:10px;font-weight:500}
+.coverage-cell .chip{font-size:9px}
+
+.aside-block{border-top:1px solid var(--border-soft);padding-top:.25em}
+.aside-block h4{margin:0 0 .2em;font-size:9px;color:var(--text-secondary);letter-spacing:.04em;font-weight:600}
+.aside-note{color:var(--text-secondary);font-size:9px;line-height:1.45;margin:.15em 0 0}
+.aside-block .ladder-mini{margin:0 0 .2em}
+.aside-block .action-btn{margin-top:.1em}
+
+/* responsive terminal columns */
+.terminal:not(.cols-120) .ctx-campaign{display:none}
+.terminal:not(.cols-100) .ctx-episode{display:none}
+.terminal:not(.cols-100) .rev,.terminal:not(.cols-100) .integrity{display:none}
+.terminal:not(.cols-120) .keys{display:none}
+.terminal:not(.cols-100) .reserved{display:none}
+.terminal:not(.cols-100) #railToggle{display:none}
+.terminal:not(.cols-100) .theme-label{display:none}
+.terminal:not(.cols-100) #themeCurrent{display:none}
+.terminal:not(.cols-100) .conv-title .conv-demo{display:none}
+.terminal:not(.cols-100) .composer-head .demo-note{display:none}
+.terminal:not(.cols-100) .composer-note{display:none}
+.terminal:not(.cols-100) .inspector-split{grid-template-columns:1fr}
+.terminal:not(.cols-100) .inspector-aside{display:none}
+.terminal:not(.cols-100) .show-detail .master{display:none}
+.terminal:not(.cols-100) .inspector-split .detail{display:none}
+.terminal:not(.cols-100) .show-detail .detail{display:block}
+.terminal:not(.cols-100) .detail-back{display:inline-block}
+.terminal:not(.cols-100) .crumb-leaf{display:none}
+.terminal:not(.cols-100) .evidence-grid{grid-template-columns:1fr}
+.terminal:not(.cols-100) .evidence-lower{grid-template-columns:1fr}
+.terminal:not(.cols-100) .rail{display:none}
+.terminal:not(.cols-100) .main{grid-template-columns:minmax(0,1fr)}
+.main.rail-collapsed{grid-template-columns:minmax(0,1fr)}
+.main.rail-collapsed .rail{display:none}
+.terminal:not(.cols-100) .top{padding:0 .5ch}
+.terminal:not(.cols-100) .main{padding:.15em .25ch}
+.terminal:not(.cols-100) .overlay-scroll{display:none}
+.terminal,.terminal *{font-size:13.5px;line-height:1.5}
+
+
+</style>
+</head>
+<body>
+<div class="terminal">
+  <span class="cell-measure" id="cellMeasure" aria-hidden="true">MMMMMMMMMMMMMMMMMMMM</span>
+
+  <header class="top">
+    <div class="top-group">
+      <span class="brand">AEGIS</span>
+      <span class="ctx ctx-task"><span class="k">task</span> <b>verify-input</b></span>
+      <span class="ctx ctx-campaign"><span class="k">campaign</span> <b>campaign-demo</b></span>
+      <span class="ctx ctx-episode"><span class="k">ep</span> <b>ep-17</b> <span class="k">s</span> <b>s-04</b></span>
+      <span class="ctx ctx-model"><span class="k">model</span> <b>demo-model</b></span>
+    </div>
+    <div class="top-group">
+      <span class="chip t-pending">RUNNING</span>
+      <span class="budget">budget <b>12/40</b> <span class="reserved"><span class="k">reserved</span> 4</span></span>
+      <span class="rev">rev 42</span>
+      <span class="integrity"><span class="t-verified">integrity OK</span></span>
+    </div>
+  </header>
+
+  <main class="main" id="main">
+    <section class="conversation" aria-label="对话">
+      <div class="chat-panel tui-frame">
+      <div class="conv-bar">
+        <span class="conv-title"><span class="mode-tag">CHAT</span><b>对话</b> <span class="sep">·</span> s-04 <span class="sep">·</span> <span class="conv-demo">demo transcript</span></span>
+        <span class="conv-actions">
+          <button class="inspect-btn" type="button" data-inspect="graph">检查器 <span class="kbd">Ctrl+I</span></button>
+          <button class="ghost-btn" type="button" id="railToggle" aria-expanded="true" aria-controls="rail">收起上下文</button>
+        </span>
+      </div>
+
+      <div class="mobile-context" id="mobileContext">
+        <span class="m-task">verify-input <span class="chip t-pending">RUNNING</span></span>
+        <span>pending <b class="t-pending">2</b></span>
+        <span>unresolved <b>0</b></span>
+        <span>budget <b>12/40</b></span>
+        <button class="inline-ref" type="button" data-inspect="graph">Inspect</button>
+      </div>
+
+      <div class="transcript" id="transcript" aria-live="polite" aria-label="对话记录">
+        <div class="demo-strip"><b>DEMO</b> 本地演示，不调用模型。点击 ↗ 引用查看 Inspector；主题在底部切换。</div>
+
+        <article class="turn user">
+          <div class="turn-head"><span class="role user">你</span><span class="role-mark">›</span><span class="turn-meta">09:42:18</span></div>
+          <div class="turn-body">请检查当前输入文件是否符合任务要求，并继续处理。</div>
+        </article>
+
+        <article class="turn aegis">
+          <div class="turn-head"><span class="role aegis">Aegis</span><span class="role-mark">·</span><span class="turn-meta">09:42:19 · 2 requests</span></div>
+          <div class="turn-body">
+            <p>先读取任务约束和输入文件。工具返回只进入观测层，不直接成为任务通过。</p>
+            <div class="tool" data-open="true">
+              <button class="tool-head" type="button" aria-expanded="true" aria-controls="tool-1">
+                <span class="tool-caret" aria-hidden="true">▾</span>
+                <span class="tool-name">read</span>
+                <span class="tool-arg">input.json</span>
+                <span class="tool-tag">transport ok · 未验收</span>
+              </button>
+              <div class="tool-body" id="tool-1">
+                <div class="tool-line"><span class="k">result</span><span class="v">8 fields · 1,284 bytes</span></div>
+                <div class="tool-line"><span class="k">artifact</span><button class="inline-ref" type="button" data-inspect="board:artifact-a71d">sha256:9f2c…a71d</button></div>
+                <div class="tool-line"><span class="k">source</span><span class="v">action.completed · offset 742</span></div>
+                <div class="tool-warn"><b>注意</b> 工具调用完成 ≠ 任务通过；仍停在 observation 层。</div>
+              </div>
+            </div>
+            <div class="claim">
+              <div class="claim-head">
+                <span class="claim-type">Hint</span>
+                <span class="chip t-proposal">UNVERIFIED</span>
+                <button class="inline-ref" type="button" data-inspect="board:hint-n77">n-77</button>
+                <span class="claim-src">来源 · 模型声明</span>
+              </div>
+              <p class="claim-text">输入结构<b>可能</b>满足 schema v2；该声明不进入事实层。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="turn user">
+          <div class="turn-head"><span class="role user">你</span><span class="role-mark">›</span><span class="turn-meta">09:43:02</span></div>
+          <div class="turn-body">重点检查字段约束，不要提交结果。</div>
+        </article>
+
+        <article class="turn aegis">
+          <div class="turn-head"><span class="role aegis">Aegis</span><span class="role-mark">·</span><span class="turn-meta">09:43:03 · current</span></div>
+          <div class="turn-body">
+            <p>已记录局部目标。字段集合已有独立判定，但 criterion 和 Outcome 仍未完成；可以打开 <button class="inline-ref" type="button" data-inspect="evidence:verify-input">Evidence ladder</button> 查看边界。</p>
+            <div class="trace" data-open="false">
+              <button class="trace-head" type="button" aria-expanded="false" aria-controls="trace-1">
+                <span class="trace-caret" aria-hidden="true">▸</span>
+                <span>过程记录</span>
+                <span class="trace-meta">3 steps · 默认折叠 · 非证据</span>
+              </button>
+              <div class="trace-body" id="trace-1">
+                <div class="trace-line"><span class="trace-k">plan</span><span>识别 c-2 字段约束</span><span class="chip t-proposal">model</span></div>
+                <div class="trace-line"><span class="trace-k">act</span><span>read input.json</span><span class="chip t-accent">transport</span></div>
+                <div class="trace-line"><span class="trace-k">check</span><span>n-42 fields only</span><span class="chip t-pending">partial</span></div>
+              </div>
+            </div>
+            <div class="tool" data-open="false">
+              <button class="tool-head" type="button" aria-expanded="false" aria-controls="tool-2">
+                <span class="tool-caret" aria-hidden="true">▸</span>
+                <span class="tool-name">aegis_observe</span>
+                <span class="tool-arg">workspace.identify</span>
+                <span class="tool-tag">transport ok · 未验收</span>
+              </button>
+              <div class="tool-body" id="tool-2">
+                <div class="tool-line"><span class="k">result</span><span class="v">format=json · fields=8</span></div>
+                <div class="tool-line"><span class="k">claim</span><span class="v">verified observation · rev 42</span></div>
+                <div class="tool-line"><span class="k">outcome</span><span class="v">none · 不构成 Outcome</span></div>
+                <div class="tool-warn"><b>注意</b> 观测成功只说明读取完成，不表示 criterion 已满足。</div>
+              </div>
+            </div>
+            <div class="claim is-fact">
+              <div class="claim-head">
+                <span class="claim-type">Fact</span>
+                <span class="chip t-verified">VERIFIED</span>
+                <button class="inline-ref" type="button" data-inspect="board:fact-n42">n-42</button>
+                <span class="claim-src">独立校验 · c-2 部分</span>
+              </div>
+              <p class="claim-text">输入 JSON 顶层字段集合与 schema v2 的 required 列表一致。</p>
+            </div>
+            <div class="claim is-unknown">
+              <div class="claim-head">
+                <span class="claim-type">Outcome</span>
+                <span class="chip t-pending">UNKNOWN</span>
+                <button class="inline-ref" type="button" data-inspect="evidence:verify-input">ladder</button>
+                <span class="claim-src">等待 Oracle</span>
+              </div>
+              <p class="claim-text">当前没有最终 Outcome；提交动作尚未发生。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="turn user">
+          <div class="turn-head"><span class="role user">你</span><span class="role-mark">›</span><span class="turn-meta">09:43:40</span></div>
+          <div class="turn-body">现在还缺什么？不要提交。</div>
+        </article>
+
+        <article class="turn aegis">
+          <div class="turn-head"><span class="role aegis">Aegis</span><span class="role-mark">·</span><span class="turn-meta">09:43:41 · current</span></div>
+          <div class="turn-body">
+            <p>还缺独立 Outcome。transport 与 observation 已完成，n-42 只覆盖字段集合；criterion c-2 需要整体判定，submit 仍不可执行。</p>
+            <div class="gate">
+              <span class="gk">criterion c-2</span><span class="gv"><span class="chip t-pending">PENDING</span> overall check</span>
+              <span class="gk">oracle</span><span class="gv"><span class="chip t-pending">REQUIRED</span> not run</span>
+              <span class="gk">outcome</span><span class="gv"><span class="chip t-pending">NONE</span> no final result</span>
+              <span class="gk">submit</span><span class="gv"><span class="chip t-error">BLOCKED</span> wait for acceptance</span>
+            </div>
+            <div class="claim is-unknown">
+              <div class="claim-head">
+                <span class="claim-type">Next</span>
+                <span class="chip t-pending">WAITING</span>
+                <button class="inline-ref" type="button" data-inspect="evidence:verify-input">Evidence ladder</button>
+              </div>
+              <p class="claim-text">下一道门是外部验收；本原型不会代为授权、提交或写 EventLog。</p>
+            </div>
+          </div>
+        </article>
+
+        <div class="session-summary">
+          <div>── local demo transcript · 6 turns · rev 42 ──</div>
+          <div>transport <span class="chip t-verified">OK</span> · observation <span class="chip t-verified">OK</span> · independent check <span class="chip t-pending">PARTIAL</span> · outcome <span class="chip t-pending">NONE</span></div>
+          <div>scroll ↑↓ / PgUp PgDn · no pending model request · terminal size in footer</div>
+        </div>
+      </div>
+      </div>
+
+      <form class="composer tui-frame" id="composer" autocomplete="off">
+        <div class="composer-head">
+          <span class="composer-label">输入区 <span class="kbd">INPUT</span></span>
+          <span class="focus-state">
+            <span class="fs-blur">未聚焦 · 点击或 Tab</span>
+            <span class="fs-focus">● 已聚焦 · Enter 发送</span>
+          </span>
+          <span class="demo-note">演示 · 不调用真实模型</span>
+        </div>
+        <div class="composer-row">
+          <span class="prompt" aria-hidden="true">›</span>
+          <input id="message" name="message" type="text" placeholder="输入任务、问题或指令…" autocomplete="off" spellcheck="false" aria-label="对话输入" autofocus>
+          <button class="send" type="submit">发送</button>
+        </div>
+        <div class="composer-note"><b>Pi 对话入口</b> · Enter 发送 · <b>Ctrl+I</b> 打开检查器 · 面板只读，不执行工具</div>
+      </form>
+    </section>
+
+    <aside class="rail tui-frame" id="rail" aria-label="Aegis 只读上下文">
+      <section class="rail-sec">
+        <div class="rail-head"><b>上下文</b><span class="readonly">READ-ONLY</span></div>
+        <div class="current-task">
+          <div class="task-top"><b>verify-input</b><span class="chip t-pending">RUNNING</span></div>
+          <div class="task-meta">ep-17 · s-04 · rev 42</div>
+          <div class="task-meter"><span class="meter"><span class="on">█</span><span class="off">░░░</span></span> 1/4 完成</div>
+          <div class="dep-chain">
+            <span class="t-verified">planning ✓</span><span class="arrow">→</span><span class="t-pending">verify-input</span><span class="arrow">→</span><span>parse</span><span class="arrow">→</span><span class="t-pending">submit ?</span>
+          </div>
+          <div class="task-note">criterion c-2 未判定 · 无 Outcome</div>
+        </div>
+        <div class="glance">
+          <div><span>JUDGED</span><b class="t-verified">3</b></div>
+          <div><span>PENDING</span><b class="t-pending">2</b></div>
+          <div><span>UNRESOLVED</span><b>0</b></div>
+          <div><span>BUDGET</span><b>12/40</b><span class="meter"><span class="on">██</span><span class="off">░░░░░░</span></span></div>
+        </div>
+      </section>
+
+      <section class="rail-sec">
+        <div class="rail-head"><b>INSPECT</b><span class="readonly">只读</span></div>
+        <button class="inspect-row" type="button" data-inspect="graph">
+          <span class="num">1</span><span class="label"><b>Task Graph</b><small>父子关系与 depends_on</small></span><span class="count">4</span>
+        </button>
+        <button class="inspect-row" type="button" data-inspect="board">
+          <span class="num">2</span><span class="label"><b>Board</b><small>判定 / 提案 / 观测 / pending</small></span><span class="count">10</span>
+        </button>
+        <button class="inspect-row" type="button" data-inspect="evidence:verify-input">
+          <span class="num">3</span><span class="label"><b>Evidence</b><small>transport → observation → outcome</small></span><span class="count">4</span>
+        </button>
+      </section>
+
+      <section class="rail-sec">
+        <div class="rail-head"><b>RECENT EVENTS</b><span class="readonly">committed</span></div>
+        <button class="event-row" type="button" data-inspect="board:artifact-a71d">
+          <span class="event-dot t-accent">●</span><span class="event-main"><b>action.completed</b><small>a-71d · offset 742</small></span><span class="event-meta">observed</span>
+        </button>
+        <button class="event-row" type="button" data-inspect="board:fact-n42">
+          <span class="event-dot t-verified">●</span><span class="event-main"><b>fact.accepted</b><small>n-42 · rev 42</small></span><span class="event-meta">verified</span>
+        </button>
+        <button class="event-row" type="button" data-inspect="board:pending-check">
+          <span class="event-dot t-pending">●</span><span class="event-main"><b>criterion.pending</b><small>c-2 · rev 42</small></span><span class="event-meta">pending</span>
+        </button>
+        <button class="event-row" type="button" data-inspect="board:hint-n77">
+          <span class="event-dot t-proposal">●</span><span class="event-main"><b>model.claim</b><small>n-77 · ep-17</small></span><span class="event-meta">unverified</span>
+        </button>
+      </section>
+
+      <section class="rail-sec rail-list">
+        <div class="rail-head"><b>信任图例</b><span class="readonly">rev 42</span></div>
+        <ul class="legend">
+          <li><span class="t-verified">Fact / Refuted</span><span>独立判定</span></li>
+          <li><span class="t-proposal">Hint / Intent</span><span>模型提案 · UNVERIFIED</span></li>
+          <li><span class="t-accent">Artifact</span><span>观测 · 非验收</span></li>
+          <li><span class="t-pending">Pending / Rejected</span><span>责任 / 边界</span></li>
+        </ul>
+        <div class="rail-foot">来自 committed EventLog<br>只读投影，不写入任务状态</div>
+      </section>
+    </aside>
+
+    <div class="inspector" id="inspector" role="dialog" aria-labelledby="inspectorTitle" aria-hidden="true">
+      <div class="inspector-frame tui-frame">
+        <header class="inspector-head">
+          <div class="crumbs" aria-label="当前位置">
+            <span class="crumb-root">INSPECT</span>
+            <span class="crumb-sep">/</span>
+            <span id="inspectorTitle">Task Graph</span>
+            <span class="crumb-leaf" id="inspectorLeaf"></span>
+          </div>
+          <div class="tabs" role="tablist" aria-label="检查器视图">
+            <button class="tab" type="button" role="tab" data-tab="graph" aria-selected="true" aria-controls="inspectorBody"><span class="tab-num">1</span>Graph</button>
+            <button class="tab" type="button" role="tab" data-tab="board" aria-selected="false" aria-controls="inspectorBody"><span class="tab-num">2</span>Board</button>
+            <button class="tab" type="button" role="tab" data-tab="evidence" aria-selected="false" aria-controls="inspectorBody"><span class="tab-num">3</span>Evidence</button>
+          </div>
+          <button class="inspector-close" type="button" id="inspectorClose">Esc 关闭</button>
+        </header>
+        <div class="inspector-body" id="inspectorBody" role="tabpanel" aria-label="检查器内容" tabindex="-1"></div>
+        <div class="inspector-foot">
+          <span id="inspectorFoot">点击任务 · Enter 打开详情 · Backspace 返回 · 只读投影</span>
+          <span>rev 42 · read-only</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="status-bar">
+    <div class="footer-left">
+      <span class="focus-zone" id="focusZone" data-zone="INPUT">FOCUS · INPUT</span>
+      <span class="keys">
+        <span><b>Ctrl+I</b> 检查器</span>
+        <span><b>1/2/3</b> 视图</span>
+        <span><b>Esc</b> 关闭</span>
+        <span><b>Backspace</b> 返回</span>
+      </span>
+    </div>
+    <div class="footer-right">
+      <span class="term-size" id="termSize">—</span>
+      <span class="demo-tag">DEMO</span>
+      <div class="theme-switch" role="group" aria-label="配色主题">
+        <span class="theme-label">主题</span>
+        <button class="theme-btn" type="button" data-theme="tokyo" aria-pressed="false" aria-label="A · Tokyo Night" title="A · Tokyo Night">A</button>
+        <button class="theme-btn" type="button" data-theme="mocha" aria-pressed="false" aria-label="B · Catppuccin Mocha" title="B · Catppuccin Mocha">B</button>
+        <button class="theme-btn" type="button" data-theme="onedark" aria-pressed="false" aria-label="C · One Dark" title="C · One Dark">C</button>
+        <button class="theme-btn" type="button" data-theme="aegis" aria-pressed="false" aria-label="D · Aegis Iron（原创，推荐）" title="D · Aegis Iron（原创，推荐）">D</button>
+        <span class="theme-label" id="themeCurrent">Aegis Iron</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const docEl = document.documentElement;
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const terminal = $(".terminal");
+  const cellMeasure = $("#cellMeasure");
+  const termSize = $("#termSize");
+
+  const THEME_NAMES = {
+    tokyo: "Tokyo Night",
+    mocha: "Catppuccin Mocha",
+    onedark: "One Dark",
+    aegis: "Aegis Iron"
+  };
+  const THEME_STORAGE_KEY = "aegis.tui.inspector.theme";
+  const TAB_TITLES = { graph: "Task Graph", board: "Board", evidence: "Evidence" };
+  const LADDER_ORDER = ["transport", "observation", "independent", "outcome"];
+
+  const messageInput = $("#message");
+  const transcript = $("#transcript");
+  const main = $("#main");
+  const railToggle = $("#railToggle");
+  const inspector = $("#inspector");
+  const inspectorBody = $("#inspectorBody");
+  const inspectorTitle = $("#inspectorTitle");
+  const inspectorLeaf = $("#inspectorLeaf");
+  const inspectorClose = $("#inspectorClose");
+  const focusZone = $("#focusZone");
+  const tabs = $$(".tab");
+
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  function decorateFrames() {
+    const glyphs = { tl: "╭", tr: "╮", bl: "╰", br: "╯" };
+    $$(".tui-frame").forEach((frame) => {
+      if (frame.querySelector(":scope > .corner")) return;
+      Object.entries(glyphs).forEach(([pos, glyph]) => {
+        const corner = el("span", "corner " + pos, glyph);
+        corner.setAttribute("aria-hidden", "true");
+        frame.append(corner);
+      });
+    });
+  }
+
+  function updateTerminalMetrics() {
+    if (!terminal || !cellMeasure) return;
+    const cellWidth = cellMeasure.getBoundingClientRect().width / 20 || 8.1;
+    const baseSize = parseFloat(getComputedStyle(terminal).fontSize) || 13.5;
+    const lineHeight = baseSize * 1.5;
+    const cols = Math.max(40, Math.floor(terminal.clientWidth / cellWidth));
+    const rows = Math.max(12, Math.floor(terminal.clientHeight / lineHeight));
+    terminal.classList.toggle("cols-100", cols >= 100);
+    terminal.classList.toggle("cols-120", cols >= 120);
+    if (termSize) termSize.textContent = cols + "×" + rows;
+  }
+
+  let metricsRaf = 0;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(metricsRaf);
+    metricsRaf = requestAnimationFrame(updateTerminalMetrics);
+  });
+
+  const state = {
+    theme: "aegis",
+    inspector: {
+      open: false,
+      tab: "graph",
+      taskId: "verify-input",
+      nodeId: "fact-n42",
+      showDetail: false
+    }
+  };
+
+  /* ---------------- fixtures ---------------- */
+  const TASKS = {
+    planning: {
+      state: "DONE", stateClass: "t-verified", desc: "拆解任务与预算",
+      tree: "├─", parent: "root", children: "verify-input",
+      depends: "—", criterion: "plan admitted · 已满足",
+      budget: "3/40", reserved: 0, source: "plan.static · admitted",
+      meta: "parent: root · static plan"
+    },
+    "verify-input": {
+      state: "RUNNING", stateClass: "t-pending", desc: "检查输入并等待独立验收",
+      tree: "│  ├─", parent: "planning", children: "parse",
+      depends: "planning（satisfied）", criterion: "c-2 input satisfies task contract · 未判定",
+      budget: "12/40", reserved: 4, source: "plan.dynamic · admitted",
+      meta: "parent: planning · depends_on planning · criterion c-2"
+    },
+    parse: {
+      state: "READY", stateClass: "t-accent", desc: "解析中间 JSON",
+      tree: "│  │  └─", parent: "verify-input", children: "—",
+      depends: "verify-input（unsatisfied）", criterion: "c-3 parsed tree matches schema · 未执行",
+      budget: "0/12", reserved: 0, source: "plan.dynamic · admitted",
+      meta: "parent: verify-input · depends_on verify-input"
+    },
+    submit: {
+      state: "UNKNOWN", stateClass: "t-pending", desc: "提交候选并等待外部复核",
+      tree: "└─", parent: "root", children: "—",
+      depends: "parse（unknown）· oracle（required）", criterion: "c-9 independent acceptance · 无 Outcome",
+      budget: "0/8", reserved: 0, source: "plan.dynamic · admitted",
+      meta: "parent: root · depends_on parse + oracle"
+    }
+  };
+  const TASK_ORDER = ["planning", "verify-input", "parse", "submit"];
+  const EDGES = [
+    { from: "planning", to: "verify-input", state: "satisfied", cls: "t-verified" },
+    { from: "verify-input", to: "parse", state: "unsatisfied", cls: "t-pending" },
+    { from: "parse", to: "submit", state: "unknown", cls: "t-pending" },
+    { from: "oracle", to: "submit", state: "required", cls: "t-proposal" }
+  ];
+
+  const NODES = {
+    "fact-n42": {
+      id: "n-42", type: "Fact", kind: "judged", trust: "VERIFIED", cls: "t-verified", trustClass: "t-verified",
+      title: "输入 JSON 顶层字段集合与 schema v2 required 一致",
+      task: "verify-input", effective: "current", source: "fact.accepted · offset 731",
+      criterion: "c-2 · expected schema v2 / observed 8 fields",
+      readback: "artifact:sha256:9f2c…a71d", supersedes: "—", ladder: "independent",
+      note: "独立判定为真，但只覆盖字段集合；criterion c-2 仍未整体判定，不替代 Outcome。"
+    },
+    "fact-n43": {
+      id: "n-43", type: "Fact", kind: "judged", trust: "VERIFIED", cls: "t-verified", trustClass: "t-verified",
+      title: "目标路径通过授权检查，未越过 workspace 边界",
+      task: "verify-input", effective: "current", source: "admit.allowed · offset 702",
+      criterion: "boundary · path inside workspace", readback: "admission:allow:…",
+      supersedes: "—", ladder: "independent",
+      note: "独立判定为真；授权记录来自 admission，不是模型声明。"
+    },
+    "refuted-n91": {
+      id: "n-91", type: "Refuted", kind: "judged", trust: "VERIFIED (negative)", cls: "t-refuted", trustClass: "t-refuted",
+      title: "旧路径假设已失效；被 refute，不等于运行错误",
+      task: "verify-input", effective: "current", source: "fact.refuted · offset 688",
+      criterion: "path · old assumption rejected", readback: "supersedes n-91",
+      supersedes: "n-91", ladder: "independent",
+      note: "负向判定同样是独立判定；不要与工具运行错误合并。"
+    },
+    "hint-n77": {
+      id: "n-77", type: "Hint", kind: "proposal", trust: "UNVERIFIED", cls: "t-proposal", trustClass: "t-proposal",
+      title: "先检查中间 JSON 的 schema，再决定是否提交",
+      task: "verify-input", effective: "not admitted", source: "model.claim · ep-17",
+      criterion: "—", readback: "—", supersedes: "—", ladder: null,
+      note: "模型提案不进入事实层，也不能推进验证阶梯；只能作为待检查线索。"
+    },
+    "intent-n88": {
+      id: "n-88", type: "Intent", kind: "proposal", trust: "UNVERIFIED", cls: "t-proposal", trustClass: "t-proposal",
+      title: "准备读取 artifact:sha256:9f2c…（尚未执行）",
+      task: "verify-input", effective: "not admitted", source: "model.plan · ep-17",
+      criterion: "—", readback: "—", supersedes: "—", ladder: null,
+      note: "Intent 是拟执行的声明，不是执行结果；执行需要另行授权与预算。"
+    },
+    "artifact-a71d": {
+      id: "a-71d", type: "Artifact", kind: "observed", trust: "OBSERVED", cls: "t-accent", trustClass: "t-dim",
+      title: "工具返回 8 个字段；transport 成功，未做独立判定",
+      task: "verify-input", effective: "current", source: "action.completed · offset 742",
+      criterion: "—", readback: "artifact:sha256:9f2c…a71d",
+      supersedes: "—", ladder: "observation",
+      note: "transport ok + artifact 只到达 observation；不能表示任务通过。"
+    },
+    "pending-submit": {
+      id: "p-submit", type: "Pending", kind: "pending", trust: "待确认", cls: "t-pending", trustClass: "t-pending",
+      title: "work.submit 等待外部验收，尚未生成 Outcome",
+      task: "submit", effective: "pending", source: "work.submit · oracle required",
+      criterion: "c-9 independent acceptance", readback: "—",
+      supersedes: "—", ladder: null,
+      note: "责任未结清；没有 Outcome 之前不能宣布成功。"
+    },
+    "pending-check": {
+      id: "p-check", type: "Pending", kind: "pending", trust: "待确认", cls: "t-pending", trustClass: "t-pending",
+      title: "criterion c-2 等待独立判定，尚无最终 Outcome",
+      task: "verify-input", effective: "pending", source: "criterion.c-2 · awaiting oracle",
+      criterion: "c-2 input satisfies task contract", readback: "—",
+      supersedes: "—", ladder: null,
+      note: "criterion 尚未整体判定；已有 Fact 不能当成整体通过。"
+    },
+    "rejected-adm": {
+      id: "a-reject", type: "Rejected", kind: "rejected", trust: "REJECTED", cls: "t-error", trustClass: "t-error",
+      title: "旧路径读取请求被拒绝；未越过 workspace 边界",
+      task: "verify-input", effective: "history", source: "admission.rejected · rev 41",
+      criterion: "boundary · path outside scope", readback: "—",
+      supersedes: "—", ladder: null,
+      note: "边界拒绝是策略判定，不是工具运行错误；保留原因和文本状态。"
+    },
+    "budget-12": {
+      id: "b-12", type: "Budget", kind: "observed", trust: "OBSERVED", cls: "t-dim", trustClass: "t-dim",
+      title: "预算 12/40 已消费，reserved 4，unresolved 0",
+      task: "verify-input", effective: "current", source: "budget projection · rev 42",
+      criterion: "budget · task allocation", readback: "—",
+      supersedes: "—", ladder: null,
+      note: "预算投影是观测值；修改预算不在本原型的操作范围内。"
+    }
+  };
+  const NODE_GROUPS = [
+    { title: "独立判定", meta: "Fact / Refuted", ids: ["fact-n42", "fact-n43", "refuted-n91"] },
+    { title: "模型提案", meta: "UNVERIFIED", ids: ["hint-n77", "intent-n88"] },
+    { title: "观测 / 运行", meta: "OBSERVED", ids: ["artifact-a71d", "budget-12"] },
+    { title: "待处理 / 边界", meta: "pending / rejected", ids: ["pending-submit", "pending-check", "rejected-adm"] }
+  ];
+
+  const LADDER = [
+    { id: "transport", no: "01", label: "TRANSPORT", state: "DONE", cls: "t-verified",
+      text: "read input.json · exit 0 · action.completed",
+      note: "只证明调用与传输完成，不证明输入满足 criterion。" },
+    { id: "observation", no: "02", label: "OBSERVATION", state: "DONE", cls: "t-verified",
+      text: "artifact sha256:9f2c…a71d · fields 8 · rev 42",
+      note: "只证明读取到内容，不证明任务目标已经达成。" },
+    { id: "independent", no: "03", label: "INDEPENDENT CHECK", state: "PARTIAL", cls: "t-pending",
+      text: "Fact n-42 verified · criterion c-2 仍未整体判定",
+      note: "独立判定覆盖字段集合，但未覆盖全部 criterion。" },
+    { id: "outcome", no: "04", label: "OUTCOME / ORACLE", state: "NOT RUN", cls: "t-pending",
+      text: "oracle required · no final Outcome",
+      note: "不能由 transport、exit code 或模型声明替代。" }
+  ];
+
+  /* ---------------- theme ---------------- */
+  function setTheme(id, persist = true) {
+    const themeId = Object.prototype.hasOwnProperty.call(THEME_NAMES, id) ? id : "aegis";
+    state.theme = themeId;
+    docEl.dataset.theme = themeId;
+    $$(".theme-btn").forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset.theme === themeId)));
+    const current = $("#themeCurrent");
+    if (current) current.textContent = THEME_NAMES[themeId];
+    if (persist) {
+      try { localStorage.setItem(THEME_STORAGE_KEY, themeId); } catch (err) { /* local only */ }
+    }
+  }
+
+  $$(".theme-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setTheme(btn.dataset.theme);
+      setFocusZone("DEMO");
+    });
+  });
+
+  let storedTheme = null;
+  try { storedTheme = localStorage.getItem(THEME_STORAGE_KEY); } catch (err) { storedTheme = null; }
+  setTheme(storedTheme || "aegis", false);
+
+  decorateFrames();
+  updateTerminalMetrics();
+
+  /* ---------------- focus zone ---------------- */
+  function setFocusZone(zone) {
+    if (!focusZone) return;
+    focusZone.textContent = "FOCUS · " + zone;
+    focusZone.dataset.zone = zone;
+  }
+
+  document.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (target.closest && target.closest(".theme-switch")) {
+      setFocusZone("DEMO");
+    } else if (state.inspector.open && inspector.contains(target)) {
+      setFocusZone("INSPECTOR");
+    } else if (target.closest && target.closest(".composer")) {
+      setFocusZone("INPUT");
+    } else {
+      setFocusZone("CHAT");
+    }
+  });
+
+  /* ---------------- shared builders ---------------- */
+  function sectionHead(title, meta) {
+    const head = el("div", "master-head");
+    head.append(el("b", "", title));
+    if (meta) head.append(el("span", "", meta));
+    return head;
+  }
+
+  function kvList(entries) {
+    const dl = el("dl", "kv");
+    entries.forEach(([k, v]) => {
+      dl.append(el("dt", "", k), el("dd", "", v));
+    });
+    return dl;
+  }
+
+  function taskGate() {
+    const gate = el("div", "gate");
+    [
+      ["criterion c-2", "[PENDING]"],
+      ["oracle", "[REQUIRED]"],
+      ["outcome", "[NONE]"],
+      ["submit", "[BLOCKED]"]
+    ].forEach(([k, v]) => gate.append(el("span", "gk", k), el("span", "gv", v)));
+    return gate;
+  }
+
+  function action(label, ref) {
+    const btn = el("button", "action-btn", label + " ↗");
+    btn.type = "button";
+    btn.dataset.inspect = ref;
+    return btn;
+  }
+
+  function asideBlock(title) {
+    const block = el("div", "aside-block");
+    block.append(el("h4", "", title));
+    return block;
+  }
+
+  function taskLadderMini() {
+    const wrap = el("div", "ladder-mini");
+    [["transport", "done"], ["observation", "done"], ["check", "current"], ["outcome", "todo"]].forEach(([label, state]) => {
+      wrap.append(el("span", "ladder-pill " + state, label));
+    });
+    return wrap;
+  }
+
+  function inspectorAside() {
+    const aside = el("aside", "inspector-aside");
+
+    const ladder = asideBlock("VERIFY-INPUT LADDER");
+    ladder.append(taskLadderMini(), el("p", "aside-note", "transport 与 observation 已完成；independent check 只覆盖部分 criterion，Outcome 未生成。"));
+    aside.append(ladder);
+
+    const boundary = asideBlock("TRUST BOUNDARY");
+    boundary.append(el("p", "aside-note", "transport ok 不等于任务通过；模型提案不推进 ladder；Fact 不是 Outcome。"));
+    aside.append(boundary);
+
+    const refs = asideBlock("REFS");
+    const actions = el("div", "detail-actions");
+    actions.append(action("artifact", "board:artifact-a71d"), action("Fact n-42", "board:fact-n42"), action("submit", "board:pending-submit"));
+    refs.append(actions);
+    aside.append(refs);
+
+    const recent = asideBlock("RECENT");
+    [
+      ["action.completed", "a-71d", "t-accent", "board:artifact-a71d"],
+      ["fact.accepted", "n-42", "t-verified", "board:fact-n42"],
+      ["criterion.pending", "c-2", "t-pending", "board:pending-check"]
+    ].forEach(([name, id, cls, ref]) => {
+      const row = el("button", "event-row");
+      row.type = "button";
+      row.dataset.inspect = ref;
+      row.append(el("span", "event-dot " + cls, "●"));
+      const main = el("span", "event-main");
+      main.append(el("b", "", name), el("small", "", id));
+      row.append(main);
+      recent.append(row);
+    });
+    aside.append(recent);
+
+    return aside;
+  }
+
+  function detailBack() {
+    const btn = el("button", "detail-back", "← 返回列表");
+    btn.type = "button";
+    btn.dataset.back = "list";
+    return btn;
+  }
+
+  function coverageGrid() {
+    const grid = el("div", "coverage-grid");
+    [
+      ["c-2 fields", "n-42 · VERIFIED", "t-verified"],
+      ["c-2 boundary", "n-43 · VERIFIED", "t-verified"],
+      ["c-2 overall", "p-check · 待确认", "t-pending"],
+      ["outcome", "oracle · NOT RUN", "t-pending"]
+    ].forEach(([label, value, cls]) => {
+      const cell = el("div", "coverage-cell");
+      cell.append(el("span", "", label), el("b", "", value), el("span", "chip " + cls, cls === "t-verified" ? "DONE" : "OPEN"));
+      grid.append(cell);
+    });
+    return grid;
+  }
+
+  function ladderMini(node) {
+    if (!node.ladder) {
+      const reason = node.kind === "proposal"
+        ? "模型提案不进入验证阶梯；需要独立判定后才能改变 trust。"
+        : node.kind === "pending"
+          ? "待处理责任尚未进入任务 ladder；Outcome 仍未生成。"
+          : node.kind === "rejected"
+            ? "边界拒绝是策略判定，不进入任务 ladder；不是工具运行错误。"
+            : "预算投影是观测值，不进入验证 ladder；只作为责任记录。";
+      return el("div", "ladder-blocked", reason);
+    }
+    const active = LADDER_ORDER.indexOf(node.ladder);
+    const wrap = el("div", "ladder-mini");
+    LADDER_ORDER.forEach((step, index) => {
+      let cls = "ladder-pill";
+      if (index < active) cls += " done";
+      else if (index === active) cls += (node.kind === "pending" ? " current" : " done");
+      wrap.append(el("span", cls, step));
+    });
+    return wrap;
+  }
+
+  /* ---------------- graph view ---------------- */
+  function graphRow(id) {
+    const task = TASKS[id];
+    const row = el("button", "master-row");
+    row.type = "button";
+    row.dataset.task = id;
+    row.setAttribute("aria-pressed", String(state.inspector.taskId === id));
+    row.append(el("span", "row-tree", task.tree));
+    const mainCol = el("span", "row-main");
+    const line = el("span", "row-line");
+    line.append(el("span", "row-id", id), el("span", "row-desc", task.desc));
+    mainCol.append(line, el("small", "row-meta", task.meta));
+    row.append(mainCol, el("span", "chip " + task.stateClass, task.state));
+    return row;
+  }
+
+  function graphDetail() {
+    const task = TASKS[state.inspector.taskId] || TASKS["verify-input"];
+    const box = el("div", "detail");
+    box.append(detailBack());
+    const title = el("h3", "detail-title");
+    title.append(el("span", "chip " + task.stateClass, task.state), el("span", "", state.inspector.taskId));
+    box.append(title, el("p", "detail-sub", task.desc));
+
+    const projection = el("div", "detail-section");
+    projection.append(el("h4", "", "TASK / PROJECTION"), kvList([
+      ["state", task.state],
+      ["episode", "ep-17 · s-04"],
+      ["parent", task.parent],
+      ["children", task.children],
+      ["depends_on", task.depends],
+      ["criterion", task.criterion],
+      ["budget", task.budget + " · reserved " + task.reserved],
+      ["source", task.source + " · rev 42"]
+    ]));
+    box.append(projection);
+
+    const verification = el("div", "detail-section");
+    verification.append(el("h4", "", "VERIFICATION POSITION"));
+    verification.append(taskLadderMini());
+    verification.append(el("p", "master-note", "当前节点 RUNNING；Fact n-42 只覆盖字段集合，criterion c-2 与 Outcome 仍未完成。"));
+    box.append(verification);
+
+    const gate = el("div", "detail-section");
+    gate.append(el("h4", "", "TASK GATE"), taskGate());
+    box.append(gate);
+
+    const note = el("div", "note-box");
+    note.append(el("b", "", "边界："), "父子关系与执行依赖分开；依赖满足不代表 criterion 通过，当前节点仍需独立验收。");
+    box.append(note);
+
+    const actions = el("div", "detail-actions");
+    actions.append(action("Evidence ladder", "evidence:verify-input"), action("Board 引用", "board:fact-n42"));
+    box.append(actions);
+    return box;
+  }
+
+  function renderGraph() {
+    const split = el("div", "inspector-split");
+    const master = el("div", "master");
+
+    const treeSec = el("div", "master-sec");
+    treeSec.append(sectionHead("父子结构", "4 tasks · rev 42"));
+    TASK_ORDER.forEach((id) => treeSec.append(graphRow(id)));
+    treeSec.append(el("p", "master-note", "缩进只表示 parent / child；执行依赖单独列出。"));
+    master.append(treeSec);
+
+    const depSec = el("div", "master-sec");
+    depSec.append(sectionHead("执行依赖", "depends_on"));
+    EDGES.forEach((edge) => {
+      const row = el("div", "dep-row");
+      const path = el("span", "dep-path");
+      path.append(el("span", "from", edge.from), el("span", "arrow", " → "), el("span", "to", edge.to));
+      row.append(path, el("span", "chip " + edge.cls, edge.state));
+      depSec.append(row);
+    });
+    depSec.append(el("p", "master-note", "verify-input 的 transport 已完成；criterion 与 Outcome 仍未完成。"));
+    master.append(depSec);
+
+    const compact = el("div", "narrow-context");
+    compact.append(sectionHead("VERIFY-INPUT / GATE", "compact"));
+    compact.append(taskLadderMini());
+    compact.append(el("p", "master-note", "transport 与 observation 完成；independent check 只覆盖部分 criterion。"));
+    const gate = el("div", "gate");
+    [
+      ["c-2 overall", "[PENDING]"],
+      ["oracle", "[REQUIRED]"],
+      ["outcome", "[NONE]"],
+      ["submit", "[BLOCKED]"]
+    ].forEach(([k, v]) => {
+      gate.append(el("span", "gk", k), el("span", "gv", v));
+    });
+    compact.append(gate);
+    const compactRefs = el("div", "detail-actions");
+    compactRefs.append(action("Evidence", "evidence:verify-input"), action("Fact n-42", "board:fact-n42"));
+    compact.append(compactRefs);
+    compact.append(sectionHead("RECENT", "committed"));
+    [
+      ["action.completed", "a-71d", "t-accent", "board:artifact-a71d"],
+      ["fact.accepted", "n-42", "t-verified", "board:fact-n42"],
+      ["criterion.pending", "c-2", "t-pending", "board:pending-check"]
+    ].forEach(([name, id, cls, ref]) => {
+      const row = el("button", "event-row");
+      row.type = "button";
+      row.dataset.inspect = ref;
+      row.append(el("span", "event-dot " + cls, "●"));
+      const main = el("span", "event-main");
+      main.append(el("b", "", name), el("small", "", id));
+      row.append(main);
+      compact.append(row);
+    });
+    master.append(compact);
+
+    split.append(master, graphDetail(), inspectorAside());
+    return split;
+  }
+
+  /* ---------------- board view ---------------- */
+  function boardRow(id) {
+    const node = NODES[id];
+    const row = el("button", "master-row");
+    row.type = "button";
+    row.dataset.node = id;
+    row.setAttribute("aria-pressed", String(state.inspector.nodeId === id));
+    const mainCol = el("span", "row-main");
+    const line = el("span", "row-line");
+    line.append(el("span", "node-type " + node.cls, node.type), el("span", "chip " + node.trustClass, node.trust));
+    mainCol.append(line, el("span", "row-text", node.title), el("small", "row-meta", node.source));
+    row.append(mainCol);
+    return row;
+  }
+
+  function nodeTrustNote(node) {
+    if (node.kind === "judged") return "独立判定；Fact 与 Refuted 都有效，但负向判定不是运行错误。";
+    if (node.kind === "proposal") return "模型声明；UNVERIFIED，不进入事实层，也不能推进验证阶梯。";
+    if (node.kind === "observed") return "观测值；transport / projection 只能证明读取或记录，不是验收。";
+    if (node.kind === "pending") return "责任未结清；没有最终 Outcome，不能视为成功。";
+    if (node.kind === "rejected") return "边界策略拒绝；保留原因和文字状态，不当作工具故障。";
+    return "状态需要结合来源与 revision 阅读。";
+  }
+
+  function boardDetail() {
+    const node = NODES[state.inspector.nodeId] || NODES["fact-n42"];
+    const box = el("div", "detail");
+    box.append(detailBack());
+    const title = el("h3", "detail-title");
+    title.append(el("span", "node-type " + node.cls, node.type), el("span", "", node.id));
+    box.append(title, el("p", "detail-sub", node.title));
+
+    const provenance = el("div", "detail-section");
+    provenance.append(el("h4", "", "NODE / PROVENANCE"), kvList([
+      ["trust", node.trust],
+      ["effective", node.effective],
+      ["task", node.task],
+      ["revision", "rev 42"],
+      ["source", node.source],
+      ["criterion", node.criterion],
+      ["readback", node.readback],
+      ["supersedes", node.supersedes]
+    ]));
+    box.append(provenance);
+
+    const trustSec = el("div", "detail-section");
+    trustSec.append(el("h4", "", "TRUST / LADDER"));
+    trustSec.append(ladderMini(node));
+    trustSec.append(el("p", "master-note", nodeTrustNote(node)));
+    box.append(trustSec);
+
+    const coverage = el("div", "detail-section");
+    coverage.append(el("h4", "", "CRITERION COVERAGE"), coverageGrid());
+    box.append(coverage);
+
+    const gate = el("div", "detail-section");
+    gate.append(el("h4", "", "TASK GATE"), taskGate());
+    box.append(gate);
+
+    const note = el("div", "note-box", node.note);
+    box.append(note);
+
+    const actions = el("div", "detail-actions");
+    actions.append(action("任务详情", "graph:" + node.task), action("Evidence", "evidence:verify-input"));
+    box.append(actions);
+    return box;
+  }
+
+  function renderBoard() {
+    const split = el("div", "inspector-split");
+    const master = el("div", "master");
+    NODE_GROUPS.forEach((group) => {
+      const sec = el("div", "master-sec");
+      sec.append(sectionHead(group.title, group.meta));
+      group.ids.forEach((id) => sec.append(boardRow(id)));
+      master.append(sec);
+    });
+    master.append(el("p", "master-note", "Fact / Refuted 与 Hint / Intent 分栏；列表只展示已提交投影。"));
+    split.append(master, boardDetail(), inspectorAside());
+    return split;
+  }
+
+  /* ---------------- evidence view ---------------- */
+  function renderEvidence() {
+    const wrap = el("div", "evidence");
+
+    const head = el("div", "evidence-head");
+    const headMain = el("div");
+    const title = el("h2", "evidence-title");
+    title.append(el("span", "chip t-pending", "RUNNING"), el("span", "", "verify-input / criterion c-2"));
+    headMain.append(title, el("p", "evidence-sub", "验证阶梯只描述已观测与已判定的事实；不执行提交、不写 EventLog。"));
+    head.append(headMain, action("任务详情", "graph:verify-input"));
+    wrap.append(head);
+
+    const grid = el("div", "evidence-grid");
+    const ladder = el("div", "");
+    LADDER.forEach((step, index) => {
+      const row = el("div", "ladder-step");
+      row.dataset.state = step.id === "independent" ? "current" : (index < 2 ? "done" : "todo");
+      row.append(el("div", "step-no", step.no));
+      const body = el("div", "");
+      const stepHead = el("div", "step-head");
+      stepHead.append(el("b", "", step.label), el("span", "chip " + step.cls, step.state));
+      body.append(stepHead, el("p", "step-text", step.text), el("p", "step-note", step.note));
+      row.append(body);
+      ladder.append(row);
+    });
+    grid.append(ladder);
+
+    const side = el("aside", "evidence-side");
+    side.append(el("h3", "", "Trust boundary"));
+    const list = el("ul", "boundary");
+    [
+      ["transport ok", "只说明调用与传输完成。"],
+      ["artifact observed", "只说明读取成功，不说明 criterion。"],
+      ["Fact n-42", "只覆盖字段集合，不能替代全部 criterion。"],
+      ["Outcome", "仍未生成；Oracle 未运行。"]
+    ].forEach(([k, v]) => {
+      const li = el("li");
+      li.append(el("b", "", k + " "), v);
+      list.append(li);
+    });
+    side.append(list);
+    side.append(kvList([
+      ["revision", "rev 42"],
+      ["budget", "12/40 · reserved 4"],
+      ["artifact", "sha256:9f2c…a71d"],
+      ["outcome", "UNKNOWN"]
+    ]));
+    const refs = el("div", "evidence-refs");
+    refs.append(action("artifact", "board:artifact-a71d"), action("Fact n-42", "board:fact-n42"), action("submit", "board:pending-submit"));
+    side.append(refs);
+    grid.append(side);
+
+    wrap.append(grid);
+
+    const lower = el("div", "evidence-lower");
+    const coverage = el("div", "lower-card");
+    coverage.append(el("h3", "", "CRITERION COVERAGE"));
+    coverage.append(coverageGrid());
+    lower.append(coverage);
+
+    const recent = el("div", "lower-card");
+    recent.append(el("h3", "", "RECENT COMMITTED"));
+    [
+      ["action.completed", "a-71d", "t-accent", "board:artifact-a71d"],
+      ["fact.accepted", "n-42", "t-verified", "board:fact-n42"],
+      ["criterion.pending", "c-2", "t-pending", "board:pending-check"]
+    ].forEach(([name, id, cls, ref]) => {
+      const row = el("button", "event-row");
+      row.type = "button";
+      row.dataset.inspect = ref;
+      row.append(el("span", "event-dot " + cls, "●"));
+      const main = el("span", "event-main");
+      main.append(el("b", "", name), el("small", "", id));
+      row.append(main);
+      recent.append(row);
+    });
+    lower.append(recent);
+    wrap.append(lower);
+
+    const note = el("div", "note-box");
+    note.append(el("b", "", "下一步："), "需要外部验收 / Oracle；本原型不执行授权、提交或 EventLog 写入。");
+    wrap.append(note);
+    return wrap;
+  }
+
+  /* ---------------- inspector controller ---------------- */
+  function currentRefId(tab) {
+    if (tab === "graph") return state.inspector.taskId;
+    if (tab === "board") return NODES[state.inspector.nodeId] ? NODES[state.inspector.nodeId].id : "";
+    return "verify-input";
+  }
+
+  function renderInspector() {
+    const inv = state.inspector;
+    inspector.classList.toggle("show-detail", inv.showDetail);
+    tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === inv.tab)));
+    inspectorTitle.textContent = TAB_TITLES[inv.tab];
+    inspectorLeaf.textContent = inv.tab === "evidence" ? "verify-input" : currentRefId(inv.tab);
+    inspectorBody.replaceChildren(
+      inv.tab === "graph" ? renderGraph() : inv.tab === "board" ? renderBoard() : renderEvidence()
+    );
+    const foot = $("#inspectorFoot");
+    if (foot) {
+      foot.textContent = inv.tab === "evidence"
+        ? "只读验证阶梯 · 不执行提交 / 授权 / EventLog 写入 · Esc 关闭"
+        : inv.tab === "board"
+          ? "点击节点 · Enter 打开详情 · Backspace 返回 · 只读投影"
+          : "点击任务 · Enter 打开详情 · Backspace 返回 · 只读投影";
+    }
+    inspectorBody.scrollTop = 0;
+  }
+
+  function focusInspectorBody() {
+    inspectorBody.focus();
+    setFocusZone("INSPECTOR");
+  }
+
+  function openInspector(rawRef) {
+    const wasOpen = state.inspector.open;
+    const [rawTab, rawId] = String(rawRef || "graph").split(":");
+    const tab = Object.prototype.hasOwnProperty.call(TAB_TITLES, rawTab) ? rawTab : "graph";
+    const inv = state.inspector;
+    inv.open = true;
+    inv.tab = tab;
+    inv.showDetail = Boolean(rawId);
+    if (tab === "graph" && TASKS[rawId]) inv.taskId = rawId;
+    if (tab === "board" && NODES[rawId]) inv.nodeId = rawId;
+    if (tab === "evidence") inv.showDetail = false;
+    inspector.classList.add("open");
+    inspector.setAttribute("aria-hidden", "false");
+    renderInspector();
+    if (wasOpen) focusInspectorBody();
+    else inspectorClose.focus();
+    setFocusZone("INSPECTOR");
+  }
+
+  function closeInspector() {
+    if (!state.inspector.open) return;
+    messageInput.focus();
+    inspector.classList.remove("open");
+    inspector.setAttribute("aria-hidden", "true");
+    state.inspector.open = false;
+    setFocusZone("INPUT");
+  }
+
+  function setTab(tab) {
+    if (!TAB_TITLES[tab]) return;
+    state.inspector.tab = tab;
+    state.inspector.showDetail = false;
+    renderInspector();
+    setFocusZone("INSPECTOR");
+  }
+
+  function selectTask(id) {
+    state.inspector.taskId = id;
+    state.inspector.showDetail = true;
+    renderInspector();
+    focusInspectorBody();
+  }
+
+  function selectNode(id) {
+    state.inspector.nodeId = id;
+    state.inspector.showDetail = true;
+    renderInspector();
+    focusInspectorBody();
+  }
+
+  function goBack() {
+    state.inspector.showDetail = false;
+    renderInspector();
+    focusInspectorBody();
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => setTab(tab.dataset.tab));
+  });
+  inspectorClose.addEventListener("click", closeInspector);
+
+  inspector.addEventListener("click", (event) => {
+    if (event.target === inspector) {
+      closeInspector();
+      return;
+    }
+    const taskRow = event.target.closest("[data-task]");
+    if (taskRow) {
+      selectTask(taskRow.dataset.task);
+      return;
+    }
+    const nodeRow = event.target.closest("[data-node]");
+    if (nodeRow) {
+      selectNode(nodeRow.dataset.node);
+      return;
+    }
+    if (event.target.closest("[data-back]")) {
+      goBack();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    const ref = event.target.closest("[data-inspect]");
+    if (!ref) return;
+    event.preventDefault();
+    openInspector(ref.dataset.inspect);
+  });
+
+  /* ---------------- rail ---------------- */
+  railToggle.addEventListener("click", () => {
+    const collapsed = main.classList.toggle("rail-collapsed");
+    railToggle.setAttribute("aria-expanded", String(!collapsed));
+    railToggle.textContent = collapsed ? "显示上下文" : "收起上下文";
+    setFocusZone("CHAT");
+  });
+
+  /* ---------------- tools ---------------- */
+  $$(".tool-head").forEach((head) => {
+    head.addEventListener("click", () => {
+      const tool = head.closest(".tool");
+      const open = tool.dataset.open !== "false";
+      tool.dataset.open = String(!open);
+      head.setAttribute("aria-expanded", String(!open));
+      const caret = $(".tool-caret", head);
+      if (caret) caret.textContent = open ? "▸" : "▾";
+    });
+  });
+
+  $$(".trace-head").forEach((head) => {
+    head.addEventListener("click", () => {
+      const trace = head.closest(".trace");
+      const open = trace.dataset.open !== "false";
+      trace.dataset.open = String(!open);
+      head.setAttribute("aria-expanded", String(!open));
+      const caret = $(".trace-caret", head);
+      if (caret) caret.textContent = open ? "▸" : "▾";
+    });
+  });
+
+  /* ---------------- demo composer ---------------- */
+  function timestamp() {
+    const now = new Date();
+    return [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join(":");
+  }
+
+  function addUserTurn(text) {
+    const article = el("article", "turn user");
+    const head = el("div", "turn-head");
+    head.append(el("span", "role user", "你"), el("span", "role-mark", "›"), el("span", "turn-meta", timestamp()));
+    article.append(head, el("div", "turn-body", text));
+    transcript.append(article);
+  }
+
+  function addDemoReply() {
+    const article = el("article", "turn aegis");
+    const head = el("div", "turn-head");
+    head.append(el("span", "role aegis", "Aegis"), el("span", "role-mark", "·"), el("span", "turn-meta", "演示回复 · 未调用模型"));
+    const body = el("div", "turn-body");
+    body.append(el("p", "", "这是本地演示回复，用于检查 Inspector 架构与主题下的消息层级；没有调用模型、工具、授权或 EventLog 写入。"));
+    const claim = el("div", "claim is-unknown");
+    const claimHead = el("div", "claim-head");
+    claimHead.append(el("span", "claim-type", "Demo"), el("span", "chip t-pending", "LOCAL ONLY"));
+    claim.append(claimHead, el("p", "claim-text", "用户输入通过 textContent 插入；真实会话与验收由 Pi / Aegis 处理。"));
+    body.append(claim);
+    article.append(head, body);
+    transcript.append(article);
+  }
+
+  $("#composer").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const value = messageInput.value.trim();
+    if (!value) {
+      messageInput.focus();
+      return;
+    }
+    addUserTurn(value);
+    messageInput.value = "";
+    addDemoReply();
+    transcript.scrollTop = transcript.scrollHeight;
+    messageInput.focus();
+    setFocusZone("INPUT");
+  });
+
+  /* ---------------- keyboard ---------------- */
+  document.addEventListener("keydown", (event) => {
+    const typing = event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']");
+    if (!state.inspector.open && !typing && ["PageUp", "PageDown", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      event.preventDefault();
+      const page = Math.round(transcript.clientHeight * 0.8);
+      const delta = event.key === "PageUp" ? -page : event.key === "PageDown" ? page : event.key === "ArrowUp" ? -Math.round(36) : Math.round(36);
+      transcript.scrollTop += delta;
+      return;
+    }
+    if (event.key === "Escape") {
+      if (state.inspector.open) {
+        event.preventDefault();
+        closeInspector();
+      }
+      return;
+    }
+
+    if (state.inspector.open) {
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key === "1") {
+        event.preventDefault();
+        setTab("graph");
+      } else if (event.key === "2") {
+        event.preventDefault();
+        setTab("board");
+      } else if (event.key === "3") {
+        event.preventDefault();
+        setTab("evidence");
+      } else if (event.key === "Backspace" && state.inspector.showDetail) {
+        event.preventDefault();
+        goBack();
+      }
+      return;
+    }
+
+    if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+    const key = event.key.toLowerCase();
+    if (key === "i") {
+      event.preventDefault();
+      openInspector("graph");
+    } else if (key === "b") {
+      event.preventDefault();
+      openInspector("board");
+    } else if (key === "d") {
+      event.preventDefault();
+      openInspector("evidence:verify-input");
+    }
+  });
+})();
+</script>
+</body>
+</html>
