@@ -1,0 +1,26 @@
+// Aegis TUI type-check: the Pi TUI API is resolved from the installed dist types.
+// Runtime tests use the source resolver; this config checks the owned session component.
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2024"],
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "allowImportingTsExtensions": true,
+    "checkJs": false,
+    "types": ["node"],
+    "typeRoots": ["./pi/node_modules/@types"],
+    "paths": {
+      "@earendil-works/pi-coding-agent": ["./pi/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"],
+      "@earendil-works/pi-tui": ["./pi/node_modules/@earendil-works/pi-tui/dist/index.d.ts"]
+    }
+  },
+  "include": ["observation/tui/**/*.ts"]
+}

@@ -24,7 +24,8 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 
 - Campaign CLI：`campaign/c6-entry.mjs`，支持 `run/status/pause/resume/cancel/export/observe/rotate/measure`。
 - 受限 pilot 准备和状态：`campaign/e1-max-pilot.mjs`。真实调用仍必须由用户显式执行。
-- Pi 隔离启动：`./run-pi.sh`。
+- Aegis Pi TUI 启动：`./run-aegis.sh`（源码入口，默认 `AEGIS_TUI_SHELL=1`：固定 Aegis 顶部状态栏 + 右侧上下文 rail，保留 Pi 原生 chat/editor，因此输入框始终可见；配置 `AEGIS_MANIFEST_FILE` 或 `AEGIS_CAMPAIGN_MANIFEST` 后 rail/状态显示 Campaign 数据，未配置时显示 `NO MANIFEST` 但不会遮挡输入。配置、会话、EventLog 与 RAM 默认隔离在 `Pi_Agent_base/config/` 和 `Pi_Agent_base/runtime/`；不自动构建或访问网络）。例如 `./run-aegis.sh --model <provider/model>` 可指定模型。`AEGIS_TUI_SHELL=0` 恢复原生 Pi 布局；`/aegis ui` 仍可打开只读 Inspector 详情 overlay。可用 `AEGIS_PI_AGENT_DIR`、`AEGIS_PI_SESSION_DIR`、`AEGIS_EVENT_LOG`、`AEGIS_RAM_DIR`、`AEGIS_MANIFEST_FILE` 覆盖隔离路径。
+- 预构建 Pi bundle 隔离启动：`./run-pi.sh`（要求 bundle 与 Pi 源码一致）。
 - 手动任务启动：仓库根 `./run-ram-test.sh`；默认使用 `maxapi/deepseek-v4.1-flash`，可显式切换到官方 DeepSeek 配置，见 [模型配置](../docs/DEEPSEEK_MODEL_REFERENCE.md)。
 - 本地知识库：根目录 ignored `knowledge/`；自动候选召回和 `aegis_knowledge` 模型选择接入 Board/RAM，迁移与调用时机见 [知识库接口](../docs/KNOWLEDGE_RUNTIME.md)。
 - Fixture 离线演示：`node Pi_Agent_base/fixtures/demo.mjs`（从仓库根运行）。

@@ -82,6 +82,8 @@ import { buildRam, buildRamProjection } from "../memory/ram.mjs";
 import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/state.mjs";
 import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
+import { openAegisTui } from "../observation/tui/session.ts";
+import { AegisBlank, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
 import {
 	createWorkController,
 	inspectWorkPermit,
@@ -272,7 +274,7 @@ function ramSeed(): Record<string, unknown> | null {
 }
 
 function hostManifest(): Record<string, unknown> | null {
-	const path = process.env.AEGIS_MANIFEST_FILE;
+	const path = process.env.AEGIS_MANIFEST_FILE || process.env.AEGIS_CAMPAIGN_MANIFEST;
 	if (!path) return null;
 	try {
 		const parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -294,6 +296,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	let currentPromptEventId: string | undefined;
 	let cliWorkspace = "";
 	let auditUnavailable = false;
+	let openingLog = false;
 	const writeFailures: string[] = [];
 	let actionRuntimeCache: { workspaceRoot: string; runtime: ReturnType<typeof createObserveActionRuntime> } | null =
 		null;
@@ -429,14 +432,23 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		log = new EventLog(eventLogPath(), {
 			onError: (message) => {
 				auditUnavailable = true;
-				process.stderr.write(`[aegis-observer] ${message}\n`);
+				if (openingLog) return;
 				if (ctx.hasUI) ctx.ui.notify(`Aegis audit failure: ${message}`, "error");
+				else process.stderr.write(`[aegis-observer] ${message}\n`);
 			},
 		});
-		const opened = await log.open();
+		openingLog = true;
+		let opened: Awaited<ReturnType<EventLog["open"]>>;
+		try {
+			opened = await log.open();
+		} finally {
+			openingLog = false;
+		}
 		if (!opened.ok) {
 			auditUnavailable = true;
-			process.stderr.write(`[aegis-observer] audit unavailable: ${opened.error}\n`);
+			if (ctx.mode === "tui" && process.env.AEGIS_TUI_AUTOSTART === "1") return log;
+			if (ctx.hasUI) ctx.ui.notify(`Aegis audit unavailable: ${opened.error}`, "error");
+			else process.stderr.write(`[aegis-observer] audit unavailable: ${opened.error}\n`);
 		}
 		return log;
 	}
@@ -707,9 +719,44 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		refreshProjections();
 	}
 
+	const readTuiSource = () => ({
+		manifest: hostManifest(),
+		events: log?.replay() ?? [],
+		integrityOk: log?.healthy === true && !auditUnavailable,
+		taskId: process.env.AEGIS_TASK_ID || taskId || null,
+		episodeId: episodeId ?? null,
+		sessionId: sessionId || null,
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		commandCtx = ctx;
 		await handleSessionStart(ctx);
+		if (ctx.mode === "tui" && process.env.AEGIS_TUI_SHELL === "1") {
+			ctx.ui.setHeader(() => new AegisBlank());
+			ctx.ui.setTopBar((tui, theme) => new AegisTopBar(tui, theme, readTuiSource));
+			ctx.ui.setSidebar((tui, theme) => new AegisSidebar(tui, theme, readTuiSource));
+		}
+		if (
+			ctx.mode === "tui" &&
+			process.env.AEGIS_TUI_SHELL !== "1" &&
+			process.env.AEGIS_TUI_AUTOSTART === "1" &&
+			hostManifest()
+		) {
+			try {
+				await openAegisTui(ctx as ExtensionCommandContext, () => ({
+					manifest: hostManifest(),
+					events: log?.replay() ?? [],
+					integrityOk: log?.healthy === true && !auditUnavailable,
+					taskId: process.env.AEGIS_TASK_ID || taskId || null,
+					episodeId: episodeId ?? null,
+					sessionId: sessionId || null,
+				}));
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (ctx.hasUI) ctx.ui.notify(`Aegis UI unavailable: ${message}`, "error");
+				else process.stderr.write(`[aegis-observer] Aegis UI unavailable: ${message}\n`);
+			}
+		}
 	});
 
 	pi.on("input", async (_event, ctx) => {
@@ -2279,7 +2326,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 
 	pi.registerCommand("aegis", {
 		description:
-			"Aegis runtime: status | board | ram | switch | close | outcome | learn | compile | route | bind | run | replay",
+			"Aegis runtime: ui | status | board | ram | switch | close | outcome | learn | compile | route | bind | run | replay",
 		handler: async (args, rawCtx) => {
 			const ctx = rawCtx as ExtensionCommandContext;
 			commandCtx = ctx;
@@ -2290,7 +2337,15 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				if (ctx.hasUI) ctx.ui.notify(message, level);
 				else process.stderr.write(`[aegis] ${message}\n`);
 			};
+			if (!sub && ctx.mode === "tui" && hostManifest()) {
+				await openAegisTui(ctx, readTuiSource);
+				return;
+			}
 			switch (sub) {
+				case "ui": {
+					await openAegisTui(ctx, readTuiSource);
+					return;
+				}
 				case "work-status": {
 					const work = projectWorkControl(log!.replay(), taskId);
 					notify(
@@ -2988,7 +3043,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				}
 				default:
 					notify(
-						`Aegis: episode=${episodeId ?? "(none)"} audit=${log?.healthy ? "ok" : "DEGRADED"} board=${JSON.stringify(summarizeBoard(board))}. Usage: /aegis status|board|tasks|dashboard|url|ram|switch|close|outcome <task_id> [session_id]|learn <json>|compile --proof <id>...|route --state-ref <json>|bind --input <path> --out <path>|run --args <json>|replay --outcome <id>`,
+						`Aegis: episode=${episodeId ?? "(none)"} audit=${log?.healthy ? "ok" : "DEGRADED"} board=${JSON.stringify(summarizeBoard(board))}. Usage: /aegis ui|status|board|tasks|dashboard|url|ram|switch|close|outcome <task_id> [session_id]|learn <json>|compile --proof <id>...|route --state-ref <json>|bind --input <path> --out <path>|run --args <json>|replay --outcome <id>`,
 					);
 			}
 		},
