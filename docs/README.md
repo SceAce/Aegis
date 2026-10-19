@@ -98,9 +98,10 @@ WP 可以直接作为教师轨迹，帮助 Agent 跳过从零搜索阶段。回�
 Pi fork 位于 `Pi_Agent_base/pi/`，启动时必须使用：
 
 ```text
-PI_CODING_AGENT_DIR=/Users/scemac/My_github/Aegis/Pi_Agent_base/config/agent
-PI_CODING_AGENT_SESSION_DIR=/Users/scemac/My_github/Aegis/Pi_Agent_base/config/sessions
-PI_SERVER_DIR=/Users/scemac/My_github/Aegis/Pi_Agent_base/config/server
+AEGIS_HOME=$HOME/.Aegis
+PI_CODING_AGENT_DIR=$AEGIS_HOME/agent
+PI_CODING_AGENT_SESSION_DIR=$AEGIS_HOME/sessions
+PI_SERVER_DIR=$AEGIS_HOME/server
 ```
 
 请使用 `Pi_Agent_base/run-pi.sh`。它会运行已构建 bundle，并在源码比 bundle
@@ -111,7 +112,7 @@ cd /Users/scemac/My_github/Aegis/Pi_Agent_base/pi
 npm run build:offline
 ```
 
-配置、session、server socket 和 debug 状态都属于 `Pi_Agent_base/config/`，
+配置、session、server socket 和 debug 状态都属于 `$AEGIS_HOME`（默认 `~/.Aegis/`），
 不得回落到 `$HOME/.pi` 或 Aegis 根目录的 `.pi`。
 
 ## 记录边界

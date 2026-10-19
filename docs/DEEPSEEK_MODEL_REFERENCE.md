@@ -1,6 +1,6 @@
 # DeepSeek 模型参考
 
-Aegis 的默认手动入口仍然是中转配置 `maxapi/deepseek-v4.1-flash`。本地 Aegis `Pi_Agent_base/config/agent/models.json` 另外保留了一份非敏感的官方 DeepSeek 模型元数据，来源是本机全局 Pi 配置的模型目录。
+Aegis 的默认手动入口仍然是中转配置 `maxapi/deepseek-v4.1-flash`。本地 Aegis `$AEGIS_HOME/agent/models.json`（默认 `~/.Aegis/agent/models.json`）另外保留了一份非敏感的官方 DeepSeek 模型元数据，来源是本机全局 Pi 配置的模型目录。
 
 ## 官方配置
 

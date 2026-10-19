@@ -1,7 +1,7 @@
 # E1 max / dsv4.1flash：操作者步骤
 
 模型已由用户选定：max 中转站，`deepseek-v4.1-flash`。
-直接复用 `Pi_Agent_base/config/agent/` 的现有 Pi 配置：`settings.json` 当前选择
+直接复用 `$AEGIS_HOME/agent/`（默认 `~/.Aegis/agent/`）的现有 Pi 配置：`settings.json` 当前选择
 `relay/deepseek-v4.1-flash`，`models.json` 给出 `https://ai.max66.xyz/v1` /
 OpenAI-compatible Chat Completions，`auth.json` 已有 relay 凭据。
 `pi-config` 使用 Pi 的 ModelRuntime 和只读 AuthStorage；无需再次输入 key。

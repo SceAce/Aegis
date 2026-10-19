@@ -47,8 +47,8 @@ Aegis 主仓库必须跟踪：
 
 保持本地且不入主仓库：
 
-- `Pi_Agent_base/config/`：凭据、模型配置、会话和本地状态；
-- `Pi_Agent_base/runtime/`：运行日志、实验产物和私有验证证据；
+- `$AEGIS_HOME`（默认 `~/.Aegis/`）：`agent/` 凭据与模型配置、`sessions/`、`server/` 本地状态，以及 `runtime/` 运行日志、实验产物和私有验证证据；
+- `Pi_Agent_base/config/`、`Pi_Agent_base/runtime/`：迁移前的旧默认位置，仍不得纳入主仓库；
 - `Pi_Agent_base/pi/`：独立嵌套仓库，主仓库不递归 vendoring 或意外加入 gitlink；
 - `tmp/`、依赖目录、缓存、环境密钥文件。
 

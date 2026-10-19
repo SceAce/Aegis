@@ -126,8 +126,8 @@ transport and observer checks, not learning evidence.
 ## Configure a relay model
 
 [`login-relay.mjs`](../Pi_Agent_base/login-relay.mjs) writes a compatible
-provider, its credential, and the default model only below
-`Pi_Agent_base/config/agent/`. It does not read or write `$HOME/.pi`, and this
+provider, its credential, and the default model only below `$AEGIS_HOME/agent/`
+(default `~/.Aegis/agent/`). It does not read or write `$HOME/.pi`, and this
 configuration change does not require rebuilding Pi.
 
 For an OpenAI-compatible relay, configure it with:
@@ -212,7 +212,7 @@ require an API key or a network request.
 ```
 
 The launcher must report Pi help and create mutable state only under
-`Pi_Agent_base/config/` and `Pi_Agent_base/runtime/`. If Pi source is newer than
+`$AEGIS_HOME/` (`agent/`, `sessions/`, `server/`, `runtime/`). If Pi source is newer than
 the bundle, it stops and asks for `npm run build:offline`.
 
 ### 3. Teacher replay fixture
