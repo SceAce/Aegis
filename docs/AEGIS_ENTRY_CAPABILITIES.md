@@ -25,7 +25,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 | `contest/run.sh` | 固定 `read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,aegis_execute,aegis_submit_candidate` | Pi 原生工具 + 已登记脚本 | 任务级 runtime 目录 + `decisions.jsonl` 元数据；无请求/工具账本 | 无自动 Oracle；`aegis_observe` 只做登记观察 | Board/RAM/知识（同一 Observer） | 人工命令；无自动轮换 | 2026-10-17 CTF pilot：9 attempt，provider 403/502，有效对照 0 |
 | `campaign/c6-entry.mjs` | `aegis_read`、`aegis_task_decision`、`aegis_submit_plan` | 任务族适配器：`fixture`、`structured-data-repair`（`data.record.set`）、`code-repair`（`code.file.write`）；`script_config_path` 的人工登记脚本 | 双侧请求账本 + 每 Task 工具账本 + 执行 permit + 预算释放 | Host Oracle：注册测试（code-repair）或 plan-ready；Manifest 只能引用 `fixture.oracle.v1` | Board/RAM（`bounded_ram` 或 `full_history`）；无知识工具 | `learning.policy=off/shadow/explicit` 的路由与编译；`session.session_count` 轮换；`pause/resume/cancel/rotate` 命令 | 2026-10-14 单文件 toy 任务真实 provider 3 请求、独立测试 success；无真实任务族/目标 |
 | `campaign/e1-max-pilot.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | `prepare/status` 不调用 provider；run 走 `c6-entry` |
-| `fixtures/ctf-board-pilot.mjs` | Observer 工具 + 受限 Python CLI（审计 guard） | Python 标准库 CLI + 文件读写（非 OS sandbox） | 无 Campaign 账本；记录 RAM/context digest | 私有答案精确比对（pilot harness） | Board/RAM + board/seed 开关 | 无 | 2026-10-17 真实模型 pilot（见 `BOARD_SEED_CTF_PILOT_RESULT.md`） |
+| `fixtures/ctf-board-pilot.mjs` | Observer 工具 + 受限 Python CLI（审计 guard） | Python 标准库 CLI + 文件读写（非 OS sandbox） | 无 Campaign 账本；记录 RAM/context digest | 私有答案精确比对；判定以 Outcome 写入同一 EventLog | Board/RAM + board/seed 开关 | 无 | 2026-10-17 真实模型 pilot；2026-10-19 B 验证（7 次完成 + 1 次 harness bug，控制任务 3/3 成功、真实任务 0/5，见 `REAL_TASK_B_VALIDATION_20261019.md`） |
 | `fixtures/real-model-ab.mjs` | 单个受限 fixture 工具 | 无（fixture 动作） | 无 Campaign 账本 | Oracle 复验 fixture | 有界经历/Compiler/Router 对照 | 无 | 需显式 `--run-real`；无真实运行报告 |
 | `observation/observation-server.mjs` | 无 | 无（只读路由） | 只读投影 | 显示已有 Outcome，不判定 | 同一 committed 投影 | 无 | loopback 测试；无真实长期监看记录 |
 | `login-relay.mjs` | 无 | 只写 `$AEGIS_HOME/agent/{models,auth,settings}.json` | 无 | 无 | 无 | 无 | 离线 smoke；拒绝符号链接/越界目录 |
@@ -70,7 +70,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 
 ### 3.6 实验 fixture
 
-- `fixtures/ctf-board-pilot.mjs`：真实模型 + Observer + 受限 Python CLI；支持 board/seed 开关；结论写入 `BOARD_SEED_CTF_PILOT_RESULT.md`。
+- `fixtures/ctf-board-pilot.mjs`：真实模型 + Observer + 受限 Python CLI；支持 board/seed 开关；独立判定后通过 `appendContestOutcome` 写入同一 committed EventLog（success → Board Fact，未解出 → unknown/Hint）。2026-10-19 的 B 验证与结果见 `REAL_TASK_B_VALIDATION_20261019.md`；10-17 先导见 `BOARD_SEED_CTF_PILOT_RESULT.md`。
 - `fixtures/real-model-ab.mjs`：`--run-real` 才调用 provider；对比 direct 与 deliberate；不是 Campaign 路径。
 
 ### 3.7 只读面与凭据工具
@@ -90,7 +90,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 1. **能力层**：Campaign 路径缺通用 shell/grep/多文件编辑；真实任务族只有 `code-repair`/`structured-data-repair` 两个玩具族。
 2. **Oracle 注册**：Manifest 只能引用 `fixture.oracle.v1`；真实题目（flag/独立 checker）没有注册入口。
 3. **入口分裂**：真实工具面没有账本/Oracle；受控执行面没有真实工具。选择与收敛方案见 [整体计划](AEGIS_COMPLETION_MASTER_PLAN.md) §11。
-4. **真实证据**：Campaign 路径只有 toy 任务；真实 provider 只在 2026-10-17 的 CTF pilot 中跑过，且有效对照为 0。
+4. **真实证据**：Campaign 路径只有 2026-10-14 的 toy 任务；真实 provider 另在 2026-10-17 的 CTF pilot 与 2026-10-19 的 B 验证中跑过（见 `REAL_TASK_B_VALIDATION_20261019.md`）。B 验证证明了“真实工具 → 独立 Outcome → Board Fact”的闭环，但 5 个真实任务尝试 0 成功、成功样本只是控制任务；没有请求/工具账本与预算守恒。
 
 ## 6. 验证入口
 

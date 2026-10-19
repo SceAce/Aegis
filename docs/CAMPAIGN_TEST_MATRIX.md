@@ -2,10 +2,10 @@
 
 ## 当前测试状态（2026-10-19 实测）
 
-本机实跑全部 149 个脚本（仓库根）：
+本机实跑全部 150 个脚本（仓库根；2026-10-19 新增 `aegis-ctf-pilot-outcome`，5/5 通过）：
 
 - required 68 个（`docs/E1_CONTRACT_CLOSURE_REQUIRED_CHECKS.json`）：**68 scripts, 0 failed**，命令见 `Pi_Agent_base/tests/helpers/run-required.sh`。
-- 其余 81 个：**80 pass / 1 red**。唯一红是 `aegis-campaign-c1-boundary-review` 的 F16（accepted prefix checkpoint 仍全量重放）；该失败已由用户确认后置，不阻塞当前范围，且不在 required 清单。
+- 其余 82 个：**81 pass / 1 red**。唯一红是 `aegis-campaign-c1-boundary-review` 的 F16（accepted prefix checkpoint 仍全量重放）；该失败已由用户确认后置，不阻塞当前范围，且不在 required 清单。
 - `tsc tsconfig.aegis.json` 186 条、`tsconfig.aegis-campaign.json` 189 条既有诊断（与记录基线一致，无新增）；`aegis-module-layout` 通过。
 - 证据：`Pi_Agent_base/runtime/dev/audit-20261019/{required,final}/results.json`（ignored 私有目录，含逐脚本退出码与日志）。
 

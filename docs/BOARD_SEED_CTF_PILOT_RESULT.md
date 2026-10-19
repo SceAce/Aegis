@@ -81,3 +81,9 @@ node Pi_Agent_base/tests/helpers/c6-suite-runner.mjs Pi_Agent_base/runtime/dev/c
 12 脚本退出码全部 0，覆盖独立开关、实际 provider payload、禁用 seed 读回、CLI 范围和超时、答案比对、既有知识和图板/RAM 回归。初次 suite 中 CLI 测试因静态 SDK import 缺 resolver 失败；改为只有显式真实运行时才动态加载 SDK 后，用纯 Node 测试通过，未删断言。代码使用 aegis-biome.json。两份类型配置均退出 1，诊断分别 186/189，与已有基线一致，无全仓类型通过声明。
 
 测试与真实效果分别记录。下一步需要 provider 恢复，并先解决召回相关性/Claim 修订和合适的工具预算，才能完成有效对照。
+
+## 后续（2026-10-19）
+
+本报告保留 2026-10-17 的原始结果与限制。后续 B 路径验证（真实工具 → 独立 Outcome → Board Fact）见
+[REAL_TASK_B_VALIDATION_20261019.md](REAL_TASK_B_VALIDATION_20261019.md)；它使用新的题目包和
+`ctf-board-pilot` 的 Outcome 入账，不改变本报告的结论适用范围。

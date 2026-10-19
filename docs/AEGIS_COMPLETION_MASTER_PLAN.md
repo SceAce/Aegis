@@ -301,7 +301,7 @@ MAINT/PERF 按影响分阶段，不阻塞无关任务，不无限扩大范围
 | 旧 C1 审计套件 | 规则收紧后重新归类：2 个夹具对齐 E1、1 个 F12 真缺陷已修；F16 仍按用户决定后置 | `CAMPAIGN_TEST_MATRIX.md` 当前状态节 |
 | 能力层 | 未完成：Campaign 模型只有 3 个工具，动作只覆盖两个玩具任务族；真实工具面（run-aegis/contest）没有账本/Oracle | `AEGIS_ENTRY_CAPABILITIES.md` |
 | Oracle 注册 | 未完成：Manifest 只能引用 `fixture.oracle.v1`；真实题目无注册入口 | `campaign/registries.mjs` |
-| 真实效果 | 几乎为空：2026-10-14 toy code-repair 1 次、2026-10-17 CTF pilot 有效对照 0 | `runtime/pilot/e1-max-first`、`BOARD_SEED_CTF_PILOT_RESULT.md` |
+| 真实效果 | 仍不足以声明收益：2026-10-14 toy code-repair 1 次、2026-10-17 CTF pilot 有效对照 0；2026-10-19 B 验证跑通“真实工具 → 独立 Outcome → Board Fact”，5 个真实任务尝试未解出、成功样本仅为控制任务 | `runtime/pilot/e1-max-first`、`BOARD_SEED_CTF_PILOT_RESULT.md`、`REAL_TASK_B_VALIDATION_20261019.md` |
 | WEB / 实验 | 未开始：WEB-W2–W4、EXP-01–04、短窗口 runner | 本文件 §6、§7 |
 
 下一步顺序（P0 本轮已完成）：

@@ -20,7 +20,7 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态（2026-10-19）：**核心机制层（CORE-01–08 / MEM-01–03 / OBS-01 / WEB-W1）已在 `eed75e7` 内部交付，等待独立外部验收；能力层和真实效果层未完成**。required 68 个脚本在本机实跑 0 failed，其余 81 个中 80 通过、唯一红是已后置的 F16；详细数字与逐项对账见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)。各入口的真实工具、账本、Oracle 与限制见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)。真实 provider 证据只有 2026-10-14 的 toy code-repair 与 2026-10-17 的 CTF pilot；正式对照矩阵与学习收益仍未运行。
+当前状态（2026-10-19）：**核心机制层（CORE-01–08 / MEM-01–03 / OBS-01 / WEB-W1）已在 `eed75e7` 内部交付，等待独立外部验收；能力层和真实效果层未完成**。required 68 个脚本在本机实跑 0 failed，其余 82 个中 81 通过、唯一红是已后置的 F16；详细数字与逐项对账见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)。各入口的真实工具、账本、Oracle 与限制见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)。真实 provider 证据：2026-10-14 的 toy code-repair、2026-10-17 的 CTF pilot，以及 2026-10-19 的 B 路径验证（真实工具 → 独立 Outcome → Board Fact 闭环；5 个真实任务尝试未解出，控制任务只验证链路，见 [报告](REAL_TASK_B_VALIDATION_20261019.md)）。正式对照矩阵与学习收益仍未运行。
 
 以下 C6 期叙述保留为历史记录（`changes_required` 与 16 例 13 通过属于当时基线，不再代表当前树）：
 
