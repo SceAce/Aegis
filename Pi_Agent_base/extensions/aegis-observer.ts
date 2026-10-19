@@ -2715,7 +2715,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						: [];
 					if (proofIds.length === 0) {
 						notify(
-							"Aegis compile: name the committed proof outcomes, e.g. /aegis compile --proof <outcome_id> --proof <outcome_id>",
+							"Aegis compile: name the committed proof outcomes, e.g. /aegis compile --proof <outcome_id> --proof <outcome_id> [--candidate <candidate_event_id>]",
 							"warning",
 						);
 						return;
@@ -2729,6 +2729,21 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 							"warning",
 						);
 						return;
+					}
+					// A knowledge-type rule is compiled from an EXPLICITLY named,
+					// committed candidate Experience event. The candidate supplies the
+					// reviewed procedure text; it is not proof, and the two-proof gate
+					// below still decides active vs candidate.
+					const candidateId = learningCommands.lastFlag(flags, "candidate");
+					let procedure = null;
+					if (typeof candidateId === "string" && candidateId) {
+						const candidate = log!.replay().find((event) => event.event_id === candidateId);
+						const built = learningCommands.procedureFromCandidateEvent(candidate);
+						if (!built.ok) {
+							notify(`Aegis compile: ${built.reason}`, "warning");
+							return;
+						}
+						procedure = built.procedure;
 					}
 					const bridge = await learningBridgeFor();
 					const store = createLearningStore({ dir: experienceDir() });
@@ -2752,6 +2767,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 								? (learningCommands.lastFlag(flags, "supersedes") as string)
 								: null,
 						recordedAt: new Date().toISOString(),
+						procedure,
 					});
 					await emit(
 						"runtime.note",
@@ -2762,6 +2778,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 							experience_id: result.experience?.experience_id ?? null,
 							revision: result.experience?.revision ?? null,
 							source_outcome_ids: proofIds,
+							do_kind: result.experience?.do?.kind ?? "action",
+							candidate_event_id: procedure?.source_event_id ?? null,
 							content_digest: result.content_digest ?? null,
 							stored: result.stored,
 							failures: result.failures,

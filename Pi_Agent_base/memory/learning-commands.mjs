@@ -20,6 +20,7 @@
 // A model NEVER drives these: they are invoked from the `/aegis` command (a
 // human/Host context) or from the launcher. The model may only propose.
 
+import { procedureDigest } from "./experience-compiler.mjs";
 import { loadReplayAdapter } from "./learning-bridge.mjs";
 import { authoritativeActiveExperiences } from "./learning-store.mjs";
 
@@ -62,6 +63,44 @@ function lastFlag(flags, key) {
 export { lastFlag };
 
 /**
+ * Build the reviewed procedure `do` from an accepted candidate Experience event.
+ *
+ * The candidate supplies the technique text and its proposed when/expect; it is
+ * NEVER proof. The caller must name the committed candidate event and the
+ * compiler still requires two independent verified outcomes. The returned
+ * procedure can only produce hint/habit, never a registered `direct` action.
+ *
+ * @param {any} event a committed `proposal.submitted` candidate event
+ * @returns {{ok:boolean, procedure?:object, reason?:string}}
+ */
+export function procedureFromCandidateEvent(event) {
+	if (!event || event.event_type !== "proposal.submitted")
+		return { ok: false, reason: "the named event is not a committed proposal.submitted event" };
+	const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+	if (payload.kind !== "candidate") return { ok: false, reason: "the named proposal is not a candidate Experience" };
+	const text = typeof payload.do === "string" ? payload.do.trim() : "";
+	if (!text) return { ok: false, reason: "the candidate has no do text" };
+	if (!Array.isArray(payload.when) || payload.when.length === 0)
+		return { ok: false, reason: "the candidate has no when conditions" };
+	if (typeof payload.expect !== "string" || !payload.expect.trim())
+		return { ok: false, reason: "the candidate has no expect" };
+	const steps = text
+		.split(/\n+/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+	return {
+		ok: true,
+		procedure: {
+			kind: "procedure",
+			text,
+			steps,
+			source_event_id: event.event_id ?? null,
+			digest: procedureDigest({ text, steps }),
+		},
+	};
+}
+
+/**
  * Bind a proposal to registered primitives. Never executes, never activates.
  * @returns {{ status, executable, gaps, active:false, proposal }}
  */
@@ -92,6 +131,7 @@ export async function compile({
 	supersedes = null,
 	existingExperiences = [],
 	recordedAt = null,
+	procedure = null,
 } = {}) {
 	if (!Array.isArray(proofIds) || proofIds.length === 0) {
 		return {
@@ -114,6 +154,7 @@ export async function compile({
 		supersedes,
 		experienceId,
 		revision,
+		procedure,
 	});
 	const status = compiled.status === "active" ? "active" : "candidate";
 	let stored = false;

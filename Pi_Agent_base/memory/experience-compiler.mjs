@@ -50,8 +50,30 @@ function isWildcard(value) {
 	return WILDCARDS.has(normalize(value));
 }
 
+/**
+ * Digest of a procedure `do` (knowledge-type experience). It pins the reviewed
+ * text/steps; it is not an executable implementation and never gates `direct`.
+ */
+export function procedureDigest({ text = null, steps = null } = {}) {
+	return digest(
+		stable({
+			kind: "procedure",
+			text: typeof text === "string" ? text : null,
+			steps: Array.isArray(steps) ? steps : null,
+		}),
+	);
+}
+
 function doIdentity(doSpec) {
 	const spec = doSpec || {};
+	if (spec.kind === "procedure") {
+		return stable({
+			kind: "procedure",
+			digest: spec.digest ?? null,
+			text: spec.text ?? null,
+			steps: spec.steps ?? null,
+		});
+	}
 	return stable({
 		action_ref: spec.action_ref ?? spec.tool ?? null,
 		action_version: spec.action_version ?? null,
@@ -244,12 +266,25 @@ export function compileExperience({
 		if (record.outcome.preconditions_verified !== true) failures.push({ rule: "proof_preconditions", detail: `proof ${record.index} does not assert verified preconditions` });
 	}
 
-	// --- Rule 3: the resolved action matches the pinned contract --------------
+	// --- Rule 3: the do-clause matches its reviewed kind ----------------------
 	let contract = null;
 	const first = records[0] ?? null;
 	if (first) {
 		const doSpec = first.do ?? { action_ref: first.outcome.action_ref, action_version: first.outcome.action_version, implementation_digest: first.outcome.implementation_digest };
-		if (!doSpec?.action_ref) failures.push({ rule: "action_registered", detail: "proofs do not identify an action_ref" });
+		if (doSpec?.kind === "procedure") {
+			// A procedure is a reviewed knowledge-type technique: it must carry its
+			// text/steps and a digest pinned to that content, plus the candidate
+			// event it came from. It has no registered implementation, so it can
+			// never become a `direct` action; the Router may only hint/habit it.
+			if (typeof doSpec.text !== "string" && !(Array.isArray(doSpec.steps) && doSpec.steps.length > 0))
+				failures.push({ rule: "procedure_shape", detail: "procedure carries no text/steps" });
+			if (typeof doSpec.digest !== "string" || !doSpec.digest)
+				failures.push({ rule: "procedure_digest", detail: "procedure does not pin a digest" });
+			else if (doSpec.digest !== procedureDigest(doSpec))
+				failures.push({ rule: "procedure_digest", detail: "procedure digest does not match its content" });
+			if (typeof doSpec.source_event_id !== "string" || !doSpec.source_event_id)
+				failures.push({ rule: "procedure_source", detail: "procedure does not name the reviewed candidate event" });
+		} else if (!doSpec?.action_ref) failures.push({ rule: "action_registered", detail: "proofs do not identify an action_ref" });
 		else if (!(environment.registry && typeof environment.registry.get === "function" && environment.registry.get(doSpec.action_ref))) failures.push({ rule: "action_registered", detail: `action ${doSpec.action_ref} is not registered` });
 		else contract = environment.registry.get(doSpec.action_ref);
 		if (contract) {
@@ -446,6 +481,9 @@ export function compileExperience({
 			compiled_by: "aegis-experience-compiler",
 			compiler_version: COMPILER_VERSION,
 			source_kind: first?.episode?.source_kind ?? first?.outcome?.source_kind ?? "live",
+			...(doSpec?.kind === "procedure"
+				? { procedure_source_event_id: doSpec.source_event_id ?? null, procedure_digest: doSpec.digest ?? null }
+				: {}),
 			source_outcome_ids: records.map((record) => record.outcome.outcome_id).filter(Boolean),
 			source_episode_ids: [...distinctEpisodes],
 			compiled_at: now,

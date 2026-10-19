@@ -58,8 +58,21 @@ function scopeMatchesExceptFingerprint(checks) {
 }
 
 function actionChecks(experience, registry, taskArgs) {
-	const checks = [];
 	const doSpec = experience.do || {};
+	if (doSpec.kind === "procedure") {
+		// A reviewed knowledge-type procedure has no registered implementation and
+		// therefore can never be `direct`. It is usable for hint/habit only.
+		return {
+			checks: [{ name: "procedure", ok: true, expected: "procedure", actual: "procedure" }],
+			contract: null,
+			missing: [],
+			arguments: {},
+			bindingOk: true,
+			hardOk: true,
+			procedure: true,
+		};
+	}
+	const checks = [];
 	const contract = doSpec.action_ref ? registry?.get(doSpec.action_ref) : null;
 	const registered = Boolean(contract);
 	checks.push({ name: "action_registered", ok: registered, expected: doSpec.action_ref ?? null, actual: contract ? contract.id : null });
@@ -287,6 +300,8 @@ function counterexampleState(experience) {
 
 function ruleIdentity(experience) {
 	const doSpec = experience.do || {};
+	if (doSpec.kind === "procedure")
+		return stable({ kind: "procedure", digest: doSpec.digest ?? null, text: doSpec.text ?? null });
 	return stable({ action_ref: doSpec.action_ref ?? null, arguments_template: doSpec.arguments_template ?? null, tool: doSpec.tool ?? null, operation: doSpec.operation ?? null });
 }
 
@@ -318,7 +333,8 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 		// A binding is reliable ONLY when the declared support is shape-correct AND
 		// every claimed outcome/episode/replay resolves to a real record.
 		const reliable = experience.status === "active" && reliability.every((check) => check.ok) && supportResolution.ok;
-		const { checks: actionChk, contract, missing, arguments: boundArgs, bindingOk, hardOk } = actionChecks(experience, registry, task.arguments);
+		const action = actionChecks(experience, registry, task.arguments);
+		const { checks: actionChk, contract, missing, arguments: boundArgs, bindingOk, hardOk } = action;
 		const actionOk = hardOk;
 		const when = whenCheck(experience, currentState);
 		const counterexample = counterexampleState(experience);
@@ -342,6 +358,7 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 			reliability,
 			support_resolution: supportResolution,
 			reliable,
+			procedure: action.procedure === true,
 			action_checks: actionChk,
 			action_ok: actionOk,
 			binding_ok: bindingOk,
@@ -371,7 +388,9 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 	const scoped = candidates.filter((candidate) => candidate.scope_match);
 	const pausedScoped = candidates.filter((candidate) => candidate.paused && (candidate.scope_match || candidate.same_task_different_env));
 	const usable = candidates.filter((candidate) => candidate.scope_match && candidate.reliable && candidate.action_ok && !candidate.paused);
-	const directReady = usable.filter((candidate) => candidate.when.ok && candidate.missing_parameters.length === 0);
+	const directReady = usable.filter(
+		(candidate) => !candidate.procedure && candidate.when.ok && candidate.missing_parameters.length === 0,
+	);
 
 	// A conflict is two DIRECT-ready rules with different effects. A paused rule
 	// competing with a direct rule is also ambiguous, so it refuses rather than
@@ -426,7 +445,9 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 	}
 
 	// habit: reliable + action valid + when verified, but parameters missing.
-	const habitReady = usable.filter((candidate) => candidate.when.ok && candidate.missing_parameters.length > 0);
+	const habitReady = usable.filter(
+		(candidate) => !candidate.procedure && candidate.when.ok && candidate.missing_parameters.length > 0,
+	);
 	if (habitReady.length === 1) {
 		const winner = habitReady[0];
 		const experience = experiences.find((item) => item.experience_id === winner.experience_id);
@@ -443,7 +464,9 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 
 	// hint: reliable + action valid, but `when` is partially unknown/unmet. A
 	// candidate is never eligible.
-	const hintReady = usable.filter((candidate) => !candidate.when.ok);
+	// A procedure is always hint-level, even when every when predicate matches:
+	// the model still has to perform the technique with its own tools.
+	const hintReady = usable.filter((candidate) => candidate.procedure || !candidate.when.ok);
 	if (hintReady.length >= 1) {
 		const winner = hintReady[0];
 		const experience = experiences.find((item) => item.experience_id === winner.experience_id);
@@ -453,7 +476,10 @@ export function routeLearning({ experiences = [], task = {}, environment = {}, c
 			reason: "an active experience partially matches; the difference must be checked",
 			experience,
 			action_ref: experience?.do?.action_ref ?? null,
-			hint: `Possible match: ${experience?.do?.action_ref ?? "unknown action"}. Confirm the reported difference before reusing it.`,
+			hint:
+				experience?.do?.kind === "procedure"
+					? `Possible technique: ${String(experience.do.text ?? experience.do.steps?.join(" ") ?? "procedure").slice(0, 600)}. This is a verified procedure, not a registered action: confirm the current conditions before reusing it.`
+					: `Possible match: ${experience?.do?.action_ref ?? "unknown action"}. Confirm the reported difference before reusing it.`,
 			differences: winner.when.checks.filter((check) => !check.ok),
 			candidates,
 		};

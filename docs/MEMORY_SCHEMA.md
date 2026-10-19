@@ -338,7 +338,7 @@ or a later counterexample appears.
 | `experience_id` | yes | id | Stable rule identity |
 | `status` | yes | enum | `candidate`, `active`, `suspended`, or `retired` |
 | `when` | yes | object[] | Normalized predicates; each has `{path, op, value, verified_by[]}` where refs must identify an authoritative observation or outcome |
-| `do` | yes | object | Action template `{tool, operation, arguments_template, risk_class}` |
+| `do` | yes | object | Either an action template `{kind:"action", tool, operation, arguments_template, risk_class}` or a reviewed procedure `{kind:"procedure", text, steps[], source_event_id, digest}`. A procedure is a knowledge-type technique: it may become active for `hint`/`habit` but never `direct` (no registered implementation). |
 | `expect` | yes | object[] | Required postconditions; each has `{path, op, value}` |
 | `scope` | yes | object | Environment, target, permission, and task-type constraints |
 | `support` | yes | object | Outcome references and counts for independent evidence |
@@ -366,6 +366,37 @@ The `support` object has:
 `source_outcome_ids`, `source_episode_ids`, and `compiled_at`. The source kind
 must retain whether evidence came from `teacher_replay`, `live`, `human_demo`,
 or `simulation`.
+
+#### 6.2b Procedure (knowledge-type) Experiences
+
+A technique such as "same modulus, two exponents → common-modulus attack" is an
+Experience, not only a tool call. It uses `do.kind: "procedure"`:
+
+```json
+{
+  "kind": "procedure",
+  "text": "reviewed technique text",
+  "steps": ["step 1", "step 2"],
+  "source_event_id": "<committed candidate proposal event>",
+  "digest": "sha256:<digest of text/steps>"
+}
+```
+
+- The procedure text comes from an **explicitly named committed candidate
+  Experience event** (`aegis_propose kind=candidate` with `when/do/expect`), not
+  from an unnamed model message. The candidate is never proof.
+- Activation uses the same gate as an action: `>=2` independently resolved
+  successful outcomes with verified preconditions, distinct episode/group/reset
+  identities, resolved evidence and replays, matching scope, and `when`/`expect`
+  predicates taken from the resolved outcomes (not from the candidate prose).
+- The compiler pins the procedure digest and requires its `source_event_id`.
+  A changed text or an unnamed candidate stays `candidate`.
+- An active procedure can only be routed to `hint` (or `habit` once arguments
+  exist); it has no registered action/version/digest, so it can never be
+  `direct`. `direct` remains reserved for registered actions/scripts.
+- Knowledge-type rules therefore grow from the same evidence gate as tool rules,
+  while the broad wiki stays an unverified external reference.
+
 
 ### 6.3 Experience lifecycle and evidence gates
 

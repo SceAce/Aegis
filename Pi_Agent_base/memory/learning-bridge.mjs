@@ -273,6 +273,7 @@ export function createLearningBridge({
 		supersedes = null,
 		experienceId = null,
 		revision = 1,
+		procedure = null,
 	} = {}) {
 		const engine = makeEngine();
 		if (!engine)
@@ -297,14 +298,18 @@ export function createLearningBridge({
 				experience: null,
 			};
 		}
+		// A reviewed procedure (knowledge-type `do`) replaces the action do-clause
+		// on EVERY proof; the compiler validates the digest and 2-proof gate. The
+		// action path is unchanged when no procedure is supplied.
+		const proofs = procedure ? built.proofs.map((proof) => ({ ...proof, do: procedure })) : built.proofs;
 		const compiled = engine.compileExperience({
-			proofs: built.proofs,
+			proofs,
 			existingExperiences,
 			supersedes,
 			experienceId,
 			revision,
 		});
-		return { ...compiled, proofs: built.proofs, gaps: built.gaps };
+		return { ...compiled, proofs, gaps: built.gaps };
 	}
 
 	/** Route on active Experiences only; the current state must be resolver-verified. */
