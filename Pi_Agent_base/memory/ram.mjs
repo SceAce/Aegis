@@ -259,12 +259,12 @@ export function buildRamProjection({ board, state, episodeId, goal, budgetChars 
 			trust: "observed",
 			state: b ? "completed" : "pending",
 			sources: [a, b].filter(Boolean).map((node) => ref("event", node.origin_event_id)),
-			input: safe(input ?? "unknown", expanded ? 260 : 100),
+			input: safe(input ?? "unknown", expanded ? 480 : 320),
 			response:
 				b && (b.response_fragments || typeof b.response === "string")
 					? compactTextFragments(b.response_fragments ?? captureTextFragments(b.response, 600), expanded ? 360 : 150)
 					: null,
-			...(output !== null ? { details: safe(output, expanded ? 220 : 80) } : {}),
+			...(output !== null ? { details: safe(output, expanded ? 420 : 260) } : {}),
 			transport: safe(b?.transport ?? "unknown", 100),
 			...(a?.input_truncated || b?.response_truncated ? { capture_truncated: true } : {}),
 		};
