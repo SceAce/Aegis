@@ -1,8 +1,32 @@
 # Aegis Campaign — Test Matrix (C0 Closure + C1)
 
+## 当前测试状态（2026-10-19 实测）
+
+本机实跑全部 149 个脚本（仓库根）：
+
+- required 68 个（`docs/E1_CONTRACT_CLOSURE_REQUIRED_CHECKS.json`）：**68 scripts, 0 failed**，命令见 `Pi_Agent_base/tests/helpers/run-required.sh`。
+- 其余 81 个：**80 pass / 1 red**。唯一红是 `aegis-campaign-c1-boundary-review` 的 F16（accepted prefix checkpoint 仍全量重放）；该失败已由用户确认后置，不阻塞当前范围，且不在 required 清单。
+- `tsc tsconfig.aegis.json` 186 条、`tsconfig.aegis-campaign.json` 189 条既有诊断（与记录基线一致，无新增）；`aegis-module-layout` 通过。
+- 证据：`Pi_Agent_base/runtime/dev/audit-20261019/{required,final}/results.json`（ignored 私有目录，含逐脚本退出码与日志）。
+
+本轮对账与修复（2026-10-19）：
+
+| 项 | 结论 | 处理 |
+| --- | --- | --- |
+| `aegis-campaign-c1-integration-contracts`（ORDER-DEDUP/ORDER-TAIL） | E1 要求 `campaign.task.started` 携带 `episode_id`，旧夹具未带而整行被拒，负例变成空转 | 夹具补齐 `episode_id`（同时让 OUT 系列负例真正执行到拒绝路径） |
+| `aegis-campaign-c1-final-audit2`（F8-PREFIX-FULL） | 测试手写的 checkpoint 形状早于 F12，缺 `episode_id` 等字段，尾部 Outcome 被判为未绑定 | 按当前 `scheduler persistCheckpoint` 形状补齐 checkpoint |
+| `aegis-campaign-c1-external-boundaries`（F12 outcome dedup） | 真缺陷：checkpoint 只 seed 了去重 id 集合，没有 seed `outcomeRecords`，尾部重复 Outcome 会再入一次 | `campaign/projection.mjs` 在 `appliedOutcomes` 命中时按 first-wins 去重；21/21 通过 |
+| `aegis-ram-reaudit`（RR-06） | 测试前提错误：1500 字符预算连一条 Fact 都放不下（实测单条需约 1591），不是“收缩丢失了本可放下的事实” | 前提改为 1700 并加“该条 Fact 确实存在”的断言；无需改产品代码 |
+| `aegis-ram-reaudit-sdk`（RS-07） | 真缺陷：RAM 把已汇总的 input/details 再次截到 100/80 字符，结构化参数值只剩几个字符 | `memory/ram.mjs` 提高单行 input/details 显示预算（320/260，展开 480/420）；7/7 通过 |
+| `aegis-tui-command`（runner） | 测试经 Observer 传递依赖 Pi 包，runner 只看文件内是否出现包名，误判为不需要 resolver | 测试声明 `// aegis-resolver: required`，runner 识别该声明 |
+
+`aegis-campaign-c1-integration-contracts` 与 `final-audit2` 曾在 `abd7ced`（10-12）全绿；E1 实现（`4b87f09`…`592d9fb`）收紧 start/scope/checkpoint 规则后变红，`d9c9f52` 只记了一句“4 unchanged audit failures”。本轮把“规则收紧导致的旧夹具”和“真缺陷”分开处理，不再把两类混成同一个“旧红”。
+
+以上数字只覆盖本机 2026-10-19 的离线运行；真实 provider/目标实验见总计划 §7，不在本矩阵内。下文 2026-10-18 基线内容保留为历史记录。
+
 ## 当前整体完善代码验证矩阵
 
-当前基线 ce0bde0；下表为阶段级完成矩阵，各阶段仍未完成，不能按个别脚本通过改成 pass。子任务原始命令/退出码放 `runtime/dev/completion-implementation/<role>/`。主 Agent最终显式12脚本为4 pass/8 fail（exit 1），实际清单与命令见 `final-checks/results.json`；Biome exit 1，Campaign tsc 189→197。阶段状态 blocked / changes_required；详情见当前审查报告。下文历史 pass 不作为本轮通过。
+历史基线 ce0bde0（2026-10-18）；下表为阶段级完成矩阵，各阶段仍未完成，不能按个别脚本通过改成 pass。子任务原始命令/退出码放 `runtime/dev/completion-implementation/<role>/`。主 Agent最终显式12脚本为4 pass/8 fail（exit 1），实际清单与命令见 `final-checks/results.json`；Biome exit 1，Campaign tsc 189→197。阶段状态 blocked / changes_required；详情见当前审查报告。下文历史 pass 不作为本轮通过。
 
 | requirement | case / 独立预期 | level / evidence | 初始脚本或负责子任务 | status |
 | --- | --- | --- | --- | --- |

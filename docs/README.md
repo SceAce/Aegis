@@ -6,7 +6,7 @@
 
 ## 当前入口
 
-当前整体完善目标与问题清单见 [AEGIS_COMPLETION_MASTER_PLAN.md](AEGIS_COMPLETION_MASTER_PLAN.md)；Pi 内主 TUI 与辅助 HTTP WebUI 的接口边界见 [AEGIS_TUI_INTERFACE_DESIGN.md](AEGIS_TUI_INTERFACE_DESIGN.md)。该计划区分架构落实缺口、已有行为缺陷、实验缺口和后置项，并记录当前由主 Agent直接完成代码与测试的执行方式（用户已取消对 max/DeepSeek 的依赖）。下文阶段状态保留其历史适用范围，当前推进以总计划及对应实现证据为准。
+当前整体完善目标与问题清单见 [AEGIS_COMPLETION_MASTER_PLAN.md](AEGIS_COMPLETION_MASTER_PLAN.md)；各入口的真实工具/账本/Oracle/限制见 [AEGIS_ENTRY_CAPABILITIES.md](AEGIS_ENTRY_CAPABILITIES.md)；当前测试与归红状态见 [CAMPAIGN_TEST_MATRIX.md](CAMPAIGN_TEST_MATRIX.md)；Pi 内主 TUI 与辅助 HTTP WebUI 的接口边界见 [AEGIS_TUI_INTERFACE_DESIGN.md](AEGIS_TUI_INTERFACE_DESIGN.md)。总计划区分架构落实缺口、已有行为缺陷、实验缺口和后置项，并记录当前由主 Agent直接完成代码与测试的执行方式（用户已取消对 max/DeepSeek 的依赖）。下文阶段状态保留其历史适用范围，当前推进以总计划、入口能力清单及对应实现证据为准。
 
 开发规则从 [根 AGENTS.md](../AGENTS.md) 开始，先加载 [固定规则](DEVELOPMENT_RULES.md)，
 再按目标路径读取工程/模块 AGENTS.md；规则层级与维护方式见 [AGENT_RULES_LAYOUT.md](AGENT_RULES_LAYOUT.md)。
@@ -20,7 +20,10 @@
 它区分已定契约、实现修正建议与待确认方案，对应 `THINK.md` §9。
 草案尚未成为正式契约，不能被实现代码当作用户已经批准的决定。
 
-当前状态：**C1-C5 按记录范围交付；C6 内部交付后外部工程审查 changes_required**。
+当前状态（2026-10-19）：**核心机制层（CORE-01–08 / MEM-01–03 / OBS-01 / WEB-W1）已在 `eed75e7` 内部交付，等待独立外部验收；能力层和真实效果层未完成**。required 68 个脚本在本机实跑 0 failed，其余 81 个中 80 通过、唯一红是已后置的 F16；详细数字与逐项对账见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)。各入口的真实工具、账本、Oracle 与限制见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)。真实 provider 证据只有 2026-10-14 的 toy code-repair 与 2026-10-17 的 CTF pilot；正式对照矩阵与学习收益仍未运行。
+
+以下 C6 期叙述保留为历史记录（`changes_required` 与 16 例 13 通过属于当时基线，不再代表当前树）：
+
 当前审查见 [`C6_EXTERNAL_REVIEW.md`](C6_EXTERNAL_REVIEW.md)，限定修复提示词
 [`C6_RECHECK_REPAIR_DS_PROMPT.md`](C6_RECHECK_REPAIR_DS_PROMPT.md)。22d075c的五组修复已获限定认可，
 85b1d1d新增反例仅剩请求门三项：末次持久提交确认、Task/Campaign联合准入、实际输入窗口。

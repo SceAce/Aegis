@@ -12,9 +12,10 @@
   "expected_unique_scripts": 68,
   "required_exit_code": 0,
   "blocked_or_skipped_satisfies_required": false,
-  "actual_status": "not_run",
-  "actual_exit": null,
-  "evidence": null,
+  "actual_status": "pass",
+  "actual_exit": 0,
+  "evidence": "2026-10-19 local run: 68 scripts, 0 failed (Pi_Agent_base/runtime/dev/audit-20261019/required/results.json, ignored/private). This records a local run of the frozen list; it is not external acceptance.",
+  "verified_at": "2026-10-19",
   "implementation_owned_new_scripts": [
     "aegis-e1-closure-contract",
     "aegis-e1-closure-admission",

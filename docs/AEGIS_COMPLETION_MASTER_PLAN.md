@@ -1,8 +1,8 @@
 # Aegis 当前整体完善目标与实施方案
 
-状态：目标与实施计划已整理，尚未实施本计划中的新代码；工程整体仍为 changes_required。
+状态：目标与问题清单仍有效；**机制层已实现（`eed75e7`），能力层与真实效果层未完成**。当前测试/归红状态见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)，入口能力见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)，最新执行状态见 §11。
 
-基线：主仓库 `00108c30891c5fb5f0c29e9377b2cdff6338fdcf`，分支 `feat/structured-ram-and-exploration-control`，整理开始时工作树干净。本文汇总截至本次会话可核对的已知问题，不宣称已经穷尽所有潜在缺陷。
+基线：主仓库 `00108c30891c5fb5f0c29e9377b2cdff6338fdcf`（10-17），分支 `feat/structured-ram-and-exploration-control`。本文汇总已知问题与处理方案，不宣称已经穷尽所有潜在缺陷；历史段落保留各自基线。
 
 当前用户要求已更新：先前指定 `maxapi/deepseek-v4.1-flash` 子 Agent 编码；该中转反复中断后，用户明确要求当前主 Agent 直接完成未完成代码和测试，**不再依赖 max/DeepSeek**。后续实现遵守同一项目规范。本文不以历史授权代替真实实验、新依赖、Pi 核心修改等具体范围的授权。
 
@@ -45,18 +45,20 @@
 | 已有能力 | 证据与限制 |
 | --- | --- |
 | Event / Episode / Outcome / Experience、六类 Board 节点 | 事件投影、证据解析、独立判断和学习模块已存在；部分共同 authority 消费仍未闭合 |
-| Campaign Host / Scheduler / Broker / Oracle、动态计划 | 正常链可运行；现有 E1 边界审查仍失败 |
+| Campaign Host / Scheduler / Broker / Oracle、动态计划 | 正常链可运行；E1 边界审查项已由 `eed75e7` 处置并有 68/0 required 证据，等待独立外部验收 |
 | 真实 SDK Session 替换和 Supervisor | 轮换、同 Episode 和预算保留有离线 SDK 证据；CTF runner 未开放轮换效果维度 |
 | RAM v3、显式提案引用与替换、候选等待 | 已实现；采样不是完整产物，真实模型使用效果仍需测量 |
 | 临时 user 尾部 RAM、固定 system 前缀 | 实际序列化验证存在；不能把公共前缀长度等同真实缓存收益 |
 | 轮次 checkpoint 和近期工具历史限制 | 已实现；新增 checkpoint 尚未被 board-off 实验开关完全隔离 |
-| 本地知识编译、自动召回、模型查询、Board/RAM 接线 | 已实现；真实检索相关性存在问题 |
+| 本地知识编译、自动召回、模型查询、Board/RAM 接线 | 已实现于 Observer 入口；Campaign 产品路径尚未接入知识工具（见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)）；真实检索相关性仍有问题 |
 | Compiler / Router / direct / habit / 跨运行 store 重建 | 已实现并有工程验证；不能描述成完全缺失，也不能据此宣称真实学习收益 |
 | 候选等待 / 恢复 / 已登记最小验证 | 已实现；Campaign work-verify 当前明确 unsupported，旧 legacy 恢复保留 migration_required |
 
 实现记录：[RAM ABC](RAM_ABC_IMPLEMENTATION.md)、[知识接线](KNOWLEDGE_RUNTIME_IMPLEMENTATION.md)、[缓存修复](RAM_CACHE_OPTIMIZATION.md)、[公开题先导](BOARD_SEED_CTF_PILOT_RESULT.md)。
 
 ## 3. 问题总表与处理范围
+
+状态更新（2026-10-19）：本表是冻结的问题定义与范围，不是当前状态。CORE-01–08、MEM-01/02、OBS-01、WEB-W1 已由 `eed75e7` 实现并有离线证据，`CAMPAIGN_REVIEW_REPORT.md` 记录为 internally_verified / awaiting_external_review；MEM-03 的两条已知 RAM 缺陷（RR-06、RS-07）已在 2026-10-19 修复并回归。仍未完成：WEB-W2–W4、EXP-01–04、ENTRY-01 的能力收敛（见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)）、MAINT/PERF。下表保留原始分类，便于追溯问题来源。
 
 类型：契约缺口表示已定架构未贯穿实际调用链；缺失能力表示范围明确但产品接口尚未实现；行为缺陷表示已有实现违背当前行为；实验缺口表示缺执行条件或证据。优先级不等于自动重开全部历史阶段。
 
@@ -290,6 +292,22 @@ MAINT/PERF 按影响分阶段，不阻塞无关任务，不无限扩大范围
 
 ## 11. 当前执行状态与下一步
 
-本文所有未完成项默认 planned；不将方案文字视为实现。已有能力保留，当前已确认的六组 E1 核心阻塞和 MEM-01 仍未修复。
+状态更新（2026-10-19，本机实测；取代本节此前的“六组阻塞未修”叙述）：
 
-后续开始编码时先完成 P0：核对当前代码与原始测试产物、纠正统计，生成核心接口表和阶段 required 矩阵；再委派指定 DeepSeek 子 Agent 实施 P1，并行安排不冲突的 MEM-01 测试/修复。真实实验在工程干预和 runner 自检通过后执行，不能靠继续付费跑题掩盖契约缺口。
+| 层面 | 状态 | 依据 |
+| --- | --- | --- |
+| 核心机制（CORE-01–08、MEM-01/02、OBS-01、WEB-W1） | 已实现，内部验证；等待独立外部验收 | `eed75e7`、`CAMPAIGN_REVIEW_REPORT.md`、`aegis-e1-single-authority-review` 13/13、required 68/0 |
+| 记忆保真（MEM-03 / RR-06 / RS-07） | 本轮修复并回归 | `memory/ram.mjs`、`aegis-ram-reaudit` 11/0、`aegis-ram-reaudit-sdk` 7/0 |
+| 旧 C1 审计套件 | 规则收紧后重新归类：2 个夹具对齐 E1、1 个 F12 真缺陷已修；F16 仍按用户决定后置 | `CAMPAIGN_TEST_MATRIX.md` 当前状态节 |
+| 能力层 | 未完成：Campaign 模型只有 3 个工具，动作只覆盖两个玩具任务族；真实工具面（run-aegis/contest）没有账本/Oracle | `AEGIS_ENTRY_CAPABILITIES.md` |
+| Oracle 注册 | 未完成：Manifest 只能引用 `fixture.oracle.v1`；真实题目无注册入口 | `campaign/registries.mjs` |
+| 真实效果 | 几乎为空：2026-10-14 toy code-repair 1 次、2026-10-17 CTF pilot 有效对照 0 | `runtime/pilot/e1-max-first`、`BOARD_SEED_CTF_PILOT_RESULT.md` |
+| WEB / 实验 | 未开始：WEB-W2–W4、EXP-01–04、短窗口 runner | 本文件 §6、§7 |
+
+下一步顺序（P0 本轮已完成）：
+
+1. P0（2026-10-19 完成）：归红与门禁、入口能力清单、状态文档收敛。
+2. P1 待用户拍板：真实任务入口走“扩 Campaign 动作集”还是“contest 纳入 Campaign 记账”；注册真实 Oracle；然后在 Campaign 路径跑一次非玩具的真实任务（小预算、固定模型与停止条件）。
+3. P2：知识接入 Campaign 路径、WEB-W2/W3、EXP-01 校准与四组对照；E1 全量重放的性能基准。
+
+真实实验仍需要用户单独指定模型、预算、目标与授权；不能用继续付费跑题掩盖能力层和入口分裂。
