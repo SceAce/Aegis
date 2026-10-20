@@ -203,6 +203,7 @@ function extractFromBlock(block, seed) {
 			semantic_digest: seed.semantic_digest ?? null,
 			section_lines: [block.lineStart, block.sections[block.sections.length - 1]?.line_end ?? null],
 			code_block_count: codeBlocks.length,
+			step_count: boundedSteps.length,
 			title,
 		},
 	};

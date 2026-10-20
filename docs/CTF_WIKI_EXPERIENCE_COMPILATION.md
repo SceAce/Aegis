@@ -124,7 +124,34 @@ node_type, node_id, status
 7. **不得从候选文本反推 `when`/`expect` 去凑验证**——§6.2b 明确要求激活时的谓词取自 resolved outcomes，而不是候选散文。
 8. **不得声称已激活**。是否 `active` 由编译器按 §6.3 门槛决定，LLM 与脚本都无权写入。
 
-## 6. 机械抽取脚本
+## 6. 一键入口（推荐）
+
+`build-ctf-wiki-memory.mjs` 把 clone → 文档 seed → 候选 → 分析串成一条命令，产物全部落在 `$AEGIS_HOME`（默认 `~/.Aegis`）：
+
+```bash
+node build-ctf-wiki-memory.mjs              # 首次：clone + 编译 + 抽取 + 分析
+node build-ctf-wiki-memory.mjs --report     # 只看分析（已有 seed 时）
+node build-ctf-wiki-memory.mjs --refresh    # 重新 clone（旧 seed 改名保留）
+```
+
+布局：
+
+```text
+~/.Aegis/knowledge/seeds/          document-seed-1 JSON + manifest.json
+~/.Aegis/knowledge/candidates/     candidates.jsonl + summary.json
+~/.Aegis/knowledge/analysis.json   本次运行报告
+```
+
+行为：
+
+- 已存在 seeds 时**默认复用**，不重复 clone；`--refresh` 把旧目录改名为 `seeds.previous-<时间戳>`，**从不删除**。
+- `--report` 只写 `analysis.json`；`--dry-run` 不写任何文件。
+- 权限 `0600`/`0700`，只写 `$AEGIS_HOME` 下，不碰仓库 `knowledge/`。
+- 分析报告包含：commit sha、按分类/语言的 seed 分布、截断数、候选数、按分类的候选分布、拒绝原因直方图、机械 triage 信号（`step_count` / `code_block_count`，**不是质量评分**），以及每次都重申的激活边界。
+
+实测（2026-10-20，真实 clone）：771 个 seed、177 个截断、1 条候选、覆盖率 0.13%。
+
+## 6.1 单独使用抽取脚本
 
 `build-ctf-wiki-experience-candidates.mjs` 从 document seed 机械抽取候选草稿。
 
@@ -188,6 +215,7 @@ node build-ctf-wiki-experience-candidates.mjs --dry-run --report
 
 | 层 | 入口 | 状态 |
 | --- | --- | --- |
+| 一键冷启动 | `build-ctf-wiki-memory.mjs`（clone + seed + 候选 + 分析） | 本文新增 |
 | 文档 seed | `build-ctf-wiki-seeds.mjs` → `knowledge/ctf-wiki/` | 已实现，1174 个 seed |
 | RAM 注入 | `AEGIS_RAM_SEED_FILE` / `aegis_knowledge` 检索 | 已实现，`verified:false`、`action_policy:none` |
 | 候选草稿 | `build-ctf-wiki-experience-candidates.mjs` | 本文新增 |
@@ -216,13 +244,14 @@ node Pi_Agent_base/tests/aegis-learning-bridge-e.mjs
 node build-ctf-wiki-experience-candidates.mjs --self-check
 ```
 
-回归用例见 `Pi_Agent_base/tests/aegis-ctf-wiki-candidates.mjs`（7 例）：
+回归用例见 `Pi_Agent_base/tests/aegis-ctf-wiki-candidates.mjs`（7 例）与 `Pi_Agent_base/tests/aegis-ctf-wiki-memory.mjs`（9 例，不联网）：
 
 ```bash
 node Pi_Agent_base/tests/aegis-ctf-wiki-candidates.mjs
+node Pi_Agent_base/tests/aegis-ctf-wiki-memory.mjs
 ```
 
-覆盖：self-check、技法块产出/定义性列表拒绝、每条草稿过真实提案门、草稿不含禁止字段、同输入确定性、自标存疑不产出、拒绝写入源码/契约目录。
+覆盖：self-check、技法块产出/定义性列表拒绝、每条草稿过真实提案门、草稿不含禁止字段、同输入确定性、自标存疑不产出、拒绝写入源码/契约目录；以及编排脚本的布局、复用不重 clone、`--report` 不写候选、`--dry-run` 不写文件、缺 seed 时 fail-closed、分析不声称产出权限或 active。
 
 ## 9. 已知限制
 
