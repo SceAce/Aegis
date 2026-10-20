@@ -14,7 +14,7 @@
 
 选择算法为可解释的确定性策略：只选当前 Episode 的 effective 节点；以事实/反驳和最近工具观察提供类别覆盖，再按可信类别优先、同类最近优先填充；完整项放不下尝试紧凑项，单条过大不阻断后续短项。预算计算包含标题、遗漏统计与 footer。当前请求相关词仅作同可信类别的辅助排序，不改变事实可信度。禁止依赖某个无关章节计数结束整体裁剪。
 
-保持每请求只有一份临时 RAM、固定 system/tools 不变、实际 toolResult 正常传给 continuation，快照不写 Session transcript。handoff 各字段按同一 Episode 过滤。真实模型任务成功率/延迟收益不由离线保真测试代替。
+保持每次 provider 请求前重建一份临时 RAM（不是每 prompt/turn 一份），固定 system/tools 不变，实际 toolResult 正常传给 continuation，快照不写 Session transcript。handoff/恢复从同一 Episode 的已提交状态重建，不复用旧快照；所有字段按同一 Episode 过滤。核心 RAM overflow 时记录未绑定 provider 的拒绝投影并中止请求；完整请求窗口仍由 Campaign provider gate 独立检查。真实模型任务成功率/延迟收益不由离线保真测试代替。
 
 ## 验证矩阵
 
@@ -35,7 +35,7 @@
 
 默认 4,000 字符预算保留。各节候选上限：Fact 20、Refuted 10、工具 6、提案 8、一般 Artifact 5、去重后的历史经验选择 3。候选先以紧凑形式装入，事实/反驳/工具各提供一次覆盖机会，再填充其他项，剩余空间用于展开细节；每次装入用完整渲染长度检查，不合适的单条不会阻塞后续较小项。标题和 footer 全计入预算，footer 的字符数等于最终字符串 `.length`（UTF-16 code units）。核心超预算保留责任并显式 overflow，不声称它是 provider token 计数或能绕过请求 gate。
 
-Observer 每请求使用同一 projection 文本注入，`request.projected` 添加版本、预算、overflow、节统计。保持 `ephemeral-user-tail-v1`，每次只有一个 RAM，不改 system/tools，也不持久到 Session transcript。`/aegis ram` 不再静默裁掉 1,200 字符以后的内容。handoff facts/refuted/intents 全按当前 Episode 过滤。
+Observer 在每个 provider 请求前重建 projection，`request.projected` 添加版本、预算、overflow、节/寄存器统计及 provider-bound 状态。正常请求保持 `ephemeral-user-tail-v1`，每次只有一份 RAM，不改 system/tools，也不持久到 Session transcript；核心 overflow 时只记 `provider_bound=false` 的拒绝审计并中止请求。`/aegis ram` 不再静默裁掉 1,200 字符以后的内容。handoff facts/refuted/intents 全按当前 Episode 过滤。
 
 | 检查 | 实际结果 | 私有证据 |
 | --- | --- | --- |

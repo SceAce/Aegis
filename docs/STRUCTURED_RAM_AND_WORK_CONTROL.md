@@ -40,7 +40,20 @@
 
 文本片段先脱敏，再机械采样 head/middle/tail。偏移单位为脱敏文本的 UTF-16 code units；不声称是原始字节 offset。采样缺口与截断必须可见，不承诺任意稀疏信息都能落入片段。原工具结果仍正常进入当前 Session continuation。缺失输出为 null，不把 digest 宣称为可读全文引用。对任何窗口化/分段读取，模型必须使用重叠窗口或已知长度并核对重建值，不能凭记忆补/丢边界字符（ROM 规则 7）。
 
-注入仍是每请求一份临时 user 尾部 JSON，固定 system/ROM/tools 不随 RAM 更新，快照不累积进 Session 历史。没有更改为永久增量消息协议。`request.projected` 同时记录 `ram_sections` 统计和 `ram_registers`（子目标、各寄存器数量与 omission），供日志分析；UI 可后续读取同一投影，不需要第二套状态。
+## 生命周期与注入契约
+
+RAM 没有独立的持久生命周期；它是一次 provider 请求的临时快照：
+
+1. `context_with_system` 在每次实际 provider 请求前，从当前已提交的 EventLog/Board/RuntimeState 重建一次 RAM。它不是每个用户 prompt 或每个 turn 固定生成一次。
+2. 同一 turn 内，工具结果、模型提案或其他已提交状态进入下一次 provider 请求前，生成新的 RAM；没有新的 provider 请求就不单独生成快照。
+3. 快照绑定当前 `Task/Episode`、`state_revision`、Board digest 和 RAM digest。Session 轮换/恢复不复用旧 RAM，而是从同一 Episode 的权威状态重建；轮换不重置预算或责任。
+4. RAM 以一条临时 user 尾部消息注入，位于完整 transcript 和 tool result 之后；固定 system/ROM/tools 不因 RAM 改变。Pi 恢复原 transcript 后，RAM 不进入 Session 历史，也不在请求之间累积。
+5. 当前快照只读。它不能写 Board、产生 Fact/Outcome、授予授权或替代执行前的最新 permit。`request.projected` 只记录本次 provider-bound 输入的投影元数据，不成为下一次 RAM 的输入。
+6. 如果核心工作集在预算内仍无法完整容纳，投影设置 `overflow=true`；Observer 记录 `provider_bound=false`、`refusal_reason=ram_overflow` 后中止该 provider 请求。不得把不完整 RAM 当作完整上下文继续推理。正常快照记录 `provider_bound=true`。Campaign provider gate 另外检查完整请求窗口：ROM + 工具定义 + RAM + 当前历史 + prompt + 输出预留。
+
+注入是按 provider 边界更新，不按 timer、固定 turn 数或工具调用数更新。Board/EventLog 继续保留完整状态；RAM 只携带当前目标的有限邻域。UI 或 handoff 可以读取同一投影，但不建立第二套 RAM 状态。
+
+`request.projected` 同时记录 `ram_sections` 统计和 `ram_registers`（子目标、各寄存器数量与 omission），供日志分析；UI 可后续读取同一投影，不需要第二套状态。
 
 本地知识文件统一位于 ignored `knowledge/`；自动召回、LLM 自主选择工具、图板关联与调用时机见 [知识库运行接口](KNOWLEDGE_RUNTIME.md)。轮次 checkpoint 与 RAM 历史压缩的接线见 [图板/seed 先导结果](BOARD_SEED_CTF_PILOT_RESULT.md)。
 

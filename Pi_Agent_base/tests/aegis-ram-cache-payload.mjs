@@ -175,6 +175,7 @@ try {
 		assert.equal(inner.length, projected[i].payload.ram_estimated_chars);
 		assert.equal(projected[i].payload.ram_version, "4.0");
 		assert.equal(projected[i].payload.ram_overflow, false);
+		assert.equal(projected[i].payload.provider_bound, true);
 		assert.equal(JSON.parse(inner).meta.ram_estimated_chars, inner.length);
 		assert.ok(inner.length <= projected[i].payload.ram_budget_chars);
 		for (const section of projected[i].payload.ram_sections)

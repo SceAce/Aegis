@@ -91,8 +91,10 @@ RAM and a handoff; history stays for audit.
   `environment.changed` changes nothing.
 - `request.projected` is a per-request audit row written by the observer's
   `context_with_system` handler. It records `ram_digest`/`state_version`/
-  `board_digest`/`effective_digest` for the exact provider-bound RAM. It
-  creates **no** board node and does **not** bump `RuntimeState.version`, so it
+  `board_digest`/`effective_digest` and `provider_bound` for the projected RAM.
+  A normal row has `provider_bound: true`; a fail-closed projection refusal
+  (for example `refusal_reason: "ram_overflow"`) has `provider_bound: false`.
+  It creates **no** board node and does **not** bump `RuntimeState.version`, so it
   can never feed back into the next projection.
 - RAM v2 adds `ram_version`, `ram_budget_chars`, `ram_overflow` and `ram_sections`
   (`id/total/shown/omitted`) to that diagnostic payload. `ram_estimated_chars`

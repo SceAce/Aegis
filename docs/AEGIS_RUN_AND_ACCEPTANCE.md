@@ -70,6 +70,7 @@ Cookie/API 当前接线：
 - `/aegis autoRemote` 第二次执行确认人类已登录后附着 `remote-http.mjs` client。
 - 工具 `aegis_remote_request` 只开放平台 GET，经 origin/rate gate；不暴露 Cookie，不提供 POST/flag 提交绕过路径。
 - `aegis-remote-cookie-http.mjs` 覆盖 cookie 过滤、Cookie 注入、origin、rate、跨域重定向和重复 POST 拒绝。
+- `aegis-observer-ram-overflow-pi.mjs` 使用真实 Pi SDK + faux provider 验证 RAM 核心 overflow 时只写 `provider_bound=false` 的拒绝审计，不产生 provider 请求。
 
 `/aegis autoRemote` 已接成**两步人类登录 bootstrap**：第一次接收平台 URL 并打开专用 Firefox；人类手动登录后再次执行命令，从专用 profile 读取 cookie 到进程内存，并附着受控 GET API client（`aegis_remote_request`，不暴露 cookie 值）。账号密码/cookie 原文不进入 RAM/EventLog；题目发现、附件下载、POST 提交和 checker 尚未接线，不能把该命令当作完整自动比赛入口。浏览器选型仍按“干净 Firefox/Playwright MCP，Zen 专用 profile 仅作备选”设计。
 
@@ -80,7 +81,7 @@ node Pi_Agent_base/tests/aegis-remote-platform-policy.mjs
 node Pi_Agent_base/tests/aegis-remote-cookie-http.mjs
 ```
 
-覆盖 rate、origin、replay、下载边界、路径逃逸、成功判定、cookie broker 和受控 GET HTTP；真实平台/凭据测试尚未运行，不能据此声称 `autoRemote` 已验收。
+覆盖 rate、origin、replay、下载边界、路径逃逸、成功判定、cookie broker 和受控 GET HTTP；RAM 请求级注入、Session 恢复和核心 overflow 的 fail-closed 也由离线 SDK/faux 用例覆盖。真实平台/凭据测试尚未运行，不能据此声称 `autoRemote` 已验收。
 
 ### Firefox DevTools MCP（已配置；autoRemote 登录 bootstrap 已接入）
 

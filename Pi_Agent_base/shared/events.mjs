@@ -108,9 +108,10 @@ export const EVENT_TYPE_SCHEMA = Object.freeze({
 	// Additive runtime extension: a trusted environment change marks related
 	// Fact/Refuted bindings stale (never deletes history). See MEMORY_SCHEMA_NOTES.
 	"environment.changed": RUNTIME_SCHEMA_VERSION,
-	// Additive runtime extension: audit that a provider-bound request was projected
-	// from committed Events (RAM digest + state revision). Creates no board node and
-	// does not change RuntimeState, so it cannot recurse into later RAM.
+	// Additive runtime extension: audit that a request was projected from committed
+	// Events (RAM digest + state revision). `provider_bound` distinguishes a request
+	// sent to the provider from a fail-closed projection refusal such as RAM overflow.
+	// Creates no board node and does not change RuntimeState, so it cannot recurse.
 	"request.projected": RUNTIME_SCHEMA_VERSION,
 });
 

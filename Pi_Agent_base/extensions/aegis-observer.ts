@@ -22,7 +22,9 @@
 //     the original transcript after the request, so RAM does not accumulate in
 //     session history or invalidate the stable system-prefix cache. Each request
 //     records a `request.projected` audit row (digest + state version); the row
-//     creates no board node and does not bump RuntimeState.
+//     creates no board node and does not bump RuntimeState. A core RAM overflow
+//     is audited and aborts before the provider call rather than sending an
+//     incomplete working set.
 //   * One Episode is kept for one task id across prompts and sessions; a new
 //     task id starts a new Episode.
 //   * The model may only propose (`aegis_propose`) and request a handoff
@@ -1039,6 +1041,34 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				timestamp: Date.now(),
 			},
 		];
+		const projectionAudit = {
+			ram_digest: ramDigest,
+			ram_estimated_chars: ram.length,
+			ram_version: projection.version,
+			ram_budget_chars: projection.budget_chars,
+			ram_overflow: projection.overflow,
+			ram_sections: projection.sections,
+			ram_registers: projection.registers,
+			ram_alias_epoch: ramAliasEpoch,
+			ram_alias_count: Object.keys(ramAliasHistory).length,
+			state_version: state.version,
+			board_digest: board.digest,
+			effective_digest: board.effective_digest,
+			ram_transport: "ephemeral-user-tail-v1",
+			context_policy: policy,
+		};
+		if (projection.overflow) {
+			// A core overflow means the working set could not retain all required
+			// responsibility. Do not send an incomplete context to the provider.
+			// The audit row is explicitly non-provider-bound and does not change state.
+			await emit(
+				"request.projected",
+				{ ...projectionAudit, provider_bound: false, refusal_reason: "ram_overflow" },
+				{ episode_id: episodeId, source_kind: "runtime" },
+			);
+			ctx.abort();
+			return undefined;
+		}
 		if (
 			!workConfigurationValid() ||
 			projectWorkControl(log.replay(), taskId).policyError ||
@@ -1056,23 +1086,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		// never recurse into the next RAM.
 		await emit(
 			"request.projected",
-			{
-				ram_digest: ramDigest,
-				ram_estimated_chars: ram.length,
-				ram_version: projection.version,
-				ram_budget_chars: projection.budget_chars,
-				ram_overflow: projection.overflow,
-				ram_sections: projection.sections,
-				ram_registers: projection.registers,
-				ram_alias_epoch: ramAliasEpoch,
-				ram_alias_count: Object.keys(ramAliasHistory).length,
-				state_version: state.version,
-				board_digest: board.digest,
-				effective_digest: board.effective_digest,
-				provider_bound: true,
-				ram_transport: "ephemeral-user-tail-v1",
-				context_policy: policy,
-			},
+			{ ...projectionAudit, provider_bound: true },
 			{ episode_id: episodeId, source_kind: "runtime" },
 		);
 		return { messages: projectedMessages };
