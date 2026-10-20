@@ -22,6 +22,7 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 
 ## 主要入口
 
+- 安装/预检：仓库根 `./install.sh`。默认只做检查（不联网、不写 `~/.Aegis` 之外的路径、不触碰 `~/.pi`）；`--install-deps`（npm install，需联网）、`--build-bundle`（构建 `run-pi.sh` 所需 bundle）、`--smoke`（离线冒烟）为显式可选动作，`--all` 三者全开。
 - Campaign CLI：`campaign/c6-entry.mjs`，支持 `run/status/pause/resume/cancel/export/observe/rotate/measure`。
 - 受限 pilot 准备和状态：`campaign/e1-max-pilot.mjs`。真实调用仍必须由用户显式执行。
 - Aegis Pi TUI 启动：`./run-aegis.sh`（源码入口，默认 `AEGIS_TUI_SHELL=1`：保留 Pi 原生 chat/editor，显示 Aegis 顶栏和右侧上下文 rail）。私有配置与运行数据默认存放在 `~/.Aegis/`：`agent/`（Pi settings、models、auth、MCP 配置）、`sessions/`（Pi 会话）、`server/`（Pi server 状态）、`runtime/`（EventLog、RAM、投影和产物）。可用 `AEGIS_HOME` 更换根目录，用 `AEGIS_PI_AGENT_DIR`、`AEGIS_PI_SESSION_DIR`、`AEGIS_PI_SERVER_DIR`、`AEGIS_EVENT_LOG`、`AEGIS_RAM_DIR` 单独覆盖；Manifest 使用 `AEGIS_MANIFEST_FILE` 或 `AEGIS_CAMPAIGN_MANIFEST` 指向你的 Campaign 文件。启动不自动迁移仓库里的旧配置，也不自动访问模型/工具网络。`./run-aegis.sh --model <provider/model>` 可指定模型；凭据放在 `~/.Aegis/agent/` 的 Pi auth 配置或环境变量中，不要提交。
