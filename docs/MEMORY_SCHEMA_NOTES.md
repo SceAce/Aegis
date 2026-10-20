@@ -102,6 +102,46 @@ RAM and a handoff; history stays for audit.
   code units, not provider tokens). The transport remains one ephemeral user
   tail per provider request; it is not stored in the Session transcript.
 
+### Human hint (`runtime.note` / `kind: "human.hint"`)
+
+An operator can inject task guidance while Aegis is already running
+(`/aegis hint <text>`), without restarting the session or pre-setting a seed
+file. The payload is:
+
+```json
+{
+  "kind": "human.hint",
+  "hint_id": "hl_<hex>",
+  "text": "<trimmed, at most 1200 chars>",
+  "truncated": true,
+  "supersedes": "hl_<previous>" ,
+  "authority": "none",
+  "verified": false
+}
+```
+
+Contract, enforced in code and covered by `aegis-human-hint` and
+`aegis-observer-hint-pi`:
+
+- **Source must be `human`.** The `RuntimeState` reducer and the Board both
+  ignore a `human.hint` from any other source kind, so a model cannot author its
+  own instruction (the model tools already emit `source_kind: "llm"`).
+- **Single value per Episode.** The newest hint replaces the previous one; a
+  `clear` writes an empty `text`, records `supersedes`, and stores no
+  `human_hints` row. Older events stay in the log, and the older Board node is
+  left with `effective: false` / `effective_status: "superseded"`.
+- **Never evidence.** A hint projects as a Board `Hint` (not `Artifact`, not
+  `Fact`, not `Refuted`) and as a RAM `references` row with
+  `kind: "human_hint"`, `trust: "human_unverified"`, `verified: false`,
+  `action_policy: "none"`. It therefore cannot satisfy a permit, a Fact or an
+  active Experience, and it never becomes a `rules` register entry.
+- **Ordering.** The hint is admitted after a deliberate knowledge retrieval and
+  before optional history, and it is the **last** reference dropped under budget
+  pressure (document seed → retrieved knowledge → human hint).
+- **Episode scoped.** A new Episode does not inherit the hint.
+- **Fail closed.** No active Episode, an unhealthy audit log, or empty text
+  refuses the write and appends nothing.
+
 ## 4. Validation gates (what may become a verified board node)
 
 1. **No inferred success.** A `success`/`failure` is accepted only when the row
