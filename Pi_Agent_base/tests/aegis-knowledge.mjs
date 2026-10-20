@@ -81,9 +81,9 @@ try {
 	assert.equal(board.byType.Artifact[0].knowledge_refs[0].knowledge_id, "web/sqli.json#1");
 	const ram = buildRamProjection({ board, state, episodeId: "ep" });
 	assert.equal(ram.data.sections.knowledge.shown, 1);
-	assert.equal(ram.data.sections.knowledge.items[0].verified, false);
-	assert.equal(ram.data.sections.knowledge.items[0].action_policy, "none");
-	assert.ok(ram.text.length <= 4000);
+	assert.equal(ram.data.references.find((row) => row.kind === "knowledge").verified, false);
+	assert.equal(ram.data.references.find((row) => row.kind === "knowledge").action_policy, "none");
+	assert.ok(ram.text.length <= 8000);
 	state = projectState([
 		...events,
 		{

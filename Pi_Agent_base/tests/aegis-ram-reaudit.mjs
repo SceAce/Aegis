@@ -141,7 +141,7 @@ try {
 	await check("RR-03 newest effective evidence remains available at the default budget", async () => {
 		assert.equal(manyFacts.board.currentByType.Fact.length, 21);
 		const ram = buildRam(manyFacts);
-		assert.ok(ram.length < 4000, "fixture leaves room in the default character budget");
+		assert.ok(ram.length < 8000, "fixture leaves room in the default character budget");
 		assert.ok(ram.includes("UNIQUE_FACT_20_END"), "21st effective fact is excluded while the first 20 fit");
 	});
 
@@ -166,8 +166,8 @@ try {
 		);
 		assert.equal(Object.keys(f.state.pending_actions).length, 0);
 		const ram = buildRam(f);
-		console.log(`measurement - RR-05 RAM chars=${ram.length}, budget=4000, decisions=40, pending=0`);
-		assert.ok(ram.length <= 4000, "historical selections accumulate in a mandatory block beyond the default budget");
+		console.log(`measurement - RR-05 RAM chars=${ram.length}, budget=8000, decisions=40, pending=0`);
+		assert.ok(ram.length <= 8000, "historical selections accumulate in a mandatory block beyond the default budget");
 	});
 
 	await check("RR-06 shrinking retains a verified fact that fits", async () => {

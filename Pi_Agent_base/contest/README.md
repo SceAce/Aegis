@@ -110,6 +110,11 @@ owner-only. Pre-existing group/world-accessible state is reported as a warning
 and is **not** chmod-ed. The workspace `cwd` is **not** an OS sandbox; run
 untrusted or high-risk tasks in a container / low-privilege account.
 
+For the interactive Observer path, `/aegis checkFlag` is the minimal human
+confirmation wrapper: it records a `human` Outcome through the same
+`resultToOutcome`/`appendContestOutcome` bridge without accepting or storing a
+flag value. It is idempotent per task/session and is not a platform checker.
+
 ## 2. Record the independent result
 
 Outcomes come from a platform score or an explicit human decision — never from

@@ -45,18 +45,18 @@ test("compiled document-seed-1 is accepted as one bounded reference", () => {
 	});
 	const d = JSON.parse(p.text);
 	assert.equal(d.sections.external_reference.shown, 1);
-	assert.equal(d.sections.external_reference.items[0].verified, false);
-	assert.equal(d.sections.external_reference.items[0].action_policy, "none");
+	assert.equal(d.references.find((row) => row.kind === "external_reference").verified, false);
+	assert.equal(d.references.find((row) => row.kind === "external_reference").action_policy, "none");
 });
 test("seed is a bounded unverified reference, not a fact or policy", () => {
 	const p = buildRamProjection({ ...base(), seed });
 	const d = JSON.parse(p.text);
 	assert.equal(d.sections.external_reference.shown, 1);
-	assert.deepEqual(d.sections.facts.items, []);
-	assert.deepEqual(d.sections.proposals.items, []);
-	assert.equal(d.sections.external_reference.items[0].action_policy, "none");
-	assert.equal(d.sections.external_reference.items[0].verified, false);
-	assert.ok(p.text.length <= 4000);
+	assert.deepEqual(d.facts, []);
+	assert.deepEqual(d.claims, []);
+	assert.equal(d.references.find((row) => row.kind === "external_reference").action_policy, "none");
+	assert.equal(d.references.find((row) => row.kind === "external_reference").verified, false);
+	assert.ok(p.text.length <= 8000);
 });
 test("invalid seed shape is omitted without changing task controls", () => {
 	for (const bad of [
@@ -96,9 +96,9 @@ test("selected knowledge is bounded, deduplicated, and remains unverified", () =
 	];
 	const d = JSON.parse(buildRamProjection({ ...f }).text);
 	assert.equal(d.sections.knowledge.shown, 1);
-	assert.equal(d.sections.knowledge.items[0].content, "new");
-	assert.equal(d.sections.knowledge.items[0].verified, false);
-	assert.equal(d.sections.knowledge.items[0].action_policy, "none");
+	assert.equal(d.references.find((row) => row.kind === "knowledge").content, "new");
+	assert.equal(d.references.find((row) => row.kind === "knowledge").verified, false);
+	assert.equal(d.references.find((row) => row.kind === "knowledge").action_policy, "none");
 });
 test("seed and observed tool data coexist without trust promotion", () => {
 	const f = base();
@@ -127,7 +127,7 @@ test("seed and observed tool data coexist without trust promotion", () => {
 		transport: { tool_ok: true },
 	});
 	const d = JSON.parse(buildRamProjection({ ...f, seed }).text);
-	assert.equal(d.sections.external_reference.items[0].verified, false);
-	assert.equal(d.sections.tools.items[0].trust, "observed");
-	assert.equal(d.sections.facts.items.length, 0);
+	assert.equal(d.references.find((row) => row.kind === "external_reference").verified, false);
+	assert.equal(d.recent.trust, "observed");
+	assert.equal(d.facts.length, 0);
 });

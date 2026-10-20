@@ -39,7 +39,8 @@ const board = projectBoard(events);
 assert.equal(board.byType.Artifact.length, 3);
 assert.ok(board.byType.Artifact.every((node) => node.checkpoint));
 const projection = buildRamProjection({ board, state, episodeId: "ep", budgetChars: 4000 });
-assert.equal(projection.data.sections.checkpoints.shown, 3);
+assert.equal(projection.data.sections.checkpoints.shown, 1);
+assert.equal(projection.data.checkpoints.length, 1, "RAM keeps only the latest checkpoint");
 assert.ok(projection.text.includes("third conclusion"));
 assert.equal(projection.data.sections.artifacts.shown, 0);
 console.log(

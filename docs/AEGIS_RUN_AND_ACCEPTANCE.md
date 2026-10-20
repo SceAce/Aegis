@@ -43,12 +43,68 @@ proof writer is the trusted Runtime/Oracle.
 
 | command | effect | never does |
 | --- | --- | --- |
+| `/aegis autoRemote` | 人类输入平台 URL；打开专用 Firefox profile 登录页，人类手动登录；不接收/保存账号密码或 cookie | 当前只做登录 bootstrap；尚未发现题目、下载附件、提交或自动 checker |
+| `/aegis checkFlag` | 人类显式确认当前打开任务 flag 正确；不接收/保存 flag 值，使用现有 human Outcome bridge 写入，重复执行幂等 | 不从模型文本/自然语言推断成功；不新增 Outcome schema；不替代独立 platform checker |
 | `/aegis learn <json>` | binds a `{when, do, scope, arguments_template}` proposal via the reviewed binder; records `experience.candidate` | never activates; prose in `when`/`do` is a **gap**, never eval'd |
 | `/aegis compile --proof <id> --proof <id> [--templates <json>] [--candidate <candidate_event_id>] [--id <name>]` | imports **only** the named committed proof outcome ids; on success writes an **active** Experience + the derived store. With `--candidate`, the named committed candidate supplies a reviewed procedure (`do.kind=procedure`) and the rule is hint/habit-only, never direct | with 0 or 1 proof it stays `candidate`; a missing/tampered procedure candidate or digest stays `candidate` |
 | `/aegis route [--state <json>] [--state-ref <json>]` | routes the active Experience: `direct` / `habit` / `hint` / `deliberate` | `paused` is a **binding state**, not a 5th level; a candidate is never hinted; no verified state ⇒ never direct |
 | `/aegis bind --<param> <value> --state <json> --state-ref <json>` | fills the reported **missing** params and **re-checks** to direct | refuses unexpected params / mismatched binding |
 | `/aegis run --args <json> [--target <path>] --state <json> --state-ref <json>` | executes the confirmed **direct** Experience through the real broker (0 model calls) and the Oracle re-checks; records a durable `action.requested` (final args + pinned version/digest + authorization), the standard step `outcome.recorded` under the trusted oracle source, and `action.completed` | never runs when the route is not direct / not authorized; fails closed (no broker call) when the audit log is unavailable |
 | `/aegis replay --outcome <id>` | commits a genuine isolated replay **through the configured adapter** | with no configured adapter: refuses, fabricates nothing, never re-runs the original target |
+
+`/aegis checkFlag` 的集成验收在 `tests/aegis-observer-outcome-command.mjs`：人类命令写入 human/independent/effective Fact；不接收或保存 flag 值；重复执行不重复 Outcome；带 flag 参数被拒绝；实际 Board 命题可见。它不替代 platform checker，也不从模型文本推断成功。
+
+### Remote platform policy（当前实现边界）
+
+新增 `orchestration/remote-platform.mjs` 作为浏览器/平台 adapter 共用的硬门；它不执行网络、不读取凭据、不写 Outcome：
+
+- 精确 origin allowlist；
+- 滑动窗口：60 秒最多 2 次、300 秒最多 8 次、最小间隔 30 秒；
+- submit/checker 一次性 key，重复或 replay 直接拒绝；
+- 附件下载 allowlist、单文件/总量/数量上限、路径净化与 quarantine root；
+- 平台成功必须同时满足：同一 challenge、提交前非 solved、提交后有结构化 accepted、状态变为 solved；只有文本或只有状态都不算成功。
+
+Cookie/API 当前接线：
+
+- `remote-cookie.mjs` 从专用 Firefox profile 的 `cookies.sqlite` 读取当前 origin 的 live cookies；值只存在进程内存，不打印、不写 EventLog/RAM。
+- `/aegis autoRemote` 第二次执行确认人类已登录后附着 `remote-http.mjs` client。
+- 工具 `aegis_remote_request` 只开放平台 GET，经 origin/rate gate；不暴露 Cookie，不提供 POST/flag 提交绕过路径。
+- `aegis-remote-cookie-http.mjs` 覆盖 cookie 过滤、Cookie 注入、origin、rate、跨域重定向和重复 POST 拒绝。
+
+`/aegis autoRemote` 已接成**两步人类登录 bootstrap**：第一次接收平台 URL 并打开专用 Firefox；人类手动登录后再次执行命令，从专用 profile 读取 cookie 到进程内存，并附着受控 GET API client（`aegis_remote_request`，不暴露 cookie 值）。账号密码/cookie 原文不进入 RAM/EventLog；题目发现、附件下载、POST 提交和 checker 尚未接线，不能把该命令当作完整自动比赛入口。浏览器选型仍按“干净 Firefox/Playwright MCP，Zen 专用 profile 仅作备选”设计。
+
+聚焦测试：
+
+```bash
+node Pi_Agent_base/tests/aegis-remote-platform-policy.mjs
+node Pi_Agent_base/tests/aegis-remote-cookie-http.mjs
+```
+
+覆盖 rate、origin、replay、下载边界、路径逃逸、成功判定、cookie broker 和受控 GET HTTP；真实平台/凭据测试尚未运行，不能据此声称 `autoRemote` 已验收。
+
+### Firefox DevTools MCP（已配置；autoRemote 登录 bootstrap 已接入）
+
+Aegis 的全局 MCP 配置位于 `$AEGIS_HOME/agent/mcp.json`；当前默认 `$HOME/.Aegis/agent/mcp.json` 已加入：
+
+- server: `firefox-devtools`
+- package: `@mozilla/firefox-devtools-mcp@0.10.6`
+- binary: `/Applications/Firefox.app/Contents/MacOS/firefox`
+- profile: `$HOME/.Aegis/browser/firefox-profile`（独立干净 profile）
+- tools: `pages snapshot input network console screenshot downloads utilities`
+- 明确不启用 `script`（不开放任意 JS evaluate）、`management`、`webextension`、`prefs`、`privileged`、`launch`
+- log: `$HOME/.Aegis/runtime/browser/firefox-mcp.log`
+
+验证命令（不启动模型/不访问平台）：
+
+```bash
+PI_CODING_AGENT_DIR="$HOME/.Aegis/agent" PI_OFFLINE=1 \
+  node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  ./Pi_Agent_base/pi/packages/coding-agent/src/cli.ts mcp list
+```
+
+当前验证结果：`firefox-devtools: connected, 31 tools (direct, global)`。
+
+限制：MCP 工具本身不会自动执行 Aegis 的 rate/origin/download policy；`/aegis autoRemote` 已有两步登录、Cookie broker 和 GET API client，但平台 adapter、题目发现、附件下载接线、POST 提交和 checker/Outcome 尚未实现。启用 MCP 不等于完整 autoRemote 已可用。
 
 ### Configuration (environment, set by the human/launcher only)
 

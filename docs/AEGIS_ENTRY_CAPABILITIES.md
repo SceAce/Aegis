@@ -20,7 +20,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 
 | 入口 | 模型工具 | 可执行动作 | 账本/预算 | Oracle/独立判定 | Board/RAM/知识 | 学习/轮换 | 真实证据 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `run-aegis.sh` | Pi 默认工具集（未固定 allowlist）+ Observer 7 个工具 | Pi 原生工具 + 已登记脚本（`aegis_execute`） | 无 Campaign 账本 | 无（Observer 只记录，不判任务） | 全部（含知识、artifact read、handoff） | 人工 `/aegis learn/compile/route/bind/run/replay`；`/aegis switch` | 无独立运行记录；组件有离线测试 |
+| `run-aegis.sh` | Pi 默认工具集（未固定 allowlist）+ Observer 7 个工具 | Pi 原生工具 + 已登记脚本（`aegis_execute`） | 无 Campaign 账本 | 无（Observer 只记录，不判任务） | 全部（含知识、artifact read、handoff） | 人工 `/aegis learn/compile/route/bind/run/replay`；`/aegis switch`；`/aegis checkFlag` 人类确认 | 无独立运行记录；组件有离线测试；Firefox DevTools MCP 已配置；`autoRemote` 有登录 bootstrap 和 policy core，平台 adapter/checker 未接线 |
 | `run-pi.sh` | 同 `run-aegis.sh`（bundle 入口） | 同上 | 同上 | 同上 | 同上 | 同上 | 需要已构建 bundle，bundle 旧于源码时拒绝启动 |
 | `contest/run.sh` | 固定 `read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,aegis_execute,aegis_submit_candidate` | Pi 原生工具 + 已登记脚本 | 任务级 runtime 目录 + `decisions.jsonl` 元数据；无请求/工具账本 | 无自动 Oracle；`aegis_observe` 只做登记观察 | Board/RAM/知识（同一 Observer） | 人工命令；无自动轮换 | 2026-10-17 CTF pilot：9 attempt，provider 403/502，有效对照 0 |
 | `campaign/c6-entry.mjs` | `aegis_read`、`aegis_task_decision`、`aegis_submit_plan` | 任务族适配器：`fixture`、`structured-data-repair`（`data.record.set`）、`code-repair`（`code.file.write`）；`script_config_path` 的人工登记脚本 | 双侧请求账本 + 每 Task 工具账本 + 执行 permit + 预算释放 | Host Oracle：注册测试（code-repair）或 plan-ready；Manifest 只能引用 `fixture.oracle.v1` | Board/RAM（`bounded_ram` 或 `full_history`）；无知识工具 | `learning.policy=off/shadow/explicit` 的路由与编译；`session.session_count` 轮换；`pause/resume/cancel/rotate` 命令 | 2026-10-14 单文件 toy 任务真实 provider 3 请求、独立测试 success；无真实任务族/目标 |
@@ -37,9 +37,9 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 - 启动：`./Pi_Agent_base/run-aegis.sh [--model provider/model]`；默认 `AEGIS_TUI_SHELL=1`，`AEGIS_TUI_AUTOSTART=0`。
 - 加载：Pi 源码 `pi/packages/coding-agent/src/cli.ts` + `extensions/aegis-observer.ts`，**不固定 `--tools`**，因此模型拿到 Pi 默认工具集。
 - 状态：`$AEGIS_HOME`（默认 `~/.Aegis/`）下的 agent/sessions/server/runtime；不读写 `$HOME/.pi`。
-- Observer 提供：`aegis_artifact_read`、`aegis_observe`、`aegis_execute`、`aegis_knowledge`、`aegis_propose`、`aegis_switch_session`、`aegis_submit_candidate`；`/aegis` 人工命令（ui/status/board/ram/switch/close/outcome/learn/compile/route/bind/run/replay）。
+- Observer 提供：`aegis_artifact_read`、`aegis_observe`、`aegis_execute`、`aegis_knowledge`、`aegis_remote_request`、`aegis_propose`、`aegis_switch_session`、`aegis_submit_candidate`；`/aegis` 人工命令（ui/status/board/ram/switch/close/autoRemote/checkFlag/outcome/learn/compile/route/bind/run/replay）。
 - 只读界面：默认顶栏 + 右侧 rail + composer 提示；`F6`/`F7`/`F8`/`F9` 打开只读 Inspector（graph/board/evidence）。
-- 学习提示：若经验库中存在 active procedure，`context_with_system` 在每个 episode 首次命中 `hint` 时注入一次 `<aegis_experience>` 只读提示；它不执行动作、不授予权限，也不替代当前观测。
+- 学习提示：若经验库中存在 active procedure，`context_with_system` 在 RAM `rules` 寄存器中携带只读 procedure hint（`trust=rule`、`not_authorization=true`）；它不执行动作、不授予权限，也不替代当前观测。
 - 边界：没有 Campaign Scheduler、请求/工具账本、独立 Oracle；工具退出码和模型文本不构成任务结果。
 
 ### 3.2 `run-pi.sh`（bundle 入口）

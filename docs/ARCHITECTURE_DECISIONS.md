@@ -253,7 +253,7 @@ Worker 提交请求入队，Reducer 顺序更新；只在相关资源的动作�
 
 ### 9.4 RuntimeState、RAM 与长期对象
 
-沿用已定写权限。RAM 是 RuntimeState 的有限投影，不是第二个可写数据库。
+沿用已定写权限。RAM 是 RuntimeState 的有限投影，不是第二个可写数据库。当前 v4 把 RAM 组织为按本轮子目标选择的工作集寄存器：task/子目标、rules、facts、claims、references、recent/referenced、pending；总目标始终在场，claims 只取当前 scope，知识卡可多张但受 8,000 字符预算限制。`text` 与 `data` 同源，sections 只保留兼容统计，完整历史仍在 Board/EventLog。
 共享板、终端 UI、JSON RAM 都读同一状态版本；长期进度不依赖某个 Pi 会话存活。
 采用上一节的短窗口与交接包设计，模型无须通过完整历史恢复当前任务。
 

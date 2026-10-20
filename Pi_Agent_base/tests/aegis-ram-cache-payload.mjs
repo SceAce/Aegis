@@ -173,13 +173,17 @@ try {
 			.replace(/\n<\/aegis_ram>$/, "");
 		assert.equal(digest(inner), projected[i].payload.ram_digest);
 		assert.equal(inner.length, projected[i].payload.ram_estimated_chars);
-		assert.equal(projected[i].payload.ram_version, "3.0");
+		assert.equal(projected[i].payload.ram_version, "4.0");
 		assert.equal(projected[i].payload.ram_overflow, false);
 		assert.equal(JSON.parse(inner).meta.ram_estimated_chars, inner.length);
 		assert.ok(inner.length <= projected[i].payload.ram_budget_chars);
 		for (const section of projected[i].payload.ram_sections)
 			assert.equal(section.shown + section.omitted, section.total);
-		assert.ok(inner.length < 5000, "ordinary RAM remains bounded");
+		assert.ok(projected[i].payload.ram_registers, "register summary is auditable");
+		assert.ok(Number.isInteger(projected[i].payload.ram_registers.facts));
+		assert.ok(projected[i].payload.ram_alias_epoch, "alias epoch is auditable");
+		assert.ok(Number.isInteger(projected[i].payload.ram_alias_count));
+		assert.ok(inner.length <= projected[i].payload.ram_budget_chars, "ordinary RAM remains bounded");
 		assert.equal(projected[i].payload.ram_transport, "ephemeral-user-tail-v1");
 		if (i > 0) {
 			assert.ok(

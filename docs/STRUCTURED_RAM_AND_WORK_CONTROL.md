@@ -1,41 +1,46 @@
 # 结构化 RAM 与通用候选等待
 
-本文说明 RAM v3 及通用工作控制接口；实际验证和已知限制记录在 `RAM_ABC_IMPLEMENTATION.md`。适用于文档、代码、数据处理及其他任务，不限定 CTF。普通 shell 命令和输出不做猜测性业务语义解析。
+本文说明 RAM v4 working-set（寄存器视图）及通用工作控制接口；实际验证和已知限制记录在 `RAM_ABC_IMPLEMENTATION.md`。适用于文档、代码、数据处理及其他任务，不限定 CTF。普通 shell 命令和输出不做猜测性业务语义解析。
 
 ## 责任与数据
 
 - Observer 从已提交事件机械收集工具输入、返回、transport 和引用，不调用模型总结，不读隐式推理。
-- RAM 是当前 Episode 的 JSON 派生投影，不能直接写权威状态、选择路线、授予权限或认定成功。每个 turn 结束时 Observer 会写入一个有界 `runtime.note kind=round.checkpoint` Artifact；它保存本轮模型摘要/工具观察并明确标记为未验证。Board/EventLog 保留历史，RAM 只带最近 checkpoint、未决责任和最近少量工具对。
+- RAM 是当前 Episode 的 JSON 派生投影，不能直接写权威状态、选择路线、授予权限或认定成功。每个 turn 结束时 Observer 会写入一个有界 `runtime.note kind=round.checkpoint` Artifact；它保存本轮模型摘要/工具观察并明确标记为未验证。Board/EventLog 保留历史，RAM 只带本轮任务/子目标、规则、当前事实与相关 claim、知识参考、未决责任和最近少量工具观察。
 - 模型用 `aegis_propose` 显式提交 Claim/Intent；提案保持未验证。独立 Oracle 和现有 authority 决定 Fact/Outcome。
 - Runtime 的候选等待属于工作流控制。`waiting_external` 不属于 Outcome 状态，也不表示任务成功。
 - 有效 Experience 继续走既有 Compiler/Router 门。候选结果与候选 Experience 是不同对象。
 
-## RAM v3
+## RAM v4 working set（寄存器视图）
 
-`buildRamProjection` 返回 `text`、`data`、预算与各节统计；`text` 可以直接 JSON.parse，`buildRam` 保持返回文本。
+`buildRamProjection` 返回 `text`、`data`、预算、`sections` 统计和 `registers` 摘要；`text` 可以直接 JSON.parse，`data` 与 `text` 同源，`buildRam` 保持返回文本。模型看到的是按本轮子目标选择的小寄存器；Board/EventLog 仍是唯一权威历史和详情来源。
 
 | 字段 | 含义 |
 | --- | --- |
 | version / episode_id / state_revision | 投影格式、所属 Episode、已提交状态版本 |
-| task | 总目标、当前请求、Task、状态、授权/预算摘要 |
+| task | **总目标 `total_goal` 始终在场**；可选 `subgoal`（最新有效 Intent，含 text/scope/ref）、Task、状态、授权/预算摘要 |
+| legend | 固定的信任类别说明，防止 facts/claims/references/rules 混淆 |
+| rules | 规则寄存器：工具纪律/active Experience（宪法/ROM 始终在 system 前缀，不重复注入）；`trust=rule`、`not_authorization=true`，只能来自规则来源，不能由 Claim/Reference 升级 |
+| facts | 所有当前有效 Fact/Refuted，`trust=verified`；保留 criterion/observed/evidence 身份；超预算时机械压缩并公开 omitted |
+| claims | 与当前子目标相关的最新 1–3 条模型 Claim/Intent，`trust=unverified`、`scope` 与子目标一致；不按时间衰减，子目标切换后旧 claim 退出 |
+| references | 知识卡（最多 4 张，支持综合/跨方向考点）与外部 seed；`verified=false`、`action_policy=none`；不等于事实或规则 |
+| recent / referenced | 最近一次工具观察（actual input/response/transport）与合法提案显式引用的较早观察；`trust=observed` |
+| artifacts / checkpoints / decisions | 一般产物、**最近一条** round checkpoint、最近经验选择；均非 Fact/规则；旧 checkpoint 留在 EventLog，不进入当前寄存器 |
 | pending | 未完成、unknown、unresolved 行动责任 |
-| workflow | 已提交工作控制的有界展示；不是新的权限来源 |
-| sections.facts / refuted | 当前有效的独立判断 |
-| sections.tools | 最近有界的成对动作、实际参数和响应片段、transport；trust=observed；不再承载完整工具历史 |
-| sections.checkpoints | 最近轮次的模型/观察 checkpoint；trust=unverified；用于携带当前结论，不是 Fact |
-| sections.proposals | 显式模型提案；trust=unverified；候选保留 when/do/expect |
-| sections.knowledge | 有选择时出现：本地知识引用及来源/行号；未验证、无行动策略 |
-| sections.artifacts / decisions | 一般产物与历史经验选择 |
-| refs | 本快照的局部引用表；别名对应完整来源身份，不以短 ID 冒充原 ID |
-| meta | 完整 JSON 字符数、字符预算、遗漏和核心 overflow |
+| sections | 兼容视图：仅 `total/shown/omitted` 统计；完整旧节内容不再重复进入模型 JSON，详情仍在 EventLog/Board |
+| refs | 本快照的引用表；Episode 级稳定别名对应完整来源身份（可引用，不是短 ID 冒充原 ID）；`request.projected` 记录 alias epoch/count |
+| meta | 完整 JSON 字符数、字符预算、遗漏、register/budget drops 与核心 overflow |
 
-普通工具观察没有 `business_status`、HTTP 状态推断或“已找到正确路线”字段。shell 输出中的 Login Success、BUILD SUCCEEDED、支付完成、测试通过等文本都保持原始数据；不能单靠它们改变控制或结果状态。
+`refs` 的别名由 Observer 在当前进程内按 Episode 维护稳定注册表：同一 canonical node/event/action 在后续请求中保持同一 `rN`，不会因选择顺序变化而改指向；`source_refs` 同时接受裸别名和 `{ref_type, ref_id:"rN"}`，但别名只建立未验证关联，不授予事实或执行权。`request.projected` 和 proposal 拒绝记录 `ram_alias_epoch/count`，用于判断工具执行时使用的别名快照。别名不是 Proof，也不能替代 canonical event ID。
 
-默认预算为 4,000 UTF-16 字符，计入全部 JSON/引用/元信息，不等同 provider token 数。候选选择保护任务与未决责任，优先保留类别覆盖、最近观察与被合法显式提案引用的较早观察，再用余量展开细节。无法容纳核心时明确 core overflow；实际请求仍受原有总输入 gate 约束。
+子目标由模型驱动：当路径变化时，模型调用现有 `aegis_propose kind=intent` 并用 `scope` 指定短标签；RAM 取最新有效非 action Intent 作为 `task.subgoal`，只展示同一 scope 的 claims。总目标始终在 `task.total_goal`，不因切换子目标而丢失。模型应在该子目标的 claim 上使用相同 scope；没有匹配 scope 时不把他目标 claim 当作当前指导。
 
-文本片段先脱敏，再机械采样 head/middle/tail。偏移单位为脱敏文本的 UTF-16 code units；不声称是原始字节 offset。采样缺口与截断必须可见，不承诺任意稀疏信息都能落入片段。原工具结果仍正常进入当前 Session continuation。缺失输出为 null，不把 digest 宣称为可读全文引用。
+事实选择是“全部当前有效事实 + 最新 1–2 条优先”：先按任务相关性和最近性排序，全部尝试装入；不足时先缩短文案，再按可丢弃顺序压缩，并显式写 `meta.omitted`。知识卡不限制为一张，RAM 最多带 4 张当前选择，模型可用 `aegis_knowledge` 继续细化；超出预算时淘汰最旧/最不必要项而不是静默丢失。压缩不使用 LLM 总结，不猜测业务成功。
 
-注入仍是每请求一份临时 user 尾部 JSON，固定 system/ROM/tools 不随 RAM 更新，快照不累积进 Session 历史。没有更改为永久增量消息协议。
+默认预算为 8,000 UTF-16 字符，计入完整 JSON/引用/元信息，不等同 provider token 数。所有内容仍是 RuntimeState 的有限投影：不能直接写权威状态、选择路线、授予权限或认定成功。无法容纳核心时明确 core overflow；实际请求仍受原有总输入 gate 约束。
+
+文本片段先脱敏，再机械采样 head/middle/tail。偏移单位为脱敏文本的 UTF-16 code units；不声称是原始字节 offset。采样缺口与截断必须可见，不承诺任意稀疏信息都能落入片段。原工具结果仍正常进入当前 Session continuation。缺失输出为 null，不把 digest 宣称为可读全文引用。对任何窗口化/分段读取，模型必须使用重叠窗口或已知长度并核对重建值，不能凭记忆补/丢边界字符（ROM 规则 7）。
+
+注入仍是每请求一份临时 user 尾部 JSON，固定 system/ROM/tools 不随 RAM 更新，快照不累积进 Session 历史。没有更改为永久增量消息协议。`request.projected` 同时记录 `ram_sections` 统计和 `ram_registers`（子目标、各寄存器数量与 omission），供日志分析；UI 可后续读取同一投影，不需要第二套状态。
 
 本地知识文件统一位于 ignored `knowledge/`；自动召回、LLM 自主选择工具、图板关联与调用时机见 [知识库运行接口](KNOWLEDGE_RUNTIME.md)。轮次 checkpoint 与 RAM 历史压缩的接线见 [图板/seed 先导结果](BOARD_SEED_CTF_PILOT_RESULT.md)。
 
@@ -82,6 +87,8 @@
 
 交互命令：
 
+- `/aegis autoRemote`：两步登录 bootstrap。第一次接收平台 URL 并打开专用 Firefox 登录页；人类手动登录后再次执行该命令，从专用 Firefox profile 读取 cookie 到当前进程内存，附着受控 HTTP client。不接收/保存账号密码或 cookie 原文；`aegis_remote_request` 仅开放平台 GET API，Cookie 由本地 broker 注入且不返回模型；`POST`/flag 提交仍由后续 adapter/checker 所有。
+- `/aegis checkFlag`：人类显式确认当前打开任务的 flag 正确；不接收/保存 flag 值，使用现有 `resultToOutcome` human source 记录 Outcome，重复执行幂等；要求 open episode 和健康审计。
 - `/aegis work-status`：查看有界的工作控制状态。
 - `/aegis work-verify {"tool_name":"read","args":{"path":"report.md"}}`：交互模式中，不调用模型，只执行契约精确登记的只读验证；仍保持等待。
 - `/aegis work-resume <原因>`：用户显式要求继续。
@@ -91,4 +98,4 @@
 
 新建 Campaign 运行使用既有 durable tool-charge 协议，候选工具也必须完成原 request 结清、charge 与 finish。旧 legacy 账本的执行恢复明确返回 `migration_required`，保留历史消费和只读 status；本轮不自动迁移或改写旧事件。
 
-恢复保留原预算消费、未决责任和事件来源。pending/unknown 副作用或未结清请求/工具先核对，不能用恢复命令重发。平台/人类认可的最终 Outcome 仍走现有独立结果录入，不由 resume 生成。
+恢复保留原预算消费、未决责任和事件来源。pending/unknown 副作用或未结清请求/工具先核对，不能用恢复命令重发。平台/人类认可的最终 Outcome 仍走现有独立结果录入，不由 resume 生成。`/aegis checkFlag` 是其中的人类确认入口：它只表达“人已确认正确”，不解析自然语言、不接收 flag 值，仍经过现有 human Outcome 门。

@@ -59,6 +59,7 @@ Object.assign(process.env, env);
 const faux = registerFauxProvider({ provider: "faux", models: [{ id: "abc", name: "ABC local" }] });
 let session;
 const requests = [];
+let observedAlias = null;
 const rows = () => readFileSync(env.AEGIS_EVENT_LOG, "utf8").trim().split("\n").map(JSON.parse);
 function ram(messages) {
 	const content = (m) =>
@@ -112,28 +113,43 @@ try {
 		(context) => {
 			requests.push(context.messages);
 			const data = ram(context.messages);
-			assert.ok(JSON.stringify(data.sections.tools.items).includes("TAIL_DOCUMENT_SIGNAL"));
+			assert.ok(JSON.stringify(data.recent).includes("TAIL_DOCUMENT_SIGNAL"));
 			const evidence = rows().findLast((r) => r.event_type === "action.completed" && r.payload.tool_name === "read");
+			const alias = Object.entries(data.refs ?? {}).find(
+				([, ref]) => ref.type === "event" && ref.id === evidence.event_id,
+			)?.[0];
+			assert.ok(alias, "the current RAM exposes an alias for the observed event");
+			observedAlias = alias;
 			return fauxAssistantMessage([
 				fauxToolCall("aegis_propose", {
 					kind: "claim",
 					text: "Document may support the report",
-					source_refs: [{ ref_type: "event", ref_id: evidence.event_id }],
+					source_refs: [alias],
 				}),
 			]);
 		},
 		(context) => {
 			requests.push(context.messages);
 			const data = ram(context.messages);
-			assert.equal(data.sections.proposals.items[0].trust, "unverified");
+			assert.equal(data.claims[0].trust, "unverified");
 			const original = rows().find((r) => r.event_type === "proposal.submitted");
 			const evidence = rows().find((r) => r.event_type === "action.completed" && r.payload.tool_name === "read");
+			assert.equal(
+				original.payload.source_refs[0].ref_id,
+				evidence.event_id,
+				"alias is resolved to canonical event identity",
+			);
+			const alias = Object.entries(data.refs ?? {}).find(
+				([, ref]) => ref.type === "event" && ref.id === evidence.event_id,
+			)?.[0];
+			assert.ok(alias, "the same observed event keeps its alias in the next request");
+			assert.equal(alias, observedAlias);
 			return fauxAssistantMessage([
 				fauxToolCall("aegis_propose", {
 					kind: "claim",
 					text: "Revised document interpretation",
 					replace_event_id: original.event_id,
-					source_refs: [{ ref_type: "event", ref_id: evidence.event_id }],
+					source_refs: [{ ref_type: "event", ref_id: alias }],
 				}),
 			]);
 		},
@@ -143,6 +159,16 @@ try {
 			assert.equal(proposals.length, 2, "actual SDK accepts the replacement against effective Board");
 			assert.equal(proposals[1].payload.replace_event_id, proposals[0].event_id);
 			const evidence = rows().find((r) => r.event_type === "action.completed" && r.payload.tool_name === "read");
+			assert.equal(proposals[0].payload.source_refs[0].ref_id, evidence.event_id);
+			assert.ok(
+				rows().some(
+					(row) =>
+						row.event_type === "request.projected" &&
+						typeof row.payload.ram_alias_epoch === "string" &&
+						Number.isInteger(row.payload.ram_alias_count),
+				),
+				"request audit exposes alias epoch/count",
+			);
 			return fauxAssistantMessage([
 				fauxToolCall("aegis_submit_candidate", {
 					target_ref: "document.txt",

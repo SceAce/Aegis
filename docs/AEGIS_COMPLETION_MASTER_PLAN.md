@@ -47,7 +47,7 @@
 | Event / Episode / Outcome / Experience、六类 Board 节点 | 事件投影、证据解析、独立判断和学习模块已存在；部分共同 authority 消费仍未闭合 |
 | Campaign Host / Scheduler / Broker / Oracle、动态计划 | 正常链可运行；E1 边界审查项已由 `eed75e7` 处置并有 68/0 required 证据，等待独立外部验收 |
 | 真实 SDK Session 替换和 Supervisor | 轮换、同 Episode 和预算保留有离线 SDK 证据；CTF runner 未开放轮换效果维度 |
-| RAM v3、显式提案引用与替换、候选等待 | 已实现；采样不是完整产物，真实模型使用效果仍需测量 |
+| RAM v4 working-set、显式提案引用与替换、候选等待 | 已实现；寄存器选择与压缩仍需真实模型效果测量 |
 | 临时 user 尾部 RAM、固定 system 前缀 | 实际序列化验证存在；不能把公共前缀长度等同真实缓存收益 |
 | 轮次 checkpoint 和近期工具历史限制 | 已实现；新增 checkpoint 尚未被 board-off 实验开关完全隔离 |
 | 本地知识编译、自动召回、模型查询、Board/RAM 接线 | 已实现于 Observer 入口；Campaign 产品路径尚未接入知识工具（见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)）；真实检索相关性仍有问题 |
@@ -156,7 +156,7 @@ completion、plan ready、依赖、执行 permit、Board Fact、RAM、观察/rep
 
 保持事实、工具观察、模型 checkpoint、显式 proposal 和知识信任类别。核对 checkpoint 的生成/覆盖/失效与显式 replace_event_id：普通文本不是可信事实，checkpoint 也不自动替换有效 Claim。
 
-在固定 RAM 预算内保护目标、授权、预算和 pending，明确 sections 的 total/shown/omitted 与 core overflow。结合当前任务引用和最近进展选择内容；工具结果继续正常进入原 Session。必要详情通过 MEM-02 读回，不靠无限放大 RAM。
+在固定 RAM 预算内保护总目标、子目标、授权、预算和 pending，明确 registers 与 sections 统计的 omission/core overflow。结合当前子目标和最近进展选择 claims/references，facts 全量优先压缩；工具结果继续正常进入原 Session。必要详情通过 MEM-02 读回，不靠无限放大 RAM。
 
 用多轮、长输出、稀疏线索、旧 Claim 被替换、跨 Episode 与真实新 Session 验证。模型未调用替换工具属于行为观察；需要改 guidelines 时用中性规则，不写具体题技巧、不新增后台总结模型、不解析隐式推理。
 

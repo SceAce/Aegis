@@ -114,7 +114,7 @@ try {
 			systems.push(context.messages.filter((m) => m.role === "system"));
 			const first = ram(context.messages);
 			assert.ok(
-				JSON.stringify(first.sections.knowledge).includes("KNOWLEDGE_AUTO_624"),
+				JSON.stringify(first.references).includes("KNOWLEDGE_AUTO_624"),
 				"user-message recall reaches the first real provider request",
 			);
 			return fauxAssistantMessage([fauxToolCall("aegis_knowledge", { query: "offset encoding", max_results: 1 })]);
@@ -124,10 +124,10 @@ try {
 			systems.push(context.messages.filter((m) => m.role === "system"));
 			const next = ram(context.messages);
 			assert.ok(
-				JSON.stringify(next.sections.knowledge).includes("KNOWLEDGE_REFINED_624"),
+				JSON.stringify(next.references).includes("KNOWLEDGE_REFINED_624"),
 				"model query replaces selection in the very next RAM",
 			);
-			assert.equal(next.sections.knowledge.items[0].verified, false);
+			assert.equal(next.references.find((row) => row.kind === "knowledge").verified, false);
 			assert.equal(next.sections.facts.shown, 0);
 			const selection = rows().findLast((r) => r.payload?.kind === "knowledge.selected");
 			return fauxAssistantMessage([
@@ -146,7 +146,7 @@ try {
 			systems.push(context.messages.filter((m) => m.role === "system"));
 			const next = ram(context.messages);
 			assert.ok(
-				JSON.stringify(next.sections.proposals).includes("observable parser distinction"),
+				JSON.stringify(next.claims).includes("observable parser distinction"),
 				"candidate conditions/procedure/verification survive projection",
 			);
 			return fauxAssistantMessage("A candidate only, awaiting observation.");
@@ -179,10 +179,10 @@ try {
 		(context) => {
 			requests++;
 			assert.ok(
-				JSON.stringify(ram(context.messages).sections.proposals).includes("Parser hypothesis"),
+				JSON.stringify(ram(context.messages).claims).includes("Parser hypothesis"),
 				"new session recovers same Episode candidate from events",
 			);
-			assert.ok(JSON.stringify(ram(context.messages).sections.knowledge).includes("KNOWLEDGE_REFINED_624"));
+			assert.ok(JSON.stringify(ram(context.messages).references).includes("KNOWLEDGE_REFINED_624"));
 			return fauxAssistantMessage("Recovered same task without declaring success.");
 		},
 	]);

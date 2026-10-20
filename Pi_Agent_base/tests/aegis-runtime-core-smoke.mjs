@@ -263,7 +263,7 @@ const sw = src("llm");
 const ramText = buildRam({ board, state, episodeId: ep, goal: "unlock the fixture door" });
 check(
 	"RAM names verified facts separately from claims",
-	ramText.includes("Verified facts") && ramText.includes("Historical proposals") && ramText.includes("NOT guidance"),
+	ramText.includes('"facts"') && ramText.includes('"claims"') && ramText.includes("NOT guidance"),
 );
 check("RAM lists unfinished actions section", ramText.includes("Unfinished actions"));
 check("RAM states its character budget", /ram_estimated_chars/.test(ramText));

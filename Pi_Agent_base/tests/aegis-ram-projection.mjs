@@ -89,7 +89,7 @@ test("RP-03 same prose with distinct judgment identities retains false/0/empty s
 	const p = buildRamProjection({ ...f, budgetChars: 6000 });
 	assert.equal(p.sections.find((s) => s.id === "facts").shown, 4);
 	for (const i of [0, 1, 2, 3]) assert.ok(p.text.includes(`criterion-${i}`));
-	const expected = JSON.parse(p.text).sections.facts.items.map((item) => item.criterion.expected);
+	const expected = JSON.parse(p.text).facts.map((item) => item.criterion.expected);
 	assert.ok(expected.includes(false));
 	assert.ok(expected.includes(0));
 	assert.ok(expected.some((value) => Array.isArray(value) && value.length === 0));
@@ -219,7 +219,7 @@ test("RP-08 selected identity dedup and current-task relevance do not promote pr
 	assert.equal(p.sections.find((s) => s.id === "facts").total, 3);
 	assert.ok(p.text.indexOf("newest evidence") < p.text.indexOf("relevant older evidence"));
 	assert.ok(p.text.indexOf("relevant older evidence") < p.text.indexOf("unrelated prior material"));
-	const factText = JSON.stringify(JSON.parse(p.text).sections.facts.items);
+	const factText = JSON.stringify(JSON.parse(p.text).facts);
 	assert.ok(!factText.includes("CLAIM_NOT_FACT"));
 	assert.ok(p.text.includes("NOT guidance"));
 });

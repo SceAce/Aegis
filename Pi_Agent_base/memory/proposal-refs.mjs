@@ -1,14 +1,22 @@
 // Proposal references are display associations, never proof or execution grants.
 
 /**
- * Resolve one RAM reference alias (`r0`, `r1`, ...) to a committed
- * event/node/action ref. The model sees the alias in RAM; without this it
- * cannot cite its own observations, and every proposal is rejected as a
- * foreign/unknown id.
+ * Resolve one RAM reference alias to a committed event/node/action ref. The
+ * model sees the alias in RAM, either as a bare string or inside the canonical
+ * ref object; both forms must resolve to the same committed identity.
  */
 function resolveAlias(rawRef, aliases, { events, nodes, episodeId }) {
-	if (typeof rawRef !== "string" || !aliases || !Object.hasOwn(aliases, rawRef)) return rawRef;
-	const alias = aliases[rawRef];
+	// A model may wrap an alias in the same object shape used for canonical
+	// refs: {ref_type:"event",ref_id:"r7"}. Resolve that shape as well instead of
+	// treating "r7" as a literal event id. Canonical objects still pass through.
+	const aliasId =
+		typeof rawRef === "string"
+			? rawRef
+			: rawRef && typeof rawRef === "object" && typeof rawRef.ref_id === "string"
+				? rawRef.ref_id
+				: null;
+	if (!aliasId || !aliases || !Object.hasOwn(aliases, aliasId)) return rawRef;
+	const alias = aliases[aliasId];
 	if (!alias || typeof alias.id !== "string" || !alias.id) return rawRef;
 	if (alias.type === "event" || alias.type === "action")
 		return { ref_type: alias.type, ref_id: alias.id, ...(alias.digest ? { digest: alias.digest } : {}) };

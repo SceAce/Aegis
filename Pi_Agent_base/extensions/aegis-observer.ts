@@ -84,6 +84,9 @@ import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
 import { openAegisTui } from "../observation/tui/session.ts";
 import { AegisComposerBar, AegisLogoHeader, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
+import { readFirefoxCookieHeader } from "../orchestration/remote-cookie.mjs";
+import { createRemoteHttpClient } from "../orchestration/remote-http.mjs";
+import { createRemotePlatformGate, validatePlatformUrl } from "../orchestration/remote-platform.mjs";
 import {
 	createWorkController,
 	inspectWorkPermit,
@@ -101,10 +104,23 @@ const MAX_EXCERPT = 800;
 
 // Tools that never mutate the workspace. They are allowed to continue while the
 // audit log is unavailable; everything else fails closed.
-const READ_ONLY_TOOLS = new Set(["read", "ls", "grep", "find", "glob", "webfetch", "websearch", "aegis_observe"]);
+const READ_ONLY_TOOLS = new Set([
+	"read",
+	"ls",
+	"grep",
+	"find",
+	"glob",
+	"webfetch",
+	"websearch",
+	"aegis_observe",
+	"aegis_remote_request",
+]);
 
 function aegisHome() {
 	return process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
+}
+function firefoxProfilePath() {
+	return process.env.AEGIS_FIREFOX_PROFILE || join(aegisHome(), "browser", "firefox-profile");
 }
 function eventLogPath() {
 	return process.env.AEGIS_EVENT_LOG || join(aegisHome(), "runtime", "events.jsonl");
@@ -307,10 +323,15 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	let sessionId = "unknown-session";
 	let taskId = "";
 	let episodeId: string | undefined;
-	/** Latest RAM ref aliases (r0, r1, ...) so a proposal can cite what it saw. */
-	let ramAliases: Record<string, { type?: string; id?: string; digest?: string }> | null = null;
-	/** One procedure hint per episode/experience revision (read-only). */
-	let lastExperienceHintKey = "";
+	/** Stable RAM ref aliases for the current Episode, keyed by canonical identity. */
+	let ramAliasHistory: Record<string, { type?: string; id?: string; digest?: string }> = {};
+	let ramAliasRegistry: Record<string, string> = {};
+	let ramAliasEpisodeId: string | null = null;
+	let ramAliasEpoch: string | null = null;
+	/** In-memory only: the cookie/HTTP client never enters RAM or EventLog. */
+	let remoteSession: { origin: string; client: ReturnType<typeof createRemoteHttpClient> } | null = null;
+	let remotePendingOrigin: string | null = null;
+	/** Read-only active procedure is projected into the current RAM rules register. */
 	let currentGoal = "";
 	let currentPromptEventId: string | undefined;
 	let cliWorkspace = "";
@@ -600,8 +621,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			const selected = await selectKnowledge({
 				root: knowledgeRootFromEnv(),
 				query: boundedQuery,
-				maxResults: 1,
-				maxChars: 3000,
+				maxResults: 3,
+				maxChars: 6000,
 			});
 			const rows = selected.selected;
 			if (rows.length === 0 && !state.knowledge_selections.some((item) => item.episode_id === episodeId)) return;
@@ -921,7 +942,50 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			"aegis_knowledge",
 			"aegis_switch_session",
 			"aegis_submit_candidate",
+			"aegis_remote_request",
 		]);
+		// Read-only Router preview: an active, resolver-verified PROCEDURE is a
+		// rule register in this request's RAM. It never executes and never changes
+		// the request's authorization. A missing bridge/store or unresolved support
+		// produces no rule; routing must not block the model request.
+		let activeRules: Array<{
+			kind: string;
+			text: string;
+			experience_id?: string | null;
+			revision?: number | null;
+			route?: string | null;
+		}> = [];
+		try {
+			const bridge = await learningBridgeFor();
+			const store = createLearningStore({ dir: experienceDir() });
+			const decision = await learningCommands.route({
+				store,
+				bridge,
+				task: { task_id: taskId, task_types: [], permissions: ["workspace-script"], arguments: {} },
+				currentState: undefined,
+				currentStateRef: null,
+				episodeId: episodeId ?? null,
+			});
+			const hint = learningCommands.experienceHint(decision);
+			if (hint)
+				activeRules = [
+					{
+						kind: "active_experience",
+						text: hint.text,
+						experience_id: hint.experience_id ?? null,
+						revision: hint.revision,
+						route: `hint (${hint.reason})`,
+					},
+				];
+		} catch {
+			// Routing is an optimization; a failure leaves the request unchanged.
+		}
+		const currentEpisode = episodeId ?? null;
+		if (ramAliasEpisodeId !== currentEpisode) {
+			ramAliasHistory = {};
+			ramAliasRegistry = {};
+			ramAliasEpisodeId = currentEpisode;
+		}
 		const projection = buildRamProjection({
 			...contextProjectionInput({ board, state, seed: ramSeed(), policy }),
 			episodeId,
@@ -935,52 +999,13 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						!nonActionTools.has(row.payload?.tool_name),
 				).length,
 			},
+			rules: activeRules,
+			aliasRegistry: ramAliasRegistry,
 		});
-		ramAliases = projection.data.refs ?? null;
 		const ram = projection.text;
-		// Read-only Router preview: an active, resolver-verified PROCEDURE can be
-		// shown once as a hint. It never executes and never changes the request's
-		// authorization. A missing bridge/store or an unresolved support simply
-		// produces no hint; routing must not block the model request.
-		let experienceMessage: Record<string, unknown> | null = null;
-		try {
-			const bridge = await learningBridgeFor();
-			const store = createLearningStore({ dir: experienceDir() });
-			const decision = await learningCommands.route({
-				store,
-				bridge,
-				task: { task_id: taskId, task_types: [], permissions: ["workspace-script"], arguments: {} },
-				currentState: undefined,
-				currentStateRef: null,
-				episodeId: episodeId ?? null,
-			});
-			const hint = learningCommands.experienceHint(decision);
-			if (hint) {
-				const key = `${episodeId ?? "none"}:${hint.key}`;
-				if (lastExperienceHintKey !== key) {
-					lastExperienceHintKey = key;
-					experienceMessage = {
-						role: "custom" as const,
-						customType: "aegis_experience_context",
-						content: sectionWrapped(
-							"aegis_experience",
-							[
-								"Read-only procedure hint. It is NOT an executed action, NOT authorization, and NOT a task result.",
-								`experience: ${hint.experience_id ?? "unknown"} rev ${hint.revision}`,
-								`router: hint (${hint.reason})`,
-								hint.text,
-								"Confirm the current conditions before reusing it.",
-							].join("\n"),
-						),
-						display: false,
-						details: { experience_id: hint.experience_id, revision: hint.revision, route: "hint" },
-						timestamp: Date.now(),
-					};
-				}
-			}
-		} catch {
-			// Routing is an optimization; a failure leaves the request unchanged.
-		}
+		const ramDigest = digest(ram);
+		Object.assign(ramAliasHistory, projection.data.refs ?? {});
+		ramAliasEpoch = ramDigest;
 		// `context_with_system` owns the complete request transcript, but Pi restores
 		// it after the provider call. A custom message converts to a user context
 		// message for the provider without changing the leading system message.
@@ -1005,7 +1030,6 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			});
 		const projectedMessages = [
 			...withoutEphemeralRam,
-			...(experienceMessage ? [experienceMessage] : []),
 			{
 				role: "custom" as const,
 				customType: "aegis_ram_context",
@@ -1033,12 +1057,15 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		await emit(
 			"request.projected",
 			{
-				ram_digest: digest(ram),
+				ram_digest: ramDigest,
 				ram_estimated_chars: ram.length,
 				ram_version: projection.version,
 				ram_budget_chars: projection.budget_chars,
 				ram_overflow: projection.overflow,
 				ram_sections: projection.sections,
+				ram_registers: projection.registers,
+				ram_alias_epoch: ramAliasEpoch,
+				ram_alias_count: Object.keys(ramAliasHistory).length,
 				state_version: state.version,
 				board_digest: board.digest,
 				effective_digest: board.effective_digest,
@@ -2081,7 +2108,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						const selected = await selectKnowledge({
 							root: knowledgeRootFromEnv(),
 							query: String((params as { query?: string }).query ?? ""),
-							maxResults: Math.min(4, Math.max(1, Number((params as { max_results?: number }).max_results ?? 1))),
+							maxResults: Math.min(4, Math.max(1, Number((params as { max_results?: number }).max_results ?? 3))),
 							maxChars: 6000,
 							ids: Array.isArray((params as { knowledge_ids?: unknown }).knowledge_ids)
 								? (params as { knowledge_ids: unknown[] }).knowledge_ids.filter(
@@ -2161,6 +2188,53 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 	pi.registerTool(
 		defineTool({
+			name: "aegis_remote_request",
+			label: "Aegis: guarded platform API request",
+			description:
+				"Read an allowlisted platform API through the attached autoRemote cookie client. The model never supplies or receives cookie values. Only GET is exposed; flag submission/checker remains adapter-owned.",
+			parameters: Type.Object({
+				path: Type.String({ description: "Platform-relative path beginning with / (no scheme/host)" }),
+			}),
+			async execute(_id, params) {
+				if (!remoteSession) {
+					return {
+						content: [
+							{ type: "text", text: "Aegis remote request unavailable: run /aegis autoRemote and attach login first." },
+						],
+						details: { ok: false, reason: "remote_session_unconfigured" },
+					};
+				}
+				const path = typeof params.path === "string" ? params.path.trim() : "";
+				if (!path.startsWith("/") || path.length > 2000) {
+					return {
+						content: [
+							{ type: "text", text: "Aegis remote request requires a platform-relative path beginning with /." },
+						],
+						details: { ok: false, reason: "invalid_remote_path" },
+					};
+				}
+				const result = await remoteSession.client.request(path, { method: "GET", kind: "list" });
+				if (!result.ok) {
+					return {
+						content: [{ type: "text", text: `Aegis remote request refused: ${result.reason}` }],
+						details: { ok: false, reason: result.reason },
+					};
+				}
+				return {
+					content: [{ type: "text", text: result.text }],
+					details: {
+						ok: true,
+						status: result.status,
+						origin: remoteSession.origin,
+						truncated: result.truncated,
+					},
+				};
+			},
+		}),
+	);
+
+	pi.registerTool(
+		defineTool({
 			name: "aegis_propose",
 			label: "Aegis: propose claim/intent/hint",
 			description:
@@ -2168,6 +2242,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			promptSnippet: "Propose a candidate claim/intent/hint/Experience to Aegis (never a verified fact)",
 			promptGuidelines: [
 				"At a meaningful hypothesis, subgoal or path change, record the claim or intent on the Aegis board with source_refs. A candidate can preserve when/do/expect; revise obsolete model proposals with replace_event_id. Do not record every thought or call a candidate verified.",
+				"When the active subgoal changes, propose kind=intent with a short scope label. RAM treats the latest effective Intent as the current subgoal and shows only claims with the same scope; set that scope on claims for this subgoal. The total task goal remains visible in task.total_goal.",
 			],
 			parameters: Type.Object({
 				kind: Type.Union([Type.Literal("claim"), Type.Literal("intent"), Type.Literal("candidate")]),
@@ -2175,7 +2250,12 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					description:
 						"The proposed claim/intent/hint text (for a candidate Experience: a short title of the hypothesis)",
 				}),
-				scope: Type.Optional(Type.String({ description: "Optional scope label" })),
+				scope: Type.Optional(
+					Type.String({
+						description:
+							"Optional label. For kind=intent this is the current subgoal label; claims for that subgoal should use the same scope.",
+					}),
+				),
 				source_refs: Type.Optional(
 					Type.Array(
 						Type.Union([
@@ -2189,7 +2269,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						{
 							maxItems: 12,
 							description:
-								"Committed same-Episode event/node/action refs, or a RAM ref alias (r0, r1, ...) from the current request; not proof",
+								"Committed same-Episode event/node/action refs, or a stable Episode RAM alias (bare string or inside ref_id); not proof",
 						},
 					),
 				),
@@ -2219,7 +2299,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						events: log!.replay(),
 						board,
 						episodeId,
-						aliases: ramAliases,
+						aliases: ramAliasEpisodeId === (episodeId ?? null) ? ramAliasHistory : null,
 					});
 					const replacement = inspectProposalReplacement(
 						(verdict.proposal as { replace_event_id?: string }).replace_event_id,
@@ -2239,6 +2319,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 							kind: (params as { kind?: string }).kind,
 							text_excerpt: excerpt((params as { text?: string }).text || "", 300),
 							rejection_reason: verdict.reason,
+							ram_alias_epoch: ramAliasEpoch,
+							ram_alias_count: Object.keys(ramAliasHistory).length,
 						},
 						{ source_kind: "llm", causation_id: currentPromptEventId },
 					);
@@ -2434,7 +2516,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 
 	pi.registerCommand("aegis", {
 		description:
-			"Aegis runtime: ui | status | board | ram | switch | close | outcome | learn | compile | route | bind | run | replay",
+			"Aegis runtime: ui | status | board | ram | switch | close | autoRemote | checkFlag | outcome | learn | compile | route | bind | run | replay",
 		handler: async (args, rawCtx) => {
 			const ctx = rawCtx as ExtensionCommandContext;
 			commandCtx = ctx;
@@ -2659,6 +2741,135 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					);
 					refreshProjections();
 					notify(`Aegis: closed episode ${episodeId}`);
+					return;
+				}
+				case "autoRemote": {
+					// Two-step login bootstrap. The first call opens the platform login
+					// page. After the human signs in, the second call reads the dedicated
+					// Firefox cookie database into process memory and attaches the guarded
+					// HTTP client. The model never receives credentials or cookie values.
+					if (!ctx.hasUI) {
+						notify("Aegis: /aegis autoRemote requires interactive UI", "warning");
+						return;
+					}
+					if (remotePendingOrigin) {
+						const ready = await ctx.ui.confirm(
+							"Aegis autoRemote: 已在 Firefox 中登录平台？",
+							"确认后会从专用 Firefox profile 读取 cookie，仅保存在当前进程内存；不会显示或写入 RAM/EventLog。",
+						);
+						if (!ready) {
+							notify("Aegis: autoRemote still waiting for manual login");
+							return;
+						}
+						const cookies = await readFirefoxCookieHeader({
+							profilePath: firefoxProfilePath(),
+							origin: remotePendingOrigin,
+						});
+						if (!cookies.ok || !cookies.cookieHeader || cookies.truncated) {
+							notify(
+								`Aegis: autoRemote could not read a complete platform cookie header: ${cookies.reason ?? (cookies.truncated ? "truncated" : "empty")}`,
+								"warning",
+							);
+							return;
+						}
+						const gate = createRemotePlatformGate({ origins: [remotePendingOrigin] });
+						remoteSession = {
+							origin: remotePendingOrigin,
+							client: createRemoteHttpClient({
+								origin: remotePendingOrigin,
+								cookieHeader: cookies.cookieHeader,
+								gate,
+							}),
+						};
+						remotePendingOrigin = null;
+						notify(
+							`Aegis: autoRemote attached ${remoteSession.origin} with ${cookies.count} live cookies (values not exposed)`,
+						);
+						return;
+					}
+					const input = await ctx.ui.input(
+						"Aegis autoRemote: 比赛平台 URL（只打开登录页，不接收账号/cookie）",
+						"https://ctf.example/login",
+					);
+					if (input === undefined) {
+						notify("Aegis: autoRemote cancelled");
+						return;
+					}
+					const checked = validatePlatformUrl(input);
+					if (!checked.ok) {
+						notify(`Aegis: autoRemote rejected URL: ${checked.reason}`, "warning");
+						return;
+					}
+					remotePendingOrigin = checked.origin;
+					notify(
+						`Aegis: opening ${checked.origin}; sign in manually, then run /aegis autoRemote again to attach cookies.`,
+					);
+					pi.sendUserMessage(
+						[
+							"[Aegis autoRemote login bootstrap]",
+							`Use the Firefox DevTools MCP to open this platform login page: ${checked.url}`,
+							"Do not read, request, or record any password or cookie. The human will sign in manually in the dedicated Firefox window.",
+							"Stay on the platform origin; do not submit flags, download files, scan other domains, or start the challenge workflow yet.",
+							"After opening the page, report the URL/title and wait for the human to finish login and run /aegis autoRemote again.",
+						].join("\n"),
+					);
+					return;
+				}
+				case "checkFlag": {
+					// Human-only outcome boundary for the minimal "I verified the flag"
+					// action. No flag value is accepted or stored: the command itself is the
+					// explicit human review, and the existing contest bridge records the
+					// outcome under the trusted human source. A repeated confirmation is
+					// idempotent; it does not create a second independent success.
+					if (rest.length > 0) {
+						notify("Aegis: usage: /aegis checkFlag (no flag value is accepted or stored)", "warning");
+						return;
+					}
+					if (!episodeId || !taskId) {
+						notify("Aegis: /aegis checkFlag requires an open episode and task", "warning");
+						return;
+					}
+					if (!log?.healthy || auditUnavailable) {
+						notify("Aegis: /aegis checkFlag requires a healthy audit log", "error");
+						return;
+					}
+					refreshProjections();
+					const current = state.episodes[episodeId];
+					if (!current || current.status !== "open") {
+						notify("Aegis: /aegis checkFlag requires an open episode", "warning");
+						return;
+					}
+					const evidence = "human confirmed flag via /aegis checkFlag (value not retained)";
+					const row = {
+						task_id: taskId,
+						session_id: sessionId,
+						result: "success",
+						result_source: "human",
+						independent: true,
+						evidence,
+						observed: evidence,
+						criterion: {
+							criterion_id: `flag:${taskId}`,
+							description: "authorized target flag",
+							expected: "human-verified correct flag",
+						},
+						at: new Date().toISOString(),
+						outcome_id: `out_checkflag_${digest(`${taskId}:${sessionId}`).slice(7, 23)}`,
+					};
+					const result = await appendContestOutcome(log as EventLog, row, { episodeId });
+					refreshProjections();
+					if (!result.ok) {
+						notify("Aegis: checkFlag outcome could not be recorded (audit unavailable)", "error");
+						return;
+					}
+					if (result.duplicate) {
+						notify("Aegis: checkFlag already recorded for this task/session (idempotent)");
+						return;
+					}
+					await persistProjections();
+					notify(
+						`Aegis: recorded human outcome=success for task=${taskId} session=${sessionId} (flag value not stored)`,
+					);
 					return;
 				}
 				case "outcome": {

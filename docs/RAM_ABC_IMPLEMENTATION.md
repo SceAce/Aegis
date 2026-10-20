@@ -12,6 +12,23 @@ C：使用同一日志的 runtime.note/work.* 控制记录，不新建数据库�
 
 Campaign 的 request/effect/dispatch 和交互 tool gate 分别复用工作控制投影。候选等待不记录虚构 transport failure，不执行 Broker，不自动重跑原 Worker。未配置通用任务契约时不臆造目标/criterion/次数限制；候选工具明确拒绝 unconfigured。已有 E1 请求结清/预算/authority 失败仍独立跟踪，不放宽原门。
 
+## 后续更新：RAM v4 working set
+
+本文件保留 RAM v3 的冻结接口与验证记录。当前接口已升级为 v4：模型看到的是按子目标选择的寄存器（task/subgoal、rules、facts、claims、references、recent/referenced、artifacts/checkpoints/decisions、pending），`text` 与 `data` 同源，sections 仅保留 total/shown/omitted 兼容统计；默认预算 8,000 字符。知识不再限制一张卡，RAM 最多保留当前 4 张；子目标由模型通过 `aegis_propose kind=intent` 的 scope 驱动，claims 按 scope 过滤；facts 全量优先并机械压缩。当前契约、日志字段和限制见 [STRUCTURED_RAM_AND_WORK_CONTROL.md](STRUCTURED_RAM_AND_WORK_CONTROL.md) 与 [MEMORY_SCHEMA_NOTES.md](MEMORY_SCHEMA_NOTES.md)。v4 聚焦验证新增 `aegis-ram-registers.mjs`（5/5）、`aegis-ram-alias-stability.mjs`（2/2）和 `aegis-remote-platform-policy`/`aegis-remote-cookie-http`；最新 Intent 驱动子目标、scope 过滤 claims、全量 facts/四张知识参考、rules 隔离、预算压缩、sections 兼容统计，以及 Episode 级稳定别名；对象形式 `{ref_type,ref_id:"rN"}` 也由 `aegis-proposal-refs.mjs` 和真实 SDK 用例覆盖。既有 RAM 纯测试与 SDK 流程回归通过。原 v3 验证仍证明当时的接线与边界，不替代 v4 的新测试。
+
+### v4 别名回归矩阵
+
+| case | 要求 | 脚本 | 结果 |
+| --- | --- | --- | --- |
+| ALIAS-01 | 裸 alias 解析到 committed event | `aegis-proposal-refs.mjs` | pass |
+| ALIAS-02 | 对象 `{ref_type,ref_id:"rN"}` 对 event/node/action/outcome 均可解析 | `aegis-proposal-refs.mjs` | pass |
+| ALIAS-03 | foreign/missing/digest-mismatch alias 仍拒绝 | `aegis-proposal-refs.mjs` | pass |
+| ALIAS-04 | 同一 canonical event/node/action 在后续 projection 中保持同一 alias；新身份不复用 | `aegis-ram-alias-stability.mjs` | 2/2 pass |
+| ALIAS-05 | 真实 SDK 中裸 alias + 对象 alias proposal 均被接受，并解析成 canonical event | `aegis-ram-abc-sdk.mjs` | pass |
+| ALIAS-06 | `request.projected` 记录 `ram_alias_epoch/count` | `aegis-ram-cache-payload.mjs` | pass |
+| BOUND-01 | 截断/边界不完整时使用重叠/长度核对（ROM 规则 7） | `observer-smoke.mjs` 只证明 ROM 注入一致；真实模型边界行为未离线验证 | static pass / real behavior not_run |
+
+
 ## 验证矩阵
 
 - A：长 HTML/一般日志/脚本中后部、转义/脱敏膨胀、大小/offset/JSON/完整身份、false/0、foreign、固定 system/tools/每请求唯一临时 RAM、Session 替换。

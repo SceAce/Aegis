@@ -126,6 +126,36 @@ rendered prose. `observation.captured` nodes also carry a bounded
 `observation_summary` of their recorded value. These display fields do not
 change the existing verification gate.
 
+### RAM v4: working-set registers
+
+RAM v4 keeps the same ephemeral JSON transport and authority boundary, but the
+model-facing object is a small working set instead of a repeated section dump.
+`text` and `data` are the same JSON object. Top-level `task` always carries
+`total_goal` plus the latest effective non-action Intent as `subgoal`; the model
+sets that subgoal and its `scope` through the existing `aegis_propose
+kind=intent` path. `claims` contains only recent claims matching the current
+subgoal scope, while the mainline task remains visible in `task.total_goal`.
+`facts` contains every current effective Fact/Refuted row (newest first) with
+criterion/observed/evidence identity; over-budget compression shortens rows and
+then drops optional/large rows with explicit `meta.omitted`. `references`
+carries up to four selected knowledge cards (including cross-direction cards)
+and external seeds with `verified=false` and `action_policy=none`. `rules` is
+separate: active Experience/tool discipline only, `trust=rule` and
+`not_authorization=true`; claims and references cannot be promoted into rules.
+Aliases in `refs` are stable within an Observer process and Episode and are accepted in
+`source_refs` both as bare strings and as `ref_id` values inside the canonical
+ref object. Alias resolution is an association, not proof; the target event
+must still have an effective Board node. `request.projected`/proposal
+rejections record alias epoch/count for diagnosis.
+
+`recent`/`referenced` retain the latest observation and a legally referenced
+older action. `checkpoints` retains only the latest round checkpoint; older
+round summaries remain in the EventLog and are not re-injected into RAM. `sections` is now a compatibility summary (`total/shown/omitted`)
+rather than a second copy of the items; full history remains in Board/EventLog.
+The default budget is 8,000 UTF-16 characters; `request.projected` records both
+`ram_sections` and `ram_registers` summaries. See
+[structured RAM and work control](STRUCTURED_RAM_AND_WORK_CONTROL.md).
+
 ### RAM v3: structured projection and explicit proposal associations
 
 RAM v3 replaces the rendered Markdown body with a parseable JSON object. It
@@ -155,7 +185,7 @@ view; authorization and dispatch checks remain in the Runtime/Host/execute gates
 
 `runtime.note` may carry `kind: knowledge.selected`, `version: knowledge-selection-1`. Only runtime/human sources project this note into an Artifact and replace the same Episode's `knowledge_selections`. The payload records mode, redacted query, bounded selected content, source URI/digest/line range, and retrieval limits/unavailability. Empty selections clear the current selection. Unknown note kinds retain their existing ignore behavior; this adds no event type or Outcome authority.
 
-RAM v3 optionally displays `sections.knowledge` with `verified=false`, `action_policy=none` and selection-event refs. Board artifacts retain knowledge source refs; model candidate nodes retain `when/do/expect`, and accepted source refs produce graph associations. Current observations and unfinished responsibilities take priority over optional knowledge. Details and actual call timing are in [knowledge runtime](KNOWLEDGE_RUNTIME.md).
+RAM v4 carries selected knowledge in `references` with `verified=false`, `action_policy=none` and selection-event refs. (v3 used `sections.knowledge`.) Board artifacts retain knowledge source refs; model candidate nodes retain `when/do/expect`, and accepted source refs produce graph associations. Current observations and unfinished responsibilities take priority over optional knowledge. Details and actual call timing are in [knowledge runtime](KNOWLEDGE_RUNTIME.md).
 
 ### Bounded tool observations and RAM selection (v2 baseline)
 
@@ -166,7 +196,7 @@ limits (default 900 serialized characters, depth 4, 16 entries per container,
 320 per string). Existing input keys/digest/path and text excerpt fields remain;
 `content_truncated` marks capture loss. Raw tool responses still reach the
 original Session continuation through the SDK; RAM contains a bounded summary.
-Old records with no values cannot be reconstructed from digests.
+Old records with no values cannot be reconstructed from digests. Windowed reads require overlap or a known length; reconstruction must be checked before use.
 
 Board action nodes preserve input/response/result summary/transport and action
 and event identity. Tool request/result pairs enter RAM as observed data, never

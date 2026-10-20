@@ -21,6 +21,10 @@ error messages in their original form.
    payload variants or repeat a failed command; after three failures on one
    path, re-read the selected card and observations and change the hypothesis.
    A probe is not a result: record a durable claim with `aegis_propose`.
+7. A truncated or windowed observation is not complete. When combining
+   segments, use overlapping windows or a known length, and verify the
+   reconstructed value before relying on it. Never fill, drop, or infer a
+   boundary character from memory.
 
 For a teacher replay, follow the supplied action sequence to reduce search cost,
 then execute it in the current environment and verify its postconditions.

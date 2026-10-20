@@ -45,11 +45,11 @@ test("ABC-A1 RAM is parseable JSON with complete size and explicit observed trus
 	];
 	const p = projection(rows);
 	const data = JSON.parse(p.text);
-	assert.equal(data.version, "3.0");
+	assert.equal(data.version, "4.0");
 	assert.equal(data.meta.ram_estimated_chars, p.text.length);
 	assert.ok(p.text.length <= 4000);
-	assert.equal(data.sections.tools.items[0].trust, "observed");
-	assert.equal(data.sections.facts.items.length, 0);
+	assert.equal(data.recent.trust, "observed");
+	assert.equal(data.facts.length, 0);
 	assert.equal(data.task.total_goal, "Inspect a document and compile a local report");
 });
 
@@ -72,10 +72,10 @@ test("ABC-A2 arbitrary shell success-like text is opaque and does not acquire do
 			}),
 		];
 		const data = JSON.parse(projection(rows).text);
-		assert.equal(data.sections.facts.items.length, 0);
-		assert.equal(data.sections.refuted.items.length, 0);
-		assert.ok(!("http_status" in data.sections.tools.items[0]));
-		assert.ok(!("business_status" in data.sections.tools.items[0]));
+		assert.equal(data.facts.length, 0);
+		assert.equal(data.sections.refuted.shown, 0);
+		assert.ok(!("http_status" in data.recent));
+		assert.ok(!("business_status" in data.recent));
 	}
 });
 
@@ -107,9 +107,9 @@ test("ABC-B1 explicit proposal can retain older action without promoting its con
 		),
 	);
 	const data = JSON.parse(projection(rows).text);
-	assert.ok(JSON.stringify(data.sections.tools.items).includes("RESULT_0_END"));
-	assert.equal(data.sections.proposals.items[0].trust, "unverified");
-	assert.equal(data.sections.facts.items.length, 0);
+	assert.ok(JSON.stringify(data.referenced).includes("RESULT_0_END"));
+	assert.equal(data.claims[0].trust, "unverified");
+	assert.equal(data.facts.length, 0);
 });
 
 test("ABC-B2 ordinary assistant text is not a proposal", () => {
@@ -124,6 +124,6 @@ test("ABC-B2 ordinary assistant text is not a proposal", () => {
 			),
 		]).text,
 	);
-	assert.equal(data.sections.proposals.items.length, 0);
-	assert.equal(data.sections.facts.items.length, 0);
+	assert.equal(data.claims.length, 0);
+	assert.equal(data.facts.length, 0);
 });

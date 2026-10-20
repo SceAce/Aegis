@@ -24,6 +24,13 @@ const events = [
 		payload: { outcome_id: "out-1" },
 	},
 	{
+		event_id: "e-no-node",
+		episode_id: ep,
+		event_digest: "sha256:z",
+		event_type: "runtime.note",
+		payload: {},
+	},
+	{
 		event_id: "e-foreign",
 		episode_id: "ep-2",
 		event_digest: "sha256:f",
@@ -53,11 +60,18 @@ const aliases = {
 	r3: { type: "outcome", id: "out-1" },
 	r4: { type: "event", id: "e-foreign" },
 	r5: { type: "node", id: "n-missing" },
+	r6: { type: "event", id: "e-no-node" },
 };
 const inspect = (refs, extra = {}) => inspectProposalRefs(refs, { events, board, episodeId: ep, aliases, ...extra });
 
 test("an event alias resolves to its committed event", () => {
 	const r = inspect(["r0"]);
+	assert.equal(r.ok, true, r.reason);
+	assert.deepEqual(r.refs[0], { ref_type: "event", ref_id: "e-event", digest: "sha256:e" });
+});
+
+test("an alias wrapped in the canonical object shape also resolves", () => {
+	const r = inspect([{ ref_type: "event", ref_id: "r0" }]);
 	assert.equal(r.ok, true, r.reason);
 	assert.deepEqual(r.refs[0], { ref_type: "event", ref_id: "e-event", digest: "sha256:e" });
 });
@@ -79,12 +93,28 @@ test("an action alias resolves to its completed action event", () => {
 	assert.equal(r.refs[0].ref_id, "e-action");
 });
 
-test("foreign, missing and digest-mismatched aliases are still rejected", () => {
+test("foreign, missing, node-less and digest-mismatched aliases are still rejected", () => {
 	assert.equal(inspect(["r4"]).ok, false);
 	assert.equal(inspect(["r5"]).ok, false);
+	const nodeLess = inspect(["r6"]);
+	assert.equal(nodeLess.ok, false);
+	assert.match(nodeLess.reason, /e-no-node/);
 	const mismatch = inspect([{ ref_type: "event", ref_id: "e-event", digest: "sha256:other" }]);
 	assert.equal(mismatch.ok, false);
 	assert.match(mismatch.reason, /digest mismatch/);
+});
+
+test("object-wrapped aliases resolve for event, node, action and outcome", () => {
+	for (const [alias, id] of [
+		["r0", "e-event"],
+		["r1", "e-node"],
+		["r2", "e-action"],
+		["r3", "e-outcome"],
+	]) {
+		const r = inspect([{ ref_type: "event", ref_id: alias }]);
+		assert.equal(r.ok, true, `${alias}: ${r.reason}`);
+		assert.equal(r.refs[0].ref_id, id);
+	}
 });
 
 test("raw event ids and object refs keep working without an alias map", () => {

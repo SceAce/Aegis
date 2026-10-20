@@ -124,16 +124,21 @@ const replacedProjection = buildRamProjection({ board: replaced, state, episodeI
 assert.ok(replacedProjection.text.includes("HINT_MARKER_REVISED"), "effective proposal stays visible");
 assert.ok(!replacedProjection.text.includes("HINT_MARKER_ORIGINAL"), "replaced proposal must not stay as guidance");
 assert.equal(
-	replacedProjection.data.sections.checkpoints.items.every((row) => row.trust === "unverified"),
+	replacedProjection.data.checkpoints.every((row) => row.trust === "unverified"),
 	true,
 	"checkpoints are model claims, never verified",
 );
 
 // MEM03-02: category trust classes stay explicit and every section exposes omission.
-const trustOf = (section) => new Set((on.data.sections[section]?.items ?? []).map((row) => row.trust));
+const trustOf = (section) =>
+	new Set(
+		(section === "checkpoints" ? on.data.checkpoints : section === "tools" ? [on.data.recent].filter(Boolean) : []).map(
+			(row) => row.trust,
+		),
+	);
 assert.deepEqual([...trustOf("checkpoints")], ["unverified"]);
 assert.deepEqual([...trustOf("tools")], ["observed"]);
-for (const row of on.data.sections.checkpoints.items) assert.notEqual(row.trust, "verified");
+for (const row of on.data.checkpoints) assert.notEqual(row.trust, "verified");
 for (const section of Object.values(on.data.sections))
 	assert.ok(
 		Number.isInteger(section.total) &&
@@ -143,7 +148,7 @@ for (const section of Object.values(on.data.sections))
 		"each section must expose consistent total/shown/omitted",
 	);
 
-// MEM03-03: at the fixed 4k budget, knowledge stays bounded and core state is preserved.
+// MEM03-03: at the fixed 8k budget, knowledge stays bounded and core state is preserved.
 const knowledgeState = {
 	...state,
 	knowledge_selections: Array.from({ length: 4 }, (_, i) => ({
@@ -156,7 +161,7 @@ const knowledgeState = {
 const capped = buildRamProjection({ board, state: knowledgeState, episodeId });
 assert.ok(capped.data.sections.knowledge.shown <= 4, "knowledge selection stays capped");
 assert.equal(capped.data.sections.knowledge.total, 4);
-assert.ok(capped.text.length <= 4000, "RAM stays inside the fixed budget");
+assert.ok(capped.text.length <= 8000, "RAM stays inside the fixed budget");
 assert.ok(
 	capped.data.pending.items.some((row) => row.status === "unknown"),
 	"pending responsibility survives",
@@ -164,5 +169,5 @@ assert.ok(
 assert.ok(capped.text.includes("recover the handout secret"), "goal survives budget pressure");
 
 console.log(
-	"RAM memory defects: board-off drops derived checkpoints while keeping task/auth/budget/unknown; category trust, proposal replacement and 4k omission passed",
+	"RAM memory defects: board-off drops derived checkpoints while keeping task/auth/budget/unknown; category trust, proposal replacement and 8k omission passed",
 );

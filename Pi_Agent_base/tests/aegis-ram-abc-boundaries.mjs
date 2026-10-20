@@ -58,7 +58,7 @@ test("structured summaries and RAM preserve criterion identity and escaped expec
 		outcome("judgment", { criterion, observed: { count: 0, enabled: false, text: '"\\'.repeat(2000) } }),
 	];
 	const p = buildRamProjection({ board: projectBoard(rows), state: projectState(rows), episodeId: ep });
-	const item = p.data.sections.facts.items[0];
+	const item = p.data.facts[0];
 	assert.equal(item.criterion.criterion_id, criterion.criterion_id);
 	assert.equal(typeof item.criterion.expected, "object");
 	assert.equal(item.criterion.expected.enabled, false);
@@ -89,16 +89,16 @@ test("mechanical head/middle/tail retain actual redacted offsets through compact
 	}
 });
 
-test("whole-output budgeting retains full refs or omits the item, with explicit core overflow", () => {
+test("whole-output budgeting retains bounded observations and explicit core overflow", () => {
 	const rows = [start(), event("x".repeat(5000), "action.completed", { action_id: "a", tool_name: "read" })];
 	const board = projectBoard(rows);
 	const state = projectState(rows);
-	const p = buildRamProjection({ board, state, episodeId: ep });
+	const p = buildRamProjection({ board, state, episodeId: ep, budgetChars: 4000 });
 	assert.ok(p.text.length <= 4000);
-	assert.equal(p.data.sections.tools.omitted, 1);
+	assert.equal(p.data.sections.tools.total, 1);
 	const large = buildRamProjection({ board, state, episodeId: ep, budgetChars: 12000 });
 	assert.ok(Object.values(large.data.refs).some((ref) => ref.id === "x".repeat(5000)));
-	assert.equal(large.data.sections.tools.items[0].response, null);
+	assert.equal(large.data.recent.response, null);
 	assert.ok(!Object.values(large.data.refs).some((ref) => ref.type === "artifact"));
 	state.pending_actions.a = { action_id: "pending-identity", episode_id: ep, tool_name: "write", status: "unknown" };
 	const tiny = buildRamProjection({ board, state, episodeId: ep, budgetChars: 30 });

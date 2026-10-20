@@ -237,7 +237,7 @@ async function main() {
 	);
 	check(
 		"dynamic RAM is carried as an ephemeral context message",
-		typeof ram1 === "string" && ram1.includes('"version":"3.0"'),
+		typeof ram1 === "string" && ram1.includes('"version":"4.0"'),
 		JSON.stringify(captured[0]?.map((message) => (message.role === "custom" ? message.customType : message.role))),
 	);
 	check(
