@@ -135,9 +135,13 @@ model-facing object is a small working set instead of a repeated section dump.
 sets that subgoal and its `scope` through the existing `aegis_propose
 kind=intent` path. `claims` contains only recent claims matching the current
 subgoal scope, while the mainline task remains visible in `task.total_goal`.
-`facts` contains every current effective Fact/Refuted row (newest first) with
-criterion/observed/evidence identity; over-budget compression shortens rows and
-then drops optional/large rows with explicit `meta.omitted`. `references`
+`facts` contains a bounded working set of current effective Fact/Refuted rows
+with criterion/observed/evidence identity. Each class is ranked by total goal,
+current prompt and subgoal relevance, then recency; the two classes are
+interleaved up to six judgments. Unselected rows remain on the Board and are
+reported by `meta.omitted.facts` and the per-class section counts. Character
+budget compression shortens rows before dropping optional/large rows.
+`references`
 carries up to four selected knowledge cards (including cross-direction cards)
 and external seeds with `verified=false` and `action_policy=none`. `rules` is
 separate: active Experience/tool discipline only, `trust=rule` and

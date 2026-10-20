@@ -1,5 +1,5 @@
-// RAM v4 working-set contract: LLM-selected subgoal, scoped claims, all facts,
-// multiple knowledge references, explicit rules, and a bounded dual view.
+// RAM v4 working-set contract: LLM-selected subgoal, scoped claims, relevant
+// judgments, multiple knowledge references, explicit rules, and a bounded view.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRamProjection } from "../memory/ram.mjs";
@@ -111,7 +111,7 @@ test("latest effective Intent drives the subgoal; claims are scoped but main tas
 	assert.equal(p.registers.subgoal.scope, "s2");
 });
 
-test("all effective facts and multiple knowledge references are selected, with trust classes separated", () => {
+test("relevant judgments and multiple knowledge references are selected, with trust classes separated", () => {
 	const { board, state } = fixture();
 	const p = buildRamProjection({ board, state, episodeId: ep });
 	const data = JSON.parse(p.text);
@@ -127,6 +127,49 @@ test("all effective facts and multiple knowledge references are selected, with t
 	assert.deepEqual(data.rules, []);
 	assert.deepEqual(JSON.parse(p.text), p.data);
 	assert.equal(p.data.meta.ram_budget_chars, 8000);
+});
+
+test("current-goal relevance can retain older evidence over unrelated newer evidence", () => {
+	const { board, state } = fixture();
+	board.currentByType.Fact = [
+		node("old-relevant", "Fact", "target parser has a length boundary", { status: "verified" }),
+		...Array.from({ length: 8 }, (_, i) =>
+			node(`new-unrelated-${i}`, "Fact", `recent network observation ${i}`, { status: "verified" }),
+		),
+	];
+	const p = buildRamProjection({ board, state, episodeId: ep, budgetChars: 8000 });
+	const data = JSON.parse(p.text);
+	assert.ok(data.facts.some((row) => row.text.includes("target parser")));
+	assert.equal(data.facts.filter((row) => row.text.includes("recent network")).length, 5);
+	assert.equal(data.meta.omitted.facts, 3);
+	assert.equal(data.sections.facts.total, 9);
+});
+
+test("facts and refutations share the working-set limit and omissions are accurate", () => {
+	const { board, state } = fixture();
+	board.currentByType.Fact = Array.from({ length: 5 }, (_, i) =>
+		node(`fact-${i}`, "Fact", `goal target evidence ${i}`, { status: "verified" }),
+	);
+	board.currentByType.Refuted = Array.from({ length: 4 }, (_, i) =>
+		node(`refuted-${i}`, "Refuted", `goal target rejected condition ${i}`, { status: "verified" }),
+	);
+	const p = buildRamProjection({ board, state, episodeId: ep });
+	const data = JSON.parse(p.text);
+	assert.equal(data.facts.length, 6);
+	assert.equal(data.facts.filter((row) => row.kind === "Refuted").length, 3);
+	assert.equal(data.meta.omitted.facts, 3);
+	assert.equal(data.sections.facts.total, 5);
+	assert.equal(data.sections.refuted.total, 4);
+});
+
+test("artifact omission count matches the one-row artifact register", () => {
+	const { board, state } = fixture();
+	board.currentByType.Artifact = Array.from({ length: 3 }, (_, i) =>
+		node(`artifact-${i}`, "Artifact", `artifact note ${i}`, { status: "candidate" }),
+	);
+	const p = buildRamProjection({ board, state, episodeId: ep });
+	assert.equal(p.data.artifacts.length, 1);
+	assert.equal(p.data.meta.omitted.artifacts, 2);
 });
 
 test("rules are explicit and never copied from claims or references", () => {

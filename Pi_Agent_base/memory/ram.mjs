@@ -5,6 +5,7 @@ import { memoryText, summarizeMemoryValue } from "./summary.mjs";
 export const RAM_VERSION = "4.0";
 const DEFAULT_BUDGET = 8000;
 const REGISTER_CLAIMS = 3;
+const REGISTER_FACTS = 6;
 const REGISTER_KNOWLEDGE = 4;
 const REGISTER_CHECKPOINTS = 1;
 const REGISTER_ARTIFACTS = 1;
@@ -94,25 +95,34 @@ export function buildRamProjection({
 		2,
 	);
 	const words = new Set(
-		(
-			String(goal ?? episode?.goal?.description ?? "")
-				.toLowerCase()
-				.match(/[\p{L}\p{N}_./-]{3,}/gu) ?? []
-		).slice(0, 32),
+		[String(episode?.goal?.description ?? ""), String(goal ?? ""), String(latestIntent?.text ?? "")]
+			.join(" ")
+			.toLowerCase()
+			.match(/[\p{L}\p{N}_./-]{3,}/gu)
+			?.slice(0, 48) ?? [],
 	);
 	function rank(list) {
-		const reversed = [...list].reverse();
-		const first = reversed.shift();
-		const scored = reversed.map((node, index) => ({
-			node,
-			index,
-			score: [...words].reduce(
-				(sum, word) => sum + Number(`${node.text} ${node.criterion?.description ?? ""}`.toLowerCase().includes(word)),
-				0,
-			),
-		}));
-		scored.sort((a, b) => b.score - a.score || a.index - b.index);
-		return first ? [first, ...scored.map((entry) => entry.node)] : [];
+		return list
+			.map((node, index) => ({
+				node,
+				index,
+				score: [...words].reduce(
+					(sum, word) => sum + Number(`${node.text} ${node.criterion?.description ?? ""}`.toLowerCase().includes(word)),
+					0,
+				),
+			}))
+			.sort((a, b) => b.score - a.score || b.index - a.index)
+			.map((entry) => entry.node);
+	}
+	function rankJudgments() {
+		const facts = rank(nodes("Fact"));
+		const refuted = rank(nodes("Refuted"));
+		const result = [];
+		for (let index = 0; index < Math.max(facts.length, refuted.length); index += 1) {
+			if (facts[index]) result.push(facts[index]);
+			if (refuted[index]) result.push(refuted[index]);
+		}
+		return result;
 	}
 	const decisions = new Map();
 	for (const row of [...(state.experience_decisions ?? [])].reverse()) {
@@ -149,8 +159,9 @@ export function buildRamProjection({
 		external_reference: external,
 		knowledge,
 		checkpoints,
-		facts: rank(nodes("Fact")),
-		refuted: rank(nodes("Refuted")),
+		judgments: rankJudgments(),
+		facts: [],
+		refuted: [],
 		tools: selectedTools,
 		proposals: rank(proposals),
 		artifacts: rank(
@@ -164,13 +175,15 @@ export function buildRamProjection({
 		),
 		decisions: [...decisions.values()],
 	};
+	raw.facts = raw.judgments.filter((node) => node.type !== "Refuted");
+	raw.refuted = raw.judgments.filter((node) => node.type === "Refuted");
 	const totals = Object.fromEntries(ORDER.map((id) => [id, id === "tools" ? toolPairs.length : raw[id].length]));
 	const limits = {
 		external_reference: 1,
 		knowledge: 4,
 		checkpoints: REGISTER_CHECKPOINTS,
-		facts: 20,
-		refuted: 10,
+		facts: REGISTER_FACTS,
+		refuted: REGISTER_FACTS,
 		tools: 2,
 		proposals: 8,
 		artifacts: 5,
@@ -307,9 +320,10 @@ export function buildRamProjection({
 			claimCandidates = raw.proposals;
 		}
 		for (const node of claimCandidates.slice(0, REGISTER_CLAIMS)) claims.push(registerClaim(node));
-		const facts = [];
-		for (const node of raw.facts) facts.push(registerFact(node, "Fact"));
-		for (const node of raw.refuted) facts.push(registerFact(node, "Refuted"));
+		const factNodes = raw.judgments.filter((node) =>
+			selected[node.type === "Refuted" ? "refuted" : "facts"].includes(node),
+		);
+		const facts = factNodes.map((node) => registerFact(node, node.type ?? "Fact"));
 		const referenceRows = [];
 		for (const node of raw.external_reference) referenceRows.push(registerReference(node));
 		for (const node of raw.knowledge.slice(-REGISTER_KNOWLEDGE)) referenceRows.push(registerReference(node));
@@ -367,13 +381,13 @@ export function buildRamProjection({
 				items: pending.map((row) => ({ action_id: row.action_id, tool: row.tool_name, status: row.status })),
 			},
 			omitted: {
-				facts: 0,
+				facts: Math.max(0, raw.judgments.length - facts.length),
 				claims: Math.max(0, claimCandidates.length - claims.length),
 				references: Math.max(0, raw.knowledge.length - REGISTER_KNOWLEDGE),
 				rules: Math.max(0, ruleRows.length - 6),
 				recent: 0,
 				referenced: 0,
-				artifacts: Math.max(0, raw.artifacts.length - 5),
+				artifacts: Math.max(0, raw.artifacts.length - artifacts.length),
 				checkpoints: Math.max(0, raw.checkpoints.length - REGISTER_CHECKPOINTS),
 				decisions: Math.max(0, raw.decisions.length - REGISTER_DECISIONS),
 			},
@@ -593,16 +607,22 @@ export function buildRamProjection({
 		// checkpoints/tool history, otherwise a full RAM can silently drop exactly
 		// what the model just asked for. Facts/pending stay in the mandatory core.
 		if (raw.knowledge[0]) admit("knowledge", raw.knowledge[0]);
-		for (const id of ["checkpoints", "facts", "refuted", "tools", "proposals", "external_reference"])
-			if (raw[id][0]) admit(id, raw[id][0]);
+		for (const id of ["checkpoints", "tools", "proposals", "external_reference"]) if (raw[id][0]) admit(id, raw[id][0]);
+		function admitJudgment(row) {
+			const id = row.type === "Refuted" ? "refuted" : "facts";
+			if (!selected[id].includes(row) && selected.facts.length + selected.refuted.length < REGISTER_FACTS)
+				admit(id, row);
+		}
+		if (raw.judgments[0]) admitJudgment(raw.judgments[0]);
 		// Preserve useful recent tool responses before admitting optional reference
 		// material. A short-session handoff depends on observations surviving RAM.
 		for (const id of [
-			...ORDER.filter((id) => !["knowledge", "checkpoints"].includes(id)),
+			...ORDER.filter((id) => !["knowledge", "checkpoints", "facts", "refuted"].includes(id)),
 			"checkpoints",
 			"knowledge",
 		].filter((id) => raw[id]))
 			for (const row of raw[id].slice(0, limits[id])) if (!selected[id].includes(row)) admit(id, row);
+		for (const row of raw.judgments.slice(1, REGISTER_FACTS)) admitJudgment(row);
 	}
 	const { text, data } = render();
 	return {

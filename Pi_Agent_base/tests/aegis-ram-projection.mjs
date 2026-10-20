@@ -217,8 +217,8 @@ test("RP-08 selected identity dedup and current-task relevance do not promote pr
 	f.board.byType.Hint.push(node("proposal", "CLAIM_NOT_FACT"));
 	const p = buildRamProjection(f);
 	assert.equal(p.sections.find((s) => s.id === "facts").total, 3);
-	assert.ok(p.text.indexOf("newest evidence") < p.text.indexOf("relevant older evidence"));
-	assert.ok(p.text.indexOf("relevant older evidence") < p.text.indexOf("unrelated prior material"));
+	assert.ok(p.text.indexOf("relevant older evidence") < p.text.indexOf("newest evidence"));
+	assert.ok(p.text.indexOf("newest evidence") < p.text.indexOf("unrelated prior material"));
 	const factText = JSON.stringify(JSON.parse(p.text).facts);
 	assert.ok(!factText.includes("CLAIM_NOT_FACT"));
 	assert.ok(p.text.includes("NOT guidance"));

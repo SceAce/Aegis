@@ -20,7 +20,7 @@
 | task | **总目标 `total_goal` 始终在场**；可选 `subgoal`（最新有效 Intent，含 text/scope/ref）、Task、状态、授权/预算摘要 |
 | legend | 固定的信任类别说明，防止 facts/claims/references/rules 混淆 |
 | rules | 规则寄存器：工具纪律/active Experience（宪法/ROM 始终在 system 前缀，不重复注入）；`trust=rule`、`not_authorization=true`，只能来自规则来源，不能由 Claim/Reference 升级 |
-| facts | 所有当前有效 Fact/Refuted，`trust=verified`；保留 criterion/observed/evidence 身份；超预算时机械压缩并公开 omitted |
+| facts | 当前目标相关的有效 Fact/Refuted 工作集，`trust=verified`；Fact 与 Refuted 各自按目标相关性/新近性排序后交错选择，共享最多 6 条；保留 criterion/observed/evidence 身份，未选项留在 Board 并计入 omitted |
 | claims | 与当前子目标相关的最新 1–3 条模型 Claim/Intent，`trust=unverified`、`scope` 与子目标一致；不按时间衰减，子目标切换后旧 claim 退出 |
 | references | 知识卡（最多 4 张，支持综合/跨方向考点）与外部 seed；`verified=false`、`action_policy=none`；不等于事实或规则 |
 | recent / referenced | 最近一次工具观察（actual input/response/transport）与合法提案显式引用的较早观察；`trust=observed` |
@@ -34,7 +34,7 @@
 
 子目标由模型驱动：当路径变化时，模型调用现有 `aegis_propose kind=intent` 并用 `scope` 指定短标签；RAM 取最新有效非 action Intent 作为 `task.subgoal`，只展示同一 scope 的 claims。总目标始终在 `task.total_goal`，不因切换子目标而丢失。模型应在该子目标的 claim 上使用相同 scope；没有匹配 scope 时不把他目标 claim 当作当前指导。
 
-事实选择是“全部当前有效事实 + 最新 1–2 条优先”：先按任务相关性和最近性排序，全部尝试装入；不足时先缩短文案，再按可丢弃顺序压缩，并显式写 `meta.omitted`。知识卡不限制为一张，RAM 最多带 4 张当前选择，模型可用 `aegis_knowledge` 继续细化；超出预算时淘汰最旧/最不必要项而不是静默丢失。压缩不使用 LLM 总结，不猜测业务成功。
+判断选择是一个小型工作集，不是 Board 的事实副本：Fact 与 Refuted 分别按总目标、当前请求和当前子目标的词项相关性排序，同分时优先较新节点，再交错选择，共享最多 6 条。超出条数上限或字符预算的判断仍保留在 Board；RAM 的 `meta.omitted.facts` 和 `sections.facts/refuted` 明确报告未展示数量。预算不足时先缩短文案，再按既有可丢弃顺序压缩。知识卡不限制为一张，RAM 最多带 4 张当前选择，模型可用 `aegis_knowledge` 继续细化。压缩不使用 LLM 总结，不猜测业务成功。
 
 默认预算为 8,000 UTF-16 字符，计入完整 JSON/引用/元信息，不等同 provider token 数。所有内容仍是 RuntimeState 的有限投影：不能直接写权威状态、选择路线、授予权限或认定成功。无法容纳核心时明确 core overflow；实际请求仍受原有总输入 gate 约束。
 
