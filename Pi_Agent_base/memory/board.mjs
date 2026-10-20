@@ -355,6 +355,19 @@ export function permittedNodeType(event) {
 		case "experience.decision":
 			return { type: "Artifact" };
 		case "runtime.note":
+			// `human.hint` is a HUMAN-voiced claim about the task, so it enters the
+			// board as a Hint — the same node type as a model hint/candidate. It is
+			// deliberately NOT an Artifact (those mean retrieval output or a round
+			// conclusion) and it can never reach Fact/Refuted: this branch does not
+			// pass through the verified+evidence+revision gate those require.
+			if (event.payload?.kind === "human.hint") {
+				if (event.source?.kind !== "human") return null;
+				// A `clear` writes an empty-text hint purely to retire the previous one;
+				// it must not add a node of its own. A non-string text is equally
+				// malformed and creates nothing.
+				if (typeof event.payload?.text !== "string" || event.payload.text.trim() === "") return null;
+				return { type: "Hint" };
+			}
 			return ["knowledge.selected", "round.checkpoint"].includes(event.payload?.kind) &&
 				["runtime", "human"].includes(event.source?.kind)
 				? { type: "Artifact" }
@@ -950,6 +963,30 @@ function projectBoardInternal(events, manifest, acceptedPrefix) {
 			node.effective = false;
 			node.effective_status = "superseded";
 		}
+	// A human hint is a single Episode-bound instruction: the newest hint event for
+	// an Episode replaces the previous one, and a `clear` (empty text) retires it
+	// from the effective view without deleting the audit trail. This mirrors the
+	// RuntimeState single-value rule so the Board and RAM never disagree about
+	// which hint is in force.
+	const latestHintByEpisode = new Map();
+	const hintEventById = new Map();
+	for (const event of normalizedEvents) {
+		if (event.event_type !== "runtime.note") continue;
+		if (event.payload?.kind !== "human.hint") continue;
+		if (event.source?.kind !== "human") continue;
+		if (!event.episode_id) continue;
+		hintEventById.set(event.event_id, event);
+		latestHintByEpisode.set(event.episode_id, event);
+	}
+	for (const node of nodes) {
+		const origin = hintEventById.get(node.origin_event_id);
+		if (!origin) continue;
+		const latest = latestHintByEpisode.get(origin.episode_id);
+		if (latest && latest.event_id !== origin.event_id) {
+			node.effective = false;
+			node.effective_status = "superseded";
+		}
+	}
 	const currentByType = Object.fromEntries(
 		NODE_TYPES.map((type) => [type, byType[type].filter((node) => node.effective)]),
 	);

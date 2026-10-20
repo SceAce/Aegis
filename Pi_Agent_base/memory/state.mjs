@@ -15,6 +15,7 @@ export function initialState() {
 		pending_actions: {},
 		experience_decisions: [],
 		knowledge_selections: [],
+		human_hints: [],
 		round_checkpoints: [],
 		handoffs: [],
 		open_handoff: null,
@@ -165,6 +166,31 @@ export function projectState(events) {
 								truncated: item.truncated === true,
 							});
 						}
+						bump(state);
+					}
+					// A human hint is a single, Episode-bound piece of natural-language
+					// task guidance. It is NEVER a Fact, rule, permission or budget: the
+					// reducer only stores text plus provenance, and the newest hint for an
+					// Episode supersedes the previous one (the older event stays in the
+					// log). Model-sourced notes cannot reach this branch because the guard
+					// above only accepts runtime/human sources.
+					if (event.payload?.kind === "human.hint" && event.episode_id) {
+						const text = typeof event.payload.text === "string" ? event.payload.text.trim() : "";
+						const prior = state.human_hints.filter((item) => item.episode_id !== event.episode_id);
+						const cleared = text.length === 0;
+						state.human_hints = cleared
+							? prior
+							: [
+									...prior,
+									{
+										event_id: event.event_id,
+										hint_id: typeof event.payload.hint_id === "string" ? event.payload.hint_id : null,
+										episode_id: event.episode_id,
+										text: text.slice(0, 1200),
+										truncated: text.length > 1200,
+										supersedes: typeof event.payload.supersedes === "string" ? event.payload.supersedes : null,
+									},
+								];
 						bump(state);
 					}
 					if (event.payload?.kind === "round.checkpoint" && event.episode_id) {

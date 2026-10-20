@@ -10,7 +10,12 @@ const REGISTER_KNOWLEDGE = 4;
 const REGISTER_CHECKPOINTS = 1;
 const REGISTER_ARTIFACTS = 1;
 const REGISTER_DECISIONS = 1;
+// A human hint is a single, Episode-bound instruction, so one row is the whole
+// register. It is admitted ahead of auto-recall material but never displaces
+// the mandatory core (task/permission/pending).
+const REGISTER_HUMAN_HINTS = 1;
 const SECTION_ORDER = [
+	"human_hint",
 	"external_reference",
 	"knowledge",
 	"checkpoints",
@@ -41,6 +46,7 @@ export function buildRamProjection({
 	const ORDER = SECTION_ORDER.filter(
 		(id) =>
 			(id !== "knowledge" || state.knowledge_selections?.some((item) => item.episode_id === episodeId)) &&
+			(id !== "human_hint" || state.human_hints?.some((item) => item.episode_id === episodeId)) &&
 			(id !== "checkpoints" || state.round_checkpoints?.some((item) => item.episode_id === episodeId)),
 	);
 	const episode = episodeId ? state.episodes?.[episodeId] : null;
@@ -135,6 +141,13 @@ export function buildRamProjection({
 		seed && seed.source_kind === "external_reference" && seed.verified === false && seed.action_policy === "none"
 			? [{ external_reference: true, ...seed }]
 			: [];
+	// The newest human hint for THIS Episode only. It is a human-voiced claim, so
+	// it enters as an unverified reference with no action policy: it can never
+	// satisfy a permit, a Fact or an active Experience.
+	const humanHint = (Array.isArray(state.human_hints) ? state.human_hints : [])
+		.filter((item) => item && item.episode_id === episodeId && typeof item.text === "string" && item.text)
+		.slice(-REGISTER_HUMAN_HINTS)
+		.map((item) => ({ human_hint: true, ...item, verified: false, action_policy: "none" }));
 	const knowledgeById = new Map();
 	for (const item of Array.isArray(state.knowledge_selections) ? state.knowledge_selections : []) {
 		if (
@@ -156,6 +169,7 @@ export function buildRamProjection({
 		.slice(-3)
 		.map((item) => ({ checkpoint_reference: true, ...item, trust: "unverified" }));
 	const raw = {
+		human_hint: humanHint,
 		external_reference: external,
 		knowledge,
 		checkpoints,
@@ -180,6 +194,7 @@ export function buildRamProjection({
 	const totals = Object.fromEntries(ORDER.map((id) => [id, id === "tools" ? toolPairs.length : raw[id].length]));
 	const limits = {
 		external_reference: 1,
+		human_hint: REGISTER_HUMAN_HINTS,
 		knowledge: 4,
 		checkpoints: REGISTER_CHECKPOINTS,
 		facts: REGISTER_FACTS,
@@ -269,6 +284,19 @@ export function buildRamProjection({
 		};
 	}
 	function registerReference(node) {
+		// A human hint is its own reference kind: it must stay distinguishable from
+		// retrieved documents (external_reference) and knowledge rows so a reader can
+		// tell a person's instruction apart from machine-retrieved material.
+		if (node.human_hint)
+			return {
+				event: node.event_id ? ref("event", node.event_id) : null,
+				kind: "human_hint",
+				trust: "human_unverified",
+				verified: false,
+				action_policy: "none",
+				hint_id: node.hint_id ?? null,
+				content: safe(node.text, 450),
+			};
 		if (node.knowledge_reference)
 			return {
 				ref: ref("knowledge", node.knowledge_id),
@@ -325,6 +353,7 @@ export function buildRamProjection({
 		);
 		const facts = factNodes.map((node) => registerFact(node, node.type ?? "Fact"));
 		const referenceRows = [];
+		for (const node of raw.human_hint) referenceRows.push(registerReference(node));
 		for (const node of raw.external_reference) referenceRows.push(registerReference(node));
 		for (const node of raw.knowledge.slice(-REGISTER_KNOWLEDGE)) referenceRows.push(registerReference(node));
 		const ruleRows = [];
@@ -534,6 +563,9 @@ export function buildRamProjection({
 		}
 		while (text.length > budget) {
 			let changed = false;
+			// Drop machine-retrieved material before a human instruction. The operator's
+			// hint for this Episode is the last reference to go, matching its admission
+			// priority (document seed -> retrieved knowledge -> human hint).
 			const externalIndex = registers.references.findIndex((row) => row.kind === "external_reference");
 			const knowledgeIndex = registers.references.findIndex((row) => row.kind === "knowledge");
 			if (externalIndex >= 0) {
@@ -580,7 +612,14 @@ export function buildRamProjection({
 				registers.omitted.rules += 1;
 				changed = true;
 			} else if (knowledgeIndex >= 0) {
+				// Retrieved knowledge goes before a human hint: the operator's instruction is
+				// the more authoritative guidance for this Episode.
 				registers.references.splice(knowledgeIndex, 1);
+				registers.omitted.references += 1;
+				changed = true;
+			} else if (registers.references.some((row) => row.kind === "human_hint")) {
+				const index = registers.references.findIndex((row) => row.kind === "human_hint");
+				registers.references.splice(index, 1);
 				registers.omitted.references += 1;
 				changed = true;
 			} else if (registers.recent) {
@@ -607,6 +646,10 @@ export function buildRamProjection({
 		// checkpoints/tool history, otherwise a full RAM can silently drop exactly
 		// what the model just asked for. Facts/pending stay in the mandatory core.
 		if (raw.knowledge[0]) admit("knowledge", raw.knowledge[0]);
+		// A human hint is a direct instruction from the operator for this Episode, so
+		// it is reserved right after the deliberate knowledge retrieval and before
+		// any auto/history material. It still yields to the mandatory core.
+		if (raw.human_hint[0]) admit("human_hint", raw.human_hint[0]);
 		for (const id of ["checkpoints", "tools", "proposals", "external_reference"]) if (raw[id][0]) admit(id, raw[id][0]);
 		function admitJudgment(row) {
 			const id = row.type === "Refuted" ? "refuted" : "facts";
