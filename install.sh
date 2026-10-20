@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Aegis installer / preflight.
 #
-# Default behaviour is CHECK ONLY: no network, no npm install, no build, and no
-# writes outside $AEGIS_HOME. Actions with side effects are opt-in:
+# Default behaviour is CHECK ONLY: no network, no clone, no npm install, no
+# build, and no writes outside $AEGIS_HOME. Actions with side effects are
+# opt-in:
 #
+#   --clone-pi        clone the Pi fork into Pi_Agent_base/pi (network)
 #   --install-deps    npm install inside the embedded pi repo (network)
 #   --build-bundle    build the pi bundle that run-pi.sh requires (CPU, no network)
 #   --smoke           run the offline smoke checks
+#
+# One-shot install for a fresh checkout:  ./install.sh --all
 #
 # The script never reads, writes or migrates ~/.pi, and never prints secrets.
 set -euo pipefail
@@ -21,6 +25,14 @@ SOURCE_RESOLVER="$PI_DIR/packages/coding-agent/src/experimental/source-resolver.
 BUNDLE="$PI_DIR/packages/coding-agent/dist/bundle/cli.js"
 MIN_NODE="22.19.0"
 
+# Aegis calls ctx.ui.setTopBar()/setSidebar(), which only exist on the Aegis
+# fork branch below. Cloning the fork's default branch (main = upstream pi)
+# would make every session_start throw, so the ref is part of the contract.
+PI_REMOTE="${AEGIS_PI_REMOTE:-https://github.com/SceAce/pi.git}"
+DEFAULT_PI_REF="feat/aegis-shell-layout"
+PI_REF="${AEGIS_PI_REF:-$DEFAULT_PI_REF}"
+
+CLONE_PI=0
 INSTALL_DEPS=0
 BUILD_BUNDLE=0
 SMOKE=0
@@ -33,13 +45,30 @@ Aegis installer / preflight
 Usage:
   ./install.sh [options]
 
+One-shot install of a fresh checkout:
+  ./install.sh --all
+
 Options:
-  --home PATH        Aegis state root (default: $AEGIS_HOME or ~/.Aegis)
-  --install-deps     run `npm install` in the embedded pi repo (needs network)
-  --build-bundle     build the pi bundle used by run-pi.sh
-  --smoke            run offline smoke checks after setup
-  --all              --install-deps --build-bundle --smoke
-  -h, --help         show this help
+  --home PATH           Aegis state root (default: $AEGIS_HOME or ~/.Aegis)
+  --clone-pi            clone the Pi fork into Pi_Agent_base/pi (needs network)
+  --pi-remote URL       Pi fork URL (default: https://github.com/SceAce/pi.git)
+  --pi-ref REF          Pi branch/ref to check out (default: feat/aegis-shell-layout)
+  --install-deps        run `npm install` in the embedded pi repo (needs network)
+  --build-bundle        build the pi bundle used by run-pi.sh
+  --smoke               run offline smoke checks after setup
+  --all                 --clone-pi --install-deps --build-bundle --smoke
+  -h, --help            show this help
+
+Pi source:
+  pi/ is a separate repository (it has its own history and a large
+  node_modules), so it is not tracked here. It is cloned from
+
+      $AEGIS_PI_REMOTE  (default https://github.com/SceAce/pi.git)
+
+  at the ref $AEGIS_PI_REF (default feat/aegis-shell-layout), because that
+  branch carries the top-bar/sidebar extension slots Aegis requires. The
+  default HTTPS URL clones anonymously; pass --pi-remote with your SSH URL
+  (git@github.com:SceAce/pi.git) if you prefer SSH.
 
 Default (no flags) only verifies prerequisites and creates the Aegis state
 directory skeleton. It never touches ~/.pi and never prints credentials.
@@ -47,7 +76,7 @@ directory skeleton. It never touches ~/.pi and never prints credentials.
 Exit codes:
   0  ready
   1  a required file is missing
-  2  an unsatisfied host prerequisite
+  2  an unsatisfied host prerequisite or bad argument
   3  a requested action failed
 USAGE
 }
@@ -59,10 +88,21 @@ while [[ $# -gt 0 ]]; do
 			AEGIS_HOME="$2"
 			shift 2
 			;;
+		--pi-remote)
+			[[ $# -ge 2 ]] || { printf -- '--pi-remote needs a value\n' >&2; exit 2; }
+			PI_REMOTE="$2"
+			shift 2
+			;;
+		--pi-ref)
+			[[ $# -ge 2 ]] || { printf -- '--pi-ref needs a value\n' >&2; exit 2; }
+			PI_REF="$2"
+			shift 2
+			;;
+		--clone-pi) CLONE_PI=1; shift ;;
 		--install-deps) INSTALL_DEPS=1; shift ;;
 		--build-bundle) BUILD_BUNDLE=1; shift ;;
 		--smoke) SMOKE=1; shift ;;
-		--all) INSTALL_DEPS=1; BUILD_BUNDLE=1; SMOKE=1; shift ;;
+		--all) CLONE_PI=1; INSTALL_DEPS=1; BUILD_BUNDLE=1; SMOKE=1; shift ;;
 		-h | --help) usage; exit 0 ;;
 		*) printf 'Unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
 	esac
@@ -124,14 +164,16 @@ fi
 # --- repository files ------------------------------------------------------
 step "Repository files"
 
+# Only Aegis-owned files are checked here. Everything under pi/ is verified by
+# the "Embedded pi repository" section, AFTER a possible clone, otherwise a
+# fresh checkout would report not-ready even when the clone succeeds.
 missing=0
 for f in \
-	"$CLI" \
-	"$SOURCE_RESOLVER" \
 	"$OBSERVER" \
 	"$ROM_FILE" \
 	"$BASE_DIR/Pi_Agent_base/run-aegis.sh" \
-	"$BASE_DIR/Pi_Agent_base/run-pi.sh"; do
+	"$BASE_DIR/Pi_Agent_base/run-pi.sh" \
+	"$BASE_DIR/install.sh"; do
 	if [[ -f "$f" ]]; then
 		ok "${f#"$BASE_DIR"/}"
 	else
@@ -146,8 +188,74 @@ fi
 # --- embedded pi repo ------------------------------------------------------
 step "Embedded pi repository"
 
-if [[ -d "$PI_DIR/.git" ]] || [[ -f "$PI_DIR/.git" ]]; then
+# Aegis requires the fork branch that adds ctx.ui.setTopBar()/setSidebar().
+# Verify it in the checked-out tree so a wrong ref fails loudly here instead of
+# throwing inside every session_start later.
+pi_has_shell_slots() {
+	[[ -f "$PI_DIR/packages/coding-agent/src/core/extensions/types.ts" ]] || return 1
+	grep -q 'setTopBar' "$PI_DIR/packages/coding-agent/src/core/extensions/types.ts" 2>/dev/null
+}
+
+pi_is_repo() {
+	[[ -d "$PI_DIR/.git" || -f "$PI_DIR/.git" ]]
+}
+
+# Cloning is a prerequisite of --install-deps and --build-bundle, so request it
+# implicitly rather than failing on a missing tree.
+if ! pi_is_repo; then
+	if ((INSTALL_DEPS || BUILD_BUNDLE)); then CLONE_PI=1; fi
+fi
+
+if ((CLONE_PI)) && ! pi_is_repo; then
+	if [[ -e "$PI_DIR" ]] && [[ -n "$(ls -A "$PI_DIR" 2>/dev/null)" ]]; then
+		# Never delete a directory we did not create.
+		fail "$PI_DIR exists and is not empty but is not a git repo; refusing to overwrite"
+		printf '      move it aside manually, then re-run with --clone-pi\n' >&2
+		RC=1
+	else
+		step "Cloning Pi ($PI_REF)"
+		printf '  from %s\n' "$PI_REMOTE"
+		mkdir -p "$(dirname "$PI_DIR")"
+		if git clone --branch "$PI_REF" --depth 1 "$PI_REMOTE" "$PI_DIR"; then
+			ok "cloned $PI_REF"
+		else
+			fail "git clone failed (check network access and that the ref exists)"
+			printf '      remote: %s\n      ref:    %s\n' "$PI_REMOTE" "$PI_REF" >&2
+			rm -rf "$PI_DIR" 2>/dev/null || true
+			RC=3
+		fi
+	fi
+fi
+
+if pi_is_repo; then
 	ok "pi repo present"
+	pi_files_ok=1
+	for f in "$CLI" "$SOURCE_RESOLVER"; do
+		if [[ -f "$f" ]]; then
+			ok "${f#"$BASE_DIR"/}"
+		else
+			fail "missing ${f#"$BASE_DIR"/}"
+			pi_files_ok=0
+		fi
+	done
+	((pi_files_ok)) || RC=1
+	if pi_has_shell_slots; then
+		ok "Aegis shell slots present (setTopBar/setSidebar)"
+	else
+		CURRENT_REF="$(git -C "$PI_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+		fail "this pi checkout lacks the Aegis shell slots (ctx.ui.setTopBar/setSidebar)"
+		printf '      checked out: %s   (ref requested: %s)\n' "$CURRENT_REF" "$PI_REF" >&2
+		if [[ "$CURRENT_REF" == "$PI_REF" ]]; then
+			printf '      that ref itself lacks the slots, so Aegis cannot run on it.\n' >&2
+			printf '      try a ref that carries them (default: %s).\n' "$DEFAULT_PI_REF" >&2
+		else
+			printf '      the checkout is on the wrong branch. Aegis needs a branch that\n' >&2
+			printf '      adds setTopBar/setSidebar; main (upstream pi) does not.\n' >&2
+			printf '      fix: git -C Pi_Agent_base/pi fetch --depth 1 origin %s\n' "$PI_REF" >&2
+			printf '           git -C Pi_Agent_base/pi checkout -B %s FETCH_HEAD\n' "$PI_REF" >&2
+		fi
+		RC=1
+	fi
 	if [[ ! -d "$PI_DIR/node_modules" ]]; then
 		warn "pi dependencies are not installed (run with --install-deps)"
 	fi
@@ -158,14 +266,19 @@ if [[ -d "$PI_DIR/.git" ]] || [[ -f "$PI_DIR/.git" ]]; then
 	fi
 else
 	fail "embedded pi repo not found at Pi_Agent_base/pi"
-	cat <<'NOTE'
+	cat <<NOTE
 
-  Aegis runs on Pi, but pi/ is a separate git repository and is intentionally
-  not tracked here (it has its own history and a large node_modules). Restore
-  or clone it into Pi_Agent_base/pi before continuing:
+  Aegis runs on Pi, but pi/ is a separate repository and is intentionally not
+  tracked here (its own history, large node_modules). Install it with:
 
-      git clone <your-pi-remote> Pi_Agent_base/pi
-      # then re-run this script with --install-deps [--build-bundle]
+      ./install.sh --all
+
+  or clone it yourself and re-run the checks:
+
+      git clone --branch $PI_REF $PI_REMOTE Pi_Agent_base/pi
+
+  The branch matters: $PI_REF carries the top-bar/sidebar extension slots that
+  Aegis calls at session start. The fork's default branch (main) does not.
 
 NOTE
 	RC=1
@@ -214,19 +327,36 @@ fi
 
 if ((BUILD_BUNDLE)); then
 	step "Building the pi bundle"
+	MODEL_DATA_DIR="$PI_DIR/packages/ai/src/providers/data"
 	if [[ ! -d "$PI_DIR/node_modules" ]]; then
 		fail "pi dependencies are missing; run with --install-deps first"
 		RC=3
-	elif (cd "$PI_DIR" && npm run build:offline); then
-		if [[ -f "$BUNDLE" ]]; then
-			ok "bundle built: packages/coding-agent/dist/bundle/cli.js"
-		else
-			fail "build reported success but the bundle is missing"
+	else
+		# The provider model data is generated, not tracked (it is .gitignored),
+		# and `build:offline` refuses to run without it. A fresh clone therefore
+		# needs one network hydration pass first.
+		if [[ ! -d "$MODEL_DATA_DIR" ]] || [[ -z "$(ls -A "$MODEL_DATA_DIR" 2>/dev/null)" ]]; then
+			step "Hydrating pi model data (network)"
+			if (cd "$PI_DIR" && npm run hydrate:model-data); then
+				ok "model data hydrated"
+			else
+				fail "npm run hydrate:model-data failed (needs network access)"
+				printf '      the bundle is only needed by run-pi.sh; run-aegis.sh does not need it\n' >&2
+				RC=3
+			fi
+		fi
+		if ((RC != 3)) && (cd "$PI_DIR" && npm run build:offline); then
+			if [[ -f "$BUNDLE" ]]; then
+				ok "bundle built: packages/coding-agent/dist/bundle/cli.js"
+			else
+				fail "build reported success but the bundle is missing"
+				RC=3
+			fi
+		elif ((RC != 3)); then
+			fail "npm run build:offline failed"
+			printf '      the bundle is only needed by run-pi.sh; run-aegis.sh does not need it\n' >&2
 			RC=3
 		fi
-	else
-		fail "npm run build:offline failed"
-		RC=3
 	fi
 fi
 
@@ -252,9 +382,13 @@ if ((SMOKE)); then
 		run_smoke "module layout" node Pi_Agent_base/tests/aegis-module-layout.mjs
 	fi
 	if [[ -d "$PI_DIR/node_modules" && -f "$BASE_DIR/Pi_Agent_base/tests/observer-smoke.mjs" ]]; then
-		run_smoke "observer extension" node \
-			--import "./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts" \
-			Pi_Agent_base/tests/observer-smoke.mjs
+		if pi_has_shell_slots; then
+			run_smoke "observer extension" node \
+				--import "./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts" \
+				Pi_Agent_base/tests/observer-smoke.mjs
+		else
+			warn "observer smoke skipped: pi checkout lacks the Aegis shell slots"
+		fi
 	fi
 fi
 
