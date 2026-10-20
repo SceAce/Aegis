@@ -2530,7 +2530,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 
 	pi.registerCommand("aegis", {
 		description:
-			"Aegis runtime: ui | status | board | ram | switch | close | autoRemote | checkFlag | outcome | learn | compile | route | bind | run | replay",
+			"Aegis runtime: ui | status | board | ram | switch | close | hint | autoRemote | checkFlag | outcome | learn | compile | route | bind | run | replay",
 		handler: async (args, rawCtx) => {
 			const ctx = rawCtx as ExtensionCommandContext;
 			commandCtx = ctx;
@@ -2742,6 +2742,83 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					}
 					await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
 					return;
+				}
+				case "hint": {
+					// A human hint is the operator's own instruction for the CURRENT Episode.
+					// It is committed as a `runtime.note` with a HUMAN source, so it can only
+					// become a Board Hint and an unverified RAM reference — never a Fact, a
+					// rule, a permission or a budget line.
+					if (!episodeId) {
+						notify("Aegis: hint_requires_active_episode", "warning");
+						return;
+					}
+					if (auditUnavailable || !log?.healthy) {
+						notify("Aegis: hint_requires_healthy_audit", "error");
+						return;
+					}
+					const existing = (state.human_hints ?? []).find((item) => item.episode_id === episodeId) ?? null;
+					switch (rest[0]) {
+						case undefined:
+						case "show": {
+							notify(
+								existing
+									? `Aegis: hint ${existing.hint_id ?? existing.event_id} = ${existing.text}`
+									: "Aegis: no human hint for this episode",
+							);
+							return;
+						}
+						case "clear": {
+							const cleared = await emit(
+								"runtime.note",
+								{
+									kind: "human.hint",
+									hint_id: `hl_${eventId().slice(0, 16)}`,
+									text: "",
+									supersedes: existing?.hint_id ?? null,
+									authority: "none",
+									verified: false,
+								},
+								{ source_kind: "human" },
+							);
+							if (!cleared.ok) {
+								notify(`Aegis: hint clear failed: ${cleared.error ?? "unknown audit failure"}`, "error");
+								return;
+							}
+							refreshProjections();
+							notify("Aegis: human hint cleared for this episode");
+							return;
+						}
+						default: {
+							const text = rest.join(" ").trim();
+							if (!text) {
+								notify("Aegis: hint_text_empty", "warning");
+								return;
+							}
+							const hintId = `hl_${eventId().slice(0, 16)}`;
+							const written = await emit(
+								"runtime.note",
+								{
+									kind: "human.hint",
+									hint_id: hintId,
+									text: text.slice(0, 1200),
+									truncated: text.length > 1200,
+									supersedes: existing?.hint_id ?? null,
+									authority: "none",
+									verified: false,
+								},
+								{ source_kind: "human" },
+							);
+							if (!written.ok) {
+								notify(`Aegis: hint write failed: ${written.error ?? "unknown audit failure"}`, "error");
+								return;
+							}
+							refreshProjections();
+							notify(
+								`Aegis: hint ${hintId} recorded${text.length > 1200 ? " (truncated to 1200 chars)" : ""}; it reaches the next provider request`,
+							);
+							return;
+						}
+					}
 				}
 				case "close": {
 					if (!episodeId) {
