@@ -94,7 +94,11 @@ export function parseEvidence(raw) {
 	if (kind === "reproduction") {
 		if (refs.length === 0) return { ok: false, reason: "evidence.kind=reproduction needs a script ref" };
 		for (const ref of refs) {
-			if (!parseScriptRef(ref)) {
+			const parsed = parseScriptRef(ref);
+			if (!parsed || parsed.version === null) {
+				// A version is mandatory: the digest pins the implementation, the version
+				// pins which reviewed registration it belongs to. Without it a card could
+				// silently attach to a later, different script.
 				return { ok: false, reason: `reproduction ref must look like script:<id>@<version>, got ${ref}` };
 			}
 		}
@@ -139,20 +143,70 @@ export function isInjectable(card, { scopeMatches = true, triggersMet = true, sc
 	if (card.curation !== "reviewed") return false;
 	const evidence = card.evidence;
 	if (!evidence || !EVIDENCE_KINDS.includes(evidence.kind) || evidence.kind === "none") return false;
-	if (evidence.kind === "reproduction") {
-		if (!Array.isArray(evidence.refs) || evidence.refs.length === 0) return false;
-		if (typeof evidence.implementation_digest !== "string") return false;
-		if (scriptDigests && typeof scriptDigests === "object") {
-			for (const ref of evidence.refs) {
-				const parsed = parseScriptRef(ref);
-				if (!parsed) return false;
-				const registered = scriptDigests[parsed.scriptId];
-				if (registered === undefined) return false;
-				if (registered !== evidence.implementation_digest) return false;
-			}
+	if (evidence.kind === "reproduction" && reproductionProblem(card, scriptDigests) !== null) return false;
+	return scopeMatches === true && triggersMet === true;
+}
+
+/**
+ * Explain why a reproduction card cannot be trusted, or null when it checks out.
+ * Kept separate from `isInjectable` so callers can report a precise reason.
+ */
+export function reproductionProblem(card, scriptDigests) {
+	const evidence = card?.evidence;
+	if (!evidence || evidence.kind !== "reproduction") return null;
+	if (!Array.isArray(evidence.refs) || evidence.refs.length === 0) return "no script ref";
+	if (typeof evidence.implementation_digest !== "string") return "no implementation_digest";
+	if (!scriptDigests) return "no script registry configured (set AEGIS_SCRIPT_CONFIG)";
+	for (const ref of evidence.refs) {
+		const parsed = parseScriptRef(ref);
+		if (!parsed || parsed.version === null) return `${ref} is not script:<id>@<version>`;
+		const registered = resolveDigest(scriptDigests, parsed.scriptId, parsed.version);
+		if (!registered) return `${ref} is not registered`;
+		if (registered !== evidence.implementation_digest) {
+			return `${ref} digest ${evidence.implementation_digest} does not match the registered ${registered}`;
 		}
 	}
-	return scopeMatches === true && triggersMet === true;
+	return null;
+}
+
+/**
+ * Read the pinned digest for `id@version` from either a resolver function or a
+ * plain map. Two map keys are accepted so callers can pass either the registry
+ * index (`id@version`) or a simple `id` map in tests.
+ */
+function resolveDigest(scriptDigests, scriptId, version) {
+	if (typeof scriptDigests === "function") {
+		const value = scriptDigests(scriptId, version);
+		return typeof value === "string" && value ? value : null;
+	}
+	if (typeof scriptDigests !== "object") return null;
+	const keyed = scriptDigests[`${scriptId}@${version}`];
+	if (typeof keyed === "string") return keyed;
+	const byId = scriptDigests[scriptId];
+	if (typeof byId === "string") return byId;
+	if (byId && typeof byId === "object") {
+		if (byId.version !== undefined && byId.version !== version) return null;
+		return typeof byId.digest === "string" ? byId.digest : null;
+	}
+	return null;
+}
+
+/**
+ * Build a digest resolver from a script registry (execution/script-registry.mjs).
+ *
+ * The pinned implementation digest is the script body when the registration runs
+ * through an interpreter (that file IS the technique), otherwise the executable.
+ */
+export function scriptDigestResolver(registry) {
+	if (!registry || typeof registry.get !== "function") return null;
+	return (scriptId, version) => {
+		const registration = registry.get(scriptId, version);
+		if (!registration) return null;
+		if (typeof registration.script_digest === "string" && registration.script_digest) return registration.script_digest;
+		if (typeof registration.executable_digest === "string" && registration.executable_digest)
+			return registration.executable_digest;
+		return null;
+	};
 }
 
 /**

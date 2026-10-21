@@ -22,8 +22,16 @@
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ANY_ENVIRONMENT, isInjectable, parseCard as parseCardV2 } from "../contest/card-schema.mjs";
+import {
+	ANY_ENVIRONMENT,
+	isInjectable,
+	parseCard as parseCardV2,
+	reproductionProblem,
+	scriptDigestResolver,
+} from "../contest/card-schema.mjs";
+import { createScriptRegistry } from "../execution/script-registry.mjs";
 
 // ---------------------------------------------------------------------------
 // Configuration (read from the environment so tests can isolate every path)
@@ -147,6 +155,51 @@ function parseCard(value: unknown, index: number): { card?: ContestCard; error?:
 	};
 }
 
+// ---------------------------------------------------------------------------
+// Registered script actions (for `reproduction` evidence)
+// ---------------------------------------------------------------------------
+
+/**
+ * `reproduction` cards reference a HUMAN-REGISTERED script action and pin its
+ * digest. The registry is the only authority for the executable, argv, parameter
+ * schema, timeout and post-condition Oracle (execution/script-registry.mjs), so a
+ * card can never carry code of its own. Without a usable registry a reproduction
+ * card is simply not injectable — it is never assumed valid.
+ */
+let scriptDigestIndex: ((scriptId: string, version: number) => string | null) | null = null;
+let scriptRegistryError: string | null = null;
+
+function scriptConfigPath(): string | null {
+	const configured = str("AEGIS_SCRIPT_CONFIG");
+	return configured?.trim() ? configured.trim() : null;
+}
+
+async function loadScriptDigestIndex(): Promise<void> {
+	scriptDigestIndex = null;
+	scriptRegistryError = null;
+	const path = scriptConfigPath();
+	if (!path) return;
+	try {
+		const mod = (await import(pathToFileURL(resolve(path)).href)) as {
+			scripts?: unknown;
+			default?: unknown;
+		};
+		const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+		const candidate = Array.isArray(mod.scripts)
+			? mod.scripts
+			: asArray((mod.default as { scripts?: unknown })?.scripts).length > 0
+				? asArray((mod.default as { scripts?: unknown }).scripts)
+				: asArray(mod.default);
+		const registry = createScriptRegistry({ scripts: candidate });
+		scriptDigestIndex = scriptDigestResolver(registry);
+	} catch (error) {
+		// Invalid registrations are refused by the registry. That is reported and the
+		// index stays null, so reproduction cards fail closed while other cards work.
+		scriptRegistryError = String(error instanceof Error ? error.message : error).slice(0, 300);
+		process.stderr.write(`[aegis-contest] script config unusable (${path}): ${scriptRegistryError}\n`);
+	}
+}
+
 /** Load cards from exactly one explicitly-configured JSON file. */
 export async function loadCards(path: string | null): Promise<LoadedCards> {
 	if (!path) return { cards: [], path: null, digest: null, error: null };
@@ -221,6 +274,7 @@ export function matchCards(cards: ContestCard[], context: MatchContext): MatchRe
 export function matchCardsDetailed(
 	cards: ContestCard[],
 	context: MatchContext,
+	options: { scriptDigests?: ((scriptId: string, version: number) => string | null) | null } = {},
 ): { matched: MatchResult[]; rejected: Array<{ card: ContestCard; reason: string }> } {
 	const observations = new Set(context.observations);
 	const matched: MatchResult[] = [];
@@ -239,12 +293,14 @@ export function matchCardsDetailed(
 			rejected.push({ card, reason: "evidence.kind=none is not auto-injectable" });
 			continue;
 		}
-		if (card.evidence.kind === "reproduction" && !card.evidence.implementation_digest) {
-			rejected.push({
-				card,
-				reason: "evidence.kind=reproduction needs implementation_digest pinned to the registered script action",
-			});
-			continue;
+		if (card.evidence.kind === "reproduction") {
+			// Report the exact reason: missing digest, missing registry, unregistered
+			// ref, or a digest that no longer matches the registered script body.
+			const problem = reproductionProblem(card, options.scriptDigests ?? null);
+			if (problem) {
+				rejected.push({ card, reason: `reproduction evidence unusable: ${problem}` });
+				continue;
+			}
 		}
 		if (card.scope.task_category !== context.taskCategory) {
 			rejected.push({ card, reason: `scope.task_category=${card.scope.task_category} != ${context.taskCategory}` });
@@ -264,7 +320,7 @@ export function matchCardsDetailed(
 			continue;
 		}
 		// Belt and braces: the shared predicate must agree with the checks above.
-		if (!isInjectable(card, { scopeMatches: true, triggersMet: true })) {
+		if (!isInjectable(card, { scopeMatches: true, triggersMet: true, scriptDigests: options.scriptDigests ?? null })) {
 			rejected.push({ card, reason: "isInjectable() rejected the card (curation/evidence mismatch)" });
 			continue;
 		}
@@ -474,6 +530,12 @@ export default function aegisContest(pi: ExtensionAPI): void {
 		if (cached.error) {
 			if (ctx.hasUI) ctx.ui.notify(`Aegis contest: ${cached.error}`, "warning");
 		}
+		// Reproduction cards pin a registered script digest; load the registry so the
+		// matcher can check it. A missing/broken registry only blocks those cards.
+		await loadScriptDigestIndex();
+		if (scriptRegistryError && ctx.hasUI) {
+			ctx.ui.notify(`Aegis contest: script registry unusable: ${scriptRegistryError}`, "warning");
+		}
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -513,7 +575,9 @@ export default function aegisContest(pi: ExtensionAPI): void {
 		const activeMode = mode();
 		const matchContext: MatchContext = { taskCategory, environment, observations };
 		const autoDetail =
-			activeMode === "hint" ? matchCardsDetailed(cached.cards, matchContext) : { matched: [], rejected: [] };
+			activeMode === "hint"
+				? matchCardsDetailed(cached.cards, matchContext, { scriptDigests: scriptDigestIndex })
+				: { matched: [], rejected: [] };
 		const autoMatched = autoDetail.matched;
 		const results = pending.results.length > 0 ? pending.results : autoMatched;
 		const manual = pending.results.length > 0;

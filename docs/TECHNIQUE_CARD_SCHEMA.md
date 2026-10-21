@@ -227,6 +227,7 @@ injectable = curation == "reviewed"
 | 检查 | 结果 |
 | --- | --- |
 | `aegis-card-schema.mjs` | **15 pass / 0 fail** |
+| `aegis-card-reproduction.mjs` | **9 pass / 0 fail**（真实注册表：digest 匹配/不匹配/版本不符/无注册表/非法登记） |
 | `contest-smoke` | exit 0 |
 | `aegis-contest-pi-integration`（需 resolver） | exit 0 |
 | `aegis-observer-contest-pi`（需 resolver） | exit 0 |
@@ -248,9 +249,16 @@ injectable = curation == "reviewed"
 
 ### 8.5 已知限制
 
-1. `reproduction` 已在 schema 与判定层实现，但当前**没有卡片使用**它：需要先有
-   `execution/script-registry.mjs` 的人工登记项，才会出现第一张。
-2. `isInjectable` 的 digest 比对需要调用方传入 `scriptDigests`；扩展侧目前只校验 digest
-   是否存在，未接 registry（尚无 reproduction 卡，不影响现状）。
-3. `limits` 不强制；当前 47/47 有值是因为 v1 的 `## Pitfalls` 被生成器映射，新卡不强制。
-4. `preconditions` 直接取 v1 的 `when_text`，未逐卡人工润色。
+1. `reproduction` 已端到端接通：扩展在 `session_start` 从 `AEGIS_SCRIPT_CONFIG` 加载注册表
+   （`execution/script-registry.mjs`），用 `scriptDigestResolver` 把 `id@version` 映射到
+   `script_digest`（解释器脚本）或 `executable_digest`，再交给 `isInjectable` 比对。
+   当前仍**没有卡片使用**它——第一张需要人工先登记脚本动作。
+2. 注册表不可用（未设置 `AEGIS_SCRIPT_CONFIG`、模块无法导入、登记项非法）时，
+   `reproduction` 卡片按 fail-closed 拒绝注入并给出具体原因；其他卡片不受影响。
+3. 注册表启用时请用 `AEGIS_SCRIPT_CONFIG` 指向 `.mjs` 模块：登记项需要 `verify()` 函数，
+   JSON 无法表达，纯 JSON 配置会在注册时被判非法。
+4. `limits` 不强制；当前 47/47 有值是因为 v1 的 `## Pitfalls` 被生成器映射，新卡不强制。
+5. `preconditions` 直接取 v1 的 `when_text`，未逐卡人工润色。
+6. **类型覆盖缺口**：`tsconfig.aegis.json` 与 `tsconfig.aegis-campaign.json` 都未包含
+   `extensions/*.ts`，所以 `aegis-contest.ts` 的改动不经类型检查（本轮曾因此漏掉两个缺失的
+   import，靠运行时才发现）。补覆盖会改变 190/193 的诊断基线，需单独一轮处理。
