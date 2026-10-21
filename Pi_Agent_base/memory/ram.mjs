@@ -210,7 +210,7 @@ export function buildRamProjection({
 	);
 	const safe = (value, limit = 160) => summarizeMemoryValue(value, { maxChars: limit, maxString: limit }).value;
 	let refs = {};
-	function ref(kind, id, digest = null) {
+	function ref(kind, id, digest = null, extra = null) {
 		if (typeof id !== "string" || !id) return null;
 		const key = JSON.stringify([kind, id, digest]);
 		// With an Episode-level registry, aliases are assigned once per canonical
@@ -225,6 +225,7 @@ export function buildRamProjection({
 			if (aliasRegistry) aliasRegistry[key] = alias;
 		}
 		if (!refs[alias]) refs[alias] = { type: kind, id, ...(digest ? { digest } : {}), _key: key };
+		if (extra && typeof extra === "object") Object.assign(refs[alias], extra);
 		return alias;
 	}
 	function toolData(pair, expanded) {
@@ -299,7 +300,12 @@ export function buildRamProjection({
 			};
 		if (node.knowledge_reference)
 			return {
-				ref: ref("knowledge", node.knowledge_id),
+				// The `ref` alias names the RETRIEVED document, not a committed event,
+				// so it can never be a proposal source on its own. The alias entry
+				// carries `eventId` (the `runtime.note` that recorded this selection)
+				// so the proposal gate can resolve a citation of this handle to a real
+				// auditable event instead of failing as "missing/foreign".
+				ref: ref("knowledge", node.knowledge_id, null, node.event_id ? { eventId: node.event_id } : null),
 				...(node.event_id ? { event: ref("event", node.event_id) } : {}),
 				kind: "knowledge",
 				trust: "reference",

@@ -4,6 +4,13 @@
  * Resolve one RAM reference alias to a committed event/node/action ref. The
  * model sees the alias in RAM, either as a bare string or inside the canonical
  * ref object; both forms must resolve to the same committed identity.
+ *
+ * RAM rows expose several alias kinds. Only event/action/node/outcome are
+ * evidence identities. A `knowledge` alias names a RETRIEVED document, which is
+ * not an event id, so citing it used to fall through to the literal-string path
+ * and be rejected as "missing or foreign" — a misleading diagnosis for a handle
+ * RAM itself printed. Such aliases carry `eventId` (the `runtime.note` that
+ * recorded the selection) so their citation resolves to that auditable event.
  */
 function resolveAlias(rawRef, aliases, { events, nodes, episodeId }) {
 	// A model may wrap an alias in the same object shape used for canonical
@@ -17,7 +24,17 @@ function resolveAlias(rawRef, aliases, { events, nodes, episodeId }) {
 				: null;
 	if (!aliasId || !aliases || !Object.hasOwn(aliases, aliasId)) return rawRef;
 	const alias = aliases[aliasId];
-	if (!alias || typeof alias.id !== "string" || !alias.id) return rawRef;
+	if (!alias) return rawRef;
+	// Non-evidence aliases (knowledge retrieval, external documents) resolve to
+	// the event that recorded them. They still pass the same Episode/effectiveness
+	// check below, so this cannot turn retrieval material into proof.
+	if (typeof alias.eventId === "string" && alias.eventId) {
+		const event = events.find((entry) => entry.event_id === alias.eventId && entry.episode_id === episodeId);
+		return event
+			? { ref_type: "event", ref_id: alias.eventId, ...(event.event_digest ? { digest: event.event_digest } : {}) }
+			: rawRef;
+	}
+	if (typeof alias.id !== "string" || !alias.id) return rawRef;
 	if (alias.type === "event" || alias.type === "action")
 		return { ref_type: alias.type, ref_id: alias.id, ...(alias.digest ? { digest: alias.digest } : {}) };
 	if (alias.type === "node" || alias.type === "outcome") {
@@ -63,8 +80,49 @@ export function inspectProposalRefs(refs, { events, board, episodeId, aliases = 
 				);
 		else row = events.find((event) => event.event_id === id);
 		const node = row ? nodes.find((entry) => entry.origin_event_id === row.event_id) : null;
-		if (!row || row.episode_id !== episodeId || !node || node.effective === false)
-			return { ok: false, reason: `source ref is missing, foreign or ineffective: ${id}`, refs: [] };
+		if (!row || row.episode_id !== episodeId || !node || node.effective === false) {
+			// Distinguish the three causes that used to collapse into one message.
+			// A model acting on this needs to know whether the handle was never RAM's,
+			// belonged to another Episode, or was retired.
+			const shown = typeof rawRef === "string" ? rawRef : rawRef?.ref_id;
+			const alias = aliases && typeof shown === "string" && Object.hasOwn(aliases, shown) ? aliases[shown] : null;
+			if (!row) {
+				if (alias && typeof alias.eventId === "string" && alias.eventId) {
+					const foreign = events.some((event) => event.event_id === alias.eventId);
+					if (foreign)
+						return {
+							ok: false,
+							reason: `source ref ${shown} was recorded in another Episode; aliases do not carry across Episodes`,
+							refs: [],
+						};
+					return {
+						ok: false,
+						reason: `source ref ${shown} is a ${alias.type ?? "retrieval"} reference whose backing event is not in this Episode`,
+						refs: [],
+					};
+				}
+				if (alias?.type && !["event", "node", "action"].includes(alias.type))
+					return {
+						reason: `source ref ${shown} is a ${alias.type} reference, not an auditable event; cite its event ref instead`,
+						refs: [],
+						ok: false,
+					};
+				return {
+					reason: `source ref ${shown} does not resolve to any committed event in this Episode`,
+					refs: [],
+					ok: false,
+				};
+			}
+			if (row.episode_id !== episodeId)
+				return { ok: false, reason: `source ref ${id} belongs to another Episode`, refs: [] };
+			if (!node)
+				return {
+					ok: false,
+					reason: `source ref ${id} is a committed event that creates no board node (observability row)`,
+					refs: [],
+				};
+			return { ok: false, reason: `source ref ${id} was superseded or invalidated`, refs: [] };
+		}
 		if (ref?.digest && ref.digest !== row.event_digest)
 			return { ok: false, reason: `source ref digest mismatch: ${id}`, refs: [] };
 		out.push({ ref_type: "event", ref_id: row.event_id, ...(row.event_digest ? { digest: row.event_digest } : {}) });
