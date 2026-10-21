@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向"
+      ],
+      "content": "迷宫/约束类逆向",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向"
+      ],
+      "content": "- id: rev-maze-constraint\n- category: reverse\n- status: verified\n- environment: macos\n- when: binary, maze, constraint\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/maze/maze.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "When"
+      ],
+      "content": "程序走格子/状态机，输入决定移动；成功路径由地图或约束决定。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Do"
+      ],
+      "content": "1. 从数据段/初始化代码提取地图、转移和墙。\n2. BFS/DFS 搜索可行路径；把输入字符映射到方向。\n3. 复杂校验用 angr/z3 做符号执行，约束到目标状态。\n4. 用真实输入跑程序验证到达终点。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Expect"
+      ],
+      "content": "输入使程序到达成功状态/输出 flag。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-maze-constraint.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "迷宫/约束类逆向",
+      "section": [
+        "迷宫/约束类逆向",
+        "Pitfalls"
+      ],
+      "content": "地图可能动态生成；符号执行要注意路径爆炸。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 448,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:90ec78512ad679635dc7f8fe9e9a6becad7323fc8bc5563087dcf6e23033cee2"
+  },
+  "semantic_digest": "sha256:fcbe415697ad05300165532c83a193edc42046923e5ffdb0ad00e19a4298f7cb",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT"
+      ],
+      "content": "Windows 加壳：OEP 与 IAT",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT"
+      ],
+      "content": "- id: rev-windows-unpack\n- category: reverse\n- status: verified\n- environment: macos\n- when: pe, packed\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/direct-oep.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/fix-iat.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/esp.md",
+      "line_start": 3,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "When"
+      ],
+      "content": "PE 加壳，入口在壳代码；需要 dump 原程序并修复导入表。",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Do"
+      ],
+      "content": "1. 用 ESP 定律/内存断点/异常找 OEP。\n2. 在 OEP dump 进程内存，重建节区。\n3. 修复 IAT（Scylla 等），检查导入函数。\n4. 用原程序逻辑验证 dump 可运行。",
+      "line_start": 16,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Expect"
+      ],
+      "content": "dump 的程序在 OEP 可运行，导入表正确。",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-windows-unpack.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Windows 加壳：OEP 与 IAT",
+      "section": [
+        "Windows 加壳：OEP 与 IAT",
+        "Pitfalls"
+      ],
+      "content": "多阶段壳；IAT 加密/重定向；注意 TLS 回调。",
+      "line_start": 25,
+      "line_end": 25,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 770,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:6d404a8ed9b55409c040de6fba45e027ed536c747375a722b5443423118417a3"
+  },
+  "semantic_digest": "sha256:78cc98ad18906901a09d20fabc93867e24233cdf0efa9d051db853b9821af032",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

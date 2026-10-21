@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）"
+      ],
+      "content": "内核堆 UAF（SLUB）",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）"
+      ],
+      "content": "- id: pwn-kernel-uaf\n- category: pwn\n- status: verified\n- environment: macos\n- when: kernel, uaf, heap\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/heap/slub/uaf.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "When"
+      ],
+      "content": "内核模块/驱动存在 UAF；能分配同 cache 的对象并控制内容。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Do"
+      ],
+      "content": "1. 确认对象 cache 大小与分配/释放路径；用 msg_msg/tty_struct 等喷雾。\n2. UAF 后重占对象，构造读/写原语；泄漏 KASLR 基址。\n3. 用 ROP 或 modprobe_path 等方式提权；注意 SMEP/SMAP/KPTI。\n4. 验证 uid=0 或读出 flag。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Expect"
+      ],
+      "content": "获得内核读写/执行，最终拿到 root/flag。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-kernel-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "内核堆 UAF（SLUB）",
+      "section": [
+        "内核堆 UAF（SLUB）",
+        "Pitfalls"
+      ],
+      "content": "内核版本与缓解不同；错误对象会导致 panic。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 532,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:7450f99bd7fbb0dfa0cd2438e26a66cb6b6cddc575c181101e77f4fee0eccc26"
+  },
+  "semantic_digest": "sha256:51627ba82df35815c5369dac20bebec0375e2096c6335fe7457c0b63431d7259",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

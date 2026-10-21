@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB"
+      ],
+      "content": "流量分析：协议、流与 USB",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB"
+      ],
+      "content": "- id: misc-traffic-pcap\n- category: misc\n- status: verified\n- environment: macos\n- when: pcap\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/introduction.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/protocols/usb.md",
+      "line_start": 3,
+      "line_end": 9,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "When"
+      ],
+      "content": "pcap/pcapng 里有 HTTP/DNS/USB/自定义协议流量。",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 14,
+      "line_end": 14,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Do"
+      ],
+      "content": "1. 先看协议分层与统计；follow stream 提取明文/文件。\n2. HTTP 导出对象；DNS 看异常长域名/编码；USB HID 按描述符解按键。\n3. 自定义协议先对齐字段（长度/类型/payload），再重组。\n4. 提取结果检查文件头/flag 格式。",
+      "line_start": 15,
+      "line_end": 18,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Expect"
+      ],
+      "content": "重组出可读内容或合法文件，且与流量时间线一致。",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-traffic-pcap.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "流量分析：协议、流与 USB",
+      "section": [
+        "流量分析：协议、流与 USB",
+        "Pitfalls"
+      ],
+      "content": "分片/重传要按流重组；USB 键盘要确认 HID 报告格式。",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 622,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:f4ffac65093b8514695befe951406aa476be01bff463a1244db13711c16392c6"
+  },
+  "semantic_digest": "sha256:8c5f066c1b1ae5c2e949d8a55e5c057840af06330114f224f44cd5b5f10f6093",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

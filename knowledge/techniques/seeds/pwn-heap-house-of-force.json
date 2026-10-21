@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）"
+      ],
+      "content": "House of Force（top chunk）",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）"
+      ],
+      "content": "- id: pwn-heap-house-of-force\n- category: pwn\n- status: verified\n- environment: macos\n- when: elf, heap, top_chunk_overflow\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/house-of-force.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "When"
+      ],
+      "content": "能溢出修改 top chunk 的 size（通常改成 -1），然后请求任意大小分配。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Do"
+      ],
+      "content": "1. 确认 glibc 版本仍允许（2.29+ 已缓解，需核实）。\n2. 把 top size 改为 -1；计算目标地址与 top 的差值。\n3. 申请该差值大小，使下一次 malloc 返回目标地址。\n4. 在目标地址写入（GOT/hook/返回地址）并触发。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Expect"
+      ],
+      "content": "malloc 返回受控地址，写入后控制流/值改变。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-house-of-force.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "House of Force（top chunk）",
+      "section": [
+        "House of Force（top chunk）",
+        "Pitfalls"
+      ],
+      "content": "glibc 版本限制；差值必须通过 size 检查；对齐。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 555,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:d3a0e371e4bd8808bc340bb0c1bec755d63ea30eb27b18ca428e5f9bbd3541ea"
+  },
+  "semantic_digest": "sha256:b910613b25d2fe902c8ccfb7aafb29e2ef00e425aef5ba8698a0f07d86ca276b",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

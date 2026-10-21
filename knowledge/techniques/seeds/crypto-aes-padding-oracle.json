@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle"
+      ],
+      "content": "CBC padding oracle",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle"
+      ],
+      "content": "- id: crypto-aes-padding-oracle\n- category: crypto\n- status: verified\n- environment: macos\n- when: aes, cbc, padding_oracle\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "When"
+      ],
+      "content": "CBC + PKCS#7，且服务端对 padding 是否合法给出可区分信号（错误/状态/时间）。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Do"
+      ],
+      "content": "1. 构造两块：前一块可控 IV/C，后一块是目标密文。\n2. 从末字节开始翻转前块字节，枚举 0..255，找到使 padding 合法的值。\n3. 逐字节恢复中间值，再与前一块异或得到明文；记录每次查询。\n4. 控制请求量，避免把 oracle 探测写成高并发爆破。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Expect"
+      ],
+      "content": "恢复出的明文重新加密/校验一致；padding 始终合法。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-padding-oracle.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "CBC padding oracle",
+      "section": [
+        "CBC padding oracle",
+        "Pitfalls"
+      ],
+      "content": "有 MAC/AEAD 时不可用；错误信号可能是统一状态码或时间差。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 544,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:115aaecd3b7c75d237e0f45910ec85c96cc700424cc793db7317224a8e73a3b8"
+  },
+  "semantic_digest": "sha256:b6dc137480634c1d9018b40198157f4d38acbe9ee2c803b829aa0aef4a907c56",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

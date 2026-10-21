@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过"
+      ],
+      "content": "Canary 泄漏与绕过",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过"
+      ],
+      "content": "- id: pwn-canary-bypass\n- category: pwn\n- status: verified\n- environment: macos\n- when: elf, canary\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/mitigation/canary.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "When"
+      ],
+      "content": "栈溢出但 canary 开启；存在读原语（printf/puts/写回显）或 fork 子进程。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Do"
+      ],
+      "content": "1. 找泄漏点读 canary（格式化串、越界读、puts 未截断）。\n2. fork 服务可逐字节爆破 canary（保留低字节 0x00）。\n3. 溢出时把 canary 原样放回，再覆盖返回地址。\n4. 验证 canary 未触发 __stack_chk_fail。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Expect"
+      ],
+      "content": "程序走到目标返回/函数，未触发 stack smashing detected。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-canary-bypass.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Canary 泄漏与绕过",
+      "section": [
+        "Canary 泄漏与绕过",
+        "Pitfalls"
+      ],
+      "content": "每次连接 canary 会变；爆破要用同一进程/fork 模型。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 534,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:95437bb689626e094bd6fff97c76a2992c85b1e165851ab5dd581e9a4b51ab5f"
+  },
+  "semantic_digest": "sha256:e665f533f63c0cd76542e9ce19255f3e46a3342cd14b50f20cd9c888d5e08a08",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

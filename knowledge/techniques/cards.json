@@ -1,0 +1,1203 @@
+{
+  "cards": [
+    {
+      "id": "crypto-rsa-common-modulus",
+      "revision": "1",
+      "title": "RSA 共模攻击（同一 n，多组 e）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_module_attack.md#共模攻击"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "rsa",
+        "same_modulus"
+      ],
+      "hint": [
+        "确认 n 相同且 gcd(e1,e2)=1；若 gcd>1，先约分或换一对。",
+        "用扩展欧几里得求 a,b 使 a*e1+b*e2=1。",
+        "m = c1^a * c2^b mod n；负指数用模逆（pow(c,-1,n)）。",
+        "把 m 转 bytes，检查可打印/结构（JSON、flag 格式、padding）。",
+        "Verify: m 重新用 e1/e2 加密分别得到 c1/c2；明文结构合理。"
+      ],
+      "expect": "m 重新用 e1/e2 加密分别得到 c1/c2；明文结构合理。"
+    },
+    {
+      "id": "crypto-rsa-low-exponent",
+      "revision": "1",
+      "title": "RSA 低加密指数（m^e < n）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数攻击"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "rsa",
+        "small_e"
+      ],
+      "hint": [
+        "先算 c 的整数 e 次根；能开尽就直接得 m。",
+        "开不尽则试 m = iroot(c + k*n, e)，k 从小范围枚举。",
+        "多接收方/多密文时先 CRT 合并再开根（Håstad）。",
+        "把 m 转 bytes 并检查结构；若带固定 padding，改用 Coppersmith。",
+        "Verify: m^e == c（或 CRT 合并后的值）；明文可解析。"
+      ],
+      "expect": "m^e == c（或 CRT 合并后的值）；明文可解析。"
+    },
+    {
+      "id": "crypto-rsa-hastad-broadcast",
+      "revision": "1",
+      "title": "RSA 广播攻击（同明文，多模数，小 e）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数广播攻击"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "rsa",
+        "same_message",
+        "small_e"
+      ],
+      "hint": [
+        "确认各组 e 相同、n_i 两两互素。",
+        "对 c_i 做 CRT 得到 C = m^e mod prod(n_i)。",
+        "若 prod(n_i) > m^e，直接整数开 e 次根得到 m。",
+        "若已知线性 padding，用 Coppersmith 求小根而不是硬开根。",
+        "Verify: 开根结果的 e 次方等于 CRT 合并值；明文结构合理。"
+      ],
+      "expect": "开根结果的 e 次方等于 CRT 合并值；明文结构合理。"
+    },
+    {
+      "id": "crypto-lcg-recover",
+      "revision": "1",
+      "title": "LCG 参数恢复与预测",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/streamcipher/lcg/intro.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "lcg"
+      ],
+      "hint": [
+        "先由连续差分的 gcd 恢复 m（或题目已给 m）。",
+        "用三组连续值解线性方程求 a,c；模不互素时多取几组。",
+        "输出被截断时，把已知位当作约束，枚举未知低位/高位。",
+        "恢复后预测下一输出，并检查与已知序列一致。",
+        "Verify: 重放已知序列完全一致，预测值与下一组观测一致。"
+      ],
+      "expect": "重放已知序列完全一致，预测值与下一组观测一致。"
+    },
+    {
+      "id": "crypto-aes-mode-misuse",
+      "revision": "1",
+      "title": "AES 模式误用（ECB / CBC）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/aes.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "aes",
+        "ecb"
+      ],
+      "hint": [
+        "ECB：找相同密文块，重排/拼接块，观察明文结构或权限字段。",
+        "CBC 位翻转：改 C_{i-1} 的字节，精确翻转 P_i 的对应字节（保留后续块损坏）。",
+        "CBC IV 可控时翻转首块；有 padding oracle 时按字节恢复明文。",
+        "每次改动后只提交一次，记录服务端响应差异。",
+        "Verify: 目标字段按预期改变（如 role=admin），且 MAC/认证未被触发。"
+      ],
+      "expect": "目标字段按预期改变（如 role=admin），且 MAC/认证未被触发。"
+    },
+    {
+      "id": "crypto-xor-known-plaintext",
+      "revision": "1",
+      "title": "重复密钥 XOR 与已知明文",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/attack-summary/bit-attack.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "xor",
+        "repeating_key"
+      ],
+      "hint": [
+        "用已知明文/文件头 crib 推密钥片段；滑动 crib 找最长匹配。",
+        "用汉明距离或重合指数估计密钥长度，再按列做单字节频率分析。",
+        "恢复候选密钥后解密，检查可打印率、词频和格式。",
+        "把结果与文件魔数/JSON 结构交叉验证。",
+        "Verify: 解密文本可读且 crib 位置一致；再加密回原密文。"
+      ],
+      "expect": "解密文本可读且 crib 位置一致；再加密回原密文。"
+    },
+    {
+      "id": "web-sqli-union-blind",
+      "revision": "1",
+      "title": "SQL 注入：联合查询与盲注",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "sqli"
+      ],
+      "hint": [
+        "先用单引号、注释、算术表达式确认注入点和数据库类型。",
+        "联合查询：ORDER BY 或 UNION SELECT 探列数与回显位。",
+        "无回显时用布尔/时间盲注逐字符取 information_schema/表/列/值。",
+        "用十六进制或 CHAR() 绕过引号过滤；记录每个字符的判定条件。",
+        "Verify: 按同一 payload 稳定得到库名/表名/目标值，且与页面差异一致。"
+      ],
+      "expect": "按同一 payload 稳定得到库名/表名/目标值，且与页面差异一致。"
+    },
+    {
+      "id": "web-ssrf-internal",
+      "revision": "1",
+      "title": "SSRF：让服务端访问内部资源",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/ssrf.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "ssrf"
+      ],
+      "hint": [
+        "先确认请求由服务端发出（DNS/HTTP 回调或时间差异）。",
+        "测 localhost/内网段/云元数据地址；试 file://、gopher://、dict://。",
+        "绕过 allowlist：十进制/八进制 IP、短域名、DNS rebinding、重定向。",
+        "用返回内容或带外通道确认读到的内部响应。",
+        "Verify: 拿到只在内网可达的响应/元数据，或用带外请求证明服务端访问。"
+      ],
+      "expect": "拿到只在内网可达的响应/元数据，或用带外请求证明服务端访问。"
+    },
+    {
+      "id": "web-xss-execution",
+      "revision": "1",
+      "title": "XSS：上下文相关的执行",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/xss.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "xss"
+      ],
+      "hint": [
+        "先判断上下文：HTML 文本、属性值、script 字符串、URL。",
+        "按上下文闭合标签/引号，避免被转义；先弹窗/写 DOM 验证执行。",
+        "检查 CSP 与 cookie 标志；存储型要确认持久化和触发页面。",
+        "用浏览器或 headless 实际执行验证，而不是只看源码。",
+        "Verify: 在真实渲染环境中执行到目标 JS（弹窗/请求回调），且不是仅字符串反射。"
+      ],
+      "expect": "在真实渲染环境中执行到目标 JS（弹窗/请求回调），且不是仅字符串反射。"
+    },
+    {
+      "id": "web-csrf-state-change",
+      "revision": "1",
+      "title": "CSRF：利用已认证会话",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/csrf.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "csrf"
+      ],
+      "hint": [
+        "找状态变更端点（改密、加管理员、转账），确认参数可预测。",
+        "检查 token/Referer/Origin/SameSite 校验；尝试去掉 token 或复用。",
+        "构造跨站表单/请求，在已登录会话中触发。",
+        "从服务端状态变化确认效果（而不是只看响应码）。",
+        "Verify: 服务端状态真的改变；重复触发不会产生未预期副作用。"
+      ],
+      "expect": "服务端状态真的改变；重复触发不会产生未预期副作用。"
+    },
+    {
+      "id": "web-php-type-juggle",
+      "revision": "1",
+      "title": "PHP 常见陷阱：类型混淆与反序列化",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/php/php.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "php",
+        "type_juggle"
+      ],
+      "hint": [
+        "找松散比较（0e、数组、null）和 hash 比较，构造满足条件的输入。",
+        "unserialize：找 POP 链（__destruct/__wakeup/__toString），控制属性触发危险调用。",
+        "文件包含：用 php://filter 读源码，或日志/临时文件包含。",
+        "包装器：data://、php://input、phar:// 视配置而定。",
+        "Verify: 用最小输入触发目标分支（读源码/写文件/绕过比较），并有可重复的响应。"
+      ],
+      "expect": "用最小输入触发目标分支（读源码/写文件/绕过比较），并有可重复的响应。"
+    },
+    {
+      "id": "pwn-stack-ret2libc",
+      "revision": "1",
+      "title": "栈溢出与 ret2libc / ROP",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stackoverflow-basic.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/basic-rop.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "stack_overflow"
+      ],
+      "hint": [
+        "checksec：确认 canary/NX/PIE/RELRO；用 cyclic 找返回地址偏移。",
+        "有 puts/read 等泄漏函数时先泄 libc 地址，算 libc base。",
+        "用 ROP 调 system('/bin/sh')；注意 64 位栈对齐（ret gadget）。",
+        "无 libc 时考虑 ret2dlresolve 或 syscall ROP。",
+        "Verify: 拿到 shell 或读出目标文件；地址与 libc 版本一致。"
+      ],
+      "expect": "拿到 shell 或读出目标文件；地址与 libc 版本一致。"
+    },
+    {
+      "id": "pwn-format-string",
+      "revision": "1",
+      "title": "格式化字符串：泄漏与任意写",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/fmtstr/fmtstr-exploit.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "format_string"
+      ],
+      "hint": [
+        "用 %p 序列确定输入在栈上的偏移。",
+        "泄漏 canary/PIE/libc/栈地址；按需多次触发。",
+        "用 %n/%hn 写 GOT/返回地址/钩子；pwntools fmtstr_payload 生成。",
+        "写完后触发目标函数或返回，验证控制流/值改变。",
+        "Verify: 目标地址的值按预期改变（GOT 指向 system、返回地址跳 shellcode/one_gadget）。"
+      ],
+      "expect": "目标地址的值按预期改变（GOT 指向 system、返回地址跳 shellcode/one_gadget）。"
+    },
+    {
+      "id": "pwn-heap-tcache-uaf",
+      "revision": "1",
+      "title": "堆：UAF / tcache 投毒",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-overview.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/tcache-attack.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "heap",
+        "uaf"
+      ],
+      "hint": [
+        "先确认 glibc 版本与 chunk 大小/数量；tcache 与 fastbin 行为不同。",
+        "UAF 后改 fd 指向目标（__free_hook、__malloc_hook、栈）；2.32+ 处理 safe-linking。",
+        "用 malloc 两次拿到目标地址，写入 one_gadget/system。",
+        "若目标是任意读，先把 chunk 链到 GOT/栈再分配。",
+        "Verify: 分配器返回受控地址，写入后触发目标（hook 被调用/返回地址被改）。"
+      ],
+      "expect": "分配器返回受控地址，写入后触发目标（hook 被调用/返回地址被改）。"
+    },
+    {
+      "id": "pwn-canary-bypass",
+      "revision": "1",
+      "title": "Canary 泄漏与绕过",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/mitigation/canary.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "canary"
+      ],
+      "hint": [
+        "找泄漏点读 canary（格式化串、越界读、puts 未截断）。",
+        "fork 服务可逐字节爆破 canary（保留低字节 0x00）。",
+        "溢出时把 canary 原样放回，再覆盖返回地址。",
+        "验证 canary 未触发 __stack_chk_fail。",
+        "Verify: 程序走到目标返回/函数，未触发 stack smashing detected。"
+      ],
+      "expect": "程序走到目标返回/函数，未触发 stack smashing detected。"
+    },
+    {
+      "id": "pwn-pie-aslr-leak",
+      "revision": "1",
+      "title": "PIE / ASLR 地址泄漏与部分覆盖",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stack-intro.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "pie"
+      ],
+      "hint": [
+        "先用任意读泄一个代码/栈/libc 指针，算基址。",
+        "只有部分覆盖时，利用同一页内的低 12 位固定特性改写低 1-2 字节。",
+        "GOT 可写（Partial RELRO）时改 GOT；否则打返回地址/栈。",
+        "每次泄漏后重新计算，不要复用旧基址。",
+        "Verify: 目标地址落在正确页内，控制流/调用到达预期函数。"
+      ],
+      "expect": "目标地址落在正确页内，控制流/调用到达预期函数。"
+    },
+    {
+      "id": "rev-static-triage",
+      "revision": "1",
+      "title": "二进制静态分诊（先看全局）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/introduction.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "unfamiliar"
+      ],
+      "hint": [
+        "file/checksec，确认 ELF/Mach-O/PE、架构、位数、保护。",
+        "strings 找提示、flag 格式、错误信息、库/语言特征；readelf/otool 看段与导入。",
+        "定位 main/输入读取/比较逻辑；先画数据流，不急着逐指令读。",
+        "判断是否加壳/混淆/自修改，再决定动态或符号执行。",
+        "Verify: 能说明输入从哪进、在哪比较、成功路径大致在哪。"
+      ],
+      "expect": "能说明输入从哪进、在哪比较、成功路径大致在哪。"
+    },
+    {
+      "id": "rev-anti-debug",
+      "revision": "1",
+      "title": "反调试识别与绕过",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/linux/detect-dbg.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/anti-debug/isdebuggerpresent.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "anti_debug"
+      ],
+      "hint": [
+        "定位反调试调用（ptrace(PTRACE_TRACEME)、IsDebuggerPresent、NtQueryInformationProcess）。",
+        "静态 patch 返回值/跳转，或用 LD_PRELOAD/Frida hook。",
+        "时间差检测用断点后改时钟/跳过比较；异常检测注意调试器异常配置。",
+        "绕过后再验证真实逻辑是否可达。",
+        "Verify: 断点能停在目标逻辑，程序不再因调试器退出。"
+      ],
+      "expect": "断点能停在目标逻辑，程序不再因调试器退出。"
+    },
+    {
+      "id": "rev-control-flow-flatten",
+      "revision": "1",
+      "title": "控制流平坦化还原",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/control-flow-flatten.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "control_flow_flatten"
+      ],
+      "hint": [
+        "找 dispatcher（大 switch/间接跳转）和状态变量赋值。",
+        "按状态值抽取基本块，恢复块间转移关系。",
+        "用符号执行/动态 trace（angr、Triton、Frida Stalker）辅助恢复。",
+        "恢复后用输入验证路径与原程序一致。",
+        "Verify: 还原后的控制流能解释输入检查，且与原二进制行为一致。"
+      ],
+      "expect": "还原后的控制流能解释输入检查，且与原二进制行为一致。"
+    },
+    {
+      "id": "rev-go-rust-runtime",
+      "revision": "1",
+      "title": "Go / Rust 二进制逆向",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/go/introduction.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/rust/introduction.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "go_binary"
+      ],
+      "hint": [
+        "Go：用 go tool nm/objdump 或 GoReSym 恢复符号；strings 找 main.* 与错误信息。",
+        "Rust：找 panic/格式化字符串和 mangled 符号；关注 main 与自定义 crate 名。",
+        "从字符串/符号定位输入解析、比较和加密函数。",
+        "动态断点验证关键分支。",
+        "Verify: 定位到输入处理和判定函数，并解释成功条件。"
+      ],
+      "expect": "定位到输入处理和判定函数，并解释成功条件。"
+    },
+    {
+      "id": "rev-constant-permutation-table",
+      "revision": "1",
+      "title": "常量表 / 置换表反推",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/introduction.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "constant_table"
+      ],
+      "hint": [
+        "在 __const/.rodata/__TEXT 中找连续且每 n 个一组、元素恰为 0..n-1 的序列。",
+        "对每组计算字典序/Lehmer 排名得到索引；索引可能取模或加常数映射到字节。",
+        "用可打印字符/常见 flag 格式过滤候选。",
+        "把候选重新编码回置换表，确认与原表一致。",
+        "Verify: 候选字节重编码后与原常量表逐项一致，且文本可读。"
+      ],
+      "expect": "候选字节重编码后与原常量表逐项一致，且文本可读。"
+    },
+    {
+      "id": "misc-encoding-chain",
+      "revision": "1",
+      "title": "编码链识别与逐层解码",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/encode/computer.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/encode/communication.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "text",
+        "encoding"
+      ],
+      "hint": [
+        "先看字符集和长度特征判断编码类型；用 file/魔数确认是否压缩/图片。",
+        "逐层解码并保留每层输入输出，避免一次性猜错。",
+        "出现乱码时试另一种编码/字符集；URL 编码注意二次编码。",
+        "最终检查 flag 格式或文件类型。",
+        "Verify: 逐层可逆，最终得到可读文本/合法文件。"
+      ],
+      "expect": "逐层可逆，最终得到可读文本/合法文件。"
+    },
+    {
+      "id": "misc-zip-archive",
+      "revision": "1",
+      "title": "压缩包：伪加密、已知明文与嵌套",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/archive/zip.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "archive",
+        "zip"
+      ],
+      "hint": [
+        "先看 zipinfo/7z l 的加密标志与压缩方法；伪加密可改标志位。",
+        "已知明文（图片头、固定文件）用 bkcrack 做明文攻击。",
+        "检查注释、额外字段、嵌套压缩包和 CRC 不匹配。",
+        "解出后验证文件类型与内容。",
+        "Verify: 解压得到可读文件/下一层线索，CRC 与内容一致。"
+      ],
+      "expect": "解压得到可读文件/下一层线索，CRC 与内容一致。"
+    },
+    {
+      "id": "misc-image-stego",
+      "revision": "1",
+      "title": "图片隐写：元数据、LSB 与附加数据",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/picture/introduction.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/picture/png.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "image",
+        "stego"
+      ],
+      "hint": [
+        "先看 exif/comment/尾部附加数据；binwalk/foremost 拆嵌套文件。",
+        "PNG 检查 IDAT 块、调色板、CRC 与像素 LSB；用 zsteg/自定义脚本提取。",
+        "JPG 看 DCT/量化表/尾部；GIF 看帧与调色板。",
+        "提取结果检查魔数与文本结构。",
+        "Verify: 提取出的数据是合法文件或可读文本，并能解释嵌入方式。"
+      ],
+      "expect": "提取出的数据是合法文件或可读文本，并能解释嵌入方式。"
+    },
+    {
+      "id": "misc-traffic-pcap",
+      "revision": "1",
+      "title": "流量分析：协议、流与 USB",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/introduction.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/protocols/usb.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "pcap"
+      ],
+      "hint": [
+        "先看协议分层与统计；follow stream 提取明文/文件。",
+        "HTTP 导出对象；DNS 看异常长域名/编码；USB HID 按描述符解按键。",
+        "自定义协议先对齐字段（长度/类型/payload），再重组。",
+        "提取结果检查文件头/flag 格式。",
+        "Verify: 重组出可读内容或合法文件，且与流量时间线一致。"
+      ],
+      "expect": "重组出可读内容或合法文件，且与流量时间线一致。"
+    },
+    {
+      "id": "misc-pyc-disk-memory",
+      "revision": "1",
+      "title": "pyc、磁盘镜像与内存取证",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/disk-memory/introduction.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "pyc"
+      ],
+      "hint": [
+        "pyc：确认 magic 与 Python 版本，用对应 decompyle/uncompyle 或手工反汇编。",
+        "磁盘：mmls/tsk_recover 找分区与删除文件；看文件系统日志。",
+        "内存：volatility 先 imageinfo，再按插件找进程/网络/凭据/文件。",
+        "恢复结果检查完整性与可读性。",
+        "Verify: 恢复出源码/文件/进程数据，且版本与镜像一致。"
+      ],
+      "expect": "恢复出源码/文件/进程数据，且版本与镜像一致。"
+    },
+    {
+      "id": "crypto-rsa-coppersmith",
+      "revision": "1",
+      "title": "RSA Coppersmith：已知高位/小根",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_coppersmith_attack.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "rsa",
+        "partial_plaintext"
+      ],
+      "hint": [
+        "把已知信息写成首一多项式 f(x)=0 (mod N 或 mod p)，未知量为小根。",
+        "按界选择格：小根 |x| < N^(1/e)（或 p 的对应界），构造 Coppersmith 格。",
+        "LLL/格约化后取短向量恢复根；Sage 的 small_roots 可直接做。",
+        "把根代回原式验证，并检查明文结构。",
+        "Verify: 根满足多项式且解密结果结构合理；对 p 高位场景能分解 N。"
+      ],
+      "expect": "根满足多项式且解密结果结构合理；对 p 高位场景能分解 N。"
+    },
+    {
+      "id": "crypto-rsa-wiener-small-d",
+      "revision": "1",
+      "title": "RSA 小私钥 d 与连分数",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/d_attacks/rsa_d_attack.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/d_attacks/rsa_extending_wiener.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "rsa",
+        "small_d"
+      ],
+      "hint": [
+        "对 e/N 做连分数展开，枚举收敛 k/d。",
+        "对每个候选用 phi=(e*d-1)/k 求整数 phi，检查是否为偶数。",
+        "由 phi 和 N 解 p+q、p*q 分解 N；解出 p,q 后解密。",
+        "d 稍大时用 extended Wiener（多组 e_i 或已知部分位）。",
+        "Verify: p*q=N，phi 与 d 自洽，解密明文可读。"
+      ],
+      "expect": "p*q=N，phi 与 d 自洽，解密明文可读。"
+    },
+    {
+      "id": "crypto-aes-padding-oracle",
+      "revision": "1",
+      "title": "CBC padding oracle",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "aes",
+        "cbc",
+        "padding_oracle"
+      ],
+      "hint": [
+        "构造两块：前一块可控 IV/C，后一块是目标密文。",
+        "从末字节开始翻转前块字节，枚举 0..255，找到使 padding 合法的值。",
+        "逐字节恢复中间值，再与前一块异或得到明文；记录每次查询。",
+        "控制请求量，避免把 oracle 探测写成高并发爆破。",
+        "Verify: 恢复出的明文重新加密/校验一致；padding 始终合法。"
+      ],
+      "expect": "恢复出的明文重新加密/校验一致；padding 始终合法。"
+    },
+    {
+      "id": "crypto-dlog-smooth-order",
+      "revision": "1",
+      "title": "离散对数：小/光滑阶",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/discrete-log/discrete-log.md"
+      ],
+      "scope": {
+        "task_category": "crypto",
+        "environment": "macos"
+      },
+      "when": [
+        "dlog",
+        "smooth_order"
+      ],
+      "hint": [
+        "分解群阶；对每个小因子用 BSGS/Pohlig-Hellman 求 x mod p_i^k。",
+        "CRT 合并各余数得到 x；验证 g^x=h。",
+        "阶未知时先从 g 的幂/因子推断。",
+        "Verify: g^x 等于 h；x 在合理范围内。"
+      ],
+      "expect": "g^x 等于 h；x 在合理范围内。"
+    },
+    {
+      "id": "web-recon-surface",
+      "revision": "1",
+      "title": "Web 侦察：先画输入面",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/introduction.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "web_target"
+      ],
+      "hint": [
+        "抓首页/robots/sitemap/JS，列出路由、参数、表单和 cookie。",
+        "识别语言/框架/中间件/数据库线索；看错误页和响应头。",
+        "标记需要登录/上传/回调/管理的入口，先观察再动手。",
+        "把每个候选入口写成可验证假设，避免无目标地扫 payload。",
+        "Verify: 得到有界的入口清单和每个入口的观测证据。"
+      ],
+      "expect": "得到有界的入口清单和每个入口的观测证据。"
+    },
+    {
+      "id": "web-php-file-inclusion",
+      "revision": "1",
+      "title": "PHP 文件包含与包装器",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/php/php.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "php",
+        "file_include"
+      ],
+      "hint": [
+        "用 php://filter/convert.base64-encode 读目标源码，确认包含点。",
+        "尝试日志/会话/上传临时文件包含；路径用相对/绝对/截断变体。",
+        "data://、php://input、phar:// 视 allow_url_include 与配置。",
+        "读出内容后检查是否是源码/配置/下一层线索。",
+        "Verify: 包含成功并返回可读源码/配置，而不是仅报错。"
+      ],
+      "expect": "包含成功并返回可读源码/配置，而不是仅报错。"
+    },
+    {
+      "id": "pwn-ret2dlresolve",
+      "revision": "1",
+      "title": "无 libc 泄漏：ret2dlresolve",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/advanced-rop/ret2dlresolve.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "stack_overflow",
+        "no_libc_leak"
+      ],
+      "hint": [
+        "准备可写内存，构造 fake Elf_Rela/Elf_Sym/字符串，让动态链接器解析 system。",
+        "调用 PLT0 并传入 fake reloc 的 index；32 位通常比 64 位简单。",
+        "pwntools 的 Ret2dlresolvePayload 可生成布局；核对对齐。",
+        "拿到 shell 或读出目标文件。",
+        "Verify: 解析到 system 并执行指定命令；无崩溃。"
+      ],
+      "expect": "解析到 system 并执行指定命令；无崩溃。"
+    },
+    {
+      "id": "pwn-srop",
+      "revision": "1",
+      "title": "SROP：sigreturn 帧",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/advanced-rop/srop.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "stack_overflow",
+        "syscall_gadget"
+      ],
+      "hint": [
+        "设置 rax=15，执行 syscall 触发 rt_sigreturn。",
+        "在栈上布置 SigreturnFrame：execve('/bin/sh') 或 read/write。",
+        "pwntools SigreturnFrame 生成字节；注意架构和栈对齐。",
+        "验证 shell/读写结果。",
+        "Verify: sigreturn 后寄存器按帧设置，执行目标 syscall。"
+      ],
+      "expect": "sigreturn 后寄存器按帧设置，执行目标 syscall。"
+    },
+    {
+      "id": "pwn-heap-house-of-force",
+      "revision": "1",
+      "title": "House of Force（top chunk）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/house-of-force.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "elf",
+        "heap",
+        "top_chunk_overflow"
+      ],
+      "hint": [
+        "确认 glibc 版本仍允许（2.29+ 已缓解，需核实）。",
+        "把 top size 改为 -1；计算目标地址与 top 的差值。",
+        "申请该差值大小，使下一次 malloc 返回目标地址。",
+        "在目标地址写入（GOT/hook/返回地址）并触发。",
+        "Verify: malloc 返回受控地址，写入后控制流/值改变。"
+      ],
+      "expect": "malloc 返回受控地址，写入后控制流/值改变。"
+    },
+    {
+      "id": "pwn-kernel-uaf",
+      "revision": "1",
+      "title": "内核堆 UAF（SLUB）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/heap/slub/uaf.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "kernel",
+        "uaf",
+        "heap"
+      ],
+      "hint": [
+        "确认对象 cache 大小与分配/释放路径；用 msg_msg/tty_struct 等喷雾。",
+        "UAF 后重占对象，构造读/写原语；泄漏 KASLR 基址。",
+        "用 ROP 或 modprobe_path 等方式提权；注意 SMEP/SMAP/KPTI。",
+        "验证 uid=0 或读出 flag。",
+        "Verify: 获得内核读写/执行，最终拿到 root/flag。"
+      ],
+      "expect": "获得内核读写/执行，最终拿到 root/flag。"
+    },
+    {
+      "id": "pwn-kernel-rop",
+      "revision": "1",
+      "title": "内核 ROP 与 KPTI 绕过",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/rop/rop.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/rop/kpti-bypass.md"
+      ],
+      "scope": {
+        "task_category": "pwn",
+        "environment": "macos"
+      },
+      "when": [
+        "kernel",
+        "rop",
+        "kpti"
+      ],
+      "hint": [
+        "泄漏 KASLR 基址，找 commit_creds/prepare_kernel_cred 与 gadgets。",
+        "用 KPTI trampoline（swapgs_restore_regs_and_return_to_usermode）布置返回。",
+        "保存用户态 cs/ss/rflags/rsp/rip，构造 iretq 帧。",
+        "返回用户态执行 shell 并验证 root。",
+        "Verify: 内核执行 commit_creds(0)，用户态拿到 root shell。"
+      ],
+      "expect": "内核执行 commit_creds(0)，用户态拿到 root shell。"
+    },
+    {
+      "id": "rev-python-bytecode",
+      "revision": "1",
+      "title": "Python 字节码/pyc 还原",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/python/introduction.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "pyc",
+        "python"
+      ],
+      "hint": [
+        "确认 magic 与 Python 版本；用对应 decompyle/uncompyle 或 dis。",
+        "读 co_consts/co_names，恢复判定常量与字符串。",
+        "版本不匹配时手工反汇编，按栈效果还原表达式。",
+        "重写关键函数并用输入验证。",
+        "Verify: 恢复出的逻辑能解释输入检查，且与原字节码一致。"
+      ],
+      "expect": "恢复出的逻辑能解释输入检查，且与原字节码一致。"
+    },
+    {
+      "id": "rev-maze-constraint",
+      "revision": "1",
+      "title": "迷宫/约束类逆向",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/maze/maze.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "maze",
+        "constraint"
+      ],
+      "hint": [
+        "从数据段/初始化代码提取地图、转移和墙。",
+        "BFS/DFS 搜索可行路径；把输入字符映射到方向。",
+        "复杂校验用 angr/z3 做符号执行，约束到目标状态。",
+        "用真实输入跑程序验证到达终点。",
+        "Verify: 输入使程序到达成功状态/输出 flag。"
+      ],
+      "expect": "输入使程序到达成功状态/输出 flag。"
+    },
+    {
+      "id": "rev-smc",
+      "revision": "1",
+      "title": "自修改代码（SMC）",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/smc.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "self_modifying"
+      ],
+      "hint": [
+        "找解密 stub 和目标内存区间；在写完后下断点。",
+        "dump 解密后的代码/数据，重新反汇编。",
+        "若反调试，先绕过；必要时 patch 掉校验。",
+        "用 dump 的逻辑恢复输入检查。",
+        "Verify: dump 后的代码可读并解释检查；与原程序行为一致。"
+      ],
+      "expect": "dump 后的代码可读并解释检查；与原程序行为一致。"
+    },
+    {
+      "id": "rev-false-disasm",
+      "revision": "1",
+      "title": "花指令/错误反汇编",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/linux/false-disasm.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "binary",
+        "obfuscated",
+        "junk_code"
+      ],
+      "hint": [
+        "从 call/jmp 目标而不是顺序字节开始反汇编。",
+        "识别 junk bytes/重叠指令，强制在真实边界重建。",
+        "用动态 trace 确认实际执行路径。",
+        "恢复关键比较逻辑。",
+        "Verify: 重建后的反汇编连续且能解释执行路径。"
+      ],
+      "expect": "重建后的反汇编连续且能解释执行路径。"
+    },
+    {
+      "id": "rev-windows-unpack",
+      "revision": "1",
+      "title": "Windows 加壳：OEP 与 IAT",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/direct-oep.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/fix-iat.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/esp.md"
+      ],
+      "scope": {
+        "task_category": "reverse",
+        "environment": "macos"
+      },
+      "when": [
+        "pe",
+        "packed"
+      ],
+      "hint": [
+        "用 ESP 定律/内存断点/异常找 OEP。",
+        "在 OEP dump 进程内存，重建节区。",
+        "修复 IAT（Scylla 等），检查导入函数。",
+        "用原程序逻辑验证 dump 可运行。",
+        "Verify: dump 的程序在 OEP 可运行，导入表正确。"
+      ],
+      "expect": "dump 的程序在 OEP 可运行，导入表正确。"
+    },
+    {
+      "id": "misc-audio",
+      "revision": "1",
+      "title": "音频隐写/编码",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/audio/introduction.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "audio",
+        "stego"
+      ],
+      "hint": [
+        "看头/时长/采样率；用频谱图找图案或文字。",
+        "检查 DTMF/摩斯/慢扫描电视；试 LSB/回声隐藏。",
+        "提取结果检查可读文本/flag 格式。",
+        "必要时按采样点手写解码。",
+        "Verify: 得到可读文本/图像，且能解释编码方式。"
+      ],
+      "expect": "得到可读文本/图像，且能解释编码方式。"
+    },
+    {
+      "id": "misc-recon-prefix",
+      "revision": "1",
+      "title": "未知文件：前缀与嵌套",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/recon.md",
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/prefix.md"
+      ],
+      "scope": {
+        "task_category": "misc",
+        "environment": "macos"
+      },
+      "when": [
+        "misc",
+        "unknown_file"
+      ],
+      "hint": [
+        "file/xxd 看 magic bytes 与结构；binwalk/foremost 做 carve，找嵌套 archive。",
+        "比对真实文件头，修复/拼接；检查尾部附加数据。",
+        "逐层解包/解码，保留每层输入输出。",
+        "验证最终文件可打开/文本可读。",
+        "Verify: 恢复出合法文件/可读文本，并解释前缀修复点。"
+      ],
+      "expect": "恢复出合法文件/可读文本，并解释前缀修复点。"
+    },
+    {
+      "id": "web-sqli-double-write",
+      "revision": "1",
+      "title": "SQLi 关键词过滤：重叠双写绕过",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "sqli",
+        "keyword_filter"
+      ],
+      "hint": [
+        "逐个确认哪些关键词被删/替换，以及是否只处理一次（单次全局替换，不递归）。",
+        "把关键词写成重叠形式，让删除后仍留下原词：union→uniunionon，select→seselectlect，from→frfromom，information_schema→infoorrmation_schema。",
+        "注意 where→wwherehere（两个 where 重叠），不能写 wherewhere（两个都会被删）。",
+        "先用布尔/错误差异确认 payload 生效，再用 UNION 探列数与回显位。",
+        "Verify: 过滤后的字符串仍包含原关键词；同一 payload 的布尔/错误响应稳定。"
+      ],
+      "expect": "过滤后的字符串仍包含原关键词；同一 payload 的布尔/错误响应稳定。"
+    },
+    {
+      "id": "web-sqli-into-outfile",
+      "revision": "1",
+      "title": "SQLi 文件写入：INTO OUTFILE / load_file",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "sqli",
+        "file_privilege"
+      ],
+      "hint": [
+        "先用 load_file('/etc/passwd') 或报错确认文件读权限；确认可写 Web 目录。",
+        "用 UNION SELECT ... INTO OUTFILE '/path/x.php' 写入一个只执行固定查询的查询器（不要写破坏性内容）。",
+        "如果引号被过滤，用 0x... 十六进制或 CHAR() 构造路径/内容。",
+        "访问写入的文件读回结果，确认查询器可执行；记录文件路径与权限。",
+        "Verify: 目标路径出现新文件，访问后能返回 SQL 查询结果。"
+      ],
+      "expect": "目标路径出现新文件，访问后能返回 SQL 查询结果。"
+    },
+    {
+      "id": "misc-zip-symlink",
+      "revision": "1",
+      "title": "ZIP 符号链接/zip slip 读取目标文件",
+      "status": "verified",
+      "source_refs": [
+        "https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/archive/zip.md"
+      ],
+      "scope": {
+        "task_category": "web",
+        "environment": "macos"
+      },
+      "when": [
+        "http",
+        "zip",
+        "upload"
+      ],
+      "hint": [
+        "确认上传后服务端会解压并 cat/读取 zip 内条目（非 zip 上传的报错可暴露这一点）。",
+        "构造 symlink 条目：external_attr=0o120777，内容为目标绝对路径（如 /proc/self/environ、/flag）。",
+        "或用 zip slip 的 ../ 条目写到可读/可执行目录；不要覆盖关键系统文件。",
+        "上传后请求读取条目，检查响应里的目标文件内容；失败时换目标路径或确认解压器是否保留 symlink。",
+        "Verify: 响应包含目标文件内容（如进程环境变量或 flag），而不是仅回显上传内容。"
+      ],
+      "expect": "响应包含目标文件内容（如进程环境变量或 flag），而不是仅回显上传内容。"
+    }
+  ]
+}

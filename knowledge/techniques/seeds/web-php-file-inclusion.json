@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器"
+      ],
+      "content": "PHP 文件包含与包装器",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器"
+      ],
+      "content": "- id: web-php-file-inclusion\n- category: web\n- status: verified\n- environment: macos\n- when: php, file_include\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/php/php.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "When"
+      ],
+      "content": "include/require 参数可控；可尝试读源码、日志或临时文件。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Do"
+      ],
+      "content": "1. 用 php://filter/convert.base64-encode 读目标源码，确认包含点。\n2. 尝试日志/会话/上传临时文件包含；路径用相对/绝对/截断变体。\n3. data://、php://input、phar:// 视 allow_url_include 与配置。\n4. 读出内容后检查是否是源码/配置/下一层线索。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Expect"
+      ],
+      "content": "包含成功并返回可读源码/配置，而不是仅报错。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-php-file-inclusion.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PHP 文件包含与包装器",
+      "section": [
+        "PHP 文件包含与包装器",
+        "Pitfalls"
+      ],
+      "content": "allow_url_include 常关闭；phar 需要能上传并触发文件操作。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 530,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:722fdbc1a5eb94d6eafb294452f8585687bf3ee07a4ec8a2d9f8498713989dad"
+  },
+  "semantic_digest": "sha256:0f9a2f6a06f23388c5d8e22b28fb0e4bef7ab31f11eefc916c65e0d395b915a5",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

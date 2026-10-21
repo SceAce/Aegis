@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒"
+      ],
+      "content": "堆：UAF / tcache 投毒",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒"
+      ],
+      "content": "- id: pwn-heap-tcache-uaf\n- category: pwn\n- status: verified\n- environment: macos\n- when: elf, heap, uaf\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-overview.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/tcache-attack.md",
+      "line_start": 3,
+      "line_end": 9,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "When"
+      ],
+      "content": "存在 use-after-free/double-free；能控制 chunk 内容；glibc 版本已知或可泄。",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 14,
+      "line_end": 14,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Do"
+      ],
+      "content": "1. 先确认 glibc 版本与 chunk 大小/数量；tcache 与 fastbin 行为不同。\n2. UAF 后改 fd 指向目标（__free_hook、__malloc_hook、栈）；2.32+ 处理 safe-linking。\n3. 用 malloc 两次拿到目标地址，写入 one_gadget/system。\n4. 若目标是任意读，先把 chunk 链到 GOT/栈再分配。",
+      "line_start": 15,
+      "line_end": 18,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Expect"
+      ],
+      "content": "分配器返回受控地址，写入后触发目标（hook 被调用/返回地址被改）。",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-heap-tcache-uaf.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "堆：UAF / tcache 投毒",
+      "section": [
+        "堆：UAF / tcache 投毒",
+        "Pitfalls"
+      ],
+      "content": "safe-linking 需要先泄 heap 地址；不同 glibc 的 hook 可能已移除（2.34+）。",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 801,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:7fcae4a351acd4637155a6fb1efa1549215fe03b196362e0e996636c24291374"
+  },
+  "semantic_digest": "sha256:b13c1e2e1e0a727a9a4b92f1f920ba89b33ceaad02bf7ad62afa25c983a26ec0",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

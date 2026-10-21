@@ -24,8 +24,14 @@ vendor/pi/
 # Never track it here.
 Pi_Agent_base/pi/
 
-# Knowledge is local and portable; never push documents, seeds or indexes.
-/knowledge/
+# Knowledge is local and portable; never push Wiki documents, seeds or indexes
+# (third-party content, tens of MB). The curated technique cards under
+# knowledge/techniques/ ARE tracked: they are our own artifacts and they carry
+# the card contract in docs/TECHNIQUE_CARD_SCHEMA.md. Their sources and the
+# compiled JSON are produced by knowledge/techniques/build_cards.py.
+/knowledge/*
+!/knowledge/techniques/
+!/knowledge/techniques/**
 
 # Local scratch
 tmp/

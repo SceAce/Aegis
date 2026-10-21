@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖"
+      ],
+      "content": "PIE / ASLR 地址泄漏与部分覆盖",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖"
+      ],
+      "content": "- id: pwn-pie-aslr-leak\n- category: pwn\n- status: verified\n- environment: macos\n- when: elf, pie\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stack-intro.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "When"
+      ],
+      "content": "PIE 开启；有栈/格式化/堆泄漏，或可做部分返回地址覆盖。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Do"
+      ],
+      "content": "1. 先用任意读泄一个代码/栈/libc 指针，算基址。\n2. 只有部分覆盖时，利用同一页内的低 12 位固定特性改写低 1-2 字节。\n3. GOT 可写（Partial RELRO）时改 GOT；否则打返回地址/栈。\n4. 每次泄漏后重新计算，不要复用旧基址。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Expect"
+      ],
+      "content": "目标地址落在正确页内，控制流/调用到达预期函数。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-pie-aslr-leak.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "PIE / ASLR 地址泄漏与部分覆盖",
+      "section": [
+        "PIE / ASLR 地址泄漏与部分覆盖",
+        "Pitfalls"
+      ],
+      "content": "ASLR 每次运行变化；部分覆盖要保证目标与当前地址同页。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 510,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:b1f0322e7900b429766a47928512ea5ebf4c1fd368264831b795cd442c018131"
+  },
+  "semantic_digest": "sha256:45b1a9f54d9ea638095aa5522ec7a867044c81affbcbefa66de55efbae3792bf",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

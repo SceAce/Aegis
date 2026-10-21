@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件"
+      ],
+      "content": "ZIP 符号链接/zip slip 读取目标文件",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件"
+      ],
+      "content": "- id: misc-zip-symlink\n- category: web\n- status: verified\n- environment: macos\n- when: http, zip, upload\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/archive/zip.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "When"
+      ],
+      "content": "上传的 zip 被服务端解压并读取包内文件；应用跟随符号链接或允许 ../ 路径。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Do"
+      ],
+      "content": "1. 确认上传后服务端会解压并 cat/读取 zip 内条目（非 zip 上传的报错可暴露这一点）。\n2. 构造 symlink 条目：external_attr=0o120777，内容为目标绝对路径（如 /proc/self/environ、/flag）。\n3. 或用 zip slip 的 ../ 条目写到可读/可执行目录；不要覆盖关键系统文件。\n4. 上传后请求读取条目，检查响应里的目标文件内容；失败时换目标路径或确认解压器是否保留 symlink。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Expect"
+      ],
+      "content": "响应包含目标文件内容（如进程环境变量或 flag），而不是仅回显上传内容。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-zip-symlink.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "ZIP 符号链接/zip slip 读取目标文件",
+      "section": [
+        "ZIP 符号链接/zip slip 读取目标文件",
+        "Pitfalls"
+      ],
+      "content": "解压器可能禁用 symlink/路径穿越；目标路径需存在且可读；不要把 zip slip 写成破坏性写入。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 634,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:183a8657b14d743dda6c81594b4b18c1f0a0e9bf26bbbe5680bc0534c50be659"
+  },
+  "semantic_digest": "sha256:db2fb5c67e3425a36bd54506d7c4dbdc671e7596d329e2b2089bfe757182cbfa",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

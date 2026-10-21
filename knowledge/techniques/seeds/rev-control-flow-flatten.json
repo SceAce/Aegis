@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原"
+      ],
+      "content": "控制流平坦化还原",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原"
+      ],
+      "content": "- id: rev-control-flow-flatten\n- category: reverse\n- status: verified\n- environment: macos\n- when: binary, control_flow_flatten\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/control-flow-flatten.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "When"
+      ],
+      "content": "函数体是一个 dispatcher + 状态变量 + switch/if 链；基本块被重排。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Do"
+      ],
+      "content": "1. 找 dispatcher（大 switch/间接跳转）和状态变量赋值。\n2. 按状态值抽取基本块，恢复块间转移关系。\n3. 用符号执行/动态 trace（angr、Triton、Frida Stalker）辅助恢复。\n4. 恢复后用输入验证路径与原程序一致。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Expect"
+      ],
+      "content": "还原后的控制流能解释输入检查，且与原二进制行为一致。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-control-flow-flatten.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "控制流平坦化还原",
+      "section": [
+        "控制流平坦化还原",
+        "Pitfalls"
+      ],
+      "content": "状态变量可能被编码；不要手工重写全部逻辑，先恢复关键比较段。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 537,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:7f22286729d939db8c3ffc0c0704ef3b3ab556c8ea283117ade423f128247f5f"
+  },
+  "semantic_digest": "sha256:167c9489641e12d3885062ad96dd2190d781f6d753bb0cc86d07e1b24dbdb028",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

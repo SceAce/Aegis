@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文"
+      ],
+      "content": "重复密钥 XOR 与已知明文",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文"
+      ],
+      "content": "- id: crypto-xor-known-plaintext\n- category: crypto\n- status: verified\n- environment: macos\n- when: xor, repeating_key\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/attack-summary/bit-attack.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "When"
+      ],
+      "content": "密文由明文与短密钥循环异或；明文是自然语言、JSON、文件头或已知格式。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Do"
+      ],
+      "content": "1. 用已知明文/文件头 crib 推密钥片段；滑动 crib 找最长匹配。\n2. 用汉明距离或重合指数估计密钥长度，再按列做单字节频率分析。\n3. 恢复候选密钥后解密，检查可打印率、词频和格式。\n4. 把结果与文件魔数/JSON 结构交叉验证。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Expect"
+      ],
+      "content": "解密文本可读且 crib 位置一致；再加密回原密文。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-xor-known-plaintext.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "重复密钥 XOR 与已知明文",
+      "section": [
+        "重复密钥 XOR 与已知明文",
+        "Pitfalls"
+      ],
+      "content": "密钥长度估计会误判；短文本频率分析不可靠，优先用 crib。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 509,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:aaecac3f65ffd367c956fdf013c45200fc669ac948453c99422dc31c35c7d7f4"
+  },
+  "semantic_digest": "sha256:f9689fa4328bd04cbf0836dc5cd29ee79a90011b85703cbbefa11041736e7ec1",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

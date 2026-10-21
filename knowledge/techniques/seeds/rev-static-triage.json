@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）"
+      ],
+      "content": "二进制静态分诊（先看全局）",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）"
+      ],
+      "content": "- id: rev-static-triage\n- category: reverse\n- status: verified\n- environment: macos\n- when: binary, unfamiliar\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/introduction.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "When"
+      ],
+      "content": "拿到未知二进制/固件片段；先判断格式、架构、语言、保护、入口和输入面。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Do"
+      ],
+      "content": "1. file/checksec，确认 ELF/Mach-O/PE、架构、位数、保护。\n2. strings 找提示、flag 格式、错误信息、库/语言特征；readelf/otool 看段与导入。\n3. 定位 main/输入读取/比较逻辑；先画数据流，不急着逐指令读。\n4. 判断是否加壳/混淆/自修改，再决定动态或符号执行。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Expect"
+      ],
+      "content": "能说明输入从哪进、在哪比较、成功路径大致在哪。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-static-triage.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "二进制静态分诊（先看全局）",
+      "section": [
+        "二进制静态分诊（先看全局）",
+        "Pitfalls"
+      ],
+      "content": "strings 可能被混淆；静态结论要用动态断点验证。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 522,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:3896bdfa85ce40e3d04d603fc0256b06bb68ec3bbd1e081849e767342550596d"
+  },
+  "semantic_digest": "sha256:94e1c8cf957528d1902889ecb2d97425c2f7fe517cbac242c045104d809d3194",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

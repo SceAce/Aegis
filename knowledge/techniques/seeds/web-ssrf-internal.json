@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源"
+      ],
+      "content": "SSRF：让服务端访问内部资源",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源"
+      ],
+      "content": "- id: web-ssrf-internal\n- category: web\n- status: verified\n- environment: macos\n- when: http, ssrf\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/ssrf.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "When"
+      ],
+      "content": "URL/图片/回调参数由服务端发起请求；可指定 host、端口、scheme。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Do"
+      ],
+      "content": "1. 先确认请求由服务端发出（DNS/HTTP 回调或时间差异）。\n2. 测 localhost/内网段/云元数据地址；试 file://、gopher://、dict://。\n3. 绕过 allowlist：十进制/八进制 IP、短域名、DNS rebinding、重定向。\n4. 用返回内容或带外通道确认读到的内部响应。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Expect"
+      ],
+      "content": "拿到只在内网可达的响应/元数据，或用带外请求证明服务端访问。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-ssrf-internal.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SSRF：让服务端访问内部资源",
+      "section": [
+        "SSRF：让服务端访问内部资源",
+        "Pitfalls"
+      ],
+      "content": "云元数据可能要求特定 header；gopher 能构造多协议请求但要按目标协议编码。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 525,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:b55dc0e9379385d31067945fdc26152f4d74fa90d006c6e32a1187065c765486"
+  },
+  "semantic_digest": "sha256:e8cae14f10bff0eb8efdc5135ff30596d46cfc706e82b6e007f025951577d962",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

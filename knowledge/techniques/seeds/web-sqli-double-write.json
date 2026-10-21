@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过"
+      ],
+      "content": "SQLi 关键词过滤：重叠双写绕过",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过"
+      ],
+      "content": "- id: web-sqli-double-write\n- category: web\n- status: verified\n- environment: macos\n- when: http, sqli, keyword_filter\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "When"
+      ],
+      "content": "输入进入 SQL，但 WAF/过滤器把 or、and、union、select、from、where、information_schema 等关键词**单次全局删除或替换一次**。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Do"
+      ],
+      "content": "1. 逐个确认哪些关键词被删/替换，以及是否只处理一次（单次全局替换，不递归）。\n2. 把关键词写成重叠形式，让删除后仍留下原词：union→uniunionon，select→seselectlect，from→frfromom，information_schema→infoorrmation_schema。\n3. 注意 where→wwherehere（两个 where 重叠），不能写 wherewhere（两个都会被删）。\n4. 先用布尔/错误差异确认 payload 生效，再用 UNION 探列数与回显位。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Expect"
+      ],
+      "content": "过滤后的字符串仍包含原关键词；同一 payload 的布尔/错误响应稳定。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-double-write.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "SQLi 关键词过滤：重叠双写绕过",
+      "section": [
+        "SQLi 关键词过滤：重叠双写绕过",
+        "Pitfalls"
+      ],
+      "content": "不同过滤器的替换次数/顺序不同；先小步验证，不要一次批量试几十个变体。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 695,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:1dbdd434be4936b7217bc429c3f64cb02fbe1183ded5bc5cce1f137e95e887bc"
+  },
+  "semantic_digest": "sha256:c8efcfbf82abaac031448c6ca3dd964d9e9cb8df727645d64c851033bb86e582",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}

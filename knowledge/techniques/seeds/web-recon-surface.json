@@ -1,0 +1,204 @@
+{
+  "schema_version": "document-seed-1",
+  "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+  "source_kind": "local_document",
+  "verified": false,
+  "action_policy": "none",
+  "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+  "compiler_version": "1.0.0",
+  "limits": {
+    "maxBytes": 262144,
+    "maxSections": 64,
+    "maxChars": 24000,
+    "maxSectionChars": 2000,
+    "maxDepth": 6
+  },
+  "sections": [
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面"
+      ],
+      "content": "Web 侦察：先画输入面",
+      "line_start": 1,
+      "line_end": 1,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面"
+      ],
+      "content": "- id: web-recon-surface\n- category: web\n- status: verified\n- environment: macos\n- when: http, web_target\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/introduction.md",
+      "line_start": 3,
+      "line_end": 8,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 10,
+      "line_end": 10,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "When"
+      ],
+      "content": "拿到一个 web 目标，先枚举路由、参数、认证、技术栈和可见源码。",
+      "line_start": 11,
+      "line_end": 11,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "list",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Do"
+      ],
+      "content": "1. 抓首页/robots/sitemap/JS，列出路由、参数、表单和 cookie。\n2. 识别语言/框架/中间件/数据库线索；看错误页和响应头。\n3. 标记需要登录/上传/回调/管理的入口，先观察再动手。\n4. 把每个候选入口写成可验证假设，避免无目标地扫 payload。",
+      "line_start": 14,
+      "line_end": 17,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 19,
+      "line_end": 19,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Expect"
+      ],
+      "content": "得到有界的入口清单和每个入口的观测证据。",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Pitfalls"
+      ],
+      "content": "Pitfalls",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-recon-surface.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489",
+      "compiler_version": "1.0.0",
+      "kind": "paragraph",
+      "topic": "Web 侦察：先画输入面",
+      "section": [
+        "Web 侦察：先画输入面",
+        "Pitfalls"
+      ],
+      "content": "不要对目标做大规模目录/参数爆破；先读页面和 JS。",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "content_chars": 481,
+  "provenance": {
+    "extractor": "deterministic-markdown-blocks",
+    "source_digest": "sha256:ba12e6c7eb048ff24a0c1af299393572814fd253c473187333a5c05016d7c489"
+  },
+  "semantic_digest": "sha256:44af8dc8d9586fd38774980954788b596c55489d0a14bed5e3bc3d0183edc6cf",
+  "generated_at": "1970-01-01T00:00:00.000Z"
+}
