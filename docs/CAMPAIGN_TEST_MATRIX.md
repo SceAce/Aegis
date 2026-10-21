@@ -1,13 +1,31 @@
 # Aegis Campaign — Test Matrix (C0 Closure + C1)
 
-## 当前测试状态（2026-10-19 实测）
+## 当前测试状态（2026-10-21 实测）
 
-本机实跑全部 150 个脚本（仓库根；2026-10-19 新增 `aegis-ctf-pilot-outcome`，5/5 通过）：
+本机实跑全部 165 个脚本（仓库根；`Pi_Agent_base/tests/*.mjs`）：
 
 - required 68 个（`docs/E1_CONTRACT_CLOSURE_REQUIRED_CHECKS.json`）：**68 scripts, 0 failed**，命令见 `Pi_Agent_base/tests/helpers/run-required.sh`。
-- 其余 82 个：**81 pass / 1 red**。唯一红是 `aegis-campaign-c1-boundary-review` 的 F16（accepted prefix checkpoint 仍全量重放）；该失败已由用户确认后置，不阻塞当前范围，且不在 required 清单。
-- `tsc tsconfig.aegis.json` 186 条、`tsconfig.aegis-campaign.json` 189 条既有诊断（与记录基线一致，无新增）；`aegis-module-layout` 通过。
-- 证据：`Pi_Agent_base/runtime/dev/audit-20261019/{required,final}/results.json`（ignored 私有目录，含逐脚本退出码与日志）。
+- 其余 97 个：**96 pass / 1 red**。唯一红是 `aegis-campaign-c1-boundary-review` 的 F16（accepted prefix checkpoint 仍全量重放）；该失败已由用户确认后置，不阻塞当前范围，且不在 required 清单。
+- `tsc tsconfig.aegis.json` **190** 条、`tsconfig.aegis-campaign.json` **193** 条、`tsconfig.aegis-tui.json` **0** 条。相对 186/189 基线的 +4 条由 `f45136c`（knowledge-type procedure 经验）引入，集中在 `memory/learning-router.mjs`（3 条）与 `memory/learning-commands.mjs`（1 条）；属 MAINT-01 待收敛项，不是本轮新增。`aegis-module-layout` 通过。
+- 证据：`/tmp` 下的本次 `required` 与逐脚本 `results.json` 为临时产物；仓库内 long-lived 证据仍在 `Pi_Agent_base/runtime/dev/audit-20261019/`（ignored 私有目录）。
+
+### 2026-10-21 相比上一记录的变化
+
+| 项 | 2026-10-19 | 2026-10-21 |
+| --- | --- | --- |
+| 脚本总数 | 150 | **165** |
+| required | 68 / 0 failed | 68 / 0 failed |
+| 非 required | 82（81 pass / 1 red） | **97（96 pass / 1 red）** |
+| tsc aegis / campaign | 186 / 189 | **190 / 193** |
+
+新增脚本：`aegis-human-hint`、`aegis-observer-hint-pi`、`aegis-ctf-wiki-candidates`、`aegis-ctf-wiki-memory`、`aegis-proposal-knowledge-refs`、`aegis-run-experiment`。红线仍为 F16。
+
+## 2026-10-19 记录（保留作历史）
+
+以下为上一轮记录，数字与对账只在该基线有效。当时实跑全部 150 个脚本（含当日新增的
+`aegis-ctf-pilot-outcome`，5/5 通过）；required 68 / 0 failed；其余 82 个为 81 pass / 1 red（F16）；
+`tsc tsconfig.aegis.json` 186 条、`tsconfig.aegis-campaign.json` 189 条；证据在
+`Pi_Agent_base/runtime/dev/audit-20261019/{required,final}/results.json`。
 
 本轮对账与修复（2026-10-19）：
 

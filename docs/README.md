@@ -23,7 +23,7 @@
 初始知识与经验冷启动的编译规则见 [CTF Wiki 经验编译](CTF_WIKI_EXPERIENCE_COMPILATION.md)：
 wiki 只能产出文档 seed 与 **candidate** 提案，不能直接变成 active Experience（`MEMORY_SCHEMA` §6.3 的 ≥2 独立结果门槛不可绕过）。
 
-当前状态（2026-10-19）：**核心机制层（CORE-01–08 / MEM-01–03 / OBS-01 / WEB-W1）已在 `eed75e7` 内部交付，等待独立外部验收；能力层和真实效果层未完成**。required 68 个脚本在本机实跑 0 failed，其余 82 个中 81 通过、唯一红是已后置的 F16；详细数字与逐项对账见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)。各入口的真实工具、账本、Oracle 与限制见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)。真实 provider 证据：2026-10-14 的 toy code-repair、2026-10-17 的 CTF pilot，以及 2026-10-19 的 B 路径验证（真实工具 → 独立 Outcome → Board Fact 闭环；5 个真实任务尝试未解出，控制任务只验证链路，见 [报告](REAL_TASK_B_VALIDATION_20261019.md)）。正式对照矩阵与学习收益仍未运行。
+当前状态（2026-10-21）：**核心机制层（CORE-01–08 / MEM-01–03 / OBS-01 / WEB-W1）已在 `eed75e7` 内部交付，等待独立外部验收；能力层和真实效果层未完成**。测试：165 个脚本中 required 68 个 0 failed，其余 97 个中 96 通过、唯一红是已后置的 F16；类型诊断 `aegis` 190 / `campaign` 193（相对 186/189 基线的 +4 条由 `f45136c` 引入，属 MAINT-01 待收敛）。详细数字与逐项对账见 [Campaign 测试矩阵](CAMPAIGN_TEST_MATRIX.md)。各入口的真实工具、账本、Oracle 与限制见 [入口能力清单](AEGIS_ENTRY_CAPABILITIES.md)。真实 provider 证据：2026-10-14 的 toy code-repair、2026-10-17 的 CTF pilot，以及 2026-10-19 的 B 路径验证（真实工具 → 独立 Outcome → Board Fact 闭环；5 个真实任务尝试未解出，控制任务只验证链路，见 [报告](REAL_TASK_B_VALIDATION_20261019.md)）。正式对照矩阵与学习收益仍未运行。
 
 以下 C6 期叙述保留为历史记录（`changes_required` 与 16 例 13 通过属于当时基线，不再代表当前树）：
 
