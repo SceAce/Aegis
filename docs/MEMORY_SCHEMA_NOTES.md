@@ -194,6 +194,41 @@ ref object. Alias resolution is an association, not proof; the target event
 must still have an effective Board node. `request.projected`/proposal
 rejections record alias epoch/count for diagnosis.
 
+### Alias kinds and what they may resolve to
+
+RAM prints aliases of several kinds. Only some name an evidence identity:
+
+| alias `type` | printed on | resolves to |
+| --- | --- | --- |
+| `event` | observations, checkpoints, human hints | that committed event |
+| `action` | tool rows | the same-Episode `action.completed` |
+| `node` / `outcome` | artifacts, judgments | the node's origin event |
+| `knowledge` | knowledge reference rows | **the `runtime.note` that recorded the selection** (via `eventId`) |
+
+A `knowledge` alias names a retrieved document, not an event id. Citing it in
+`source_refs` therefore resolves to the audit row for the retrieval, never to
+the document itself — the citation says "this claim was informed by that
+retrieval", which is exactly the association the proposal is allowed to assert.
+The resolved event still has to be same-Episode and have an effective node, so a
+retrieval can never become proof or a Fact.
+
+### Rejection reasons a caller can act on
+
+These used to collapse into one `missing, foreign or ineffective` message, which
+misdiagnosed handles that RAM had printed itself:
+
+| reason | meaning |
+| --- | --- |
+| `was recorded in another Episode; aliases do not carry across Episodes` | alias came from a previous Episode's RAM |
+| `does not resolve to any committed event in this Episode` | alias was never printed, or the event is absent |
+| `is a committed event that creates no board node (observability row)` | the event is real but has no citable node |
+| `was superseded or invalidated` | the node is no longer effective |
+| `is a <kind> reference, not an auditable event` | non-evidence alias with no backing event |
+
+When an alias does not resolve, the caller must not retry the same alias: the
+Episode/effectiveness relation has to change, or the claim needs different
+evidence.
+
 `recent`/`referenced` retain the latest observation and a legally referenced
 older action. `checkpoints` retains only the latest round checkpoint; older
 round summaries remain in the EventLog and are not re-injected into RAM. `sections` is now a compatibility summary (`total/shown/omitted`)

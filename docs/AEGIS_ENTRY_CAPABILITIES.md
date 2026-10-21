@@ -93,6 +93,14 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 2. **Oracle 注册**：Manifest 只能引用 `fixture.oracle.v1`；真实题目（flag/独立 checker）没有注册入口。
 3. **入口分裂**：真实工具面没有账本/Oracle；受控执行面没有真实工具。选择与收敛方案见 [整体计划](AEGIS_COMPLETION_MASTER_PLAN.md) §11。
 4. **真实证据**：Campaign 路径只有 2026-10-14 的 toy 任务；真实 provider 另在 2026-10-17 的 CTF pilot 与 2026-10-19 的 B 验证中跑过（见 `REAL_TASK_B_VALIDATION_20261019.md`）。B 验证证明了“真实工具 → 独立 Outcome → Board Fact”的闭环，但 5 个真实任务尝试 0 成功、成功样本只是控制任务；没有请求/工具账本与预算守恒。
+5. **真实工具面无法产出可激活的 Experience（结构缺口）**。这一点在 2026-10-20 的一次真实 CTF 会话中被实测确认，容易误判为操作问题：
+   - 该 EventLog 累计 9 个 Episode，`outcome.recorded` 为 **0**。真实工具面只有两条写 Outcome 的路径：`/aegis checkFlag`（人工确认 flag）与 `/aegis outcome`（导入外部判定结果）。
+   - 即使两者都跑多次，`checkFlag` 写入的行（`aegis-observer.ts` 的 checkFlag 分支）只带 `criterion`/`observed`/`source=human`/`independent=true`，**不写** `independence_group` 或 `isolation_ref`。
+   - 编译器的独立性门（`memory/experience-compiler.mjs:321-323`）要求至少 2 个不同 `episode_id`、`independence_group`、`isolation_ref`。
+   - `isolation_ref` 只能由可信来源记录（`memory/evidence-resolver.mjs:267-270` 明确禁止从 Episode id 合成），而全仓库唯一写 `episode.isolated_reset` 的是 `orchestration/workflow-engine.mjs` 的 `replayOutcome()`，它要求 `AEGIS_REPLAY_ADAPTER` 提供 `isolated: true` 的确定性重置。
+   - 远程靶机无法提供确定性重置，所以真实工具面上的经验**只能停在 `candidate`**。
+
+   相关工作区分：知识（文档 seed / 卡片 / `aegis_propose` 候选）可正常入库与召回；只有“变成 active Experience”这一层被阻，且该阻塞是刻意的防注入设计，不是待修的 bug。要跑通需在可控本地目标上做（fixture Host 或自写 `isolated: true` replay adapter），或先确认如何在不降低门槛的前提下记录 reset 证据。
 
 ## 6. 验证入口
 
