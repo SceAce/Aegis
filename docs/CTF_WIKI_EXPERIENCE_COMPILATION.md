@@ -160,7 +160,7 @@ node build-ctf-wiki-memory.mjs --refresh    # 重新 clone（旧 seed 改名保�
 node build-ctf-wiki-experience-candidates.mjs --dry-run --limit 20
 
 # 生成草稿
-node build-ctf-wiki-experience-candidates.mjs --output knowledge/ctf-wiki-candidates
+node build-ctf-wiki-experience-candidates.mjs --output ~/.Aegis/knowledge/ctf-wiki-candidates
 
 # 只看统计与丢弃原因
 node build-ctf-wiki-experience-candidates.mjs --dry-run --report
@@ -216,7 +216,7 @@ node build-ctf-wiki-experience-candidates.mjs --dry-run --report
 | 层 | 入口 | 状态 |
 | --- | --- | --- |
 | 一键冷启动 | `build-ctf-wiki-memory.mjs`（clone + seed + 候选 + 分析） | 本文新增 |
-| 文档 seed | `build-ctf-wiki-seeds.mjs` → `knowledge/ctf-wiki/` | 已实现，1174 个 seed |
+| 文档 seed | `build-ctf-wiki-seeds.mjs` → `$AEGIS_HOME/knowledge/ctf-wiki/` | 已实现；本机 772 个 seed（仓库副本已废弃） |
 | RAM 注入 | `AEGIS_RAM_SEED_FILE` / `aegis_knowledge` 检索 | 已实现，`verified:false`、`action_policy:none` |
 | 候选草稿 | `build-ctf-wiki-experience-candidates.mjs` | 本文新增 |
 | 提案提交 | `/aegis` 或 `aegis_propose`（Pi 工具） | 已实现，只接受提案 |
