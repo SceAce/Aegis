@@ -166,3 +166,51 @@ test("the tracked knowledge covers the tools the inventory reports", () => {
 	assert.ok((source.match(/purpose:/g) ?? []).length >= 9);
 	assert.ok((source.match(/usage:/g) ?? []).length >= 9);
 });
+
+test("a python module row becomes its own tool, distinct from a same-named CLI", () => {
+	const base = mkdtempSync(join(tmpdir(), "aegis-pymod-"));
+	try {
+		const py = join(base, "python3");
+		writeFileSync(py, "#!/bin/sh\nexit 0\n", "utf8");
+		chmodSync(py, 0o755);
+		const inventory = join(base, "inv.json");
+		writeFileSync(
+			inventory,
+			JSON.stringify({
+				tools: [
+					{ id: "pwn.pwntools", path: py, version: "1.0" },
+					{ id: "py.pwntools", kind: "python", module: "pwn", interpreter: py, version: "4.15.0" },
+				],
+			}),
+			"utf8",
+		);
+		const catalog = join(base, "catalog.json");
+		const result = run(["--inventory", inventory, "--catalog", catalog]);
+		assert.equal(result.status, 0, result.stderr);
+		const loaded = loadToolCatalog(catalog);
+		assert.equal(loaded.ok, true, loaded.errors.join("; "));
+		const ids = loaded.catalog.tools.map((tool) => tool.id).sort();
+		assert.deepEqual(ids, ["pwntools", "py-pwntools"], "the module form is addressable on its own");
+		const moduleTool = loaded.catalog.tools.find((tool) => tool.id === "py-pwntools");
+		assert.match(moduleTool.notes, /python module pwn/);
+		assert.equal(moduleTool.executable, py);
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});
+
+test("--force replaces an invalid catalog but keeps a copy", () => {
+	const f = fixture();
+	try {
+		writeFileSync(f.catalog, JSON.stringify({ tools: [{ id: "broken" }] }), "utf8");
+		const refused = run(["--inventory", f.inventory, "--catalog", f.catalog]);
+		assert.equal(refused.status, 1, "without --force it refuses");
+
+		const forced = run(["--inventory", f.inventory, "--catalog", f.catalog, "--force"]);
+		assert.equal(forced.status, 0, forced.stderr);
+		assert.match(forced.stderr, /kept a copy at/);
+		assert.equal(loadToolCatalog(f.catalog).ok, true);
+	} finally {
+		f.cleanup();
+	}
+});

@@ -103,14 +103,25 @@ Aegis: recorded human outcome=success … ; confirmed 1 tool pitfall(s)
 
 ## 5. 从工具清单批量生成
 
-本机已有 `~/.Aegis/tools/ctf/tool-inventory.json`（发现结果：路径 + 版本）。用生成器补上
-用途/用法/坑，**知识入库、路径本机解析**：
+两步：**扫描**（机器状态）→ **生成**（知识）。
 
 ```bash
-node aegis-seed-tool-catalog.mjs            # 写入 ~/.Aegis/tools/catalog.json
-node aegis-seed-tool-catalog.mjs --dry-run  # 先看
+# 1) 扫描本机：哪些工具在、版本多少、按方向统计
+node aegis-scan-tools.mjs            # → ~/.Aegis/tools/ctf/tool-inventory.json
+node aegis-scan-tools.mjs --dry-run  # 先看
+
+# 2) 生成能力清单：补上用途/用法/坑
+node aegis-seed-tool-catalog.mjs            # → ~/.Aegis/tools/catalog.json
+node aegis-seed-tool-catalog.mjs --dry-run
 node aegis-seed-tool-catalog.mjs --only pwn.ropgadget
 ```
+
+扫描器不只查 `PATH`，还会搜 `/opt/homebrew/bin`、`~/.local/bin`、两个 CTF venv 的 `bin`，
+以及 **gem 的可执行目录**（homebrew ruby 默认不在 `PATH` 里，之前就因此误报"未安装"）。
+Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 venv 里存在的包也能被发现；
+模块与同名 CLI 会存成两个条目（`pwntools` 与 `py-pwntools`）。
+
+`--force` 用于从**非法**的旧 catalog 恢复：先备份成 `catalog.invalid-<时间戳>.json` 再覆盖。
 
 - 知识表（`TOOL_KNOWLEDGE`）在 `aegis-seed-tool-catalog.mjs` 里，**随仓库跟踪**，可 review；
 - `executable` 从 inventory 解析（含 `pwn.ropgadget` → `ROPgadget` 这类命名差异）；
@@ -119,8 +130,9 @@ node aegis-seed-tool-catalog.mjs --only pwn.ropgadget
 - 种子坑一律是 `candidate`：只有真实解出并由 `checkFlag` 确认后才会变 `confirmed`，
   所以种子里写的"坑"只是待验证的提示，不是已验证结论。
 
-当前已覆盖：`pwntools`、`ropgadget`、`checksec`、`binwalk`、`nmap`、`gdb`、`lldb`、
-`docker`、`colima`（`pwninit` 装了才会出现）。
+当前本机覆盖 **47 个条目**：reverse 11、pwn 12、web 8、misc 8、crypto 7、general 1
+（含 `ida`：GUI `ida <bin>` / headless `idat -A -S<script.py>`；`pwninit`、`frida`、
+`dirsearch`、`arjun`、`jwt_tool`、`sage`、`steghide` 等未安装的不会出现）。
 
 ## 6. 怎么加一个工具
 
