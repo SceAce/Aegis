@@ -164,11 +164,41 @@ MCP 工具由 Pi 直接暴露给模型，**不经过本清单**，也不经过 `
 | `rea` | 207 个工具 | `REA_ANALYSIS_PROVIDER=ida`，即 **IDA Pro** 的反编译/xref/函数分析；另含 frida、rizin、gdb、adb、apktool、web 分析 |
 | `firefox-devtools` / `firefox` / `zen-browser` | 浏览器自动化 | 页面/网络/快照 |
 
-配置在 `$AEGIS_HOME/agent/mcp.json`（`$AEGIS_HOME` 默认 `~/.Aegis`）。**默认不启动**：
+配置在 `$AEGIS_HOME/agent/mcp.json`（`$AEGIS_HOME` 默认 `~/.Aegis`）。
+
+**默认不启动 MCP；`--mcp` 启动但禁用浏览器类**：
 
 ```bash
-./run-experiment.sh ram-001 --mcp     # 用共用 agent 目录，MCP 生效
-./run-experiment.sh ram-001           # 默认：派生 agent 目录 + 空 mcp.json，MCP 不启动
+./run-experiment.sh ram-001              # 默认：派生 agent 目录 + 空 mcp.json，MCP 全关
+./run-experiment.sh ram-001 --mcp        # 开 MCP，但浏览器 server 置 enabled:false
+./run-experiment.sh ram-001 --mcp-all    # 全开，含浏览器
+```
+
+为什么浏览器默认关：驱动页面（找选择器、等 UI 就绪、对齐快照）在多数题目上花费的时间远大于
+它节省的时间。这是**执行策略**，不是权限限制——`--mcp-all` 随时可以打开。
+
+实现方式：过滤发生在**派生 agent 目录**里，把 `mcp.json` 复制一份、给匹配到的 server 加
+`enabled: false`，共用的 `~/.Aegis/agent/mcp.json` 一个字节都不改。匹配规则是对
+`名称 + command + args + url` 拼接串做 JS 正则，默认：
+
+```
+firefox|zen|chrom|playwright|puppeteer|selenium|webdriver|browser
+```
+
+名字不含这些词的 server 会误伤时，用 `AEGIS_MCP_BROWSER_PATTERN` 覆盖。启动摘要会写明本次
+禁用了哪些：
+
+```
+mcp        filtered - on, browser servers disabled: firefox-devtools zen-browser firefox
+```
+
+实测 `pi mcp list`（派生目录）：
+
+```
+firefox-devtools: disabled (direct, global)
+zen-browser:      disabled (direct, global)
+firefox:          disabled (codemode, global)
+rea:              connected, 207 tools (codemode, global)
 ```
 
 要点：

@@ -52,7 +52,7 @@ SCRIPT_CONFIG_OVERRIDE=""
 ACTION_MODE=""          # normal (default) | auto
 ATTACH=()
 MAX_ATTACH_BYTES=536870912
-MCP_MODE="off"       # off | on
+MCP_MODE="off"       # off | filtered | all
 DRY_RUN=0
 LIST=0
 PASSTHROUGH=()
@@ -102,10 +102,13 @@ Options:
   --isolate-agent     use a private, empty agent dir for this run. You will have
                       to authenticate inside it first; credentials are never
                       copied for you.
-  --mcp               start the MCP servers configured in the agent dir. Default
-                      is OFF: the launcher derives an agent dir that links your
-                      real credential files but ships an empty mcp.json, so no MCP
-                      process starts. Your global mcp.json is left untouched.
+  --mcp               start MCP servers, EXCEPT browser automation. Driving a page
+                      (finding selectors, waiting for UI) costs more time than it
+                      saves on most tasks, so browsers are disabled by default and
+                      the rest (e.g. rea/IDA) are enabled. Implemented as a derived
+                      agent dir with those servers set to enabled:false; your global
+                      mcp.json is untouched.
+  --mcp-all           start EVERY configured MCP server, browsers included.
   --dry-run           print the resolved configuration and exit
   --list              list existing experiments and exit
   -h, --help          this help
@@ -159,7 +162,8 @@ while (($#)); do
 		--knowledge) KNOWLEDGE_DIR="${2:-}"; shift 2 ;;
 		--agent-dir) AGENT_DIR_OVERRIDE="${2:-}"; shift 2 ;;
 		--isolate-agent) ISOLATE_AGENT=1; shift ;;
-		--mcp) MCP_MODE="on"; shift ;;
+		--mcp) MCP_MODE="filtered"; shift ;;
+		--mcp-all) MCP_MODE="all"; shift ;;
 		--no-mcp) MCP_MODE="off"; shift ;;
 		--dry-run) DRY_RUN=1; shift ;;
 		--list) LIST=1; shift ;;
@@ -256,6 +260,11 @@ elif ((ISOLATE_AGENT)); then
 elif [[ "$MCP_MODE" == "off" ]]; then
 	AGENT_MODE="derived-no-mcp"
 	AGENT_DIR="$EXP_DIR/agent"
+elif [[ "$MCP_MODE" == "filtered" ]]; then
+	# MCP on, but browser automation off: driving a page costs more time than it
+	# saves on most tasks, so it is opt-in via --mcp-all.
+	AGENT_MODE="derived-mcp-filtered"
+	AGENT_DIR="$EXP_DIR/agent"
 else
 	AGENT_MODE="shared"
 	AGENT_DIR="$SHARED_AGENT_DIR"
@@ -308,7 +317,39 @@ MCP_NOTE=""
 AUTH_WARNING=""
 LINKED_FILES=()
 
-if [[ "$AGENT_MODE" == "derived-no-mcp" ]]; then
+# Browser-ish MCP servers are matched by NAME or by COMMAND/ARGS. Override the
+# pattern with AEGIS_MCP_BROWSER_PATTERN if a server is misclassified.
+MCP_BROWSER_PATTERN="${AEGIS_MCP_BROWSER_PATTERN:-firefox|zen|chrom|playwright|puppeteer|selenium|webdriver|browser}"
+
+# Emit a mcp.json where browser servers are disabled, and report which ones.
+# Kept in node so the JSON is parsed rather than pattern-matched in text.
+filter_mcp_config() {
+	local source="$1" target="$2" pattern="$3"
+	node -e '
+		const fs = require("node:fs");
+		const [source, target, pattern] = process.argv.slice(1);
+		let raw = { mcpServers: {} };
+		try { raw = JSON.parse(fs.readFileSync(source, "utf8")); } catch { }
+		const servers = raw && typeof raw.mcpServers === "object" && raw.mcpServers ? raw.mcpServers : {};
+		const re = new RegExp(pattern, "i");
+		const out = {};
+		const disabled = [];
+		for (const [name, entry] of Object.entries(servers)) {
+			const haystack = [name, entry?.command, ...(Array.isArray(entry?.args) ? entry.args : []), entry?.url]
+				.filter((v) => typeof v === "string").join(" ");
+			if (re.test(haystack)) {
+				out[name] = { ...entry, enabled: false };
+				disabled.push(name);
+			} else {
+				out[name] = entry;
+			}
+		}
+		fs.writeFileSync(target, JSON.stringify({ mcpServers: out }, null, 2) + "\n", { mode: 0o600 });
+		process.stdout.write(disabled.join(","));
+	' "$source" "$target" "$pattern"
+}
+
+if [[ "$AGENT_MODE" == "derived-no-mcp" || "$AGENT_MODE" == "derived-mcp-filtered" ]]; then
 	[[ -d "$SHARED_AGENT_DIR" ]] ||
 		die "shared agent dir does not exist: $SHARED_AGENT_DIR
   create it or point at one with --agent-dir" 1
@@ -321,19 +362,30 @@ if [[ "$AGENT_MODE" == "derived-no-mcp" ]]; then
 	if [[ ${#LINKED_FILES[@]} -eq 0 ]]; then
 		AUTH_WARNING="no credential files found in $SHARED_AGENT_DIR; the model will start unauthenticated"
 	fi
-	# An empty server map is the whole override; a resumed run keeps whatever it
-	# already has so an operator edit is not clobbered.
-	if [[ ! -f "$AGENT_DIR/mcp.json" ]]; then
-		printf '{\n  "mcpServers": {}\n}\n' >"$AGENT_DIR/mcp.json"
+	if [[ "$AGENT_MODE" == "derived-no-mcp" ]]; then
+		# An empty server map is the whole override; a resumed run keeps whatever it
+		# already has so an operator edit is not clobbered.
+		if [[ ! -f "$AGENT_DIR/mcp.json" ]]; then
+			printf '{\n  "mcpServers": {}\n}\n' >"$AGENT_DIR/mcp.json"
+		fi
+		MCP_NOTE="off (derived agent dir, empty mcp.json)"
+	else
+		# Regenerate every run: the roster of servers may have changed since the
+		# experiment was created, and this file is derived, not authored.
+		DISABLED_MCP="$(filter_mcp_config "$SHARED_AGENT_DIR/mcp.json" "$AGENT_DIR/mcp.json" "$MCP_BROWSER_PATTERN")"
+		if [[ -n "$DISABLED_MCP" ]]; then
+			MCP_NOTE="on, browser servers disabled: $(echo "$DISABLED_MCP" | tr ',' ' ')"
+		else
+			MCP_NOTE="on (no browser server matched)"
+		fi
 	fi
-	MCP_NOTE="off (derived agent dir, empty mcp.json)"
 elif [[ "$AGENT_MODE" == "shared" ]]; then
 	[[ -d "$AGENT_DIR" ]] || die "shared agent dir does not exist: $AGENT_DIR
   create it or point at one with --agent-dir" 1
 	if [[ ! -f "$AGENT_DIR/auth.json" ]]; then
 		AUTH_WARNING="no auth.json in $AGENT_DIR; the model will start unauthenticated"
 	fi
-	MCP_NOTE="on (shared agent dir)"
+	MCP_NOTE="on, ALL servers including browsers (shared agent dir)"
 elif [[ "$AGENT_MODE" == "isolated" ]]; then
 	MCP_NOTE="on (isolated agent dir; authenticate first)"
 else

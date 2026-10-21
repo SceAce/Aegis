@@ -351,7 +351,7 @@ test("MCP is off by default through a derived agent dir that still authenticates
 	}
 });
 
-test("--mcp uses the shared agent dir so the real mcp.json applies", () => {
+test("--mcp-all uses the shared agent dir so every configured server applies", () => {
 	const home = freshHome();
 	try {
 		writeFileSync(
@@ -359,11 +359,11 @@ test("--mcp uses the shared agent dir so the real mcp.json applies", () => {
 			JSON.stringify({ mcpServers: { demo: { command: "true" } } }),
 			"utf8",
 		);
-		const result = run(["mcp-002", "--mcp", "--dry-run"], { home });
+		const result = run(["mcp-002", "--mcp-all", "--dry-run"], { home });
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /agent\s+.*\/agent \(shared\)/);
 		const runJson = JSON.parse(readFileSync(join(home, "experiments", "mcp-002", "run.json"), "utf8"));
-		assert.equal(runJson.mcp, "on");
+		assert.equal(runJson.mcp, "all");
 		assert.equal(runJson.agent_mode, "shared");
 		assert.equal(existsSync(join(home, "experiments", "mcp-002", "agent")), false);
 	} finally {
@@ -595,6 +595,87 @@ test("a script roster is resolved from the Aegis home and reported", () => {
 			result.stdout,
 			new RegExp(`scripts\\s+${home.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}/tools/roster.json`),
 		);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("--mcp disables browser servers but keeps the rest", () => {
+	const home = freshHome();
+	try {
+		writeFileSync(
+			join(home, "agent", "mcp.json"),
+			JSON.stringify({
+				mcpServers: {
+					firefox: { command: "/usr/bin/npx", args: ["-y", "firefox-devtools-mcp"] },
+					"zen-browser": { command: "npx", args: ["-y", "zen-mcp"] },
+					"chrome-tools": { command: "/usr/bin/chrome-mcp" },
+					rea: { command: "/opt/homebrew/bin/rea", args: ["mcp"] },
+				},
+			}),
+			"utf8",
+		);
+		const result = run(["mcp-001", "--mcp", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /browser servers disabled: .*firefox.*zen-browser.*chrome-tools/);
+
+		const generated = JSON.parse(readFileSync(join(home, "experiments", "mcp-001", "agent", "mcp.json"), "utf8"));
+		assert.equal(generated.mcpServers.firefox.enabled, false);
+		assert.equal(generated.mcpServers["zen-browser"].enabled, false);
+		assert.equal(generated.mcpServers["chrome-tools"].enabled, false);
+		assert.equal(generated.mcpServers.rea.enabled, undefined, "non-browser servers keep their config");
+		assert.equal(generated.mcpServers.rea.command, "/opt/homebrew/bin/rea");
+		// The shared config is never edited: the filter writes a copy.
+		const shared = JSON.parse(readFileSync(join(home, "agent", "mcp.json"), "utf8"));
+		assert.equal(shared.mcpServers.firefox.enabled, undefined);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("--mcp-all keeps every server, and --no-mcp keeps none", () => {
+	const home = freshHome();
+	try {
+		writeFileSync(
+			join(home, "agent", "mcp.json"),
+			JSON.stringify({
+				mcpServers: { firefox: { command: "npx", args: ["firefox-mcp"] }, rea: { command: "/rea", args: ["mcp"] } },
+			}),
+			"utf8",
+		);
+		const all = run(["mcp-002", "--mcp-all", "--dry-run"], { home });
+		assert.equal(all.status, 0, all.stderr);
+		assert.match(all.stdout, /ALL servers including browsers/);
+		assert.equal(existsSync(join(home, "experiments", "mcp-002", "agent", "mcp.json")), false);
+
+		const none = run(["mcp-003", "--no-mcp", "--dry-run"], { home });
+		assert.equal(none.status, 0, none.stderr);
+		const empty = JSON.parse(readFileSync(join(home, "experiments", "mcp-003", "agent", "mcp.json"), "utf8"));
+		assert.deepEqual(empty.mcpServers, {});
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("the browser pattern can be overridden for a misnamed server", () => {
+	const home = freshHome();
+	try {
+		writeFileSync(
+			join(home, "agent", "mcp.json"),
+			JSON.stringify({
+				mcpServers: { "web-ui": { command: "/x/y", args: [] }, rea: { command: "/rea", args: ["mcp"] } },
+			}),
+			"utf8",
+		);
+		const result = run(["mcp-004", "--mcp", "--dry-run"], {
+			home,
+			// The pattern is matched against "name command args url", so anchor on the name.
+			env: { AEGIS_MCP_BROWSER_PATTERN: "^web-ui\\b" },
+		});
+		assert.equal(result.status, 0, result.stderr);
+		const generated = JSON.parse(readFileSync(join(home, "experiments", "mcp-004", "agent", "mcp.json"), "utf8"));
+		assert.equal(generated.mcpServers["web-ui"].enabled, false);
+		assert.equal(generated.mcpServers.rea.enabled, undefined);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
