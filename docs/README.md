@@ -1,5 +1,7 @@
 # Aegis 设计文档
 
+项目总览、安装/快速上手、知识生产（wiki/卡片/CVE）和给 LLM 的准备提示词见根 [README](../README.md)。
+
 这里保存完整版的设计、验证方案和历史决策。旧 demo 的实现代码已经移除，
 本地归档分支为 `archive/demo-20260927`。当前工作区不应再从已删除的 demo
 路径恢复代码；新的实现以本文档和 `docs/MEMORY_SCHEMA.md` 为准。

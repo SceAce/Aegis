@@ -239,12 +239,37 @@ const DIRECTION_HINTS = {
 	misc: ["misc", "隐写", "stego", "流量", "pcap", "取证", "音频", "图片", "二维码", "压缩包", "编码", "osint"],
 };
 
-/** Category segment of a seed path, e.g. ctf-wiki/web/zh/... -> web. */
+/**
+ * Category segment of a seed path, e.g. ctf-wiki/web/zh/... -> web, or
+ * techniques/seeds/web-php-... -> web. Curated cards carry their category in the
+ * card id prefix, so a direction-filtered query must not silently drop them.
+ */
 function directionOfPath(path) {
 	const parts = String(path).split("/");
 	const index = parts.indexOf("ctf-wiki");
-	const segment = index >= 0 ? parts[index + 1] : parts[0];
-	return segment && DIRECTION_HINTS[segment] ? segment : null;
+	if (index >= 0) {
+		const segment = parts[index + 1];
+		return segment && DIRECTION_HINTS[segment] ? segment : null;
+	}
+	if (parts[0] === "seeds") {
+		const id = String(parts[1] ?? "").toLowerCase();
+		for (const direction of ["web", "crypto", "pwn", "misc"]) {
+			if (id.startsWith(`${direction}-`)) return direction;
+		}
+		if (id.startsWith("rev-")) return "reverse";
+	}
+	return null;
+}
+
+/** Curated local material is direction-neutral when its path has no category. */
+function isCuratedPath(path) {
+	const value = String(path);
+	return (
+		value.startsWith("seeds/") ||
+		value.startsWith("documents/") ||
+		value.startsWith("techniques/seeds/") ||
+		value.includes("/techniques/seeds/")
+	);
 }
 
 /** The direction the request itself names, or null when it does not say. */
@@ -272,6 +297,19 @@ function hasSpecificWord(record, words) {
 	);
 }
 
+/**
+ * Curated local material outranks the broad wiki when both match. Cards are
+ * human-reviewed hints and CVE documents are curated references; the wiki is a
+ * broad background corpus. The bonus is small enough that a much stronger wiki
+ * match still wins, but a tie no longer drops the card behind generic pages.
+ */
+function sourceBonus(record) {
+	const id = record.knowledge_id;
+	if (id.startsWith("seeds/") || id.startsWith("techniques/seeds/") || id.includes("/techniques/seeds/")) return 6;
+	if (id.startsWith("documents/") || id.includes("/documents/")) return 4;
+	return 0;
+}
+
 function score(record, words) {
 	const topic = canonicalText(record.topic);
 	const heading = canonicalText(record.section.join(" "));
@@ -285,7 +323,7 @@ function score(record, words) {
 		if (path.includes(word)) value += 1;
 	}
 	// Return substantive blocks before bare headings of the same topic.
-	return record.kind === "heading" ? value * 0.5 : value;
+	return (record.kind === "heading" ? value * 0.5 : value) + sourceBonus(record);
 }
 
 /** Read only the configured local tree. Limits and unavailable data are visible;
@@ -358,7 +396,12 @@ export async function selectKnowledge({
 	// absent from the corpus, so this never hides knowledge entirely.
 	const direction = ids.length === 0 ? directionOfQuery(words) : null;
 	const sameDirection =
-		direction === null ? records : records.filter((record) => directionOfPath(record.knowledge_id) === direction);
+		direction === null
+			? records
+			: records.filter((record) => {
+					const recordDirection = directionOfPath(record.knowledge_id);
+					return recordDirection === direction || (recordDirection === null && isCuratedPath(record.knowledge_id));
+				});
 	const pool = sameDirection.length > 0 ? sameDirection : records;
 	const rankedWithScore =
 		ids.length > 0

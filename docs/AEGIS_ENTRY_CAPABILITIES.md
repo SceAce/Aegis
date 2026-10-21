@@ -40,7 +40,7 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 - Observer 提供：`aegis_artifact_read`、`aegis_observe`、`aegis_execute`、`aegis_knowledge`、`aegis_web_search`、`aegis_remote_request`、`aegis_propose`、`aegis_switch_session`、`aegis_submit_candidate`；`/aegis` 人工命令（ui/status/board/ram/switch/close/hint/autoRemote/checkFlag/outcome/learn/compile/route/bind/run/replay）。
 - `/aegis hint <文本>` 在运行中注入当前 Episode 的人类提示（`/aegis hint clear` 撤回，`/aegis hint` 查看）。它写入 `runtime.note`（`human` 来源），投影为图板 Hint 与 RAM 的 `human_hint` 引用（`verified=false`、`action_policy=none`），不成为 Fact、规则、权限或预算，也不被新 Episode 继承。契约见 [字段补充](MEMORY_SCHEMA_NOTES.md)。
 - 只读界面：默认顶栏 + 右侧 rail + composer 提示；`F6`/`F7`/`F8`/`F9` 打开只读 Inspector（graph/board/evidence）。
-- 技法搜索：`aegis_web_search` 在本地语料无覆盖时查询 DeepSeek Search 的技法/CVE/tool 参考；当前 target host/任务 id/已见 WP slug 是 denylist，查询和结果都会过滤；默认只返回 summary，不抓全文；结果标 `verified=false`、`action_policy=none`，不是 Fact 或授权。`run-aegis.sh` / `run-pi.sh` 默认 `AEGIS_WEB_SEARCH=on`，key 从 `$AEGIS_HOME/agent` 的 DS 官方 provider 或 `DEEPSEEK_API_KEY` 读取；`--no-web-search` 可关闭。
+- 技法搜索：`aegis_web_search` 在本地语料无覆盖时查询 DeepSeek Search 的技法/CVE/tool 参考；当前 target host/任务 id/已见 WP slug 是 denylist，查询和结果都会过滤；默认只返回 summary；`include_content` 可为 technique/CVE/tool 返回有界正文（similar-task 不返回）；结果标 `verified=false`、`action_policy=none`，不是 Fact 或授权。`run-aegis.sh` / `run-pi.sh` 默认 `AEGIS_WEB_SEARCH=on`，key 从 `$AEGIS_HOME/agent` 的 DS 官方 provider 或 `DEEPSEEK_API_KEY` 读取；`--no-web-search` 可关闭。
 - 学习提示：若经验库中存在 active procedure，`context_with_system` 在 RAM `rules` 寄存器中携带只读 procedure hint（`trust=rule`、`not_authorization=true`）；它不执行动作、不授予权限，也不替代当前观测。
 - 边界：没有 Campaign Scheduler、请求/工具账本、独立 Oracle；工具退出码和模型文本不构成任务结果。
 

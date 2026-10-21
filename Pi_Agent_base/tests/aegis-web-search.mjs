@@ -219,6 +219,50 @@ test("searchWeb sends a bounded request, filters results and never echoes the ke
 	assert.ok(!JSON.stringify(result).includes("test-key"), "the key never reaches the model payload");
 });
 
+test("page content is opt-in, bounded, and never requested for a similar-task write-up", async () => {
+	let body = null;
+	const result = await searchWeb({
+		query: "PHP disable_functions bypass",
+		purpose: "technique",
+		includeContent: true,
+		config: config(),
+		apiKey: "test-key",
+		fetchImpl: async (_url, init) => {
+			body = JSON.parse(init.body);
+			return response(200, {
+				results: [
+					{
+						title: "PHP bypass",
+						url: "https://example.com/php",
+						summary: "summary",
+						content: "x".repeat(5000),
+					},
+				],
+			});
+		},
+	});
+	assert.equal(body.need_content, true);
+	assert.equal(result.results[0].content.length, 2000);
+	assert.equal(result.include_content, true);
+
+	const similar = await searchWeb({
+		query: "similar PHP disable_functions writeup",
+		purpose: "similar-task",
+		includeContent: true,
+		config: config(),
+		apiKey: "test-key",
+		fetchImpl: async (_url, init) => {
+			body = JSON.parse(init.body);
+			return response(200, {
+				results: [{ title: "similar", url: "https://example.com/similar", summary: "summary", content: "full" }],
+			});
+		},
+	});
+	assert.equal(body.need_content, false);
+	assert.equal(similar.results[0].content, undefined);
+	assert.equal(similar.include_content, false);
+});
+
 test("HTTP failures are reported, not retried or hidden", async () => {
 	for (const [status, expected] of [
 		[401, "http_401"],

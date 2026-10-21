@@ -9,7 +9,7 @@
 ## 本地目录
 
 - `~/.Aegis/knowledge/ctf-wiki/`：默认使用的 GitHub Markdown 编译产物（772 个 seed），按 `web/`、`pwn/`、`crypto/`、`reverse/` 等分类，语言作为子目录。SQL 注入位于 `ctf-wiki/web/`。
-- `~/.Aegis/knowledge/techniques/`：47 张人工技法卡及其 `seeds/`、`cards.json`、`build_cards.py`。2026-10-21 从仓库迁入；这是本地唯一副本，不再纳入 Git。
+- `~/.Aegis/knowledge/techniques/`：55 张人工技法卡（原 47 张 + 8 张 CVE/技法卡）及其 `seeds/`、`cards.json`、`build_cards.py`。2026-10-21 从仓库迁入；这是本地唯一副本，不再纳入 Git。
 - `~/.Aegis/knowledge/documents/`：`run-ram-test.sh --compile FILE.md` 编译的本地文档 seed。
 - 旧的站点抓取归档 `ctf-wiki-crawl` 已在本地删除；检索仍保留对该目录名的排除，以防将来误复制回来。
 
@@ -38,7 +38,7 @@ C6 默认 SDK 工具白名单包含 `aegis_knowledge`，其工具调用继续经
 
 - 配置：`AEGIS_WEB_SEARCH=on|off`（`run-aegis.sh` / `run-pi.sh` / `run-experiment.sh` 默认 on；独立进程默认 off）；`AEGIS_SEARCH_COUNT`（1–10，默认 5）；`AEGIS_SEARCH_MAX_CALLS`（每 Episode，默认 8）；`AEGIS_SEARCH_TIMEOUT_MS`；`AEGIS_SEARCH_DENY`（逗号分隔的本题/挑战名/域名，人工补充）。
 - Key：优先 `AEGIS_SEARCH_API_KEY` / `DEEPSEEK_API_KEY`；否则从默认 agent 配置读取 `api.deepseek.com` provider 的 key（`$AEGIS_HOME/agent/{models,auth}.json`，默认 `deedeepseek`）。不读取 `~/.pi`，不打印 key。
-- 策略：`purpose` 只能是 `technique` / `cve` / `tool` / `similar-task`；当前 target 的 host、注册域、port、task id，以及本次 Episode 已提交命令/提案里出现的 WP host/slug 自动加入 denylist；查询命中即拒绝，结果命中即丢弃；`writeup` / `wp` / `题解` / `复现` 只允许 `purpose=similar-task`，且仍不得包含本题标识。默认只取 `summary/snippet`，不请求全文、不抓取页面。
+- 策略：`purpose` 只能是 `technique` / `cve` / `tool` / `similar-task`；当前 target 的 host、注册域、port、task id，以及本次 Episode 已提交命令/提案里出现的 WP host/slug 自动加入 denylist；查询命中即拒绝，结果命中即丢弃；`writeup` / `wp` / `题解` / `复现` 只允许 `purpose=similar-task`，且仍不得包含本题标识。默认只取 `summary/snippet`；`include_content=true` 可为 `technique`/`cve`/`tool` 请求每条最多 2000 字符的有界正文，`similar-task` 永远只返回摘要。不按任意 URL 抓取页面，不执行页面内容。
 - 审计：每次调用（包括拒绝、未配置、HTTP 错误）写 `runtime.note kind="web.search"`，含 status、query、purpose、返回/过滤数量、结果 URL/摘要、预算和 `key_source`（不含 key）。成功结果在 Board 上是 `Artifact`，不是 `Fact`；`verified=false`、`action_policy=none`。模型必须在真实目标上复验。
 - 计费/失败：Search 按成功请求计费；401/402/403/404/408/429/5xx 明确返回，不自动重试。预算按 Episode 统计 `attempted=true` 的记录。
 

@@ -176,7 +176,7 @@ export function validateSearchRequest({ query, purpose = "technique", count = 5,
 }
 
 /** Drop results that mention the current target/challenge. */
-export function filterSearchResults(results, denyTokens = []) {
+export function filterSearchResults(results, denyTokens = [], { includeContent = false } = {}) {
 	const denied = new Set((Array.isArray(denyTokens) ? denyTokens : []).map(normalizeToken).filter(Boolean));
 	const allowed = [];
 	let dropped = 0;
@@ -214,6 +214,9 @@ export function filterSearchResults(results, denyTokens = []) {
 			url,
 			snippet: bounded(row.snippet, 400),
 			summary: bounded(row.summary, MAX_SUMMARY_CHARS),
+			...(includeContent && typeof row.content === "string" && row.content.trim()
+				? { content: bounded(row.content, 2000) }
+				: {}),
 			score: typeof row.rerank_score === "number" ? row.rerank_score : null,
 			authority: Number.isInteger(row.authority) ? row.authority : -1,
 			date: typeof row.date === "string" ? row.date : null,
@@ -323,6 +326,7 @@ export async function searchWeb({
 	query,
 	purpose = "technique",
 	count = 5,
+	includeContent = false,
 	denyTokens = [],
 	config,
 	apiKey = null,
@@ -331,6 +335,10 @@ export async function searchWeb({
 } = {}) {
 	const checked = validateSearchRequest({ query, purpose, count, denyTokens });
 	if (!checked.ok) return { ...checked, attempted: false };
+	// Full page content is only for technique/CVE/tool references. A
+	// similar-task result stays a summary: the operator may reuse the technique,
+	// not copy a write-up wholesale.
+	const contentRequested = includeContent === true && checked.purpose !== "similar-task";
 	if (!config || config.enabled !== true)
 		return { ok: false, status: "disabled", reason: "web search is disabled (AEGIS_WEB_SEARCH=off)", attempted: false };
 	if (!config.endpoint_ok)
@@ -359,7 +367,11 @@ export async function searchWeb({
 				Authorization: `Bearer ${key.key}`,
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify({ query: checked.query, count: checked.count, need_content: false }),
+			body: JSON.stringify({
+				query: checked.query,
+				count: checked.count,
+				need_content: contentRequested,
+			}),
 			signal: controller.signal,
 		});
 	} catch (error) {
@@ -392,13 +404,14 @@ export async function searchWeb({
 		return { ok: false, status: "invalid_response", reason: "search response is not JSON", attempted: true };
 	}
 	const rows = Array.isArray(body?.results) ? body.results : [];
-	const filtered = filterSearchResults(rows, denyTokens);
+	const filtered = filterSearchResults(rows, denyTokens, { includeContent: contentRequested });
 	return {
 		ok: true,
 		status: "ok",
 		query: checked.query,
 		purpose: checked.purpose,
 		requested_count: checked.count,
+		include_content: contentRequested,
 		results: filtered.allowed,
 		total: rows.length,
 		filtered: filtered.dropped,

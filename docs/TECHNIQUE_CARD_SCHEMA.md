@@ -3,7 +3,7 @@
 状态：**设计提案，待确认**。本文只做字段语义分析与迁移方案，不代表已实现。
 基线：`1ec6cd7`（2026-10-21）。契约依据 [MEMORY_SCHEMA](MEMORY_SCHEMA.md) §6。
 
-> 2026-10-21 路径更新：仓库 `knowledge/` 已删除；47 张卡及其 `build_cards.py`、`cards.json`、`seeds/` 现位于 `$AEGIS_HOME/knowledge/techniques/`（默认 `~/.Aegis/knowledge/techniques/`），不再纳入 Git。下文历史路径保留为当时基线；当前操作路径以 [KNOWLEDGE_RUNTIME.md](KNOWLEDGE_RUNTIME.md) 为准。
+> 2026-10-21 路径更新：仓库 `knowledge/` 已删除；卡片及其 `build_cards.py`、`cards.json`、`seeds/` 现位于 `$AEGIS_HOME/knowledge/techniques/`（默认 `~/.Aegis/knowledge/techniques/`），不再纳入 Git。随后新增 8 张 CVE/技法卡（PHP disable_functions/open_basedir、PHP7 backtrace、PwnKit、SUID/readflag、Java 反序列化、CVE triage），当前共 **55 张**。下文出现的 47 张/分类数字是迁移前的历史基线；当前操作路径与数量以 [KNOWLEDGE_RUNTIME.md](KNOWLEDGE_RUNTIME.md) 和本地 `INVENTORY.md` 为准。
 
 ## 1. 现状事实
 
