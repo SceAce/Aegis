@@ -71,6 +71,7 @@ function guardEnabled(): boolean {
 // ---------------------------------------------------------------------------
 
 export interface ContestCard {
+	schema_version: string;
 	id: string;
 	revision: string;
 	title: string;
@@ -125,16 +126,29 @@ function asStringArray(value: unknown): string[] {
 
 // Parse and validate one card. Unknown/malformed cards are dropped (fail to
 // "no card"), never widened into a wildcard or promoted.
+/**
+ * Read a failure message from a `{ok:false, reason|error}` result produced by an
+ * unchecked .mjs module. Those unions do not narrow in this program, so the read
+ * is centralised here rather than cast at every call site.
+ */
+function failureReason(result: unknown, fallback = "unknown failure"): string {
+	if (!result || typeof result !== "object") return fallback;
+	const record = result as { reason?: unknown; error?: unknown };
+	const value = typeof record.reason === "string" && record.reason ? record.reason : record.error;
+	return typeof value === "string" && value ? value : fallback;
+}
+
 function parseCard(value: unknown, index: number): { card?: ContestCard; error?: string } {
 	// Schema, validation and v1 compatibility live in ONE place:
 	// contest/card-schema.mjs. This adapter only maps it to the display shape the
 	// extension renders, and derives the legacy `status` label.
 	const parsed = parseCardV2(value, { index });
-	if (!parsed.ok) return { error: parsed.reason };
+	if (!("card" in parsed)) return { error: failureReason(parsed, "invalid card") };
 	const card = parsed.card;
 	const injectableShape = card.curation === "reviewed" && card.evidence && card.evidence.kind !== "none";
 	return {
 		card: {
+			schema_version: card.schema_version,
 			id: card.id,
 			revision: card.revision,
 			title: card.title,
@@ -180,16 +194,26 @@ async function loadScriptDigestIndex(): Promise<void> {
 	const path = scriptConfigPath();
 	if (!path) return;
 	try {
-		const mod = (await import(pathToFileURL(resolve(path)).href)) as {
-			scripts?: unknown;
-			default?: unknown;
-		};
-		const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-		const candidate = Array.isArray(mod.scripts)
-			? mod.scripts
-			: asArray((mod.default as { scripts?: unknown })?.scripts).length > 0
-				? asArray((mod.default as { scripts?: unknown }).scripts)
-				: asArray(mod.default);
+		// A .json file is a ROSTER: a flat, human-scannable list where the Oracle is
+		// data (`verify_spec`) instead of a function. Anything else is imported as a
+		// module exposing `scripts` (the function form).
+		let candidate: unknown[];
+		if (path.toLowerCase().endsWith(".json")) {
+			const parsed = JSON.parse(await readFile(resolve(path), "utf8")) as { scripts?: unknown };
+			candidate = Array.isArray(parsed?.scripts) ? parsed.scripts : [];
+			if (candidate.length === 0) throw new Error("roster has no scripts[]");
+		} else {
+			const mod = (await import(pathToFileURL(resolve(path)).href)) as {
+				scripts?: unknown;
+				default?: unknown;
+			};
+			const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+			candidate = Array.isArray(mod.scripts)
+				? mod.scripts
+				: asArray((mod.default as { scripts?: unknown })?.scripts).length > 0
+					? asArray((mod.default as { scripts?: unknown }).scripts)
+					: asArray(mod.default);
+		}
 		const registry = createScriptRegistry({ scripts: candidate });
 		scriptDigestIndex = scriptDigestResolver(registry);
 	} catch (error) {
@@ -567,7 +591,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 			cards_error: cached.error,
 			guard_enabled: guardEnabled(),
 		});
-		if (!written.ok) reportLogFailure(ctx, written.error);
+		if (!written.ok) reportLogFailure(ctx, failureReason(written));
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -632,7 +656,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 		const written = await log.append(decision as Record<string, unknown>);
 		if (!written.ok) {
 			invalidRequests += 1;
-			reportLogFailure(ctx, written.error);
+			reportLogFailure(ctx, failureReason(written));
 			process.stderr.write(
 				`[aegis-contest] injection NOT applied this request because the decision could not be logged; this episode is invalid for A/B\n`,
 			);
@@ -717,7 +741,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 				.update(JSON.stringify(event.input ?? null))
 				.digest("hex")}`,
 		});
-		if (!written.ok) reportLogFailure(ctx, written.error);
+		if (!written.ok) reportLogFailure(ctx, failureReason(written));
 
 		if (!guardEnabled()) return undefined;
 		if (event.toolName === "bash" && typeof (event.input as { command?: unknown })?.command === "string") {
@@ -734,7 +758,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 					tool_call_id: event.toolCallId,
 					reason: violation,
 				});
-				if (!blockedLog.ok) reportLogFailure(ctx, blockedLog.error);
+				if (!blockedLog.ok) reportLogFailure(ctx, failureReason(blockedLog));
 				return { block: true, reason: `Aegis contest guard: ${violation}` };
 			}
 		}
@@ -752,7 +776,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 			tool_call_id: event.toolCallId,
 			is_error: event.isError === true,
 		});
-		if (!written.ok) reportLogFailure(ctx, written.error);
+		if (!written.ok) reportLogFailure(ctx, failureReason(written));
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {
@@ -764,7 +788,7 @@ export default function aegisContest(pi: ExtensionAPI): void {
 			event: "agent_settled",
 			status_hint: "unknown",
 		});
-		if (!written.ok) reportLogFailure(ctx, written.error);
+		if (!written.ok) reportLogFailure(ctx, failureReason(written));
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

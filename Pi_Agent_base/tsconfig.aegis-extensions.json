@@ -1,0 +1,53 @@
+{
+	// Aegis-owned type-check config for the Pi EXTENSION sources only.
+	//
+	// Why a third config instead of extending the other two:
+	//   * tsconfig.aegis.json is documented as "Batch-E learning modules ONLY";
+	//   * tsconfig.aegis-campaign.json is documented as the Campaign product set.
+	// Both deliberately exclude extensions/ and say so in their own comments, so
+	// adding extensions there would silently widen a documented scope and move
+	// baselines that other reports cite. Extensions get their own honest baseline
+	// here instead.
+	//
+	// The extensions are untyped-ish TS that import the author-JS .mjs runtime, so
+	// the same non-strict structural settings are used. The goal is to catch real
+	// errors (missing imports, wrong property names, bad arity), not to enforce
+	// strict mode over a pre-existing codebase.
+	//
+	// The two `@earendil-works/*` packages come from the embedded Pi repo; without
+	// an explicit `paths` mapping NodeNext would walk up from extensions/ and never
+	// find them.
+	"compilerOptions": {
+		"target": "ES2024",
+		// The extensions are ESM TypeScript (Pi bundles them with esbuild). NodeNext
+		// would infer CommonJS because Pi_Agent_base has no package.json, which makes
+		// `import.meta` an error even though the runtime uses it.
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"lib": ["ES2024"],
+		"strict": false,
+		"noImplicitAny": false,
+		"strictNullChecks": false,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowJs": true,
+		"checkJs": false,
+		"allowImportingTsExtensions": true,
+		"types": ["node"],
+		"typeRoots": ["./pi/node_modules/@types"],
+		// Resolve to the BUILT declarations, not pi's sources: pi is a separate
+		// repository whose own tsconfig covers its sources, and pointing here would
+		// drag its internal files into this program.
+		"paths": {
+			"@earendil-works/pi-coding-agent": ["./pi/node_modules/@earendil-works/pi-coding-agent"],
+			"@earendil-works/pi-coding-agent/*": ["./pi/node_modules/@earendil-works/pi-coding-agent/dist/*"],
+			"@earendil-works/pi-ai": ["./pi/node_modules/@earendil-works/pi-ai"],
+			"@earendil-works/pi-ai/*": ["./pi/node_modules/@earendil-works/pi-ai/dist/*"],
+			"@earendil-works/pi-tui": ["./pi/node_modules/@earendil-works/pi-tui"],
+			"@earendil-works/pi-tui/*": ["./pi/node_modules/@earendil-works/pi-tui/dist/*"]
+		}
+	},
+	"include": ["extensions/*.ts"],
+	"exclude": ["pi/**", "node_modules/**"]
+}

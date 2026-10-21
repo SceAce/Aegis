@@ -18,6 +18,45 @@
 // Experience carry arbitrary scripts" as an open question, so this module must
 // not answer it by smuggling code into cards.
 
+/**
+ * @typedef {object} CardEvidence
+ * @property {"none"|"document"|"outcome"|"reproduction"} kind
+ * @property {string[]} refs
+ * @property {string} [implementation_digest]
+ */
+
+/**
+ * @typedef {object} CardSource
+ * @property {string} kind
+ * @property {string} uri
+ * @property {string} [digest]
+ * @property {string} [commit]
+ * @property {string} [section]
+ */
+
+/**
+ * @typedef {object} Card
+ * @property {string} schema_version
+ * @property {string} id
+ * @property {string} revision
+ * @property {string} title
+ * @property {"draft"|"reviewed"|"disputed"} curation
+ * @property {CardEvidence} evidence
+ * @property {{task_category: string, environment: string}} scope
+ * @property {string[]} triggers
+ * @property {string[]} [preconditions]
+ * @property {string[]} hint
+ * @property {string[]} [postconditions]
+ * @property {string|null} [verification]
+ * @property {string[]} [limits]
+ * @property {CardSource} [source]
+ * @property {{by: string, at?: string, against_commit?: string}} [review]
+ */
+
+/**
+ * @typedef {(scriptId: string, version: number) => string | null} ScriptDigestResolver
+ */
+
 export const CARD_SCHEMA_VERSION = "2.0";
 export const CURATION_VALUES = Object.freeze(["draft", "reviewed", "disputed"]);
 export const EVIDENCE_KINDS = Object.freeze(["none", "document", "outcome", "reproduction"]);
@@ -63,7 +102,8 @@ function boundedString(value, maxLength = MAX_STRING) {
 
 /**
  * Parse a `script:<id>@<version>` reference.
- * @returns {{scriptId: string, version: number} | null}
+ * @param {unknown} ref
+ * @returns {{scriptId: string, version: number|null} | null}
  */
 export function parseScriptRef(ref) {
 	if (typeof ref !== "string") return null;
@@ -75,7 +115,8 @@ export function parseScriptRef(ref) {
 /**
  * Validate a v2 evidence block. `reproduction` must reference a registered
  * script action and pin its digest; refs of other kinds are opaque labels.
- * @returns {{ok: boolean, reason?: string, evidence?: object}}
+ * @param {unknown} raw
+ * @returns {{ok: true, evidence: CardEvidence} | {ok: false, reason: string}}
  */
 export function parseEvidence(raw) {
 	if (raw === undefined || raw === null) return { ok: true, evidence: { kind: "none", refs: [] } };
@@ -111,7 +152,11 @@ export function parseEvidence(raw) {
 	return { ok: true, evidence: { kind, refs } };
 }
 
-/** Reject any field that would make a card carry executable content. */
+/**
+ * Reject any field that would make a card carry executable content.
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
 export function findForbiddenFields(raw) {
 	if (!raw || typeof raw !== "object") return [];
 	const found = [];
@@ -137,6 +182,11 @@ export function findForbiddenFields(raw) {
  * trigger was observed. `reproduction` additionally requires the digest to match
  * the registered script action.
  */
+/**
+ * @param {Card | null | undefined} card
+ * @param {{scopeMatches?: boolean, triggersMet?: boolean, scriptDigests?: ScriptDigestResolver | Record<string, unknown> | null}} [options]
+ * @returns {boolean}
+ */
 export function isInjectable(card, { scopeMatches = true, triggersMet = true, scriptDigests = null } = {}) {
 	if (!card || typeof card !== "object") return false;
 	if (!CURATION_VALUES.includes(card.curation)) return false;
@@ -150,6 +200,11 @@ export function isInjectable(card, { scopeMatches = true, triggersMet = true, sc
 /**
  * Explain why a reproduction card cannot be trusted, or null when it checks out.
  * Kept separate from `isInjectable` so callers can report a precise reason.
+ */
+/**
+ * @param {Card | null | undefined} card
+ * @param {ScriptDigestResolver | Record<string, unknown> | null} scriptDigests
+ * @returns {string | null}
  */
 export function reproductionProblem(card, scriptDigests) {
 	const evidence = card?.evidence;
@@ -197,6 +252,10 @@ function resolveDigest(scriptDigests, scriptId, version) {
  * The pinned implementation digest is the script body when the registration runs
  * through an interpreter (that file IS the technique), otherwise the executable.
  */
+/**
+ * @param {unknown} registry
+ * @returns {ScriptDigestResolver | null}
+ */
 export function scriptDigestResolver(registry) {
 	if (!registry || typeof registry.get !== "function") return null;
 	return (scriptId, version) => {
@@ -211,12 +270,14 @@ export function scriptDigestResolver(registry) {
 
 /**
  * Parse one card. Accepts v2 and v1.
+ * @param {unknown} raw
+ * @param {{index?: number}} [options]
  *
  * v1 mapping: status=verified -> curation=reviewed + evidence document (the v1
  * field was only ever set on wiki-derived cards); status=candidate -> draft;
  * `when` -> `triggers`; `expect` -> `postconditions`.
  *
- * @returns {{ok: true, card: object} | {ok: false, reason: string}}
+ * @returns {{ok: true, card: Card} | {ok: false, reason: string}}
  */
 export function parseCard(raw, { index = 0 } = {}) {
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -344,7 +405,8 @@ function parseReview(raw) {
 
 /**
  * Parse a whole card file: either `{cards: [...]}` or a bare array.
- * @returns {{ok: boolean, cards: object[], errors: string[]}}
+ * @param {unknown} value
+ * @returns {{ok: boolean, cards: Card[], errors: string[]}}
  */
 export function parseCards(value) {
 	const list = Array.isArray(value) ? value : value && typeof value === "object" ? value.cards : null;

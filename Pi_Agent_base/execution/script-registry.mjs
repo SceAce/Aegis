@@ -7,6 +7,11 @@
 // supply DATA arguments; it can never supply the executable, the argv shape or
 // any executable text.
 //
+// Registrations may arrive as a JavaScript module (a `verify` FUNCTION) or as a
+// JSON roster (a declarative `verify_spec`). A roster is a lookup table a human
+// can scan; `compileVerifySpec` turns its data into the same Oracle contract, and
+// the check still re-reads the real post-state instead of trusting stdout/exit.
+//
 // Rejections that matter:
 //   * no configuration -> `unconfigured`; the runtime never self-registers a
 //     contest/remote script;
@@ -19,15 +24,41 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
-import { digest, resolveInside, sha256Hex } from "../shared/contracts.mjs";
-import { defineContract, implementationDigest, newOutcomeId, validateParameters, validatePredicateShape } from "./action-contract.mjs";
+import { digest, evaluatePredicates, getPath, sha256Hex } from "../shared/contracts.mjs";
+import { defineContract, newOutcomeId, validateParameters, validatePredicateShape } from "./action-contract.mjs";
 
 export const SCRIPT_SCHEMA_VERSION = "1.0";
-export const FORBIDDEN_EXECUTABLES = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"]);
+export const FORBIDDEN_EXECUTABLES = new Set([
+	"sh",
+	"bash",
+	"zsh",
+	"dash",
+	"ksh",
+	"fish",
+	"csh",
+	"tcsh",
+	"cmd",
+	"cmd.exe",
+	"powershell",
+	"powershell.exe",
+	"pwsh",
+	"pwsh.exe",
+]);
 export const FORBIDDEN_ARGV_TOKENS = new Set(["-e", "--eval", "-c", "-Command", "-EncodedCommand", "--command"]);
 // Interpreters that must have their SCRIPT ARGUMENT pinned separately (the
 // interpreter binary alone is not enough if the script can be swapped out).
-export const INTERPRETER_BASENAMES = new Set(["node", "node.exe", "python", "python3", "python3.11", "python3.12", "ruby", "perl", "deno", "bun"]);
+export const INTERPRETER_BASENAMES = new Set([
+	"node",
+	"node.exe",
+	"python",
+	"python3",
+	"python3.11",
+	"python3.12",
+	"ruby",
+	"perl",
+	"deno",
+	"bun",
+]);
 const MAX_CAPTURE_BYTES = 256 * 1024;
 
 /** True when this executable is a known interpreter needing a pinned script arg. */
@@ -44,58 +75,195 @@ export function executableDigest(path) {
 }
 
 /** Static review of one script registration. Returns `{ok, reasons}`. */
+/** Oracle kinds a JSON roster may request. Each re-reads real state. */
+export const VERIFY_SPEC_KINDS = Object.freeze(["json_post_state"]);
+
+/**
+ * @typedef {object} VerifySpecCheck
+ * @property {string} path  Dotted or JSON-pointer path in the post-state.
+ * @property {"eq"|"neq"|"exists"} op
+ * @property {unknown} [value]
+ */
+
+/**
+ * @typedef {object} VerifySpec
+ * @property {"json_post_state"} kind
+ * @property {string} resource  Bound output parameter whose file is re-read.
+ * @property {VerifySpecCheck[]} checks
+ */
+
+/**
+ * @typedef {{ok: boolean, reason: string, expected?: unknown, observed?: unknown}} VerifyResult
+ */
+
+/**
+ * Validate a declarative Oracle spec (the JSON-roster form of `verify`).
+ * @param {unknown} spec
+ * @returns {{ok: boolean, reasons: string[]}}  `reasons` is empty when ok.
+ */
+export function validateVerifySpec(spec) {
+	if (!spec || typeof spec !== "object" || Array.isArray(spec)) return { ok: false, reasons: ["verify_spec must be an object"] };
+	const value = /** @type {VerifySpec} */ (spec);
+	const reasons = [];
+	if (!VERIFY_SPEC_KINDS.includes(value.kind)) {
+		reasons.push(`verify_spec.kind must be one of ${VERIFY_SPEC_KINDS.join(", ")}`);
+	}
+	if (typeof value.resource !== "string" || !value.resource) {
+		reasons.push("verify_spec.resource is required (a bound output parameter name)");
+	}
+	if (!Array.isArray(value.checks) || value.checks.length === 0) {
+		reasons.push("verify_spec.checks must be a non-empty array");
+	} else {
+		for (const [index, check] of value.checks.entries()) {
+			reasons.push(...validatePredicateShape(check, `verify_spec.checks[${index}]`));
+		}
+	}
+	return { ok: reasons.length === 0, reasons };
+}
+
+/**
+ * Compile a declarative Oracle spec into the `verify({observed})` contract.
+ *
+ * The compiled Oracle resolves the bound output path from the run's
+ * `resource_bindings`, reads it from disk and re-parses it. It never looks at the
+ * script's stdout, exit code or the caller's claims.
+ *
+ * @param {unknown} spec
+ * @returns {(input?: {observed?: {resource_bindings?: Record<string, string>}}) => VerifyResult}
+ */
+export function compileVerifySpec(spec) {
+	const review = validateVerifySpec(spec);
+	if (!review.ok) throw new Error(`invalid verify_spec: ${review.reasons.join("; ")}`);
+	const value = /** @type {VerifySpec} */ (spec);
+	return (/** @type {{observed?: {resource_bindings?: Record<string, string>}}} */ input = {}) => {
+		const bindings = input.observed?.resource_bindings;
+		const target = bindings ? bindings[value.resource] : undefined;
+		if (typeof target !== "string" || !target) {
+			return { ok: false, reason: `no bound "${value.resource}" output to re-read` };
+		}
+		/** @type {any} */
+		let state;
+		try {
+			state = JSON.parse(readFileSync(target, "utf8"));
+		} catch (error) {
+			return {
+				ok: false,
+				reason: `could not re-read ${value.kind} at ${target}: ${error instanceof Error ? error.message : String(error)}`,
+			};
+		}
+		const satisfied = state !== null && typeof state === "object" && evaluatePredicates(state, value.checks);
+		const actual = Object.fromEntries(value.checks.map((check) => [check.path, getPath(state, check.path)]));
+		return satisfied
+			? { ok: true, reason: `independent ${value.kind} re-read agrees`, expected: value.checks, observed: actual }
+			: {
+					ok: false,
+					reason: `independent ${value.kind} re-read does not satisfy the checks`,
+					expected: value.checks,
+					observed: actual,
+				};
+	};
+}
+
 export function validateScriptRegistration(registration) {
 	const reasons = [];
-	if (!registration || typeof registration !== "object") return { ok: false, reasons: ["registration must be an object"] };
-	if (registration.schema_version !== SCRIPT_SCHEMA_VERSION) reasons.push(`schema_version must be ${SCRIPT_SCHEMA_VERSION}`);
+	if (!registration || typeof registration !== "object")
+		return { ok: false, reasons: ["registration must be an object"] };
+	if (registration.schema_version !== SCRIPT_SCHEMA_VERSION)
+		reasons.push(`schema_version must be ${SCRIPT_SCHEMA_VERSION}`);
 	if (typeof registration.id !== "string" || !registration.id) reasons.push("id is required");
-	if (!Number.isInteger(registration.version) || registration.version < 1) reasons.push("version must be a positive integer");
+	if (!Number.isInteger(registration.version) || registration.version < 1)
+		reasons.push("version must be a positive integer");
 	if (typeof registration.executable !== "string" || !registration.executable) reasons.push("executable is required");
 	else if (!isAbsolute(registration.executable)) reasons.push("executable must be an absolute path");
-	else if (FORBIDDEN_EXECUTABLES.has(basename(registration.executable).toLowerCase())) reasons.push(`shell interpreter is not an allowed executable: ${basename(registration.executable)}`);
-	if (typeof registration.executable_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(registration.executable_digest)) reasons.push("executable_digest (sha256) is required for version pinning");
-	if (!Array.isArray(registration.argv_template) || !registration.argv_template.every((token) => typeof token === "string")) reasons.push("argv_template must be an array of strings");
-	else for (const token of registration.argv_template) if (FORBIDDEN_ARGV_TOKENS.has(token)) reasons.push(`argv_template contains a forbidden eval/shell token: ${token}`);
+	else if (FORBIDDEN_EXECUTABLES.has(basename(registration.executable).toLowerCase()))
+		reasons.push(`shell interpreter is not an allowed executable: ${basename(registration.executable)}`);
+	if (
+		typeof registration.executable_digest !== "string" ||
+		!/^sha256:[0-9a-f]{64}$/.test(registration.executable_digest)
+	)
+		reasons.push("executable_digest (sha256) is required for version pinning");
+	if (
+		!Array.isArray(registration.argv_template) ||
+		!registration.argv_template.every((token) => typeof token === "string")
+	)
+		reasons.push("argv_template must be an array of strings");
+	else
+		for (const token of registration.argv_template)
+			if (FORBIDDEN_ARGV_TOKENS.has(token))
+				reasons.push(`argv_template contains a forbidden eval/shell token: ${token}`);
 
 	// Interpreter + script pinning: when the executable is a general interpreter,
 	// the SCRIPT FILE it runs must be pinned by digest too. Otherwise a human could
 	// swap the script body without changing any reviewed digest.
 	if (typeof registration.executable === "string" && isInterpreter(registration.executable)) {
-		if (typeof registration.script_path !== "string" || !registration.script_path || !isAbsolute(registration.script_path)) {
+		if (
+			typeof registration.script_path !== "string" ||
+			!registration.script_path ||
+			!isAbsolute(registration.script_path)
+		) {
 			reasons.push("an interpreter registration requires an absolute script_path (the script to run)");
 		}
 		if (registration.script_path) {
 			if (!existsSync(registration.script_path)) reasons.push("script_path does not exist");
-			else if (typeof registration.script_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(registration.script_digest)) reasons.push("script_digest (sha256) is required to pin the script body for an interpreter registration");
-			else if (registration.script_digest !== executableDigest(registration.script_path)) reasons.push("script_digest does not match the registered script file");
+			else if (
+				typeof registration.script_digest !== "string" ||
+				!/^sha256:[0-9a-f]{64}$/.test(registration.script_digest)
+			)
+				reasons.push("script_digest (sha256) is required to pin the script body for an interpreter registration");
+			else if (registration.script_digest !== executableDigest(registration.script_path))
+				reasons.push("script_digest does not match the registered script file");
 		}
-		const templateHasScript = Array.isArray(registration.argv_template) && registration.argv_template.includes(registration.script_path);
-		if (registration.script_path && !templateHasScript) reasons.push("the argv_template must reference script_path as an executable token");
+		const templateHasScript =
+			Array.isArray(registration.argv_template) && registration.argv_template.includes(registration.script_path);
+		if (registration.script_path && !templateHasScript)
+			reasons.push("the argv_template must reference script_path as an executable token");
 	}
 
-	if (typeof registration.allowed_root !== "string" || !registration.allowed_root || !isAbsolute(registration.allowed_root)) reasons.push("allowed_root (absolute workspace path) is required");
-	if (typeof registration.cwd !== "string" || !registration.cwd || !isAbsolute(registration.cwd)) reasons.push("cwd (absolute path) is required");
+	if (
+		typeof registration.allowed_root !== "string" ||
+		!registration.allowed_root ||
+		!isAbsolute(registration.allowed_root)
+	)
+		reasons.push("allowed_root (absolute workspace path) is required");
+	if (typeof registration.cwd !== "string" || !registration.cwd || !isAbsolute(registration.cwd))
+		reasons.push("cwd (absolute path) is required");
 	// cwd must be inside the allowed root (real, symlink-resolved). A lexical
 	// check alone would let a symlinked cwd escape.
-	if (typeof registration.allowed_root === "string" && isAbsolute(registration.allowed_root) && typeof registration.cwd === "string" && isAbsolute(registration.cwd)) {
+	if (
+		typeof registration.allowed_root === "string" &&
+		isAbsolute(registration.allowed_root) &&
+		typeof registration.cwd === "string" &&
+		isAbsolute(registration.cwd)
+	) {
 		const cwdCheck = insideRoot(registration.allowed_root, registration.cwd);
 		if (!cwdCheck.ok) reasons.push(`cwd must be inside allowed_root: ${cwdCheck.reason}`);
 	}
-	if (!registration.parameters || typeof registration.parameters !== "object" || Array.isArray(registration.parameters)) reasons.push("parameters must be an object schema");
+	if (!registration.parameters || typeof registration.parameters !== "object" || Array.isArray(registration.parameters))
+		reasons.push("parameters must be an object schema");
 	else {
 		for (const [name, spec] of Object.entries(registration.parameters)) {
-			if (!spec || typeof spec !== "object" || typeof spec.type !== "string") reasons.push(`parameter ${name} needs a type`);
+			if (!spec || typeof spec !== "object" || typeof spec.type !== "string")
+				reasons.push(`parameter ${name} needs a type`);
 			// A resource parameter (filesystem path) MUST declare its direction so the
 			// runtime can bound it to allowed_root BEFORE any effect. `in` must exist
 			// inside the root; `out` must resolve inside the root too.
 			if (spec && spec.direction !== undefined) {
-				if (spec.direction !== "in" && spec.direction !== "out") reasons.push(`parameter ${name} direction must be "in" or "out"`);
-				else if (spec.type !== "string") reasons.push(`parameter ${name} declares a resource direction and must be a string`);
+				if (spec.direction !== "in" && spec.direction !== "out")
+					reasons.push(`parameter ${name} direction must be "in" or "out"`);
+				else if (spec.type !== "string")
+					reasons.push(`parameter ${name} declares a resource direction and must be a string`);
 			}
 		}
 	}
-	if (typeof registration.verify !== "function") reasons.push("a registered post-condition verify() Oracle is required");
-	if (registration.network === true && registration.risk_class === "observe") reasons.push("network=true cannot be risk_class=observe");
+	if (typeof registration.verify === "function") {
+		if (registration.verify_spec !== undefined) reasons.push("declare either verify() or verify_spec, not both");
+	} else if (registration.verify_spec !== undefined) {
+		reasons.push(...validateVerifySpec(registration.verify_spec).reasons);
+	} else {
+		reasons.push("a registered post-condition Oracle is required: verify() or verify_spec (JSON roster)");
+	}
+	if (registration.network === true && registration.risk_class === "observe")
+		reasons.push("network=true cannot be risk_class=observe");
 	return { ok: reasons.length === 0, reasons };
 }
 
@@ -105,16 +273,31 @@ export function createScriptRegistry(config = {}) {
 	const registrations = Array.isArray(config.scripts) ? config.scripts : [];
 	for (const registration of registrations) {
 		const review = validateScriptRegistration(registration);
-		if (!review.ok) throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
+		if (!review.ok)
+			throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
+		// A JSON roster has no functions, so the declarative Oracle is compiled here.
+		// Downstream code therefore always sees a callable `verify`.
+		const compiled =
+			typeof registration.verify === "function"
+				? registration
+				: { ...registration, verify: compileVerifySpec(registration.verify_spec) };
 		const key = `${registration.id}@${registration.version}`;
 		if (scripts.has(key)) throw new Error(`duplicate script registration: ${key}`);
-		scripts.set(key, registration);
+		scripts.set(key, compiled);
 	}
 	return {
 		configured: scripts.size > 0,
 		all: () => [...scripts.values()],
 		get: (id, version) => scripts.get(`${id}@${version}`) ?? null,
-		describe: () => [...scripts.values()].map((r) => ({ id: r.id, version: r.version, executable: r.executable, risk_class: r.risk_class ?? "medium", network: r.network === true, parameters: r.parameters })),
+		describe: () =>
+			[...scripts.values()].map((r) => ({
+				id: r.id,
+				version: r.version,
+				executable: r.executable,
+				risk_class: r.risk_class ?? "medium",
+				network: r.network === true,
+				parameters: r.parameters,
+			})),
 	};
 }
 
@@ -158,8 +341,11 @@ export function buildArgv(registration, args) {
 		if (substituted.includes("\u0000")) return { ok: false, reason: "argument contains a NUL byte" };
 		argv.push(substituted);
 	}
-	const unbound = parameterNames.filter((name) => args[name] !== undefined && args[name] !== null && !referenced.has(name));
-	if (unbound.length > 0) return { ok: false, reason: `provided argument not bound by argv_template: ${unbound.join(", ")}` };
+	const unbound = parameterNames.filter(
+		(name) => args[name] !== undefined && args[name] !== null && !referenced.has(name),
+	);
+	if (unbound.length > 0)
+		return { ok: false, reason: `provided argument not bound by argv_template: ${unbound.join(", ")}` };
 	return { ok: true, argv };
 }
 
@@ -199,7 +385,9 @@ export function validateResourceParams(registration, args, { cwd = null } = {}) 
 		// cannot be pointed at a path whose parent is a symlink out of the root.
 		const parentCheck = insideRoot(registration.allowed_root, dirname(check.resolved), { mustExist: true });
 		if (!parentCheck.ok) {
-			reasons.push(`resource parameter ${name} (${spec.direction}) parent is not a usable in-root directory: ${parentCheck.reason}`);
+			reasons.push(
+				`resource parameter ${name} (${spec.direction}) parent is not a usable in-root directory: ${parentCheck.reason}`,
+			);
 			continue;
 		}
 		resolved[name] = check.resolved;
@@ -219,7 +407,8 @@ function excerpt(text) {
  */
 export function createScriptContract(registration) {
 	const review = validateScriptRegistration(registration);
-	if (!review.ok) throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
+	if (!review.ok)
+		throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
 	const id = `script.${registration.id}`;
 	// Cache the reviewed registration so the closures always compare against the
 	// CONTRACT's declared pin, not a mutated contract field.
@@ -229,27 +418,40 @@ export function createScriptContract(registration) {
 		version: registration.version,
 		tool: "aegis_script",
 		operation: registration.id,
-		description: registration.description ?? `Run the human-registered script ${registration.id}@${registration.version}.`,
+		description:
+			registration.description ?? `Run the human-registered script ${registration.id}@${registration.version}.`,
 		risk_class: registration.risk_class ?? "medium",
 		network: registration.network === true,
 		parameters: registration.parameters,
 		recognition: {
 			check: () => {
 				if (!existsSync(registration.executable)) return { ok: false, reason: "registered executable is missing" };
-				if (!statSync(registration.executable).isFile()) return { ok: false, reason: "registered executable is not a regular file" };
+				if (!statSync(registration.executable).isFile())
+					return { ok: false, reason: "registered executable is not a regular file" };
 				// Compare against the contract's declared pins so a mutated contract is
 				// itself detected as a change.
 				const declaredExecDigest = contract.procedure.executable_digest;
 				const current = executableDigest(registration.executable);
 				if (current !== declaredExecDigest || current !== registration.executable_digest) {
-					return { ok: false, reason: "registered executable changed; a new version and re-verification are required", expected: declaredExecDigest, observed: current };
+					return {
+						ok: false,
+						reason: "registered executable changed; a new version and re-verification are required",
+						expected: declaredExecDigest,
+						observed: current,
+					};
 				}
 				// Interpreter registrations additionally re-check the script body.
 				if (isInterpreter(registration.executable)) {
-					if (!registration.script_path || !existsSync(registration.script_path)) return { ok: false, reason: "registered script_path is missing" };
+					if (!registration.script_path || !existsSync(registration.script_path))
+						return { ok: false, reason: "registered script_path is missing" };
 					const scriptNow = executableDigest(registration.script_path);
 					if (scriptNow !== registration.script_digest) {
-						return { ok: false, reason: "registered script changed; a new version and re-verification are required", expected: registration.script_digest, observed: scriptNow };
+						return {
+							ok: false,
+							reason: "registered script changed; a new version and re-verification are required",
+							expected: registration.script_digest,
+							observed: scriptNow,
+						};
 					}
 				}
 				// Real (symlink-resolved) cwd check.
@@ -267,12 +469,21 @@ export function createScriptContract(registration) {
 			argv_template: registration.argv_template,
 			run: ({ arguments: args, context }) => {
 				const argvBuild = buildArgv(registration, args);
-				if (!argvBuild.ok) return { ok: false, failure_mode: "precondition_unmet", detail: argvBuild.reason, retry_allowed: false };
+				if (!argvBuild.ok)
+					return { ok: false, failure_mode: "precondition_unmet", detail: argvBuild.reason, retry_allowed: false };
 				const cwdCheck = insideRoot(registration.allowed_root, registration.cwd);
-				if (!cwdCheck.ok) return { ok: false, failure_mode: "action_rejected", detail: cwdCheck.reason, retry_allowed: false };
+				if (!cwdCheck.ok)
+					return { ok: false, failure_mode: "action_rejected", detail: cwdCheck.reason, retry_allowed: false };
 				// Bound every declared path parameter to allowed_root BEFORE spawning.
 				const resourceCheck = validateResourceParams(registration, args, { cwd: cwdCheck.resolved });
-				if (!resourceCheck.ok) return { ok: false, failure_mode: "action_rejected", detail: `resource binding refused: ${resourceCheck.reasons.join("; ")}`, retry_allowed: false, resource_bindings: resourceCheck.resolved };
+				if (!resourceCheck.ok)
+					return {
+						ok: false,
+						failure_mode: "action_rejected",
+						detail: `resource binding refused: ${resourceCheck.reasons.join("; ")}`,
+						retry_allowed: false,
+						resource_bindings: resourceCheck.resolved,
+					};
 				const started = Date.now();
 				const result = spawnSync(registration.executable, argvBuild.argv, {
 					cwd: cwdCheck.resolved,
@@ -309,9 +520,27 @@ export function createScriptContract(registration) {
 					attempts: 1,
 					retry_allowed: false,
 				};
-				if (timedOut) return { ok: false, failure_mode: "timeout", detail: "script timed out; not retried", timed_out: true, exit_code: exitCode, signal, duration_ms: Date.now() - started, observed };
+				if (timedOut)
+					return {
+						ok: false,
+						failure_mode: "timeout",
+						detail: "script timed out; not retried",
+						timed_out: true,
+						exit_code: exitCode,
+						signal,
+						duration_ms: Date.now() - started,
+						observed,
+					};
 				if (errored && exitCode === null) {
-					return { ok: false, failure_mode: "tool_error", detail: `script could not complete: ${observed.spawn_error ?? signal ?? "unknown"}`, exit_code: exitCode, signal, duration_ms: Date.now() - started, observed };
+					return {
+						ok: false,
+						failure_mode: "tool_error",
+						detail: `script could not complete: ${observed.spawn_error ?? signal ?? "unknown"}`,
+						exit_code: exitCode,
+						signal,
+						duration_ms: Date.now() - started,
+						observed,
+					};
 				}
 				// A non-zero exit code is a TRANSPORT fact, not a task verdict: the
 				// registered Oracle still inspects the real post-state. So we return ok
@@ -328,8 +557,14 @@ export function createScriptContract(registration) {
 				} catch (error) {
 					result = { ok: false, reason: error instanceof Error ? error.message : String(error) };
 				}
-				if (!result || result.ok !== true) return { ok: false, reason: result?.reason ?? "registered oracle rejected the post-state" };
-				return { ok: true, reason: result.reason ?? "registered oracle confirmed the post-state", expected: result.expected, observed: result.observed };
+				if (!result || result.ok !== true)
+					return { ok: false, reason: result?.reason ?? "registered oracle rejected the post-state" };
+				return {
+					ok: true,
+					reason: result.reason ?? "registered oracle confirmed the post-state",
+					expected: result.expected,
+					observed: result.observed,
+				};
 			},
 		},
 		scope: {
@@ -363,7 +598,12 @@ export function createScriptContract(registration) {
 				observed_at: now,
 			};
 			const evidenceRefs = [];
-			if (observed?.stdout_digest) evidenceRefs.push({ ref_type: "artifact", ref_id: `${registration.id}.stdout`, digest: observed.stdout_digest });
+			if (observed?.stdout_digest)
+				evidenceRefs.push({
+					ref_type: "artifact",
+					ref_id: `${registration.id}.stdout`,
+					digest: observed.stdout_digest,
+				});
 			if (context.action_event_id) evidenceRefs.push({ ref_type: "action", ref_id: context.action_event_id });
 			// Data refs the FINAL bound arguments actually used are part of the stage
 			// Outcome's own evidence, so a later contribution can be confirmed against
@@ -388,8 +628,13 @@ export function createScriptContract(registration) {
 				scope: `script.${registration.id}@${registration.version}`,
 				criterion,
 				status,
-				observed: status === "success" || status === "failure" ? observed ?? null : null,
-				oracle: { oracle_id: `script-oracle:${registration.id}`, method: "registered_post_check", version: String(registration.version), independence_group: registration.independence_group ?? null },
+				observed: status === "success" || status === "failure" ? (observed ?? null) : null,
+				oracle: {
+					oracle_id: `script-oracle:${registration.id}`,
+					method: "registered_post_check",
+					version: String(registration.version),
+					independence_group: registration.independence_group ?? null,
+				},
 				evidence_refs: evidenceRefs,
 				transport,
 				failure_mode: status === "success" ? null : failure_mode || "insufficient_evidence",
@@ -398,7 +643,13 @@ export function createScriptContract(registration) {
 				// read-only sense, and the script itself is NOT auto-replayed (it may be
 				// non-idempotent). replay_count stays 0 unless an independent replay is
 				// actually performed by a caller.
-				reproducibility: { replayable: status === "success", replay_kind: "postcondition_check", replay_hash: status === "success" ? observed?.stdout_digest ?? null : null, replay_count: 0, checked_at: now },
+				reproducibility: {
+					replayable: status === "success",
+					replay_kind: "postcondition_check",
+					replay_hash: status === "success" ? (observed?.stdout_digest ?? null) : null,
+					replay_count: 0,
+					checked_at: now,
+				},
 				assessed_at: now,
 				action_ref: actionRef,
 				action_id: actionId,

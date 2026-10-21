@@ -228,6 +228,7 @@ injectable = curation == "reviewed"
 | --- | --- |
 | `aegis-card-schema.mjs` | **15 pass / 0 fail** |
 | `aegis-card-reproduction.mjs` | **9 pass / 0 fail**（真实注册表：digest 匹配/不匹配/版本不符/无注册表/非法登记） |
+| `aegis-script-roster.mjs` | **9 pass / 0 fail**（JSON 花名册：无需 verify 函数即可登记、Oracle 重读真实后置状态、忽略 stdout/退出码、非法 spec 拒绝、两者并存拒绝） |
 | `contest-smoke` | exit 0 |
 | `aegis-contest-pi-integration`（需 resolver） | exit 0 |
 | `aegis-observer-contest-pi`（需 resolver） | exit 0 |
@@ -255,10 +256,28 @@ injectable = curation == "reviewed"
    当前仍**没有卡片使用**它——第一张需要人工先登记脚本动作。
 2. 注册表不可用（未设置 `AEGIS_SCRIPT_CONFIG`、模块无法导入、登记项非法）时，
    `reproduction` 卡片按 fail-closed 拒绝注入并给出具体原因；其他卡片不受影响。
-3. 注册表启用时请用 `AEGIS_SCRIPT_CONFIG` 指向 `.mjs` 模块：登记项需要 `verify()` 函数，
-   JSON 无法表达，纯 JSON 配置会在注册时被判非法。
+3. `AEGIS_SCRIPT_CONFIG` 支持两种形式：
+   * `.mjs` 模块：登记项带 `verify()` 函数（原有形式）；
+   * `.json` 花名册：Oracle 用**数据**表达（`verify_spec`），便于人读、diff 与快速挑选：
+
+     ```json
+     { "scripts": [ { "id": "common-modulus", "version": 1,
+         "verify_spec": { "kind": "json_post_state", "resource": "out",
+           "checks": [{ "path": "stage", "op": "eq", "value": "done" }] } } ] }
+     ```
+
+     `compileVerifySpec` 在注册时把它编译成同一份 Oracle 契约：从 `resource_bindings`
+     取绑定路径、从磁盘重读并 `JSON.parse`，**不看 stdout、退出码或调用方声明**。
+     谓词形状复用 `shared/contracts.mjs` 的 `{path, op, value}`（`op ∈ eq|neq|exists`），
+     没有第二套 DSL。
 4. `limits` 不强制；当前 47/47 有值是因为 v1 的 `## Pitfalls` 被生成器映射，新卡不强制。
 5. `preconditions` 直接取 v1 的 `when_text`，未逐卡人工润色。
-6. **类型覆盖缺口**：`tsconfig.aegis.json` 与 `tsconfig.aegis-campaign.json` 都未包含
-   `extensions/*.ts`，所以 `aegis-contest.ts` 的改动不经类型检查（本轮曾因此漏掉两个缺失的
-   import，靠运行时才发现）。补覆盖会改变 190/193 的诊断基线，需单独一轮处理。
+6. **类型覆盖**：已新增 `Pi_Agent_base/tsconfig.aegis-extensions.json` 覆盖 `extensions/*.ts`
+   （不改动另两份配置各自的声明范围）。结果：
+   * `aegis-contest.ts` **0 错**，`aegis-fixture-tool.ts` 1 错；
+   * `aegis-observer.ts` 62 错，全部来自 `.mjs` 运行时被 `checkJs:false` 排除后返回类型退化
+     （`@returns {Promise<object>}` 之类），属既有基线，不是本轮引入；
+   * 其中 2 条是真实信号：`setTopBar`/`setSidebar` 不在已构建的 `.d.ts` 里（`dist` 旧于
+     `feat/aegis-shell-layout` 源码）。`npm run build:offline` 在本机无法刷新——pi 自身在
+     `packages/ai/src/providers/kimi-coding.ts` 处有既有类型错误，属 pi 侧问题，未改。
+   * `checkJs: true` 的试验会让总数升到 449 且不改善收窄，因此保持 `false`。
