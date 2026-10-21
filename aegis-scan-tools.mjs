@@ -21,8 +21,12 @@ const DEFAULT_OUT = join(homedir(), ".Aegis", "tools", "ctf", "tool-inventory.js
  * checked in the Python interpreters listed under --python.
  */
 export const SCAN_LIST = [
+	// Deliberately absent:
+	//   pwn.pwntools  - the `pwn` CLI duplicates the Python module; only the module
+	//                   is catalogued (see py.pwntools) so the model has one entry.
+	//   reverse.ida   - IDA is reached through its MCP server (rea, provider=ida),
+	//                   not a CLI; MCP tools are exposed by Pi, not by this catalog.
 	// pwn
-	{ id: "pwn.pwntools", binary: "pwn", args: ["version"], direction: "pwn" },
 	{ id: "pwn.ropgadget", binary: "ROPgadget", args: ["--version"], direction: "pwn" },
 	{ id: "pwn.ropper", binary: "ropper", args: ["--version"], direction: "pwn" },
 	{ id: "pwn.one_gadget", binary: "one_gadget", args: ["--version"], direction: "pwn" },

@@ -27,31 +27,6 @@ const DEFAULT_CATALOG = join(homedir(), ".Aegis", "tools", "catalog.json");
  * the model composes the actual arguments.
  */
 export const TOOL_KNOWLEDGE = {
-	"pwn.pwntools": {
-		purpose: "pwntools 命令行：汇编/反汇编、cyclic 偏移、ELF 补丁、模板生成",
-		category: "pwn",
-		usage: "pwn <subcommand> [args]   （常用子命令：asm disasm cyclic checksec template elfpatch phd）",
-		key_flags: ["pwn asm -c amd64", "pwn disasm", "pwn cyclic -l", "pwn template", "pwn elfpatch"],
-		examples: [
-			'pwn asm -c amd64 "mov rax, 60; xor rdi, rdi; syscall"',
-			"pwn cyclic 200",
-			"pwn cyclic -l 0x6161616c",
-			"pwn template ./chall > exploit.py",
-			"pwn checksec ./chall",
-		],
-		pitfalls: [
-			{
-				condition: "目标是 macOS 的 Mach-O（例如 /bin/ls）",
-				symptom: "checksec/elfpatch 等子命令报 `Magic number does not match`",
-				correct_invocation: "只在 Linux ELF 上使用；Mach-O 用 otool/codesign 或 lldb 分析",
-			},
-			{
-				condition: "用 pwn template 生成脚本后直接运行",
-				symptom: "脚本里的 process/remote 依赖当前目录的相对路径，换目录即失败",
-				correct_invocation: "在题目目录内运行，或先改 exe/elf 路径再执行",
-			},
-		],
-	},
 	"pwn.ropgadget": {
 		purpose: "在 ELF 中搜索 ROP/JOP gadget，用于构造 ROP 链",
 		category: "pwn",
@@ -304,25 +279,6 @@ const SECOND_WAVE = {
 		key_flags: ["-A", "-q", "-c", "aaa", "afl", "pdf"],
 		examples: ["rizin -A -q -c 'aaa; afl' ./chall"],
 		pitfalls: [],
-	},
-	"reverse.ida": {
-		purpose: "IDA Pro：反汇编/反编译（Hex-Rays）；GUI 交互或 headless 脚本化",
-		category: "reverse",
-		usage: "GUI: `ida <binary>`；headless: `idat -A -S<script.py> -L<log> <binary>`",
-		key_flags: ["-A", "-S", "-L", "-B", "-c"],
-		examples: ["ida ./chall", "idat -A -Sanalyze.py -Lida.log ./chall", "idat -B ./chall"],
-		pitfalls: [
-			{
-				condition: "headless 启动时没有加 -A",
-				symptom: "进程停住不动，日志里在等对话框",
-				correct_invocation: "headless 一律 `idat -A -S...`；-A 关闭全部弹出对话框",
-			},
-			{
-				condition: "在已激活的 Python venv 里启动 idat",
-				symptom: "打印 `sys.prefix ... expected <venv>, got <brew python>` 警告",
-				correct_invocation: "先 `deactivate`，或用 `idapyswitch` 指定 IDA 自带的解释器",
-			},
-		],
 	},
 	"reverse.dex2jar": {
 		purpose: "把 APK/DEX 转成 jar，配合 jadx/jd-gui 看 Java 源码",
@@ -694,11 +650,17 @@ const SECOND_WAVE = {
 		pitfalls: [],
 	},
 	"py.pwntools": {
-		purpose: "Python 侧的 pwntools：远程交互、ELF/ROP、打包/解包",
+		purpose:
+			"pwntools（唯一入口）：远程交互、ELF/ROP、打包解包，以及 asm/disasm/cyclic/template 等命令行能力的 Python 等价",
 		category: "pwn",
-		usage: "from pwn import *",
-		key_flags: [],
-		examples: ['from pwn import *; io=remote("host",9999); io.sendlineafter(b"> ", payload); io.interactive()'],
+		usage: "from pwn import *   /   python3 -c 'from pwn import *; ...'",
+		key_flags: ["remote", "process", "ELF", "ROP", "asm", "cyclic", "context"],
+		examples: [
+			'from pwn import *; io=remote("host",9999); io.sendlineafter(b"> ", payload); io.interactive()',
+			'python3 -c "from pwn import *; print(cyclic(64)); print(cyclic_find(0x6161616c))"',
+			"python3 -c \"from pwn import *; print(asm('mov rax, 60; syscall', arch='amd64'))\"",
+			"python3 -c \"from pwn import *; print(ELF('./chall').checksec())\"",
+		],
 		pitfalls: [],
 	},
 	"reverse.jadx": {

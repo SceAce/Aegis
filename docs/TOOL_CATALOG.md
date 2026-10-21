@@ -130,9 +130,17 @@ Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 ven
 - 种子坑一律是 `candidate`：只有真实解出并由 `checkFlag` 确认后才会变 `confirmed`，
   所以种子里写的"坑"只是待验证的提示，不是已验证结论。
 
-当前本机覆盖 **47 个条目**：reverse 11、pwn 12、web 8、misc 8、crypto 7、general 1
-（含 `ida`：GUI `ida <bin>` / headless `idat -A -S<script.py>`；`pwninit`、`frida`、
-`dirsearch`、`arjun`、`jwt_tool`、`sage`、`steghide` 等未安装的不会出现）。
+当前本机覆盖 **45 个条目**：reverse 10、pwn 9、web 8、misc 8、crypto 7、general 1
+（`pwninit`、`frida`、`dirsearch`、`arjun`、`jwt_tool`、`sage`、`steghide` 等未安装的不会出现）。
+
+两条刻意的**不收录**规则：
+
+- **同名 CLI 与 Python 模块只留一个**。`pwn` 命令行与 `from pwn import *` 是同一能力的两个入口，
+  同时列出会让模型在两条相似条目间犹豫；只保留 `py-pwntools`，并把 `asm`/`cyclic`/
+  `ELF.checksec()` 等命令行等价写法写进它的 examples。
+- **通过 MCP 提供的工具不进本清单**。IDA Pro 由 `rea mcp`（provider=ida）暴露，
+  模型直接看到 MCP 工具（`procedure_pseudo_code`、`batch_decompile`、`xrefs` 等 200+ 个），
+  不需要清单再描述一遍。见下节。
 
 ## 6. 怎么加一个工具
 
@@ -147,14 +155,37 @@ Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 ven
   "interface": { "usage": "binwalk -e <firmware>" } }
 ```
 
-## 7. 边界（不变）
+## 7. MCP 提供的工具（与清单并列的另一层）
+
+MCP 工具由 Pi 直接暴露给模型，**不经过本清单**，也不经过 `aegis_toolbox`。当前本机已接入：
+
+| server | 提供 | 说明 |
+| --- | --- | --- |
+| `rea` | 207 个工具 | `REA_ANALYSIS_PROVIDER=ida`，即 **IDA Pro** 的反编译/xref/函数分析；另含 frida、rizin、gdb、adb、apktool、web 分析 |
+| `firefox-devtools` / `firefox` / `zen-browser` | 浏览器自动化 | 页面/网络/快照 |
+
+配置在 `$AEGIS_HOME/agent/mcp.json`（`$AEGIS_HOME` 默认 `~/.Aegis`）。**默认不启动**：
+
+```bash
+./run-experiment.sh ram-001 --mcp     # 用共用 agent 目录，MCP 生效
+./run-experiment.sh ram-001           # 默认：派生 agent 目录 + 空 mcp.json，MCP 不启动
+```
+
+要点：
+
+- MCP 的 `exposure`（`direct`/`codemode`/`deferred`）**不是** Aegis 的 work permit；
+  它只决定模型怎么看到工具，不表示已授权调用。
+- MCP 工具不经本清单，所以清单里没有 IDA 条目是**预期**的，不是遗漏。
+- 验证：`pi mcp list`（在 `$AEGIS_HOME/agent` 下）应显示 `rea: connected`。
+
+## 8. 边界（不变）
 
 - 清单不是授权：不会让任何命令变成"已批准"。
 - 通过 bash 的结果仍是**不透明观察**，不自动成为 Fact 或 Outcome。
 - 需要**可复算、可独立判定**的技法，仍应走脚本动作注册表（`aegis_execute` + Oracle）。
 - 清单文件是本机私有（`$AEGIS_HOME`），不入库；工具路径因机器而异。
 
-## 8. 验证
+## 9. 验证
 
 | 检查 | 结果 |
 | --- | --- |

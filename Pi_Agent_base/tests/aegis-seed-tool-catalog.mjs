@@ -159,7 +159,10 @@ test("an invalid existing catalog is not overwritten", () => {
 
 test("the tracked knowledge covers the tools the inventory reports", () => {
 	const source = readFileSync(new URL("../../aegis-seed-tool-catalog.mjs", import.meta.url), "utf8");
-	for (const id of ["pwn.pwntools", "pwn.ropgadget", "pwn.checksec", "reverse.binwalk", "network.nmap", "debug.gdb"]) {
+	// `pwn.pwntools` and `reverse.ida` are deliberately absent: the pwntools CLI
+	// duplicates the Python module (one entry only), and IDA is reached through its
+	// MCP server rather than a CLI.
+	for (const id of ["py.pwntools", "pwn.ropgadget", "pwn.checksec", "reverse.binwalk", "network.nmap", "debug.gdb"]) {
 		assert.ok(source.includes(`"${id}"`), `knowledge must cover ${id}`);
 	}
 	// Each entry must state a purpose and an invocation shape, not just a name.
@@ -167,7 +170,7 @@ test("the tracked knowledge covers the tools the inventory reports", () => {
 	assert.ok((source.match(/usage:/g) ?? []).length >= 9);
 });
 
-test("a python module row becomes its own tool, distinct from a same-named CLI", () => {
+test("a python module becomes its own addressable entry", () => {
 	const base = mkdtempSync(join(tmpdir(), "aegis-pymod-"));
 	try {
 		const py = join(base, "python3");
@@ -177,10 +180,7 @@ test("a python module row becomes its own tool, distinct from a same-named CLI",
 		writeFileSync(
 			inventory,
 			JSON.stringify({
-				tools: [
-					{ id: "pwn.pwntools", path: py, version: "1.0" },
-					{ id: "py.pwntools", kind: "python", module: "pwn", interpreter: py, version: "4.15.0" },
-				],
+				tools: [{ id: "py.pwntools", kind: "python", module: "pwn", interpreter: py, version: "4.15.0" }],
 			}),
 			"utf8",
 		);
@@ -189,11 +189,13 @@ test("a python module row becomes its own tool, distinct from a same-named CLI",
 		assert.equal(result.status, 0, result.stderr);
 		const loaded = loadToolCatalog(catalog);
 		assert.equal(loaded.ok, true, loaded.errors.join("; "));
-		const ids = loaded.catalog.tools.map((tool) => tool.id).sort();
-		assert.deepEqual(ids, ["pwntools", "py-pwntools"], "the module form is addressable on its own");
-		const moduleTool = loaded.catalog.tools.find((tool) => tool.id === "py-pwntools");
+		assert.deepEqual(
+			loaded.catalog.tools.map((tool) => tool.id),
+			["py-pwntools"],
+		);
+		const moduleTool = loaded.catalog.tools[0];
 		assert.match(moduleTool.notes, /python module pwn/);
-		assert.equal(moduleTool.executable, py);
+		assert.equal(moduleTool.executable, py, "the interpreter is the executable to pin");
 	} finally {
 		rmSync(base, { recursive: true, force: true });
 	}
