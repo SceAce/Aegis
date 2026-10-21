@@ -49,6 +49,7 @@ KNOWLEDGE_DIR=""
 AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
 SCRIPT_CONFIG_OVERRIDE=""
+ACTION_MODE=""          # normal (default) | auto
 ATTACH=()
 MAX_ATTACH_BYTES=536870912
 MCP_MODE="off"       # off | on
@@ -71,6 +72,12 @@ Options:
   --workspace DIR     use DIR as the task workspace (default: <label>/workspace)
   --here              use the CURRENT directory as the workspace (no isolation).
                       Use this when the challenge files already sit in a folder.
+  --action-mode normal|auto
+                      authorization for registered script actions. `normal`
+                      (default) requires an explicit per-call grant, so a model
+                      call is REFUSED; `auto` is a user-granted default path for
+                      this run and is recorded with every intent. It is still not
+                      a verification result.
   --script-config PATH
                       script roster for aegis_execute (default: the experiment's
                       roster.json, else $AEGIS_HOME/tools/roster.json, else the
@@ -122,6 +129,11 @@ while (($#)); do
 	case "$1" in
 		--workspace) WORKSPACE="${2:-}"; shift 2 ;;
 		--here) USE_CWD=1; shift ;;
+		--action-mode)
+			[[ $# -ge 2 ]] || { printf -- '--action-mode needs normal or auto\n' >&2; exit 2; }
+			ACTION_MODE="$2"
+			shift 2
+			;;
 		--script-config)
 			[[ $# -ge 2 ]] || { printf -- '--script-config needs a path\n' >&2; exit 2; }
 			SCRIPT_CONFIG_OVERRIDE="$2"
@@ -363,6 +375,10 @@ if [[ -n "$SCRIPT_CONFIG" ]]; then
 else
 	unset AEGIS_SCRIPT_CONFIG
 fi
+if [[ -n "$ACTION_MODE" ]]; then
+	[[ "$ACTION_MODE" =~ ^(normal|auto)$ ]] || die "--action-mode must be normal or auto"
+	export AEGIS_ACTION_MODE="$ACTION_MODE"
+fi
 if [[ -n "$SEED_FILE" ]]; then
 	export AEGIS_RAM_SEED_FILE="$SEED_FILE"
 else
@@ -488,6 +504,7 @@ if [[ -n "$SCRIPT_CONFIG" ]]; then
 else
 	printf '  scripts    (none registered: aegis_execute will refuse; see aegis-register-tool.mjs)\n'
 fi
+printf '  action     %s%s\n' "${ACTION_MODE:-normal (default)}" "$([[ "${ACTION_MODE:-normal}" == normal ]] && echo ' - aegis_execute needs a per-call grant, so model calls are refused' || echo ' - user-granted default path for this run')"
 if [[ -n "$AUTH_WARNING" ]]; then
 	printf '  warning    %s\n' "$AUTH_WARNING" >&2
 fi

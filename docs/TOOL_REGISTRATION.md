@@ -15,7 +15,20 @@ Aegis 的模型能看到的工具分三类，信任级别完全不同：
 
 `PATH` 里能看到一个 CLI **不等于**它已成为 Aegis 动作。这是本层的存在理由。
 
-## 2. 三步走
+## 2. 让 AI 真正用起来需要什么
+
+一次成功调用需要三件事同时成立，缺一都会被拒绝：
+
+| 条件 | 怎么满足 | 失败时会看到 |
+| --- | --- | --- |
+| 工具已登记 | `aegis-register-tool.mjs --recipe … --roster …` | `aegis_tools` 报 `scripts_configured: false` |
+| 运行读到了 roster | `run-experiment.sh` 自动发现，或 `--script-config` | 启动摘要显示 `scripts (none registered…)` |
+| **有授权** | `--action-mode auto`（或每次 `AEGIS_ACTION_APPROVED=1`） | `Aegis: normal mode — … is pending human approval and was NOT executed.` |
+
+第三项最容易踩：默认是 `normal`，**每个动作都需要显式授权**，所以模型调用会被拒绝。`auto` 是本次运行
+的用户授权默认路径，会随每个 intent 记录；它**不是**验证结果，也不影响 Oracle。
+
+## 2.1 三步走
 
 ```bash
 # 1. 写 recipe（唯一需要人写的部分）
@@ -26,8 +39,8 @@ node aegis-register-tool.mjs \
   --recipe knowledge/techniques/scripts/rsa-common-modulus.recipe.json \
   --roster ~/.Aegis/tools/roster.json
 
-# 3. 启动实验（自动发现 roster）
-./run-experiment.sh ram-001
+# 3. 启动实验（自动发现 roster；授权默认路径按你的意愿选择）
+./run-experiment.sh ram-001 --action-mode auto
 ```
 
 启动后模型会看到：

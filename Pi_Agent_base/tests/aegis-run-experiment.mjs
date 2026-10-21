@@ -563,3 +563,39 @@ test("attachments suppress the empty-workspace warning", () => {
 		rmSync(launch, { recursive: true, force: true });
 	}
 });
+
+test("--action-mode is validated, exported and shown", () => {
+	const home = freshHome();
+	try {
+		const normal = run(["act-001", "--dry-run"], { home });
+		assert.equal(normal.status, 0, normal.stderr);
+		assert.match(normal.stdout, /action\s+normal \(default\)/);
+		assert.match(normal.stdout, /model calls are refused/);
+
+		const auto = run(["act-002", "--action-mode", "auto", "--dry-run"], { home });
+		assert.equal(auto.status, 0, auto.stderr);
+		assert.match(auto.stdout, /action\s+auto/);
+
+		const bad = run(["act-003", "--action-mode", "yes", "--dry-run"], { home });
+		assert.equal(bad.status, 2);
+		assert.match(bad.stderr, /must be normal or auto/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("a script roster is resolved from the Aegis home and reported", () => {
+	const home = freshHome();
+	try {
+		mkdirSync(join(home, "tools"), { recursive: true });
+		writeFileSync(join(home, "tools", "roster.json"), JSON.stringify({ scripts: [] }), "utf8");
+		const result = run(["act-004", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			result.stdout,
+			new RegExp(`scripts\\s+${home.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}/tools/roster.json`),
+		);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
