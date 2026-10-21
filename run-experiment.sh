@@ -375,6 +375,29 @@ if [[ -n "$SCRIPT_CONFIG" ]]; then
 else
 	unset AEGIS_SCRIPT_CONFIG
 fi
+# Tool catalog: documentation for general CLIs. Exported so aegis_toolbox reads the
+# same file, and its tool directories are put on PATH so the model's bash calls
+# actually resolve. PATH visibility is NOT authorization (see Pi_Agent_base/AGENTS.md).
+TOOL_CATALOG="${AEGIS_TOOL_CATALOG:-$AEGIS_HOME/tools/catalog.json}"
+if [[ -f "$TOOL_CATALOG" ]]; then
+	export AEGIS_TOOL_CATALOG="$TOOL_CATALOG"
+	CATALOG_PATHS="$(node -e '
+		const fs = require("node:fs");
+		try {
+			const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+			const dirs = new Set();
+			for (const t of c.tools ?? []) {
+				if (typeof t.executable === "string" && t.executable.includes("/")) dirs.add(t.executable.slice(0, t.executable.lastIndexOf("/")));
+			}
+			process.stdout.write([...dirs].join(":"));
+		} catch { process.stdout.write(""); }
+	' "$TOOL_CATALOG" 2>/dev/null)"
+	if [[ -n "$CATALOG_PATHS" ]]; then
+		PATH="$CATALOG_PATHS:$PATH"
+		export PATH
+	fi
+fi
+
 if [[ -n "$ACTION_MODE" ]]; then
 	[[ "$ACTION_MODE" =~ ^(normal|auto)$ ]] || die "--action-mode must be normal or auto"
 	export AEGIS_ACTION_MODE="$ACTION_MODE"
@@ -503,6 +526,11 @@ if [[ -n "$SCRIPT_CONFIG" ]]; then
 	printf '  scripts    %s\n' "$SCRIPT_CONFIG"
 else
 	printf '  scripts    (none registered: aegis_execute will refuse; see aegis-register-tool.mjs)\n'
+fi
+if [[ -f "$TOOL_CATALOG" ]]; then
+	printf '  toolbox    %s\n' "$TOOL_CATALOG"
+else
+	printf '  toolbox    (no catalog: aegis_toolbox will report nothing; see docs/TOOL_CATALOG.md)\n'
 fi
 printf '  action     %s%s\n' "${ACTION_MODE:-normal (default)}" "$([[ "${ACTION_MODE:-normal}" == normal ]] && echo ' - aegis_execute needs a per-call grant, so model calls are refused' || echo ' - user-granted default path for this run')"
 if [[ -n "$AUTH_WARNING" ]]; then

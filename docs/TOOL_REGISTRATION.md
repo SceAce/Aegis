@@ -1,4 +1,8 @@
-# 工具接入：注册、发现、调用
+# 脚本动作注册（固定 argv + Oracle）
+
+> 本文只讲**脚本动作注册表**。通用 CLI（ROPgadget、pwninit、binwalk…）不走这里——
+> 它们由模型自己拼参数、通过 bash 调用，只需要一份[工具能力清单](TOOL_CATALOG.md)。
+> 简单判据：**需要独立判定结果 → 注册表；只是想让模型知道工具存在和怎么调 → 能力清单。**
 
 状态：**已实现并验证**（2026-10-21）。基线 `aegis-base-20261021`。
 相关契约：[脚本注册表](../Pi_Agent_base/execution/script-registry.mjs)、[技法卡 schema](TECHNIQUE_CARD_SCHEMA.md)。

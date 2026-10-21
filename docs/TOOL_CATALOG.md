@@ -1,0 +1,130 @@
+# 工具能力清单（Tool Catalog）
+
+状态：**已实现**（2026-10-21）。与 [脚本动作注册表](TOOL_REGISTRATION.md) 是**两层不同的东西**。
+
+## 1. 两层工具，别混
+
+| | 脚本动作注册表 | **能力清单（本文）** |
+| --- | --- | --- |
+| 目的 | 让 Aegis 能**确定地**执行一个已审阅动作 | 告诉模型**有哪些工具、怎么调用** |
+| 参数 | 固定 argv 模板，模型只给数据 | **模型自己拼参数**，通过 bash 执行 |
+| 信任 | pinned digest + 已登记 Oracle | 文档，不授权、不产生证据 |
+| 适用 | 反复使用的技法脚本（RSA 共模、解析器） | 通用 CLI（ROPgadget、pwninit、binwalk…） |
+
+能力清单**不枚举命令**。ROPgadget 有几十种用法，注册表不该也不可能穷举；它只需要说清
+「装在哪、怎么调用、参数长什么样、踩过什么坑」，参数由模型按当前题目自己组合。
+
+## 2. 文件与工具
+
+```text
+$AEGIS_HOME/tools/catalog.json     能力清单（本机私有，不入库）
+```
+
+模型侧：
+
+| 工具 | 作用 |
+| --- | --- |
+| `aegis_toolbox` | 列出所有工具（id / 用途 / usage 一行 / 坑数量）；带 `tool` 参数时返回该工具的完整接口、示例与坑 |
+| `aegis_tool_note` | 提议一条坑（condition + symptom + correct_invocation），存为 **candidate** |
+
+`aegis_toolbox` **不返回可执行路径**；路径留在磁盘，供审计与调试。清单是文档，不是授权：
+模型仍然通过 bash 调用，产物仍是**不透明观察**（见 `Pi_Agent_base/AGENTS.md`）。
+
+启动器会把清单里各工具所在目录加入 `PATH`（`run-experiment.sh`），否则模型拼好的命令会
+`command not found`。**PATH 可见 ≠ 已授权**，这条不变。
+
+## 3. catalog.json 结构
+
+```json
+{
+  "schema_version": "1.0",
+  "tools": [
+    {
+      "id": "ropgadget",
+      "purpose": "从 ELF 二进制中列出 ROP gadget，用于链构造",
+      "category": "pwn",
+      "executable": "/Users/scemac/Tools/PyVenv/CTF/bin/ROPgadget",
+      "interface": {
+        "usage": "ROPgadget --binary <file> [--only \"pop|ret\"] [--depth N]",
+        "key_flags": ["--binary", "--only", "--depth", "--ropchain", "--badbytes"],
+        "examples": ["ROPgadget --binary ./pwn --only \"pop|ret\""]
+      },
+      "pitfalls": [
+        {
+          "condition": "目标是没有符号的裸 ELF",
+          "symptom": "只给位置参数时 ROPgadget 不输出任何 gadget",
+          "correct_invocation": "ROPgadget --binary ./pwn --only \"pop|ret\"",
+          "status": "confirmed",
+          "recorded_at": "2026-10-21T05:00:00.000Z",
+          "refs": ["episode:…"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `id` | 是 | `[A-Za-z0-9][A-Za-z0-9._-]*` |
+| `purpose` | 是 | 一句话用途，模型据此决定要不要用 |
+| `executable` | 是 | 绝对路径（仅用于 PATH 与诊断，不进模型上下文） |
+| `interface.usage` | 是 | 调用形状；可写占位符如 `<file>` |
+| `interface.key_flags` / `examples` | 否 | 关键参数与一条可照抄的例子 |
+| `pitfalls[]` | 否 | 见下 |
+| `notes` | 否 | 自由说明（建议少用，优先结构化 pitfall） |
+
+## 4. 坑为什么是结构化的
+
+`架构.md` §6.4 明确：**不存"教训文本"，存"判决"**。所以一条坑必须是三元组：
+
+```
+condition（什么条件下成立） + symptom（会出什么错） + correct_invocation（怎么做才对）
+```
+
+散文式"注意 ROPgadget 容易出错"既不可核对，也无法在下次自动匹配。三元组可以被模型直接
+套用，也可以被后续的判据提取复用。
+
+### 生命周期
+
+```text
+模型 aegis_tool_note  →  pitfalls[] 追加一条 status=candidate（带 episode ref）
+人类 /aegis checkFlag  →  本 Episode 的 candidate 提升为 confirmed，写入 recorded_at 与 refs
+```
+
+**只有人类确认解出之后**，本轮的坑才变成 `confirmed`。这是刻意的：模型的自述不是证据，
+一条"坑"必须挂在一个被确认的胜负结果上。跨 Episode 的 candidate 不会被别的解顺带提升。
+
+`/aegis checkFlag` 还会提示确认了几条：
+
+```
+Aegis: recorded human outcome=success … ; confirmed 1 tool pitfall(s)
+```
+
+## 5. 怎么加一个工具
+
+手工编辑 `catalog.json` 即可（它是数据，不是代码）；或用 `install.sh --smoke` 之后的小脚本生初稿。
+校验在加载时进行：非法条目会被报出来并**丢弃**，不会带着半条数据进入上下文。
+
+最低要求三个字段就能用起来：
+
+```json
+{ "id": "binwalk", "purpose": "递归提取固件中的嵌入文件系统",
+  "executable": "/opt/homebrew/Cellar/binwalk/3.1.0/bin/binwalk",
+  "interface": { "usage": "binwalk -e <firmware>" } }
+```
+
+## 6. 边界（不变）
+
+- 清单不是授权：不会让任何命令变成"已批准"。
+- 通过 bash 的结果仍是**不透明观察**，不自动成为 Fact 或 Outcome。
+- 需要**可复算、可独立判定**的技法，仍应走脚本动作注册表（`aegis_execute` + Oracle）。
+- 清单文件是本机私有（`$AEGIS_HOME`），不入库；工具路径因机器而异。
+
+## 7. 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `aegis-tool-catalog.mjs` | **10 pass**（结构校验、summary 不含路径、坑的三元组、candidate→confirmed、坏文件被拒） |
+| 真实 SDK 端到端 | 模型看到 2 个工具与 usage → 提议坑存为 candidate → `checkFlag` 后变 confirmed |
+| `run-experiment.sh` | 打印 `toolbox` 路径；清单目录进入 `PATH` |

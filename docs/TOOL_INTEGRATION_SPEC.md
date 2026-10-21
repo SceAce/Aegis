@@ -1,4 +1,7 @@
-# 工具接入规范（供 Agent 执行）
+# 脚本动作接入规范（供 Agent 执行）
+
+> 适用于**需要固定 argv + 独立 Oracle** 的技法脚本。通用 CLI 的能力登记见
+> [工具能力清单](TOOL_CATALOG.md)——那里不锁 argv，模型自己拼参数。
 
 状态：**当前有效**。本文件是给**其他 Agent** 的操作规范：按此产出 recipe，即可让 Aegis 的模型
 发现并调用一个工具。实现与契约见 [工具接入](TOOL_REGISTRATION.md)。

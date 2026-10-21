@@ -83,6 +83,13 @@ import { inspectProposalRefs, inspectProposalReplacement } from "../memory/propo
 import { buildRam, buildRamProjection } from "../memory/ram.mjs";
 import { episodeHasSession, projectState, resolveOpenEpisode } from "../memory/state.mjs";
 import { redactMemoryText, summarizeMemoryValue } from "../memory/summary.mjs";
+import {
+	addToolNote,
+	describeTool,
+	loadToolCatalog,
+	saveToolCatalog,
+	summarizeTools,
+} from "../memory/tool-catalog.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
 import { openAegisTui } from "../observation/tui/session.ts";
 import { AegisComposerBar, AegisLogoHeader, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
@@ -174,6 +181,71 @@ function actionMode(): "auto" | "normal" {
 // declare data fields; a `.mjs`/`.js` module may additionally export real
 // `verify()` post-condition Oracles as trusted local code. The MODEL can never
 // set this path (it comes from the human/launcher environment).
+/**
+ * Tool catalog: what general CLIs this machine has, how to invoke them, and the
+ * pitfalls observed so far. It is DOCUMENTATION for the model, not authorization:
+ * the model composes arguments itself and runs them through bash, so nothing here
+ * grants a call or becomes evidence.
+ */
+function toolCatalogPath(): string | null {
+	const configured = process.env.AEGIS_TOOL_CATALOG;
+	if (configured?.trim()) return configured.trim();
+	const home = process.env.AEGIS_HOME;
+	if (home?.trim()) return resolve(home.trim(), "tools", "catalog.json");
+	return null;
+}
+
+function readToolCatalog() {
+	const path = toolCatalogPath();
+	const loaded = loadToolCatalog(path);
+	return { path, ...loaded };
+}
+
+/**
+ * Promote the tool pitfalls proposed during THIS episode to `confirmed`, because a
+ * human just confirmed the solve they belong to. A note proposed in another episode
+ * is never promoted by this one, so one solve cannot launder unrelated guesses.
+ *
+ * @param {{path: string|null, episodeId: string|null, events: unknown[]}} input
+ * @returns {{confirmed: number}}
+ */
+function confirmToolNotesForEpisode({
+	path,
+	episodeId,
+	events,
+}: {
+	path: string | null;
+	episodeId: string | null;
+	events: unknown[];
+}): { confirmed: number } {
+	if (!path || !episodeId) return { confirmed: 0 };
+	const { ok, catalog } = loadToolCatalog(path);
+	if (!ok) return { confirmed: 0 };
+	const episodeEventIds = new Set(
+		(events as Array<{ event_id?: string; episode_id?: string }>)
+			.filter((row) => row?.episode_id === episodeId)
+			.map((row) => row.event_id)
+			.filter(Boolean) as string[],
+	);
+	let confirmed = 0;
+	const now = new Date().toISOString();
+	for (const tool of catalog.tools as Array<{ pitfalls?: Array<Record<string, unknown>> }>) {
+		for (const note of tool.pitfalls ?? []) {
+			if (note.status !== "candidate") continue;
+			const refs = Array.isArray(note.refs) ? (note.refs as string[]) : [];
+			// A note with refs must cite an event from this episode; a note without refs
+			// is treated as belonging to the current episode (it was just proposed).
+			if (refs.length > 0 && !refs.some((ref) => episodeEventIds.has(ref))) continue;
+			note.status = "confirmed";
+			note.recorded_at = now;
+			note.refs = [...new Set([...refs, refs.length > 0 ? "" : `episode:${episodeId}`].filter(Boolean))].slice(0, 8);
+			confirmed += 1;
+		}
+	}
+	if (confirmed > 0) saveToolCatalog(path, catalog);
+	return { confirmed };
+}
+
 function scriptConfigPath(): string | null {
 	const configured = process.env.AEGIS_SCRIPT_CONFIG;
 	return configured?.trim() ? configured : null;
@@ -1629,6 +1701,147 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	);
 
 	// -----------------------------------------------------------------------
+	// aegis_toolbox: the CAPABILITY list for general CLIs.
+	//
+	// This is deliberately not aegis_execute. Registered script actions have a
+	// fixed argv and an Oracle; general tools (ROPgadget, pwninit, ...) are invoked
+	// with arguments the model composes. The catalog therefore carries the interface
+	// and the known pitfalls, and grants nothing: the call still runs through bash
+	// and stays an opaque observation.
+	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
+			name: "aegis_toolbox",
+			label: "Aegis: list available CLI tools",
+			description:
+				"List the general-purpose CLI tools installed on this machine, with how each one is invoked and the pitfalls observed so far. Use this BEFORE reaching for a tool whose exact interface you are unsure about. Call with a `tool` id to get its full interface, examples and pitfalls. Documentation only: it does not grant execution, and results you get through bash remain unverified observations.",
+			promptSnippet: "List installed CLI tools, their invocation shape and pitfalls",
+			parameters: Type.Object({
+				tool: Type.Optional(Type.String({ description: "Tool id from the list; omit to list all tools" })),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				commandCtx = ctx;
+				await ensureLog(ctx);
+				const { path, ok, catalog, errors } = readToolCatalog();
+				if (!ok) {
+					return {
+						content: [{ type: "text", text: `Aegis toolbox: catalog unusable (${path}): ${errors.join("; ")}` }],
+						details: { ok: false, reason: "catalog_invalid" },
+					};
+				}
+				if (!path) {
+					return {
+						content: [
+							{ type: "text", text: "Aegis toolbox: no catalog configured (set AEGIS_HOME or AEGIS_TOOL_CATALOG)." },
+						],
+						details: { ok: false, reason: "no_catalog" },
+					};
+				}
+				const requested =
+					typeof (params as { tool?: string }).tool === "string" ? (params as { tool?: string }).tool?.trim() : "";
+				const summary = summarizeTools(catalog);
+				if (requested) {
+					const detail = describeTool(catalog, requested);
+					if (!detail) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Aegis toolbox: no tool "${requested}". Known: ${summary.map((entry) => entry.id).join(", ") || "(none)"}`,
+								},
+							],
+							details: { ok: false, reason: "unknown_tool" },
+						};
+					}
+					return {
+						content: [{ type: "text", text: JSON.stringify(detail, null, 2) }],
+						details: { ok: true, tool: detail.id },
+					};
+				}
+				if (summary.length === 0) {
+					return {
+						content: [{ type: "text", text: `Aegis toolbox: catalog at ${path} lists no tools yet.` }],
+						details: { ok: true, count: 0 },
+					};
+				}
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Aegis toolbox: ${summary.length} tool(s). Call aegis_toolbox with a tool id for the full interface and pitfalls.\n\n${JSON.stringify(summary, null, 2)}`,
+						},
+					],
+					details: { ok: true, count: summary.length },
+				};
+			},
+		}),
+	);
+
+	// -----------------------------------------------------------------------
+	// aegis_tool_note: propose a pitfall for one tool.
+	//
+	// The model PROPOSES; the note is stored as `candidate` in the catalog and only
+	// becomes `confirmed` when a human-confirmed outcome covers it (see checkFlag).
+	// A note is a judgement: condition + symptom + correct invocation.
+	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
+			name: "aegis_tool_note",
+			label: "Aegis: record a tool pitfall",
+			description:
+				"Record a pitfall you actually hit with a CLI tool so later runs do not repeat it. Requires the condition (when it applies), the symptom (what went wrong) and the correct invocation. It is stored as an unconfirmed candidate and only becomes confirmed when the human confirms a solve in this episode. Do not record speculation.",
+			promptSnippet: "Propose a tool pitfall (candidate until a confirmed solve)",
+			parameters: Type.Object({
+				tool: Type.String({ description: "Tool id from aegis_toolbox" }),
+				condition: Type.String({ description: "When this applies" }),
+				symptom: Type.String({ description: "What goes wrong" }),
+				correct_invocation: Type.String({ description: "What works instead" }),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				commandCtx = ctx;
+				await ensureLog(ctx);
+				if (!episodeId) {
+					return {
+						content: [{ type: "text", text: "Aegis: no open episode; tool note refused." }],
+						details: { ok: false, reason: "no_open_episode" },
+					};
+				}
+				const { path, ok, catalog } = readToolCatalog();
+				if (!path || !ok) {
+					return {
+						content: [{ type: "text", text: `Aegis: tool catalog unavailable (${path ?? "unset"}).` }],
+						details: { ok: false, reason: "no_catalog" },
+					};
+				}
+				const input = params as { tool?: string; condition?: string; symptom?: string; correct_invocation?: string };
+				const result = addToolNote(catalog, String(input.tool ?? ""), {
+					condition: input.condition,
+					symptom: input.symptom,
+					correct_invocation: input.correct_invocation,
+				});
+				if (!result.ok) {
+					return {
+						content: [{ type: "text", text: `Aegis: tool note refused: ${result.reason}` }],
+						details: { ok: false, reason: "invalid_note" },
+					};
+				}
+				saveToolCatalog(path, catalog);
+				return {
+					content: [
+						{
+							type: "text",
+							text: result.added
+								? `Aegis: recorded a CANDIDATE pitfall for ${input.tool}. It becomes confirmed only when the human confirms a solve in this episode.`
+								: `Aegis: that pitfall was already recorded for ${input.tool}.`,
+						},
+					],
+					details: { ok: true, added: result.added, promoted: result.promoted },
+				};
+			},
+		}),
+	);
+
+	// -----------------------------------------------------------------------
 	// Verify-first EXECUTE action. Only a HUMAN-REGISTERED script (fixed
 	// executable, fixed argv template, pinned digest, data-only params, a
 	// registered post-condition Oracle) can run. The model supplies only data
@@ -3022,8 +3235,18 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						return;
 					}
 					await persistProjections();
+					// A human-confirmed solve is the moment a pitfall stops being a
+					// proposal: promote this episode's candidate tool notes to confirmed and
+					// record which tools this episode actually used. The notes' text is not
+					// rewritten; only the status and provenance change.
+					const promoted = confirmToolNotesForEpisode({
+						path: toolCatalogPath(),
+						episodeId: episodeId ?? null,
+						events: log ? log.replay() : [],
+					});
 					notify(
-						`Aegis: recorded human outcome=success for task=${taskId} session=${sessionId} (flag value not stored)`,
+						`Aegis: recorded human outcome=success for task=${taskId} session=${sessionId} (flag value not stored)` +
+							(promoted.confirmed > 0 ? `; confirmed ${promoted.confirmed} tool pitfall(s)` : ""),
 					);
 					return;
 				}
