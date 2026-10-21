@@ -48,6 +48,8 @@ SEED_FILE=""
 KNOWLEDGE_DIR=""
 AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
+ATTACH=()
+MAX_ATTACH_BYTES=536870912
 MCP_MODE="off"       # off | on
 DRY_RUN=0
 LIST=0
@@ -68,6 +70,11 @@ Options:
   --workspace DIR     use DIR as the task workspace (default: <label>/workspace)
   --here              use the CURRENT directory as the workspace (no isolation).
                       Use this when the challenge files already sit in a folder.
+  --attach PATH       copy a file or directory into the workspace before launch.
+                      Repeatable. An existing destination is never overwritten.
+  --max-attach-bytes N
+                      refuse attachments larger than N bytes in total
+                      (default 536870912 = 512 MiB).
   --resume            reuse an existing <label> instead of refusing
   --bundle            launch the built bundle (run-pi.sh) instead of source
   --model PROVIDER/MODEL
@@ -109,6 +116,16 @@ while (($#)); do
 	case "$1" in
 		--workspace) WORKSPACE="${2:-}"; shift 2 ;;
 		--here) USE_CWD=1; shift ;;
+		--attach)
+			[[ $# -ge 2 ]] || { printf -- '--attach needs a path\n' >&2; exit 2; }
+			ATTACH+=("$2")
+			shift 2
+			;;
+		--max-attach-bytes)
+			[[ $# -ge 2 ]] || { printf -- '--max-attach-bytes needs a value\n' >&2; exit 2; }
+			MAX_ATTACH_BYTES="${2:-}"
+			shift 2
+			;;
 		--resume) MODE="resume"; shift ;;
 		--bundle) ENTRY="bundle"; shift ;;
 		--model) MODEL="${2:-}"; shift 2 ;;
@@ -357,6 +374,58 @@ else
 		"$(sed -n 's/.*"created_at": *"\([^"]*\)".*/\1/p' "$RUN_JSON" | head -1)"
 fi
 
+# --- attachments -----------------------------------------------------------
+# Copying is explicit and non-destructive: an existing destination is refused
+# rather than merged, so a re-run cannot silently overwrite challenge files.
+ATTACH_SUMMARY=()
+if (( ${#ATTACH[@]} )); then
+	((USE_CWD)) && die "--attach is pointless with --here: the files are already the workspace" 2
+	[[ "$MAX_ATTACH_BYTES" =~ ^[0-9]+$ ]] || die "--max-attach-bytes must be a whole number"
+
+	resolved=()
+	total_kb=0
+	for src in "${ATTACH[@]}"; do
+		[[ -n "$src" ]] || die "--attach needs a non-empty path"
+		[[ "$src" = /* ]] || src="$LAUNCH_DIR/$src"
+		[[ -e "$src" ]] || die "attachment not found: $src"
+		[[ -L "$src" ]] && die "attachment is a symlink, refusing to follow it: $src"
+		src="$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")"
+		resolved+=("$src")
+		size_kb="$(du -sk "$src" 2>/dev/null | awk '{print $1}')"
+		total_kb=$((total_kb + ${size_kb:-0}))
+		name="$(basename "$src")"
+		[[ -e "$WORKSPACE/$name" ]] && die "workspace already contains '$name'; refusing to overwrite it"
+	done
+	if (( total_kb * 1024 > MAX_ATTACH_BYTES )); then
+		die "attachments total $((total_kb)) KiB ($((total_kb * 1024)) bytes), above --max-attach-bytes ($MAX_ATTACH_BYTES bytes)"
+	fi
+
+	if ((DRY_RUN)); then
+		printf '  attach     (dry run, not copied)\n'
+		for src in "${resolved[@]}"; do printf '             %s -> %s\n' "$src" "$WORKSPACE/$(basename "$src")"; done
+	else
+		for src in "${resolved[@]}"; do
+			name="$(basename "$src")"
+			cp -R "$src" "$WORKSPACE/$name" || die "failed to copy $src"
+			ATTACH_SUMMARY+=("$src")
+			printf '  attach     %s -> %s\n' "$src" "$WORKSPACE/$name"
+		done
+		printf '  attached   %s item(s), %s KiB\n' "${#ATTACH_SUMMARY[@]}" "$total_kb"
+	fi
+fi
+
+# Record where the copied files came from. Derived data is rebuildable, but the
+# provenance of an experiment's inputs is not: it says what the run actually saw.
+if (( ${#ATTACH_SUMMARY[@]} )); then
+	{
+		printf '\n  "attachments": [\n'
+		for i in "${!ATTACH_SUMMARY[@]}"; do
+			printf '    "%s"%s\n' "${ATTACH_SUMMARY[$i]}" "$([[ $i -lt $((${#ATTACH_SUMMARY[@]} - 1)) ]] && echo ,)"
+		done
+		printf '  ]\n'
+	} >"$EXP_DIR/attachments.json"
+fi
+
 # --- summary ---------------------------------------------------------------
 printf 'Aegis experiment: %s%s\n' "$LABEL" "$([[ "$MODE" == "resume" ]] && echo ' (resume)')"
 printf '  entry      %s\n' "$([[ "$ENTRY" == bundle ]] && echo 'run-pi.sh (bundle)' || echo 'run-aegis.sh (source)')"
@@ -368,10 +437,11 @@ printf '  workspace  %s\n' "$WORKSPACE"
 if [[ "$WORKSPACE" != "$LAUNCH_DIR" ]]; then
 	workspace_items="$(find "$WORKSPACE" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
 	launch_items="$(find "$LAUNCH_DIR" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
-	if [[ "$workspace_items" == "0" && "$launch_items" != "0" ]]; then
+	if [[ "$workspace_items" == "0" && "$launch_items" != "0" && ${#ATTACH[@]} -eq 0 ]]; then
 		printf '\n  NOTE: the workspace is EMPTY. Files in %s are not visible to this run.\n' "$LAUNCH_DIR" >&2
 		printf '        To work on those files: %s %s --here\n' "$0" "$LABEL" >&2
 		printf '        Or point at another folder:  %s %s --workspace DIR\n' "$0" "$LABEL" >&2
+		printf '        Or copy files in:            %s %s --attach PATH\n' "$0" "$LABEL" >&2
 	fi
 fi
 printf '  events     %s\n' "$EVENT_LOG"

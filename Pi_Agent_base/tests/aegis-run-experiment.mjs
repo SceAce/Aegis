@@ -458,3 +458,108 @@ test("no warning when the launch directory is the workspace", () => {
 		rmSync(launch, { recursive: true, force: true });
 	}
 });
+
+test("--attach copies a file and a directory into the workspace", () => {
+	const home = freshHome();
+	const src = mkdtempSync(join(tmpdir(), "aegis-src-"));
+	try {
+		writeFileSync(join(src, "one.zip"), "zip\n", "utf8");
+		mkdirSync(join(src, "bundle", "nested"), { recursive: true });
+		writeFileSync(join(src, "bundle", "题面.txt"), "challenge\n", "utf8");
+		writeFileSync(join(src, "bundle", "nested", "data.bin"), "data\n", "utf8");
+
+		const result = run(["att-001", "--attach", join(src, "one.zip"), "--attach", join(src, "bundle"), "--", "--help"], {
+			home,
+		});
+		assert.equal(result.status, 0, result.stderr);
+
+		const ws = join(home, "experiments", "att-001", "workspace");
+		assert.equal(readFileSync(join(ws, "one.zip"), "utf8"), "zip\n");
+		assert.equal(readFileSync(join(ws, "bundle", "题面.txt"), "utf8"), "challenge\n");
+		assert.equal(readFileSync(join(ws, "bundle", "nested", "data.bin"), "utf8"), "data\n");
+
+		// Provenance is recorded so the run says what it actually saw.
+		const provenance = readFileSync(join(home, "experiments", "att-001", "attachments.json"), "utf8");
+		assert.match(provenance, /one\.zip/);
+		assert.match(provenance, /bundle/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(src, { recursive: true, force: true });
+	}
+});
+
+test("--attach never overwrites an existing workspace entry", () => {
+	const home = freshHome();
+	const src = mkdtempSync(join(tmpdir(), "aegis-src2-"));
+	try {
+		writeFileSync(join(src, "same.txt"), "first\n", "utf8");
+		assert.equal(run(["att-002", "--attach", join(src, "same.txt"), "--", "--help"], { home }).status, 0);
+		writeFileSync(join(src, "same.txt"), "second\n", "utf8");
+		const again = run(["att-002", "--resume", "--attach", join(src, "same.txt"), "--", "--help"], { home });
+		assert.equal(again.status, 2);
+		assert.match(again.stderr, /refusing to overwrite/);
+		// The original content must be untouched.
+		assert.equal(readFileSync(join(home, "experiments", "att-002", "workspace", "same.txt"), "utf8"), "first\n");
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(src, { recursive: true, force: true });
+	}
+});
+
+test("--attach refusals: missing source, symlink, --here, size cap", () => {
+	const home = freshHome();
+	const src = mkdtempSync(join(tmpdir(), "aegis-src3-"));
+	try {
+		writeFileSync(join(src, "big.bin"), "x".repeat(4096), "utf8");
+		mkdirSync(join(src, "dir"), { recursive: true });
+		writeFileSync(join(src, "dir", "f.txt"), "y".repeat(4096), "utf8");
+		const link = join(src, "link.bin");
+		writeFileSync(link, "z", "utf8");
+
+		const missing = run(["att-003", "--attach", join(src, "nope"), "--dry-run"], { home });
+		assert.equal(missing.status, 2);
+		assert.match(missing.stderr, /attachment not found/);
+
+		const withHere = run(["att-004", "--here", "--attach", join(src, "big.bin"), "--dry-run"], { home, cwd: src });
+		assert.equal(withHere.status, 2);
+		assert.match(withHere.stderr, /pointless with --here/);
+
+		const tooBig = run(["att-005", "--attach", join(src, "big.bin"), "--max-attach-bytes", "100", "--dry-run"], {
+			home,
+		});
+		assert.equal(tooBig.status, 2);
+		assert.match(tooBig.stderr, /above --max-attach-bytes/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(src, { recursive: true, force: true });
+	}
+});
+
+test("--attach with --dry-run copies nothing", () => {
+	const home = freshHome();
+	const src = mkdtempSync(join(tmpdir(), "aegis-src4-"));
+	try {
+		writeFileSync(join(src, "f.txt"), "x\n", "utf8");
+		const result = run(["att-006", "--attach", join(src, "f.txt"), "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(existsSync(join(home, "experiments", "att-006", "workspace", "f.txt")), false);
+		assert.match(result.stdout, /dry run, not copied/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(src, { recursive: true, force: true });
+	}
+});
+
+test("attachments suppress the empty-workspace warning", () => {
+	const home = freshHome();
+	const launch = mkdtempSync(join(tmpdir(), "aegis-launch3-"));
+	try {
+		writeFileSync(join(launch, "题面.txt"), "x\n", "utf8");
+		const result = run(["att-007", "--attach", join(launch, "题面.txt"), "--dry-run"], { home, cwd: launch });
+		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stderr, /workspace is EMPTY/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(launch, { recursive: true, force: true });
+	}
+});
