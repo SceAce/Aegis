@@ -135,6 +135,15 @@ const WORKFLOW_WORDS = new Set(
 		" ",
 	),
 );
+// Chinese has no word spaces, so `terms()` emits bigrams. Task-wrapper bigrams then
+// collide with topic text: "这是 CTF web 的题目…解出 flag" matched "RSA 复杂题目"
+// purely on 题目. These describe the request, not the technique, so they are not
+// evidence that a section is relevant.
+const WRAPPER_BIGRAMS = new Set(
+	"这是 的题 题目 题面 附件 解出 解法 并且 记录 一下 时间 帮我 这个 那个 什么 怎么 需要 已经 可以 一个 现在 我们 你们 它们 通过 进行 使用 结果 输出 正确 错误 请帮 看下 看看 试试 是否 上面 下面 这里 那里 时候".split(
+		" ",
+	),
+);
 const HAN_FROM = "條爾當頁據種響應恢復數觀兩時";
 const HAN_TO = "条尔当页据种响应恢复数观两时";
 function canonicalText(value) {
@@ -143,6 +152,112 @@ function canonicalText(value) {
 		.replace(/[條爾當頁據種響應恢復數觀兩時]/g, (c) => HAN_TO[HAN_FROM.indexOf(c)])
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+// Direction hints in the request. A message that names its domain ("CTF web",
+// "rsa", "栈溢出") is a strong filter: retrieving kernel ROP notes for a web task
+// wastes context and, worse, invites the wrong plan. Only used when the hint is
+// explicit and the corpus actually has that category.
+const DIRECTION_HINTS = {
+	web: [
+		"web",
+		"http",
+		"https",
+		"sql",
+		"sqli",
+		"xss",
+		"ssrf",
+		"csrf",
+		"upload",
+		"cookie",
+		"php",
+		"jwt",
+		"flask",
+		"thinkphp",
+		"nginx",
+	],
+	crypto: [
+		"crypto",
+		"rsa",
+		"aes",
+		"ecc",
+		"des",
+		"hash",
+		"md5",
+		"sha",
+		"lattice",
+		"格子",
+		"格",
+		"共模",
+		"离散对数",
+		"维纳",
+		"广播",
+		"padding oracle",
+	],
+	pwn: [
+		"pwn",
+		"rop",
+		"ret2",
+		"shellcode",
+		"栈溢出",
+		"堆",
+		"heap",
+		"tcache",
+		"uaf",
+		"格式化字符串",
+		"libc",
+		"seccomp",
+		"one_gadget",
+	],
+	reverse: [
+		"reverse",
+		"逆向",
+		"反编译",
+		"反汇编",
+		"apk",
+		"dex",
+		"jadx",
+		"ida",
+		"ghidra",
+		"upx",
+		"angr",
+		"frida",
+		"ollvm",
+	],
+	misc: ["misc", "隐写", "stego", "流量", "pcap", "取证", "音频", "图片", "二维码", "压缩包", "编码", "osint"],
+};
+
+/** Category segment of a seed path, e.g. ctf-wiki/web/zh/... -> web. */
+function directionOfPath(path) {
+	const parts = String(path).split("/");
+	const index = parts.indexOf("ctf-wiki");
+	const segment = index >= 0 ? parts[index + 1] : parts[0];
+	return segment && DIRECTION_HINTS[segment] ? segment : null;
+}
+
+/** The direction the request itself names, or null when it does not say. */
+function directionOfQuery(words) {
+	for (const [direction, hints] of Object.entries(DIRECTION_HINTS)) {
+		if (words.some((word) => hints.includes(word))) return direction;
+	}
+	return null;
+}
+
+/** Minimum relevance for an automatic recall. Explicit `ids` bypass scoring. */
+const MIN_RELEVANCE = 5;
+
+/**
+ * A long latin token is specific on its own: "changed_content" or
+ * "http_response_split" identifies a section, while "题目" identifies nothing.
+ * Without a full IDF pass this is the cheap proxy that keeps precise queries
+ * working under the MIN_RELEVANCE floor.
+ */
+function hasSpecificWord(record, words) {
+	const body = canonicalText(record.content);
+	const heading = canonicalText(record.section.join(" "));
+	return words.some(
+		(word) => word.length >= 6 && /^[a-z0-9_]/.test(word) && (heading.includes(word) || body.includes(word)),
+	);
 }
 
 function score(record, words) {
@@ -224,22 +339,36 @@ export async function selectKnowledge({
 	}
 	const byId = new Map(records.map((record) => [record.knowledge_id, record]));
 	const allWords = terms(canonicalText(query));
-	const taskWords = allWords.filter((word) => !WORKFLOW_WORDS.has(word));
+	const taskWords = allWords.filter((word) => !WORKFLOW_WORDS.has(word) && !WRAPPER_BIGRAMS.has(word));
 	const words = taskWords.length ? taskWords : allWords;
-	const ranked =
+	// Direction filter: when the request names a domain, drop records from other
+	// domains. Falling back to the unfiltered set keeps recall when a category is
+	// absent from the corpus, so this never hides knowledge entirely.
+	const direction = ids.length === 0 ? directionOfQuery(words) : null;
+	const sameDirection =
+		direction === null ? records : records.filter((record) => directionOfPath(record.knowledge_id) === direction);
+	const pool = sameDirection.length > 0 ? sameDirection : records;
+	const rankedWithScore =
 		ids.length > 0
-			? [...new Set(ids)].map((id) => byId.get(id)).filter(Boolean)
-			: records
+			? [...new Set(ids)].map((id) => ({ record: byId.get(id), score: null })).filter((entry) => entry.record)
+			: pool
 					.map((record) => ({ record, score: score(record, words) }))
-					.filter((entry) => entry.score > 0)
-					.sort((a, b) => b.score - a.score || a.record.knowledge_id.localeCompare(b.record.knowledge_id))
-					.map((entry) => entry.record);
+					.filter((entry) => entry.score >= MIN_RELEVANCE || hasSpecificWord(entry.record, words))
+					.sort((a, b) => b.score - a.score || a.record.knowledge_id.localeCompare(b.record.knowledge_id));
+	const ranked = rankedWithScore.map((entry) => entry.record);
+	const scoreById = new Map(rankedWithScore.map((entry) => [entry.record.knowledge_id, entry.score]));
 	let remaining = maxChars;
 	const selected = [];
 	const seenContent = new Set();
+	// Parallel translations (zh / zh-tw / en) of the same page score identically and
+	// would fill every slot with one section. One row per section path keeps the
+	// working set diverse without changing what counts as relevant.
+	const seenSection = new Set();
 	for (const record of ranked) {
 		if (remaining <= 0 || selected.length >= (taskWords.length ? maxResults : 1)) break;
 		const contentKey = canonicalText(record.content);
+		const sectionKey = `${record.source_uri}|${canonicalText(record.section.join("/"))}`;
+		if (seenSection.has(sectionKey)) continue;
 		if (
 			record.kind === "heading" &&
 			ranked.some(
@@ -262,9 +391,16 @@ export async function selectKnowledge({
 		)
 			continue;
 		seenContent.add(contentKey);
+		seenSection.add(sectionKey);
 		const content = record.content.slice(0, remaining);
 		remaining -= content.length;
-		selected.push({ ...record, content, truncated: record.truncated || content.length !== record.content.length });
+		selected.push({
+			...record,
+			content,
+			truncated: record.truncated || content.length !== record.content.length,
+			// Why this row was recalled; null for an explicit id lookup.
+			score: scoreById.get(record.knowledge_id) ?? null,
+		});
 	}
 	return {
 		version: KNOWLEDGE_VERSION,

@@ -48,6 +48,16 @@ try {
 		true,
 		"no stale catalog after file update",
 	);
+	// A long, unique latin token still recalls even though a body hit alone scores 2.
+	assert.equal(
+		(await selectKnowledge({ root, query: "changed_content" })).selected[0].score >= 0,
+		true,
+		"score is exposed for audits",
+	);
+	// Task-wrapper Chinese bigrams are not evidence: "题目" must not recall a section
+	// just because the section heading ends with the same two characters.
+	const wrapperOnly = await selectKnowledge({ root, query: "这是题目" });
+	assert.equal(wrapperOnly.selected.length, 0, "wrapper words alone must not recall anything");
 
 	const events = [
 		{
@@ -99,3 +109,58 @@ try {
 } finally {
 	await rm(root, { recursive: true, force: true });
 }
+
+// Direction filter: a request that names its domain must not recall other domains.
+{
+	const root = await mkdtemp(join(tmpdir(), "aegis-knowledge-direction-"));
+	try {
+		await mkdir(join(root, "web"), { recursive: true });
+		await mkdir(join(root, "pwn"), { recursive: true });
+		const source = (uri) => ({ source_uri: uri, source_kind: "external_reference", approved: true });
+		await writeFile(
+			join(root, "web", "upload.json"),
+			JSON.stringify(
+				compileDocumentSeed({
+					markdown: "# Web\n\nweb 文件上传绕过与 flag 读取\n",
+					source: source("https://example.test/web/upload"),
+				}),
+			),
+		);
+		await writeFile(
+			join(root, "pwn", "kernel.json"),
+			JSON.stringify(
+				compileDocumentSeed({
+					markdown: "# 内核 pwn\n\npwn 内核里搜索 flag\n",
+					source: source("https://example.test/pwn/kernel"),
+				}),
+			),
+		);
+
+		const web = await selectKnowledge({ root, query: "这是 CTF web 题目，解出 flag" });
+		assert.ok(web.selected.length > 0, "web task recalls web material");
+		assert.equal(
+			web.selected.every((row) => row.knowledge_id.split("/")[0] === "web"),
+			true,
+			`a web task must not surface pwn rows: ${web.selected.map((row) => row.knowledge_id).join(",")}`,
+		);
+
+		const pwn = await selectKnowledge({ root, query: "内核 pwn 里搜索 flag" });
+		assert.equal(
+			pwn.selected.every((row) => row.knowledge_id.split("/")[0] === "pwn"),
+			true,
+			"a pwn task must not surface web rows",
+		);
+
+		// A bare generic word is not evidence of relevance. Zero recall is a valid,
+		// documented outcome (KNOW-01): better nothing than four wrong sections.
+		const vague = await selectKnowledge({ root, query: "flag" });
+		assert.equal(vague.selected.length, 0, "a single generic word recalls nothing");
+
+		// Without a direction word but with a specific term, recall still works.
+		const specific = await selectKnowledge({ root, query: "上传绕过" });
+		assert.ok(specific.selected.length > 0, "a specific term recalls without a direction hint");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+}
+console.log("Knowledge direction filter passed");
