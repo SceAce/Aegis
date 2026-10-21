@@ -2,6 +2,8 @@
 
 状态：内部验证通过，尚无真实模型效果实验或独立验收结论。
 
+> 历史记录（基线见下）。2026-10-21 仓库 `knowledge/` 已整体移除，技法卡与 wiki seed 只保存在 `$AEGIS_HOME/knowledge/`；本文的仓库路径仅代表当时基线。当前接口、搜索回退与路径见 [KNOWLEDGE_RUNTIME.md](KNOWLEDGE_RUNTIME.md)。
+
 ## 范围与基线
 
 本次开始读取到的主仓库 HEAD 为 `a91012cdf24badcb7f5c128b504959904bf7e9c5`，分支为 `feat/structured-ram-and-exploration-control`，起点无用户未提交改动。内嵌 Pi HEAD `42a3497d03ad17e308a2299fa824727894f2c0ec`，本次未修改其源码或私有配置。

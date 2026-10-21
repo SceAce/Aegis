@@ -3,6 +3,7 @@ set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AEGIS_BASE="$BASE_DIR/Pi_Agent_base"
+AEGIS_HOME="${AEGIS_HOME:-${HOME:-$BASE_DIR}/.Aegis}"
 TASK_ID=""
 SESSION_ID=""
 SEED_FILE=""
@@ -26,7 +27,7 @@ Options:
   --task-id ID       Explicit safe task/session id; default ram-test-<uuid>
   --session-id ID    Resume/create this Pi session id; defaults to task id
   --seed FILE        Inject one bounded, unverified RAM reference JSON
-  --compile FILE.md  Compile Markdown under knowledge/documents for reuse
+  --compile FILE.md  Compile Markdown under the Aegis home knowledge/documents for reuse
   --proxy URL        Proxy used by the Pi process with --proxy-model
   --provider NAME    Pi provider id (default: maxapi; official global config uses deedeepseek)
   --model NAME       Pi model id (default: deepseek-v4.1-flash)
@@ -36,7 +37,7 @@ Options:
   --no-seed          Do not inject a RAM reference
   --help             Show this help
 
-Local knowledge under knowledge/ is recalled automatically. The LLM can refine
+Local knowledge under the Aegis home knowledge/ is recalled automatically. The LLM can refine
 selection with aegis_knowledge. --no-seed disables only the explicit seed file.
 All remaining arguments after `--` are passed to run-pi.sh.
 EOF
@@ -72,8 +73,8 @@ if [[ -n "$SESSION_ID" ]]; then safe_id "$SESSION_ID"; else SESSION_ID="$TASK_ID
 if [[ -n "$COMPILE_FILE" ]]; then
 	[[ -f "$COMPILE_FILE" ]] || { echo "Markdown source not found: $COMPILE_FILE" >&2; exit 2; }
 	[[ "$COMPILE_FILE" = /* ]] || COMPILE_FILE="$(cd "$(dirname "$COMPILE_FILE")" && pwd)/$(basename "$COMPILE_FILE")"
-	SEED_FILE="$BASE_DIR/knowledge/documents/$(basename "${COMPILE_FILE%.*}").seed.json"
-	mkdir -p "$BASE_DIR/knowledge/documents"
+	SEED_FILE="$AEGIS_HOME/knowledge/documents/$(basename "${COMPILE_FILE%.*}").seed.json"
+	mkdir -p "$AEGIS_HOME/knowledge/documents"
 	node "$BASE_DIR/compile-document-seed.mjs" --input "$COMPILE_FILE" --output "$SEED_FILE" >&2
 fi
 if [[ -n "$SEED_FILE" ]]; then
@@ -88,7 +89,7 @@ export AEGIS_RAM_DIR="$ATTEMPT/ram"
 export AEGIS_HANDOFF_FILE="$ATTEMPT/ram/handoff.json"
 export AEGIS_PROJECTION_DIR="$ATTEMPT/projections"
 export AEGIS_EXPERIENCE_DIR="$ATTEMPT/experiences"
-export AEGIS_KNOWLEDGE_DIR="${AEGIS_KNOWLEDGE_DIR:-$BASE_DIR/knowledge}"
+export AEGIS_KNOWLEDGE_DIR="${AEGIS_KNOWLEDGE_DIR:-$AEGIS_HOME/knowledge}"
 # Keep the selected provider/model stable across session replacement. Pi's
 # runtime recreates the session from these process-level selections; without
 # this, a restored transcript can fall back to a provider with no auth.

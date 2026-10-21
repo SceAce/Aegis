@@ -3,9 +3,11 @@
 状态：**设计提案，待确认**。本文只做字段语义分析与迁移方案，不代表已实现。
 基线：`1ec6cd7`（2026-10-21）。契约依据 [MEMORY_SCHEMA](MEMORY_SCHEMA.md) §6。
 
+> 2026-10-21 路径更新：仓库 `knowledge/` 已删除；47 张卡及其 `build_cards.py`、`cards.json`、`seeds/` 现位于 `$AEGIS_HOME/knowledge/techniques/`（默认 `~/.Aegis/knowledge/techniques/`），不再纳入 Git。下文历史路径保留为当时基线；当前操作路径以 [KNOWLEDGE_RUNTIME.md](KNOWLEDGE_RUNTIME.md) 为准。
+
 ## 1. 现状事实
 
-47 张卡位于 `knowledge/techniques/cards/*.md`，编译产物 `cards.json`（47 张，全部
+47 张卡位于 `$AEGIS_HOME/knowledge/techniques/cards/*.md`，编译产物 `cards.json`（47 张，全部
 `status: "verified"`），消费者是 `extensions/aegis-contest.ts` 的 `ContestCard`：
 
 ```ts
@@ -202,9 +204,9 @@ injectable = curation == "reviewed"
 | --- | --- |
 | `Pi_Agent_base/contest/card-schema.mjs` | 新增。v2 解析、v1 兼容映射、`isInjectable` 派生判定、`reproduction` 校验、禁止字段检查 |
 | `Pi_Agent_base/extensions/aegis-contest.ts` | 卡片模型改为 v2；注入门控改为派生判定；`environment: "any"` 支持；渲染显示 `curation`/`evidence` 与 `does NOT apply when:` |
-| `knowledge/techniques/build_cards.py` | 既有单一生成器升级为 v2 输出（`curation`/`evidence`/`triggers`/`environment: any`/`## Limits`），并纳入 Git 跟踪 |
-| `knowledge/techniques/cards/*.md` | 47 个文件由生成器重新产出 v2（不手改） |
-| `.gitignore` | 作用域例外：`knowledge/*` 仍忽略，放行 `knowledge/techniques/**` |
+| `$AEGIS_HOME/knowledge/techniques/build_cards.py` | 既有单一生成器升级为 v2 输出（`curation`/`evidence`/`triggers`/`environment: any`/`## Limits`）；2026-10-21 起仅本地保存，不纳入 Git |
+| `$AEGIS_HOME/knowledge/techniques/cards/*.md` | 47 个文件由生成器重新产出 v2（不手改） |
+| `.gitignore` | 仓库不再有 `knowledge/`；新增 `/knowledge/` 忽略，防止误建后覆盖本地语料 |
 | `Pi_Agent_base/tests/aegis-card-schema.mjs` | 新增 15 例 |
 
 ### 8.2 迁移前后对照
@@ -235,14 +237,14 @@ injectable = curation == "reviewed"
 | `aegis-ram-knowledge-reserve` | exit 0 |
 | required 清单 | 68 scripts, 0 failed |
 | `tsc tsconfig.aegis-campaign.json` | 193，无新增 |
-| 卡片生成 | `python3 knowledge/techniques/build_cards.py` → 47 张；`curation=reviewed`×47、`evidence=document`×47、`environment=any`×47、`limits` 47/47 |
+| 卡片生成 | `python3 ~/.Aegis/knowledge/techniques/build_cards.py` → 47 张；`curation=reviewed`×47、`evidence=document`×47、`environment=any`×47、`limits` 47/47 |
 | 生成结果过共享 schema | `parseCards(cards.json)` ok，47 张全部 `isInjectable` |
 
 ### 8.4 对本文早期表述的更正
 
-§4 最初写「`md → cards.json` 的脚本当前缺失」。这是错的：`knowledge/techniques/build_cards.py`
+§4 最初写「`md → cards.json` 的脚本当前缺失」。这是错的：`$AEGIS_HOME/knowledge/techniques/build_cards.py`
 一直存在且是唯一来源，只是**未纳入 Git**， repository 视角看不见。同理，`status=verified`
-「只表示人看过」也已写在 `knowledge/techniques/README.md` 里。本文的两个结论仍然成立
+「只表示人看过」也已写在 `$AEGIS_HOME/knowledge/techniques/README.md` 里。本文的两个结论仍然成立
 （字段在代码路径上确实混用、自动注入确实依赖单个布尔），但不应当写成「未记录」或「无生成器」。
 
 另：期间曾新增 `build-technique-cards.mjs` 做同样的 md→json 转换，已删除——保留两套生成器

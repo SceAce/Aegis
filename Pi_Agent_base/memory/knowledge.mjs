@@ -1,11 +1,22 @@
 // Local reference retrieval. Model queries/ids select data, never proof or policy.
 import { open, readdir } from "node:fs/promises";
-import { relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { redactMemoryText } from "./summary.mjs";
 
 export const KNOWLEDGE_VERSION = "1.0.0";
-const DEFAULT_ROOT = fileURLToPath(new URL("../../knowledge/", import.meta.url));
+/**
+ * The knowledge base lives with the Aegis state home, never in the repository.
+ * A repository fallback was removed deliberately: a stale checkout must not
+ * silently supply (or shadow) the operator's local corpus.
+ */
+function defaultKnowledgeRoot(env = process.env) {
+	const home = env.AEGIS_HOME || join(homedir(), ".Aegis");
+	return join(home, "knowledge");
+}
+// Metadata files in the knowledge tree are not document seeds. Skipping them
+// avoids parsing large indexes and reporting them as rejected seeds.
+const NON_SEED_FILES = new Set(["manifest.json", "cards.json", "candidates.json", "analysis.json", "summary.json"]);
 const MAX_FILES = 4096;
 const MAX_FILE_BYTES = 1_048_576;
 const MAX_TOTAL_BYTES = 64 * 1_048_576;
@@ -40,6 +51,7 @@ async function filesUnder(root) {
 		}
 		for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
 			if (entry.name.startsWith(".") || entry.name === "ctf-wiki-crawl") continue;
+			if (NON_SEED_FILES.has(entry.name) || entry.name.endsWith(".recipe.json")) continue;
 			if (paths.length >= MAX_FILES) {
 				omitted = true;
 				break;
@@ -416,5 +428,5 @@ export async function selectKnowledge({
 }
 
 export function knowledgeRootFromEnv() {
-	return process.env.AEGIS_KNOWLEDGE_DIR || DEFAULT_ROOT;
+	return process.env.AEGIS_KNOWLEDGE_DIR || defaultKnowledgeRoot();
 }

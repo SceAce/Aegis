@@ -46,6 +46,9 @@ THINKING=""
 TASK_ID=""
 SEED_FILE=""
 KNOWLEDGE_DIR=""
+KNOWLEDGE_OVERRIDE=0
+WEB_SEARCH="${AEGIS_WEB_SEARCH:-on}"
+SEARCH_DENY="${AEGIS_SEARCH_DENY:-}"
 AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
 SCRIPT_CONFIG_OVERRIDE=""
@@ -95,13 +98,18 @@ Options:
   --thinking LEVEL    off|minimal|low|medium|high|max
   --task-id ID        explicit task id (default: the label)
   --seed FILE         inject one bounded, unverified RAM reference
-  --knowledge DIR     knowledge root (default: $AEGIS_HOME/knowledge if present,
-                      else the repository knowledge/)
+  --knowledge DIR     knowledge root (default: $AEGIS_HOME/knowledge; there is no
+                      repository fallback)
   --agent-dir DIR     Pi agent dir (auth/models/settings). Default:
                       $AEGIS_HOME/agent, i.e. your normal credentials.
   --isolate-agent     use a private, empty agent dir for this run. You will have
                       to authenticate inside it first; credentials are never
                       copied for you.
+  --web-search        enable the DeepSeek technique search (default: on; it needs a
+                      DeepSeek key in AEGIS_HOME/agent/auth.json or DEEPSEEK_API_KEY)
+  --no-web-search     disable web search for this run
+  --search-deny LIST  comma-separated challenge/target tokens the search query
+                      must never contain (in addition to the auto-derived target)
   --mcp               start MCP servers, EXCEPT browser automation. Driving a page
                       (finding selectors, waiting for UI) costs more time than it
                       saves on most tasks, so browsers are disabled by default and
@@ -159,7 +167,10 @@ while (($#)); do
 		--thinking) THINKING="${2:-}"; shift 2 ;;
 		--task-id) TASK_ID="${2:-}"; shift 2 ;;
 		--seed) SEED_FILE="${2:-}"; shift 2 ;;
-		--knowledge) KNOWLEDGE_DIR="${2:-}"; shift 2 ;;
+		--knowledge) KNOWLEDGE_DIR="${2:-}"; KNOWLEDGE_OVERRIDE=1; shift 2 ;;
+		--web-search) WEB_SEARCH="on"; shift ;;
+		--no-web-search) WEB_SEARCH="off"; shift ;;
+		--search-deny) SEARCH_DENY="${2:-}"; shift 2 ;;
 		--agent-dir) AGENT_DIR_OVERRIDE="${2:-}"; shift 2 ;;
 		--isolate-agent) ISOLATE_AGENT=1; shift ;;
 		--mcp) MCP_MODE="filtered"; shift ;;
@@ -204,6 +215,8 @@ fi
 }
 [[ "$LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid label '$LABEL': use letters, digits, dot, dash, underscore"
 [[ "$LABEL" == *..* ]] && die "invalid label '$LABEL': '..' is not allowed"
+[[ "$WEB_SEARCH" =~ ^(on|off)$ ]] || die "--web-search value must be on or off"
+[[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-deny must not contain quotes or newlines"
 
 for f in "$AEGIS_BASE/run-aegis.sh" "$AEGIS_BASE/run-pi.sh" "$AEGIS_BASE/agent/ROM.md"; do
 	[[ -f "$f" ]] || die "missing required file: ${f#"$BASE_DIR"/}" 1
@@ -276,16 +289,18 @@ fi
 [[ "$TASK_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid --task-id '$TASK_ID'"
 
 if [[ -z "$KNOWLEDGE_DIR" ]]; then
-	# Match what the runtime would do, but prefer the Aegis home when it exists,
-	# so a wiki built with build-ctf-wiki-memory.mjs is actually found.
-	if [[ -d "$AEGIS_HOME/knowledge" ]]; then
-		KNOWLEDGE_DIR="$AEGIS_HOME/knowledge"
-	else
-		KNOWLEDGE_DIR="$BASE_DIR/knowledge"
-	fi
+	# The knowledge base lives with the Aegis state home. There is deliberately no
+	# repository fallback: a stale checkout must not shadow the operator's corpus.
+	KNOWLEDGE_DIR="$AEGIS_HOME/knowledge"
 fi
 [[ "$KNOWLEDGE_DIR" = /* ]] || KNOWLEDGE_DIR="$PWD/$KNOWLEDGE_DIR"
-[[ -d "$KNOWLEDGE_DIR" ]] || die "knowledge directory not found: $KNOWLEDGE_DIR"
+if [[ ! -d "$KNOWLEDGE_DIR" ]]; then
+	if ((KNOWLEDGE_OVERRIDE)); then
+		die "knowledge directory not found: $KNOWLEDGE_DIR"
+	fi
+	mkdir -p "$KNOWLEDGE_DIR" || die "could not create knowledge directory: $KNOWLEDGE_DIR"
+	printf 'run-experiment: created empty knowledge directory %s\n' "$KNOWLEDGE_DIR" >&2
+fi
 
 if [[ -n "$SEED_FILE" ]]; then
 	[[ "$SEED_FILE" = /* ]] || SEED_FILE="$PWD/$SEED_FILE"
@@ -419,6 +434,10 @@ export AEGIS_HANDOFF_FILE="$HANDOFF_FILE"
 export AEGIS_PROJECTION_DIR="$PROJECTION_DIR"
 export AEGIS_EXPERIENCE_DIR="$EXPERIENCE_DIR"
 export AEGIS_KNOWLEDGE_DIR="$KNOWLEDGE_DIR"
+export AEGIS_WEB_SEARCH="$WEB_SEARCH"
+if [[ -n "$SEARCH_DENY" ]]; then
+	export AEGIS_SEARCH_DENY="$SEARCH_DENY"
+fi
 export AEGIS_PI_AGENT_DIR="$AGENT_DIR"
 export AEGIS_PI_SESSION_DIR="$SESSION_DIR"
 export AEGIS_PI_SERVER_DIR="$SERVER_DIR"
@@ -491,6 +510,8 @@ if [[ ! -f "$RUN_JSON" ]]; then
   "agent_mode": "$AGENT_MODE",
   "mcp": "$MCP_MODE",
   "seed_file": ${SEED_FILE:+\"$SEED_FILE\"}${SEED_FILE:-null},
+  "web_search": "$WEB_SEARCH",
+  "search_deny": ${SEARCH_DENY:+\"$SEARCH_DENY\"}${SEARCH_DENY:-null},
   "note": "derived parameters only; no credentials are stored here"
 }
 JSON
@@ -572,6 +593,7 @@ fi
 printf '  events     %s\n' "$EVENT_LOG"
 printf '  ram        %s\n' "$RAM_DIR"
 printf '  knowledge  %s\n' "$KNOWLEDGE_DIR"
+printf '  search     %s%s\n' "$WEB_SEARCH" "$([[ "$WEB_SEARCH" == on ]] && echo ' - DeepSeek Search (technique/CVE only; target denylist)' || echo ' - disabled')"
 printf '  agent      %s (%s)\n' "$AGENT_DIR" "$AGENT_MODE"
 printf '  mcp        %s%s\n' "$MCP_MODE" "${MCP_NOTE:+ - $MCP_NOTE}"
 if [[ -n "$SCRIPT_CONFIG" ]]; then

@@ -96,11 +96,22 @@ RAM and a handoff; history stays for audit.
   (for example `refusal_reason: "ram_overflow"`) has `provider_bound: false`.
   It creates **no** board node and does **not** bump `RuntimeState.version`, so it
   can never feed back into the next projection.
-- RAM v2 adds `ram_version`, `ram_budget_chars`, `ram_overflow` and `ram_sections`
-  (`id/total/shown/omitted`) to that diagnostic payload. `ram_estimated_chars`
-  counts the complete RAM string including headings/counters/footer (UTF-16
-  code units, not provider tokens). The transport remains one ephemeral user
-  tail per provider request; it is not stored in the Session transcript.
+- RAM v2 adds `ram_version`, `ram_budget_chars`, `ram_overflow`,
+  `ram_core_overflow` and `ram_sections` (`id/total/shown/omitted`) to that
+  diagnostic payload. `ram_estimated_chars` counts the complete RAM string
+  including headings/counters/footer (UTF-16 code units, not provider tokens),
+  and the footer is part of the compression budget. `ram_sections` is computed
+  from the FINAL registers, not from admission: a row admitted and then dropped
+  for budget is reported as omitted.
+- `ram_core_overflow` (and `meta.core_overflow`) is true only when the mandatory
+  core (task/pending/authorization/budget plus fixed bookkeeping) exceeds the
+  budget after every optional register was dropped. Optional material overflowing
+  is not a refusal: it is dropped and disclosed. The Observer aborts with
+  `provider_bound=false` / `refusal_reason=ram_overflow` only for a core
+  overflow. The fixed-width `meta.pad` keeps the serialized length independent
+  of the boolean footer values, so writing the footer cannot undo compression.
+- The transport remains one ephemeral user tail per provider request; it is not
+  stored in the Session transcript.
 
 ### Human hint (`runtime.note` / `kind: "human.hint"`)
 

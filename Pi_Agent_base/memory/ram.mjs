@@ -470,16 +470,6 @@ export function buildRamProjection({
 			budget: safe(episode?.budget ?? "unknown", 200),
 		};
 		const registers = buildRegisters(task, subgoalNode);
-		const sectionsSummary = Object.fromEntries(
-			ORDER.map((id) => [
-				id,
-				{
-					total: totals[id],
-					shown: selected[id].length,
-					omitted: totals[id] - selected[id].length,
-				},
-			]),
-		);
 		const refsTable = Object.fromEntries(Object.entries(refs).map(([key, { _key, ...value }]) => [key, value]));
 		function collectViewRefs() {
 			const usedRefs = new Set();
@@ -536,18 +526,73 @@ export function buildRamProjection({
 				? { workflow: safe(state.work_state[episode.task_id], 600) }
 				: {}),
 			pending: registers.pending,
-			sections: sectionsSummary,
+			// Rebuilt from the FINAL registers on every serialize (see syncMeta), not
+			// from admission decisions: a row admitted and then dropped for budget must
+			// not still be reported as shown.
+			sections: {},
 			refs: collectViewRefs(),
 			meta: {
 				ram_estimated_chars: 0,
 				ram_budget_chars: budget,
+				// COMPRESSION PLACEHOLDER: `false` is the longer boolean representation.
+				// `pad` compensates for the two flags' length difference, so the serialized
+				// size is identical whether the final flags are false/"" or true/"xx".
+				// Without that fixed-width footer, writing `overflow: true` after
+				// compression could make the text shorter or longer than the budget it was
+				// just compressed against (the self-referential footer bug).
 				overflow: false,
-				budget_drops: ORDER.reduce((n, id) => n + totals[id] - selected[id].length, 0),
+				core_overflow: false,
+				pad: "",
+				budget_drops: 0,
 				register_drops: 0,
 				omitted: registers.omitted,
 			},
 		};
+		/** Counts that are actually present in the FINAL register view. */
+		function shownCounts() {
+			const references = registers.references;
+			const count = (kind) => references.filter((row) => row.kind === kind).length;
+			const facts = registers.facts.filter((row) => row.kind !== "Refuted").length;
+			return {
+				human_hint: count("human_hint"),
+				external_reference: count("external_reference"),
+				knowledge: count("knowledge"),
+				checkpoints: registers.checkpoints.length,
+				facts,
+				refuted: registers.facts.length - facts,
+				tools: (registers.recent ? 1 : 0) + registers.referenced.length,
+				// The subgoal is an admitted Intent, but it is carried in `task`, not in
+				// `registers.claims`.
+				proposals: registers.claims.length + (task.subgoal ? 1 : 0),
+				artifacts: registers.artifacts.length,
+				decisions: registers.decisions.length,
+			};
+		}
+		/**
+		 * Keep the footer and the per-section counts part of the BYTE BUDGET. They were
+		 * previously written after compression, so the final JSON could grow by a few
+		 * bytes and report `overflow: true` even though an optional row was still
+		 * present and could have been dropped. A projection must never abort because of
+		 * its own bookkeeping.
+		 */
+		function syncMeta() {
+			const shown = shownCounts();
+			data.sections = Object.fromEntries(
+				ORDER.map((id) => [
+					id,
+					{
+						total: totals[id],
+						shown: shown[id] ?? 0,
+						omitted: Math.max(0, totals[id] - (shown[id] ?? 0)),
+					},
+				]),
+			);
+			data.meta.register_drops = Object.values(registers.omitted).reduce((n, value) => n + value, 0);
+			data.meta.budget_drops = ORDER.reduce((n, id) => n + Math.max(0, totals[id] - (shown[id] ?? 0)), 0);
+			data.meta.ram_budget_chars = budget;
+		}
 		function serialize() {
+			syncMeta();
 			data.refs = collectViewRefs();
 			let text = JSON.stringify(data);
 			while (data.meta.ram_estimated_chars !== text.length) {
@@ -617,6 +662,17 @@ export function buildRamProjection({
 				registers.rules.pop();
 				registers.omitted.rules += 1;
 				changed = true;
+			} else if (data.discipline) {
+				// Operation discipline is guidance, not task responsibility: it yields to
+				// retrieved knowledge and to the operator's hint.
+				delete data.discipline;
+				changed = true;
+			} else if (data.workflow) {
+				delete data.workflow;
+				changed = true;
+			} else if (data.task?.current_prompt) {
+				delete data.task.current_prompt;
+				changed = true;
 			} else if (knowledgeIndex >= 0) {
 				// Retrieved knowledge goes before a human hint: the operator's instruction is
 				// the more authoritative guidance for this Episode.
@@ -636,15 +692,22 @@ export function buildRamProjection({
 			if (!changed) break;
 			text = serialize();
 		}
-		data.meta.register_drops = Object.values(registers.omitted).reduce((n, value) => n + value, 0);
-		data.meta.overflow = text.length > budget;
-		data.meta.core_overflow = data.meta.overflow;
+		// The flags and `pad` are part of the serialized text. The footer is
+		// fixed-width, so the length measured during compression is the length of
+		// the final JSON. If the text still exceeds the budget here, every optional
+		// register has already been dropped: this is a genuine core overflow.
+		const over = text.length > budget;
+		data.meta.overflow = over;
+		data.meta.core_overflow = over;
+		data.meta.pad = over ? "xx" : "";
 		text = serialize();
 		return { text, data };
 	}
 	function admit(id, row) {
 		selected[id].push(row);
-		if (render().data.meta.overflow) selected[id].pop();
+		// Use the real serialized length, never the footer flag: the footer is part
+		// of the bytes and the flag itself has a length.
+		if (render().text.length > budget) selected[id].pop();
 	}
 	if (!render().data.meta.overflow) {
 		// A selected knowledge row is a DELIBERATE retrieval (auto-recall or an
@@ -681,11 +744,12 @@ export function buildRamProjection({
 		budget_chars: budget,
 		estimated_chars: text.length,
 		overflow: text.length > budget,
+		core_overflow: data.meta.core_overflow === true,
 		sections: ORDER.map((id) => ({
 			id,
 			total: totals[id],
-			shown: selected[id].length,
-			omitted: totals[id] - selected[id].length,
+			shown: data.sections[id]?.shown ?? 0,
+			omitted: data.sections[id]?.omitted ?? totals[id],
 		})),
 		registers: {
 			subgoal: data.task.subgoal ?? null,

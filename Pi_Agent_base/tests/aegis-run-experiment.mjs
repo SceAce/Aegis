@@ -220,22 +220,22 @@ test("a missing label prints usage", () => {
 	}
 });
 
-test("knowledge resolves to the Aegis home when it exists, else the repository", () => {
+test("knowledge always resolves to the Aegis home and never to the repository", () => {
 	const home = freshHome();
 	try {
-		const repoKnowledge = new URL("../../knowledge", import.meta.url).pathname;
 		const first = run(["k-001", "--dry-run"], { home });
 		assert.equal(first.status, 0, first.stderr);
-		assert.match(
-			first.stdout,
-			new RegExp(`AEGIS_KNOWLEDGE_DIR=${repoKnowledge.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-		);
+		assert.ok(first.stdout.includes(`AEGIS_KNOWLEDGE_DIR=${join(home, "knowledge")}`));
+		assert.ok(existsSync(join(home, "knowledge")), "the default knowledge directory is created");
+		assert.ok(!first.stdout.includes("/Aegis/knowledge/"), "no repository fallback is printed");
+		assert.match(first.stdout, /search\s+on/);
+		const noSearch = run(["k-003", "--dry-run", "--no-web-search"], { home });
+		assert.equal(noSearch.status, 0, noSearch.stderr);
+		assert.match(noSearch.stdout, /search\s+off/);
 
-		mkdirSync(join(home, "knowledge"), { recursive: true });
-		const second = run(["k-002", "--dry-run"], { home });
-		assert.equal(second.status, 0, second.stderr);
-		assert.match(second.stdout, /AEGIS_KNOWLEDGE_DIR=.*\/knowledge/);
-		assert.ok(second.stdout.includes(join(home, "knowledge")), "prefers the Aegis home once it exists");
+		const explicitMissing = run(["k-002", "--dry-run", "--knowledge", join(home, "missing")], { home });
+		assert.equal(explicitMissing.status, 2);
+		assert.match(explicitMissing.stderr, /knowledge directory not found/);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}

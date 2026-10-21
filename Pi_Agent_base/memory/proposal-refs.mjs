@@ -130,17 +130,33 @@ export function inspectProposalRefs(refs, { events, board, episodeId, aliases = 
 	return { ok: true, refs: out, reason: null };
 }
 
-/** A model can revise only its own explicit same-Episode proposal. */
-export function inspectProposalReplacement(id, events, episodeId, board = null) {
-	if (id === undefined || id === null) return { ok: true };
-	const prior = events.find((event) => event.event_id === id);
-	const node = board?.nodes?.find((entry) => entry.origin_event_id === id);
+/**
+ * A model can revise only its own explicit same-Episode proposal.
+ *
+ * `id` may be a real committed event id (the canonical form) or a RAM alias the
+ * model actually saw (`r12`). RAM aliases are the model-facing handles; rejecting
+ * them while accepting them in `source_refs` made a legitimate correction
+ * impossible and left the stale claim effective. The returned `event_id` is the
+ * resolved committed identity, so the emitted proposal stores a stable id rather
+ * than a per-episode alias.
+ */
+export function inspectProposalReplacement(id, events, episodeId, board = null, aliases = null) {
+	if (id === undefined || id === null) return { ok: true, event_id: null };
+	const nodes = board?.nodes ?? [];
+	const resolved = resolveAlias(id, aliases, { events, nodes, episodeId });
+	const eventId = typeof resolved === "string" ? resolved : resolved?.ref_id;
+	const prior = typeof eventId === "string" ? events.find((event) => event.event_id === eventId) : null;
+	const node = board?.nodes?.find((entry) => entry.origin_event_id === eventId);
 	return prior?.event_type === "proposal.submitted" &&
 		prior.episode_id === episodeId &&
 		prior.source?.kind === "llm" &&
 		node?.episode_id === episodeId &&
 		node.effective === true &&
 		["Hint", "Intent"].includes(node.type)
-		? { ok: true }
-		: { ok: false, reason: "replace_event_id must reference an accepted effective same-Episode model proposal" };
+		? { ok: true, event_id: eventId }
+		: {
+				ok: false,
+				reason:
+					"replace_event_id must reference an accepted effective same-Episode model proposal (committed event id or RAM alias)",
+			};
 }

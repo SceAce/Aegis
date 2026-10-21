@@ -36,11 +36,11 @@ Aegis 的模型能看到的工具分三类，信任级别完全不同：
 
 ```bash
 # 1. 写 recipe（唯一需要人写的部分）
-$EDITOR knowledge/techniques/scripts/rsa-common-modulus.recipe.json
+$EDITOR $AEGIS_HOME/knowledge/techniques/scripts/rsa-common-modulus.recipe.json
 
 # 2. 注册（自动算 digest、过真实校验门）
 node aegis-register-tool.mjs \
-  --recipe knowledge/techniques/scripts/rsa-common-modulus.recipe.json \
+  --recipe $AEGIS_HOME/knowledge/techniques/scripts/rsa-common-modulus.recipe.json \
   --roster ~/.Aegis/tools/roster.json
 
 # 3. 启动实验（自动发现 roster；授权默认路径按你的意愿选择）
@@ -92,7 +92,7 @@ scaffold **不会**编造 Oracle，而是在 review 里指出需要包装脚本�
   "version": 1,
   "description": "同一 n、不同 e 时恢复明文（要求 gcd(e1,e2)=1）",
   "executable": "/Users/scemac/Tools/PyVenv/CTF/bin/python3",
-  "script": "/Users/scemac/My_github/Aegis/knowledge/techniques/scripts/rsa-common-modulus.py",
+  "script": "/Users/<you>/.Aegis/knowledge/techniques/scripts/rsa-common-modulus.py",
   "argv": ["{script}", "{out}", "{n}", "{e1}", "{c1}", "{e2}", "{c2}"],
   "workspace": "/tmp/at-test",
   "parameters": {
@@ -134,7 +134,7 @@ scaffold **不会**编造 Oracle，而是在 review 里指出需要包装脚本�
 - stdout 是脚本自己的输出，等于让被检查方提供证据；
 - 退出码同理（`spawn error`、timeout、signal 都单独归类，不当判定）。
 
-因此工具必须把结论写成文件。这也是为什么推荐直接注册**技法脚本**（`knowledge/techniques/scripts/*.py`）而不是裸 CLI：脚本能在写完 JSON 后自检（如重新加密比对），Oracle 再独立复读一遍。
+因此工具必须把结论写成文件。这也是为什么推荐直接注册**技法脚本**（`$AEGIS_HOME/knowledge/techniques/scripts/*.py`）而不是裸 CLI：脚本能在写完 JSON 后自检（如重新加密比对），Oracle 再独立复读一遍。
 
 ## 5. 与经验激活的关系
 

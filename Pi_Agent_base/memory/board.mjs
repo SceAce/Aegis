@@ -368,7 +368,7 @@ export function permittedNodeType(event) {
 				if (typeof event.payload?.text !== "string" || event.payload.text.trim() === "") return null;
 				return { type: "Hint" };
 			}
-			return ["knowledge.selected", "round.checkpoint"].includes(event.payload?.kind) &&
+			return ["knowledge.selected", "round.checkpoint", "web.search"].includes(event.payload?.kind) &&
 				["runtime", "human"].includes(event.source?.kind)
 				? { type: "Artifact" }
 				: null;
@@ -628,6 +628,9 @@ function nodeText(event, type) {
 			}
 			if (payload.kind === "knowledge.selected") {
 				return `knowledge selected: ${payload.selected?.length ?? 0} reference(s) for ${payload.mode ?? "manual"} query`;
+			}
+			if (payload.kind === "web.search") {
+				return `web search ${payload.status ?? "unknown"}: ${payload.returned ?? 0} allowed / ${payload.total ?? 0} total result(s) for ${payload.purpose ?? "technique"} (unverified reference, not a Fact)`;
 			}
 			if (payload.kind === "experience_injection_decision") {
 				const selected = payload.selected?.id ? `${payload.selected.id}@${payload.selected.revision ?? "?"}` : "(none)";

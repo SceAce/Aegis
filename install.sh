@@ -295,14 +295,14 @@ if [[ -e "$AEGIS_HOME" && ! -d "$AEGIS_HOME" ]]; then
 	RC=2
 else
 	mkdir -p "$AEGIS_HOME/agent" "$AEGIS_HOME/sessions" "$AEGIS_HOME/server" \
-		"$AEGIS_HOME/runtime/ram" 2>/dev/null || {
+		"$AEGIS_HOME/runtime/ram" "$AEGIS_HOME/knowledge" 2>/dev/null || {
 		fail "cannot create AEGIS_HOME skeleton under $AEGIS_HOME"
 		RC=2
 	}
 	if [[ -d "$AEGIS_HOME" ]]; then
 		chmod 700 "$AEGIS_HOME" 2>/dev/null || true
 		ok "home: $AEGIS_HOME"
-		for sub in agent sessions server runtime runtime/ram; do
+		for sub in agent sessions server runtime runtime/ram knowledge; do
 			[[ -d "$AEGIS_HOME/$sub" ]] && ok "  $sub/"
 		done
 		ok "isolated from ~/.pi (Aegis never reads or writes it)"

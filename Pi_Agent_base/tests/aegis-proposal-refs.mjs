@@ -3,7 +3,7 @@
 // never grant proof and a foreign/unknown alias is still rejected.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { inspectProposalRefs } from "../memory/proposal-refs.mjs";
+import { inspectProposalRefs, inspectProposalReplacement } from "../memory/proposal-refs.mjs";
 
 const ep = "ep-1";
 const events = [
@@ -15,7 +15,14 @@ const events = [
 		event_type: "action.completed",
 		payload: { action_id: "act-1" },
 	},
-	{ event_id: "e-node", episode_id: ep, event_digest: "sha256:n", event_type: "proposal.submitted", payload: {} },
+	{
+		event_id: "e-node",
+		episode_id: ep,
+		event_digest: "sha256:n",
+		event_type: "proposal.submitted",
+		source: { kind: "llm" },
+		payload: {},
+	},
 	{
 		event_id: "e-outcome",
 		episode_id: ep,
@@ -120,4 +127,18 @@ test("object-wrapped aliases resolve for event, node, action and outcome", () =>
 test("raw event ids and object refs keep working without an alias map", () => {
 	assert.equal(inspect(["e-event"], { aliases: null }).ok, true);
 	assert.equal(inspect([{ ref_type: "event", ref_id: "e-event" }], { aliases: null }).ok, true);
+});
+
+test("replace_event_id accepts a RAM alias and returns the resolved committed event id", () => {
+	const viaAlias = inspectProposalReplacement("r1", events, ep, board, aliases);
+	assert.equal(viaAlias.ok, true, viaAlias.reason);
+	assert.equal(viaAlias.event_id, "e-node");
+
+	const viaEvent = inspectProposalReplacement("e-node", events, ep, board, aliases);
+	assert.equal(viaEvent.ok, true, viaEvent.reason);
+	assert.equal(viaEvent.event_id, "e-node");
+
+	assert.deepEqual(inspectProposalReplacement(null, events, ep, board, aliases), { ok: true, event_id: null });
+	assert.equal(inspectProposalReplacement("r0", events, ep, board, aliases).ok, false, "an observation alias is not a proposal");
+	assert.equal(inspectProposalReplacement("r4", events, ep, board, aliases).ok, false, "a foreign alias is rejected");
 });

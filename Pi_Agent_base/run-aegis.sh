@@ -38,12 +38,15 @@ RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
 export AEGIS_HOME
-# Knowledge lives in the Aegis home now (the repository copy is deprecated). Only
-# set it when the directory exists, so an explicit AEGIS_KNOWLEDGE_DIR always wins
-# and a missing tree never turns into a silently empty knowledge base.
-if [[ -z "${AEGIS_KNOWLEDGE_DIR:-}" && -d "$AEGIS_HOME/knowledge" ]]; then
+# Knowledge lives ONLY in the Aegis home. There is no repository fallback: a
+# stale checkout must never be consulted or shadow the operator's local corpus.
+if [[ -z "${AEGIS_KNOWLEDGE_DIR:-}" ]]; then
 	export AEGIS_KNOWLEDGE_DIR="$AEGIS_HOME/knowledge"
 fi
+# Web search is a knowledge-gap fallback. It is on by default when a DeepSeek
+# key is available in the default agent config; the tool itself fails closed
+# when no key is configured. Set AEGIS_WEB_SEARCH=off to disable it.
+export AEGIS_WEB_SEARCH="${AEGIS_WEB_SEARCH:-on}"
 if [[ -n "$AEGIS_CTF_VENV" ]]; then
 	if [[ ! -x "$AEGIS_CTF_VENV/bin/python" ]]; then
 		printf 'AEGIS_CTF_VENV must contain an executable bin/python: %s\n' "$AEGIS_CTF_VENV" >&2

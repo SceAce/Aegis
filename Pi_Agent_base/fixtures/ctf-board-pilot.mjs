@@ -199,7 +199,7 @@ export async function runCtfPilot({
 		AEGIS_WORKSPACE: workspace,
 		AEGIS_BOARD_FEEDBACK: boardEnabled ? "on" : "off",
 		AEGIS_KNOWLEDGE_ENABLED: knowledgeEnabled ? "on" : "off",
-		AEGIS_KNOWLEDGE_DIR: resolve(BASE, "..", "knowledge"),
+		AEGIS_KNOWLEDGE_DIR: resolve(AEGIS_HOME, "knowledge"),
 		AEGIS_RAM_SEED_FILE: "",
 		AEGIS_TASK_CONTRACT_FILE: "",
 		AEGIS_MANIFEST_FILE: "",

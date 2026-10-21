@@ -152,6 +152,7 @@ await call("tool_result", {
 await call("agent_settled", { type: "agent_settled" });
 
 // Constrained proposal tool: a claim is accepted as an unverified hint node.
+if (!tools.has("aegis_web_search")) throw new Error("aegis_web_search is not registered");
 const propose = tools.get("aegis_propose");
 if (!propose) throw new Error("aegis_propose tool is not registered");
 const accepted = await propose.execute(

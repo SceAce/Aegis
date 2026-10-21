@@ -146,7 +146,7 @@ node build-ctf-wiki-memory.mjs --refresh    # 重新 clone（旧 seed 改名保�
 
 - 已存在 seeds 时**默认复用**，不重复 clone；`--refresh` 把旧目录改名为 `seeds.previous-<时间戳>`，**从不删除**。
 - `--report` 只写 `analysis.json`；`--dry-run` 不写任何文件。
-- 权限 `0600`/`0700`，只写 `$AEGIS_HOME` 下，不碰仓库 `knowledge/`。
+- 权限 `0600`/`0700`，只写 `$AEGIS_HOME` 下；仓库已无 `knowledge/`，不存在可写的仓库副本。
 - 分析报告包含：commit sha、按分类/语言的 seed 分布、截断数、候选数、按分类的候选分布、拒绝原因直方图、机械 triage 信号（`step_count` / `code_block_count`，**不是质量评分**），以及每次都重申的激活边界。
 
 实测（2026-10-20，真实 clone）：771 个 seed、177 个截断、1 条候选、覆盖率 0.13%。
@@ -166,7 +166,7 @@ node build-ctf-wiki-experience-candidates.mjs --output ~/.Aegis/knowledge/ctf-wi
 node build-ctf-wiki-experience-candidates.mjs --dry-run --report
 ```
 
-产物（`knowledge/` 已被 gitignore，不入库）：
+产物（`$AEGIS_HOME/knowledge/`，不入库）：
 
 ```
 <candidates.jsonl>   每行一条候选草稿，含 provenance
@@ -216,7 +216,7 @@ node build-ctf-wiki-experience-candidates.mjs --dry-run --report
 | 层 | 入口 | 状态 |
 | --- | --- | --- |
 | 一键冷启动 | `build-ctf-wiki-memory.mjs`（clone + seed + 候选 + 分析） | 本文新增 |
-| 文档 seed | `build-ctf-wiki-seeds.mjs` → `$AEGIS_HOME/knowledge/ctf-wiki/` | 已实现；本机 772 个 seed（仓库副本已废弃） |
+| 文档 seed | `build-ctf-wiki-seeds.mjs` → `$AEGIS_HOME/knowledge/ctf-wiki/` | 已实现；本机 772 个 seed（仓库无副本） |
 | RAM 注入 | `AEGIS_RAM_SEED_FILE` / `aegis_knowledge` 检索 | 已实现，`verified:false`、`action_policy:none` |
 | 候选草稿 | `build-ctf-wiki-experience-candidates.mjs` | 本文新增 |
 | 提案提交 | `/aegis` 或 `aegis_propose`（Pi 工具） | 已实现，只接受提案 |
