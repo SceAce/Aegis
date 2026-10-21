@@ -39,19 +39,128 @@ function repairUnclosedFence(markdown) {
 		? { markdown: `${markdown}\n${fence.char.repeat(fence.length)}\n`, transformed: "closed_eof_fence" }
 		: { markdown, transformed: null };
 }
-function splitMarkdown(markdown, maxBytes) {
-	if (Buffer.byteLength(markdown, "utf8") <= maxBytes) return [markdown];
+/**
+ * Split one markdown file into seed-sized parts.
+ *
+ * Two limits apply and BOTH must be respected: the byte bound below, and the
+ * compiler's own section/char budget. Splitting only by bytes left 23% of the
+ * corpus (`truncated: true`) with its tail silently dropped - a long chapter such
+ * as web/php/php.md kept 64 of its ~130 sections, cutting everything after the
+ * no-alnum trick: dynamic calls, backticks, callbacks, unserialize, PHP quirks,
+ * source-backup leaks.
+ *
+ * The split therefore verifies itself: a chunk that still compiles to a truncated
+ * seed is halved at a block boundary until every part fits. `compile` is injected
+ * so the splitter uses the REAL truncation signal instead of guessing a count.
+ */
+function splitByLimit(blocks, maxBytes) {
 	const chunks = [];
-	let current = "";
-	for (const block of markdown.split(/\n{2,}/)) {
-		const candidate = current ? `${current}\n\n${block}` : block;
-		if (current && Buffer.byteLength(candidate, "utf8") > maxBytes) {
+	let current = [];
+	let bytes = 0;
+	for (const block of blocks) {
+		const size = Buffer.byteLength(block, "utf8");
+		const separator = current.length > 0 ? 2 : 0;
+		if (current.length > 0 && bytes + separator + size > maxBytes) {
 			chunks.push(current);
-			current = block;
-		} else current = candidate;
+			current = [block];
+			bytes = size;
+		} else {
+			current.push(block);
+			bytes += separator + size;
+		}
 	}
-	if (current) chunks.push(current);
+	if (current.length > 0) chunks.push(current);
 	return chunks;
+}
+
+/**
+ * For each block, record whether it STARTS inside a fenced code block and whether
+ * its first line is a heading outside any fence. A cut is only safe at a block that
+ * begins outside a fence and opens with a heading: `#` lines also occur *inside*
+ * fences (shell comments), so a plain heading regex is not enough.
+ */
+function blockFenceInfo(blocks) {
+	const info = [];
+	let inside = false;
+	for (const block of blocks) {
+		const firstLine = block.split("\n").find((line) => line.trim().length > 0) ?? "";
+		const isHeading = !inside && /^#{1,6}\s/.test(firstLine);
+		info.push({ startsInsideFence: inside, isHeading });
+		for (const line of block.split("\n")) {
+			if (!/^\s*(?:`{3,}|~{3,})/.test(line)) continue;
+			// A fence line toggles state, except a closing fence of a different char.
+			inside = !inside;
+		}
+	}
+	return info;
+}
+
+export function splitMarkdown(markdown, maxBytes, { compile = null } = {}) {
+	if (Buffer.byteLength(markdown, "utf8") <= maxBytes && !compile) return [markdown];
+	// Group blocks so a fenced code block is never split across parts: an unclosed
+	// fence makes compileDocumentSeed throw, and a splitter must not manufacture
+	// malformed markdown while trying to preserve content.
+	const fenceOpen = (text) => (text.match(/^\s{0,3}(?:`{3,}|~{3,})/gm) ?? []).length % 2 === 1;
+	const grouped = [];
+	let pending = null;
+	for (const block of markdown.split(/\n{2,}/)) {
+		if (pending === null) {
+			pending = block;
+		} else {
+			pending = `${pending}\n\n${block}`;
+		}
+		if (!fenceOpen(pending)) {
+			grouped.push(pending);
+			pending = null;
+		}
+	}
+	if (pending !== null) grouped.push(pending);
+	const blocks = grouped;
+
+	const byteChunks = splitByLimit(blocks, maxBytes);
+	if (typeof compile !== "function") return byteChunks.map((chunk) => chunk.join("\n\n"));
+
+	/** True when this markdown compiles without hitting the section/char budget. */
+	const fits = (text) => {
+		try {
+			return compile(text)?.truncated !== true;
+		} catch {
+			// A compile error is handled by the caller's existing fallback; treat it
+			// as "fits" so the splitter does not mask it.
+			return true;
+		}
+	};
+
+	const out = [];
+	const fenceInfo = blockFenceInfo(blocks);
+	const visit = (blocks, offset = 0) => {
+		const text = blocks.join("\n\n");
+		if (blocks.length <= 1 || fits(text)) {
+			out.push(text);
+			return;
+		}
+		// Cut at a HEADING, never at an arbitrary block: a heading cannot appear inside
+		// a fenced code block, so this keeps every part's fences balanced (an unclosed
+		// fence makes the compiler throw). Scan outward from the midpoint; fall back to
+		// the midpoint only when the chunk has no heading at all.
+		const middle = Math.ceil(blocks.length / 2);
+		let cut = middle;
+		for (let offset = 0; offset < blocks.length; offset += 1) {
+			for (const candidate of [middle + offset, middle - offset]) {
+				if (candidate <= 0 || candidate >= blocks.length) continue;
+				const info = fenceInfo[offset + candidate];
+				if (info.isHeading && !info.startsInsideFence) {
+					cut = candidate;
+					offset = blocks.length;
+					break;
+				}
+			}
+		}
+		visit(blocks.slice(0, cut), offset);
+		visit(blocks.slice(cut), offset + cut);
+	};
+	for (const chunk of byteChunks) visit(chunk);
+	return out;
 }
 
 export function classifyRepoPath(path) {
@@ -276,7 +385,14 @@ export async function buildGithubSeeds(input = {}) {
 				}
 				const rawMarkdown = await readFile(file.full, "utf8");
 				const repaired = repairUnclosedFence(rawMarkdown);
-				const parts = splitMarkdown(repaired.markdown, options.maxSeedBytes);
+				const parts = splitMarkdown(repaired.markdown, options.maxSeedBytes, {
+					compile: (text) =>
+						compileDocumentSeed({
+							markdown: text,
+							source: { source_uri: sourceUri, source_kind: "external_reference", approved: true },
+							generatedAt: manifest.generated_at,
+						}),
+				});
 				if (repaired.transformed) manifest.markdown.transformed_fences++;
 				if (parts.length > 1) manifest.markdown.split_parts += parts.length;
 				const sourceUri = `https://github.com/ctf-wiki/ctf-wiki/blob/${manifest.commit_sha}/${rel.split("/").map(encodeURIComponent).join("/")}`;
