@@ -69,6 +69,19 @@ export const SCAN_LIST = [
 	{ id: "web.mitmproxy", binary: "mitmdump", args: ["--version"], direction: "web" },
 	{ id: "web.jwt_tool", binary: "jwt_tool", args: [], direction: "web" },
 	{ id: "network.nmap", binary: "nmap", args: ["--version"], direction: "web" },
+
+	// CVE / vulnerability-reference tooling. Presence is machine state; it is
+	// not authorization. Install hints are in README.md.
+	{ id: "cve.searchsploit", binary: "searchsploit", args: ["--version"], direction: "cve" },
+	{ id: "cve.whatweb", binary: "whatweb", args: ["--version"], direction: "cve" },
+	{ id: "cve.msfconsole", binary: "msfconsole", args: ["--version"], direction: "cve" },
+	{ id: "cve.wpscan", binary: "wpscan", args: ["--version"], direction: "cve" },
+	{ id: "cve.testssl", binary: "testssl.sh", args: ["--version"], direction: "cve" },
+	{ id: "cve.trivy", binary: "trivy", args: ["--version"], direction: "cve" },
+	{ id: "cve.grype", binary: "grype", args: ["--version"], direction: "cve" },
+	{ id: "cve.osv_scanner", binary: "osv-scanner", args: ["--version"], direction: "cve" },
+	{ id: "cve.cve_bin_tool", binary: "cve-bin-tool", args: ["--version"], direction: "cve" },
+	{ id: "cve.retire", binary: "retire", args: ["--version"], direction: "cve" },
 	// crypto
 	{ id: "crypto.hashcat", binary: "hashcat", args: ["--version"], direction: "crypto" },
 	{ id: "crypto.john", binary: "john", args: ["--list=build-info"], direction: "crypto" },

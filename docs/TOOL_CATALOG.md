@@ -142,6 +142,34 @@ Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 ven
   模型直接看到 MCP 工具（`procedure_pseudo_code`、`batch_decompile`、`xrefs` 等 200+ 个），
   不需要清单再描述一遍。见下节。
 
+### 5.1 CVE / 漏洞参考工具
+
+CVE 工具的知识表在 `aegis-seed-tool-catalog.mjs` 的 `CVE_KNOWLEDGE`，与通用工具共用
+scan → seed 两步；**只出现在已安装的 inventory 里**，不会把未安装工具编进目录。
+当前知识表覆盖：
+
+`searchsploit`、`whatweb`、`msfconsole`、`wpscan`、`testssl.sh`、`trivy`、`grype`、
+`osv-scanner`、`cve-bin-tool`、`retire`。
+
+一键安装（按需；Metasploit 很大，单独决定）：
+
+```bash
+HOMEBREW_NO_AUTO_UPDATE=1 brew install exploitdb testssl trivy grype osv-scanner
+npm install -g retire
+~/Tools/PyVenv/CTF/bin/pip install cve-bin-tool
+# 可选：brew install --cask metasploit
+```
+
+安装后重新扫描并生成：
+
+```bash
+node aegis-scan-tools.mjs
+node aegis-seed-tool-catalog.mjs
+```
+
+CVE 工具只提供“指纹 → CVE/参考 → 验证”的文档能力；`searchsploit -x`、`msfconsole run`
+等仍有真实副作用，必须由当前授权与独立 Oracle 约束，不能把工具输出当 Outcome。
+
 ## 6. 怎么加一个工具
 
 手工编辑 `catalog.json` 即可（它是数据，不是代码）；或用 `install.sh --smoke` 之后的小脚本生初稿。
@@ -239,4 +267,4 @@ rea:              connected, 207 tools (codemode, global)
 | `aegis-tool-catalog.mjs` | **10 pass**（结构校验、summary 不含路径、坑的三元组、candidate→confirmed、坏文件被拒） |
 | 真实 SDK 端到端 | 模型看到 2 个工具与 usage → 提议坑存为 candidate → `checkFlag` 后变 confirmed |
 | `run-experiment.sh` | 打印 `toolbox` 路径；清单目录进入 `PATH` |
-| `aegis-seed-tool-catalog.mjs` | **6 pass**（生成、跳过未覆盖项、保留 confirmed、dry-run/--only、不覆盖坏文件） |
+| `aegis-seed-tool-catalog.mjs` | **9 pass**（生成、CVE 工具知识、跳过未覆盖项、保留 confirmed、dry-run/--only、不覆盖坏文件） |

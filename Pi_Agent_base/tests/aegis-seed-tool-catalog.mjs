@@ -162,12 +162,49 @@ test("the tracked knowledge covers the tools the inventory reports", () => {
 	// `pwn.pwntools` and `reverse.ida` are deliberately absent: the pwntools CLI
 	// duplicates the Python module (one entry only), and IDA is reached through its
 	// MCP server rather than a CLI.
-	for (const id of ["py.pwntools", "pwn.ropgadget", "pwn.checksec", "reverse.binwalk", "network.nmap", "debug.gdb"]) {
+	for (const id of [
+		"py.pwntools",
+		"pwn.ropgadget",
+		"pwn.checksec",
+		"reverse.binwalk",
+		"network.nmap",
+		"debug.gdb",
+		"cve.searchsploit",
+		"cve.whatweb",
+		"cve.trivy",
+		"cve.osv_scanner",
+		"cve.msfconsole",
+	]) {
 		assert.ok(source.includes(`"${id}"`), `knowledge must cover ${id}`);
 	}
 	// Each entry must state a purpose and an invocation shape, not just a name.
 	assert.ok((source.match(/purpose:/g) ?? []).length >= 9);
 	assert.ok((source.match(/usage:/g) ?? []).length >= 9);
+});
+
+test("a CVE tool gets its usage, flags and candidate pitfalls", () => {
+	const f = fixture();
+	try {
+		writeFileSync(
+			f.inventory,
+			JSON.stringify({
+				schema_version: "aegis.local-tool-inventory.v1",
+				tools: [{ id: "cve.searchsploit", path: f.ropgadget, version: "2026-10-02" }],
+			}),
+			"utf8",
+		);
+		const result = run(["--inventory", f.inventory, "--catalog", f.catalog]);
+		assert.equal(result.status, 0, result.stderr);
+		const tool = loadToolCatalog(f.catalog).catalog.tools.find((entry) => entry.id === "searchsploit");
+		assert.ok(tool, "searchsploit is seeded");
+		assert.match(tool.purpose, /Exploit-DB/);
+		assert.match(tool.interface.usage, /searchsploit/);
+		assert.ok(tool.interface.key_flags.includes("-x"));
+		assert.ok(tool.pitfalls.length > 0);
+		assert.ok(tool.pitfalls.every((note) => note.status === "candidate"));
+	} finally {
+		f.cleanup();
+	}
 });
 
 test("a python module becomes its own addressable entry", () => {

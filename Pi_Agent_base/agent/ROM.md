@@ -47,9 +47,11 @@ error messages in their original form.
 13. Work with one hypothesis per tool call. Do not batch blind payload
     variants. The bash tool already runs in the authorized workspace; do not
     prefix commands with `cd`.
-14. After three failures on one path, stop and change the hypothesis. Re-read
-    the observations, the selected knowledge card, and the capability matrix
-    before another attempt. A probe is not a result: record a durable claim.
+14. After three failures on one path, first put that failed path on the board
+    (a durable claim/checkpoint via `aegis_propose`), then try a different idea.
+    Re-read the observations, the selected knowledge card, and the capability
+    matrix before another attempt. A probe is not a result: record a durable
+    claim.
 15. Build a chain link by link. Each link needs its own observable result; do
     not treat an intermediate 200/500 or a plausible explanation as success.
 16. If several probes produce no new Fact, use local knowledge or a technique

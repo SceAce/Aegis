@@ -745,6 +745,207 @@ const BINARY_HINTS = {
 	"pwn.pwninit": ["pwninit"],
 };
 
+/**
+ * CVE / vulnerability-reference tools. These are documentation entries: a found
+ * binary is not a work permit, and an exploit result is not a task Outcome.
+ * They help the model map a fingerprint to a known CVE and then verify on the
+ * authorized target.
+ */
+const CVE_KNOWLEDGE = {
+	"cve.searchsploit": {
+		purpose: "在本地 Exploit-DB 中按组件/版本/CVE 搜索公开 exploit 与 PoC",
+		category: "cve",
+		usage: "searchsploit [options] <term>   （先 searchsploit -u 更新本地库）",
+		key_flags: ["-w", "-j", "-m", "-x", "-c", "--nmap", "--exclude"],
+		examples: [
+			"searchsploit apache 2.4",
+			"searchsploit -w php 7.2",
+			"searchsploit -m 12345",
+			"searchsploit --nmap scan.xml",
+		],
+		pitfalls: [
+			{
+				condition: "第一次使用或很久没更新",
+				symptom: "搜不到已知 CVE/组件，或结果明显过旧",
+				correct_invocation: "先 `searchsploit -u` 更新 Exploit-DB；离线环境需预装 exploitdb 数据",
+			},
+			{
+				condition: "直接把 `-m`/`-x` 的结果当可用 exploit",
+				symptom: "复制或执行了不匹配版本/带副作用的 PoC",
+				correct_invocation: "先读路径/版本/前置条件，只在授权目标上验证；`-x` 会执行 exploit",
+			},
+		],
+	},
+	"cve.whatweb": {
+		purpose: "Web 指纹识别：服务器、框架、CMS、插件与版本，用于 CVE 映射",
+		category: "cve",
+		usage: "whatweb [options] <url>",
+		key_flags: ["-a", "--aggression", "-v", "--log-json", "--user-agent", "--cookie"],
+		examples: ["whatweb -a 3 http://host", "whatweb -v --log-json out.json http://host"],
+		pitfalls: [
+			{
+				condition: "使用高强度主动模式扫描生产/受限目标",
+				symptom: "请求量增大、触发 WAF 或改变目标状态",
+				correct_invocation: "先 `-a 1` 被动指纹；只在授权目标上提高 aggression",
+			},
+			{
+				condition: "把版本 banner 直接当 CVE 适用性",
+				symptom: "版本被回填/反代隐藏，CVE 实际不适用",
+				correct_invocation: "再用行为/文件/错误信息验证版本与补丁级别",
+			},
+		],
+	},
+	"cve.msfconsole": {
+		purpose: "Metasploit 框架：搜索 CVE/模块、检查目标、复现公开 exploit（高副作用）",
+		category: "cve",
+		usage: 'msfconsole -q -x "search cve:2021-4034; exit"   （先 check，再 run）',
+		key_flags: ["-q", "-x", "search", "use", "set", "check", "run"],
+		examples: [
+			'msfconsole -q -x "search cve:2021-4034"',
+			'msfconsole -q -x "use exploit/...; set RHOSTS host; check; exit"',
+		],
+		pitfalls: [
+			{
+				condition: "直接 `run` 而未先 `check`",
+				symptom: "对不匹配版本执行 exploit，产生未知副作用",
+				correct_invocation: "先 `check` 判断适用性；只在授权目标上 `run`",
+			},
+			{
+				condition: "模块版本/依赖与目标不匹配",
+				symptom: "失败或崩溃，不能据此判定目标不可利用",
+				correct_invocation: "读模块的受影响版本与前置条件，换模块或手工验证",
+			},
+		],
+	},
+	"cve.wpscan": {
+		purpose: "WordPress 漏洞、插件/主题、用户枚举；CVE 数据需要 API token",
+		category: "cve",
+		usage: "wpscan --url <url> [--enumerate vp,vt,u] [--api-token <token>]",
+		key_flags: ["--url", "--enumerate", "--api-token", "--plugins-detection", "--stealthy"],
+		examples: [
+			"wpscan --url http://host --enumerate vp,vt,u",
+			"wpscan --url http://host --enumerate vp --api-token <token>",
+		],
+		pitfalls: [
+			{
+				condition: "没有 API token",
+				symptom: "只能做指纹/枚举，拿不到漏洞数据",
+				correct_invocation: "配置 WPScan API token；不要把 token 写入仓库/日志",
+			},
+			{
+				condition: "对受限目标做高强度枚举",
+				symptom: "触发 WAF/封禁",
+				correct_invocation: "先 `--stealthy`/低线程，只对授权目标",
+			},
+		],
+	},
+	"cve.testssl": {
+		purpose: "TLS/SSL 配置与已知漏洞扫描（Heartbleed、CCS、协议/套件问题）",
+		category: "cve",
+		usage: "testssl.sh [options] <host:port>",
+		key_flags: ["--severity", "--protocols", "--vulnerabilities", "--jsonfile", "--quiet"],
+		examples: [
+			"testssl.sh --severity HIGH host:443",
+			"testssl.sh --vulnerabilities --jsonfile out.json host:443",
+		],
+		pitfalls: [
+			{
+				condition: "目标只允许特定 SNI/域名",
+				symptom: "握手失败或扫到默认证书",
+				correct_invocation: "用 `--sni <name>` 或直接访问正确域名",
+			},
+			{
+				condition: "把 TLS 漏洞扫描当 Web CVE 扫描",
+				symptom: "漏掉应用层 CVE",
+				correct_invocation: "TLS 只覆盖传输层；应用层另用 nuclei/whatweb/版本映射",
+			},
+		],
+	},
+	"cve.trivy": {
+		purpose: "容器镜像/文件系统/依赖/配置的 CVE 与 misconfig 扫描",
+		category: "cve",
+		usage: "trivy <image|fs|repo|config> <target> [--severity ...]",
+		key_flags: ["image", "fs", "repo", "config", "--severity", "--scanners", "--format", "--ignore-unfixed"],
+		examples: [
+			"trivy image --severity HIGH,CRITICAL nginx:1.25",
+			"trivy fs --scanners vuln .",
+		],
+		pitfalls: [
+			{
+				condition: "首次运行未下载漏洞库",
+				symptom: "提示 DB 不存在/需要联网",
+				correct_invocation: "先 `trivy image --download-db-only` 或允许联网更新",
+			},
+			{
+				condition: "把 CVE 列表当可利用性",
+				symptom: "大量 unfixed/不可达组件 CVE 干扰判断",
+				correct_invocation: "结合 `--ignore-unfixed`、可达性和目标版本/配置复验",
+			},
+		],
+	},
+	"cve.grype": {
+		purpose: "镜像/目录/SBOM 的 CVE 扫描（Anchore Grype）",
+		category: "cve",
+		usage: "grype <image|dir:path|sbom:file> [options]",
+		key_flags: ["--scope", "--fail-on", "-o", "--only-fixed", "--add-cpes-if-none"],
+		examples: ["grype nginx:1.25", "grype dir:. -o json"],
+		pitfalls: [
+			{
+				condition: "只扫镜像标签而不固定 digest",
+				symptom: "不同时间扫到不同版本",
+				correct_invocation: "用 `image@sha256:...` 固定镜像 digest",
+			},
+		],
+	},
+	"cve.osv_scanner": {
+		purpose: "依赖 lockfile/SBOM 的 OSV 漏洞扫描",
+		category: "cve",
+		usage: "osv-scanner --lockfile=<file> | -r <dir> [--format json]",
+		key_flags: ["--lockfile", "-r", "--format", "--offline", "--config"],
+		examples: ["osv-scanner --lockfile package-lock.json", "osv-scanner -r . --format json"],
+		pitfalls: [
+			{
+				condition: "没有 lockfile/SBOM",
+				symptom: "扫描不到依赖",
+				correct_invocation: "先生成 lockfile/SBOM，或改用镜像/文件系统扫描",
+			},
+		],
+	},
+	"cve.cve_bin_tool": {
+		purpose: "扫描二进制/固件中的已知组件 CVE（组件签名 + 版本）",
+		category: "cve",
+		usage: "cve-bin-tool [options] <path>",
+		key_flags: ["-i", "--input-file", "-f", "--format", "--offline", "--update"],
+		examples: ["cve-bin-tool ./firmware", "cve-bin-tool -f json -o out.json ./bin"],
+		pitfalls: [
+			{
+				condition: "未更新 CVE 数据库",
+				symptom: "结果过旧或为空",
+				correct_invocation: "先 `cve-bin-tool --update`；离线环境预置 DB",
+			},
+			{
+				condition: "组件版本靠字符串签名识别",
+				symptom: "误报/漏报",
+				correct_invocation: "用实际二进制/包版本和 advisory 交叉验证",
+			},
+		],
+	},
+	"cve.retire": {
+		purpose: "JavaScript 依赖的已知漏洞扫描",
+		category: "cve",
+		usage: "retire [options] <path>",
+		key_flags: ["--path", "--outputformat", "--outputpath", "--js", "--node"],
+		examples: ["retire --path ./static", "retire --node --outputformat json"],
+		pitfalls: [
+			{
+				condition: "前端打包/混淆后没有版本信息",
+				symptom: "扫描不到库或版本",
+				correct_invocation: "从 sourcemap/package-lock/静态文件版本交叉确认",
+			},
+		],
+	},
+};
+
 const EXTRA_KNOWLEDGE = {
 	"pwn.pwninit": {
 		purpose: "为 pwn 题准备运行环境：修补二进制里的 libc/ld 路径并生成启动脚本",
@@ -762,7 +963,8 @@ const EXTRA_KNOWLEDGE = {
 	},
 };
 
-const knowledgeFor = (id) => TOOL_KNOWLEDGE[id] ?? EXTRA_KNOWLEDGE[id] ?? SECOND_WAVE[id] ?? null;
+const knowledgeFor = (id) =>
+	TOOL_KNOWLEDGE[id] ?? CVE_KNOWLEDGE[id] ?? EXTRA_KNOWLEDGE[id] ?? SECOND_WAVE[id] ?? null;
 
 function help() {
 	console.log(`Usage: node aegis-seed-tool-catalog.mjs [options]
