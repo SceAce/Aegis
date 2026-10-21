@@ -130,9 +130,9 @@ Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 ven
 - 种子坑一律是 `candidate`：只有真实解出并由 `checkFlag` 确认后才会变 `confirmed`，
   所以种子里写的"坑"只是待验证的提示，不是已验证结论。
 
-当前本机覆盖 **53 个条目**：reverse 10、pwn 11、cve 8、web 8、misc 8、crypto 7、general 1
-（`pwninit`、`frida`、`dirsearch`、`arjun`、`jwt_tool`、`sage`、`steghide`、`whatweb`、`wpscan`
-等未安装的不会出现；以实际 `catalog.json` 为准）。
+当前本机覆盖 **55 个条目**：reverse 10、pwn 11、cve 10、web 8、misc 8、crypto 7、general 1
+（`pwninit`、`frida`、`dirsearch`、`arjun`、`jwt_tool`、`sage`、`steghide` 等未安装的不会出现；
+以实际 `catalog.json` 为准）。
 
 两条刻意的**不收录**规则：
 
@@ -161,7 +161,7 @@ npm install -g retire
 # 可选：brew install --cask metasploit
 ```
 
-安装后重新扫描并生成（当前本机已识别 8 个 CVE 工具；whatweb/wpscan 未安装时不出现）：
+安装后重新扫描并生成（当前本机 10 个 CVE 工具已全部识别）：
 
 ```bash
 node aegis-scan-tools.mjs

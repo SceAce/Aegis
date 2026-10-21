@@ -181,8 +181,8 @@ npm install -g retire
 ```
 
 可选：`brew install --cask metasploit`（很大）、WhatWeb/WPScan（无当前 core 公式，
-按上游 Ruby 项目安装）。当前本机 catalog 已有 53 条，其中 CVE 8 条；whatweb/wpscan
-未安装时不会出现在 catalog。`nmap`、`nuclei`、`nikto`、`sqlmap` 已在。
+按上游 Ruby 项目安装）。当前本机 catalog 已有 55 条，CVE 10 条全部识别；
+`nmap`、`nuclei`、`nikto`、`sqlmap` 也已在。
 
 安装后重建本地目录：
 
