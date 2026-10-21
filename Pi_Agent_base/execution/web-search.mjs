@@ -8,7 +8,7 @@
 //   * the current target/challenge tokens (hosts, domains, task id, WP slugs
 //     seen in committed actions, AEGIS_SEARCH_DENY) are refused in the query;
 //   * results whose URL/title/snippet names those tokens are dropped;
-//   * `writeup`/`wp`/`题解`/`复现` is only allowed with purpose=similar-task;
+//   * every `writeup`/`wp`/`题解`/`复现` query is refused; write-up-looking results are dropped;
 //   * only summary/snippet are returned, never full page content;
 //   * every attempt is bounded per Episode and recorded as a runtime.note.
 //
@@ -21,13 +21,17 @@ import { join } from "node:path";
 
 export const WEB_SEARCH_VERSION = "1.0.0";
 export const DEFAULT_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search";
-export const SEARCH_PURPOSES = Object.freeze(["technique", "cve", "tool", "similar-task"]);
+export const SEARCH_PURPOSES = Object.freeze(["technique", "cve", "tool"]);
 export const MAX_QUERY_CHARS = 128;
 export const MAX_COUNT = 10;
 export const MAX_SUMMARY_CHARS = 800;
 export const MAX_RESULT_TITLE = 240;
 export const MAX_RESULT_URL = 2048;
 const MAX_EVENT_SCAN = 20_000;
+// A write-up title/URL is not a technique reference. `wp` must not match
+// `wp-content`; that is a WordPress path, not a write-up.
+const LOOKS_LIKE_WRITEUP = /\b(?:write-?up|walkthrough|wp(?!-))\b|题解|复现/iu;
+const WRITEUP_URL = /(?:^|\/)(?:write-?up|walkthrough|wp)(?:\/|$)|题解|复现/iu;
 
 const HTTP_REASONS = Object.freeze({
 	400: "invalid_request",
@@ -165,12 +169,15 @@ export function validateSearchRequest({ query, purpose = "technique", count = 5,
 			status: "refused",
 			reason: "query names the current target/challenge; search for the technique instead",
 		};
-	const asksForWriteup = /\b(?:writeup|walkthrough|wp(?!-))\b|题解|复现/iu.test(text);
-	if (asksForWriteup && chosen !== "similar-task")
+	// No write-up / WP queries at all. The user may reuse a technique or a
+	// similar challenge's primitive, but the search must never be used to fetch
+	// a write-up or a walkthrough.
+	const asksForWriteup = /\b(?:write-?up|walkthrough|wp(?!-))\b|题解|复现/iu.test(text);
+	if (asksForWriteup)
 		return {
 			ok: false,
 			status: "refused",
-			reason: "write-up queries require purpose=similar-task and must not name this challenge",
+			reason: "write-up/WP queries are refused; search for the technique, CVE, or tool behaviour instead",
 		};
 	return { ok: true, query: text, purpose: chosen, count: requestedCount };
 }
@@ -206,6 +213,12 @@ export function filterSearchResults(results, denyTokens = [], { includeContent =
 		}
 		const text = [row.title, row.snippet, row.summary].filter((value) => typeof value === "string").join(" ").toLowerCase();
 		if ([...denied].some((token) => text.includes(token))) {
+			dropped += 1;
+			continue;
+		}
+		// Even a technique query can surface a write-up. Drop it by title/URL shape
+		// rather than relying only on the operator's challenge-name blocklist.
+		if (LOOKS_LIKE_WRITEUP.test(text) || WRITEUP_URL.test(parsed.pathname.toLowerCase())) {
 			dropped += 1;
 			continue;
 		}
@@ -335,10 +348,8 @@ export async function searchWeb({
 } = {}) {
 	const checked = validateSearchRequest({ query, purpose, count, denyTokens });
 	if (!checked.ok) return { ...checked, attempted: false };
-	// Full page content is only for technique/CVE/tool references. A
-	// similar-task result stays a summary: the operator may reuse the technique,
-	// not copy a write-up wholesale.
-	const contentRequested = includeContent === true && checked.purpose !== "similar-task";
+	// Full page content is opt-in and only for technique/CVE/tool references.
+	const contentRequested = includeContent === true;
 	if (!config || config.enabled !== true)
 		return { ok: false, status: "disabled", reason: "web search is disabled (AEGIS_WEB_SEARCH=off)", attempted: false };
 	if (!config.endpoint_ok)

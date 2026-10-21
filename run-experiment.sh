@@ -108,8 +108,10 @@ Options:
   --web-search        enable the DeepSeek technique search (default: on; it needs a
                       DeepSeek key in AEGIS_HOME/agent/auth.json or DEEPSEEK_API_KEY)
   --no-web-search     disable web search for this run
-  --search-deny LIST  comma-separated challenge/target tokens the search query
-                      must never contain (in addition to the auto-derived target)
+  --search-block LIST local BLOCKLIST, not a query: comma-separated challenge/
+                      target tokens that must NEVER appear in a search query or
+                      result (in addition to the auto-derived target)
+  --search-deny LIST  alias for --search-block (kept for compatibility)
   --mcp               start MCP servers, EXCEPT browser automation. Driving a page
                       (finding selectors, waiting for UI) costs more time than it
                       saves on most tasks, so browsers are disabled by default and
@@ -170,7 +172,7 @@ while (($#)); do
 		--knowledge) KNOWLEDGE_DIR="${2:-}"; KNOWLEDGE_OVERRIDE=1; shift 2 ;;
 		--web-search) WEB_SEARCH="on"; shift ;;
 		--no-web-search) WEB_SEARCH="off"; shift ;;
-		--search-deny) SEARCH_DENY="${2:-}"; shift 2 ;;
+		--search-block | --search-deny) SEARCH_DENY="${2:-}"; shift 2 ;;
 		--agent-dir) AGENT_DIR_OVERRIDE="${2:-}"; shift 2 ;;
 		--isolate-agent) ISOLATE_AGENT=1; shift ;;
 		--mcp) MCP_MODE="filtered"; shift ;;
@@ -216,7 +218,7 @@ fi
 [[ "$LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "invalid label '$LABEL': use letters, digits, dot, dash, underscore"
 [[ "$LABEL" == *..* ]] && die "invalid label '$LABEL': '..' is not allowed"
 [[ "$WEB_SEARCH" =~ ^(on|off)$ ]] || die "--web-search value must be on or off"
-[[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-deny must not contain quotes or newlines"
+[[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-block must not contain quotes or newlines"
 
 for f in "$AEGIS_BASE/run-aegis.sh" "$AEGIS_BASE/run-pi.sh" "$AEGIS_BASE/agent/ROM.md"; do
 	[[ -f "$f" ]] || die "missing required file: ${f#"$BASE_DIR"/}" 1

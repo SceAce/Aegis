@@ -158,11 +158,13 @@ node compile-document-seed.mjs \
 - 默认在 `run-aegis.sh` / `run-pi.sh` / `run-experiment.sh` 开启；`--no-web-search` 关闭。
 - Key：`AEGIS_SEARCH_API_KEY` / `DEEPSEEK_API_KEY`，否则从 `$AEGIS_HOME/agent/{models,auth}.json`
   中 `api.deepseek.com` provider 读取（当前 `deedeepseek`）；不打印 key。
-- `purpose`：`technique` / `cve` / `tool` / `similar-task`。
+- `purpose`：`technique` / `cve` / `tool`。
 - 当前 target host/domain/port、task id、本 Episode 已见 WP host/slug 自动 denylist；
-  `AEGIS_SEARCH_DENY` 可补挑战名。`writeup/wp/题解/复现` 只允许 `similar-task`。
+  `AEGIS_SEARCH_DENY` / `--search-block` 是**本地阻断清单，不是查询内容**：这些词永远不会被发给搜索引擎。
+  **任何 writeup / wp / 题解 / 复现查询一律拒绝**；标题/URL 像 write-up 的结果也会被丢弃。
+  例：`--search-block "SCTF 2021 RCEME,sigeryang.net"` 只是本地阻断，不会把这些词发送给搜索引擎。
 - 默认返回 `summary/snippet`；`include_content=true` 可为 technique/CVE/tool
-  返回每条最多 2000 字符正文，`similar-task` 永远只返回摘要。
+  返回每条最多 2000 字符正文；所有 purpose 都不返回 write-up 内容。
 - 结果写 `runtime.note kind="web.search"`，在 Board 上是 `Artifact`，不是 `Fact`。
 
 ---
@@ -275,4 +277,4 @@ CARD_LIST：
 
 限制：卡片/CVE 文档是 hint，不是已证明方法；真实工具面没有 Campaign 账本/Oracle；
 没有本地可重置靶场时经验通常只能停在 candidate；真实模型效果和四组对照尚未建立；
-搜索是付费网络能力，denylist 是 best-effort，开题时建议显式设置 `AEGIS_SEARCH_DENY`。
+搜索是付费网络能力；`--search-block`/`AEGIS_SEARCH_DENY` 是本地阻断清单，不会作为查询发送；开题时建议显式设置挑战名/WP 域名。

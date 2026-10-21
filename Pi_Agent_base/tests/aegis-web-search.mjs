@@ -80,24 +80,31 @@ test("a technique query is accepted; a target/WP query is refused before any cal
 
 	const wp = validateSearchRequest({
 		query: "sctf-2021-web-rceme writeup",
-		purpose: "similar-task",
+		purpose: "technique",
 		denyTokens: buildDenyTokens({ goal: GOAL, events: [{ event_type: "action.requested", payload: { command: `curl ${WP}` } }] }).tokens,
 	});
-	assert.equal(wp.ok, false, "the current challenge's WP must stay refused even with similar-task");
+	assert.equal(wp.ok, false, "a write-up query naming the current challenge is refused");
 });
 
-test("write-ups are only allowed as a similar-task technique query", () => {
+test("every write-up/WP query is refused, regardless of purpose", () => {
 	const deny = buildDenyTokens({ goal: GOAL }).tokens;
+	for (const query of [
+		"PHP disable_functions writeup",
+		"PHP disable_functions write-up",
+		"PHP disable_functions walkthrough",
+		"PHP disable_functions wp",
+		"PHP 绕过 题解",
+		"PHP 绕过 复现",
+	]) {
+		const result = validateSearchRequest({ query, purpose: "technique", denyTokens: deny });
+		assert.equal(result.ok, false, `${query} must be refused`);
+		assert.match(result.reason, /write-up\/WP/);
+	}
 	assert.equal(
-		validateSearchRequest({ query: "PHP disable_functions writeup", purpose: "technique", denyTokens: deny }).ok,
+		validateSearchRequest({ query: "PHP disable_functions writeup", purpose: "similar-task", denyTokens: deny }).ok,
 		false,
+		"similar-task is no longer an available purpose",
 	);
-	const similar = validateSearchRequest({
-		query: "similar PHP disable_functions challenge writeup",
-		purpose: "similar-task",
-		denyTokens: deny,
-	});
-	assert.equal(similar.ok, true, similar.reason);
 	assert.equal(
 		validateSearchRequest({ query: "x", purpose: "other", denyTokens: deny }).ok,
 		false,
@@ -145,6 +152,23 @@ test("results naming the target/challenge are dropped; unrelated technique refer
 	assert.equal(allowed.length, 1);
 	assert.equal(allowed[0].url, "https://example.com/php-bypass");
 	assert.equal(dropped, 3);
+});
+
+test("write-up-looking results are dropped even without a challenge denylist", () => {
+	const { allowed, dropped } = filterSearchResults(
+		[
+			{ title: "SCTF 2021 RCEME Write-up", url: "https://blog.example/2021/12/sctf-2021-web-rceme", summary: "solution" },
+			{ title: "walkthrough", url: "https://example.com/walkthrough/x", summary: "steps" },
+			{ title: "PHP disable_functions bypass", url: "https://example.com/php", summary: "create_function + unserialize" },
+			{ title: "WordPress wp-content", url: "https://example.com/wp-content/x", summary: "WordPress content path" },
+		],
+		[],
+	);
+	assert.deepEqual(
+		allowed.map((row) => row.title),
+		["PHP disable_functions bypass", "WordPress wp-content"],
+	);
+	assert.equal(dropped, 2);
 });
 
 test("the default DeepSeek key is read from the agent config, never from ~/.pi", () => {
@@ -219,7 +243,7 @@ test("searchWeb sends a bounded request, filters results and never echoes the ke
 	assert.ok(!JSON.stringify(result).includes("test-key"), "the key never reaches the model payload");
 });
 
-test("page content is opt-in, bounded, and never requested for a similar-task write-up", async () => {
+test("page content is opt-in and bounded for technique/CVE/tool references", async () => {
 	let body = null;
 	const result = await searchWeb({
 		query: "PHP disable_functions bypass",
@@ -245,22 +269,19 @@ test("page content is opt-in, bounded, and never requested for a similar-task wr
 	assert.equal(result.results[0].content.length, 2000);
 	assert.equal(result.include_content, true);
 
-	const similar = await searchWeb({
-		query: "similar PHP disable_functions writeup",
-		purpose: "similar-task",
+	const refused = await searchWeb({
+		query: "PHP disable_functions writeup",
+		purpose: "technique",
 		includeContent: true,
 		config: config(),
 		apiKey: "test-key",
-		fetchImpl: async (_url, init) => {
-			body = JSON.parse(init.body);
-			return response(200, {
-				results: [{ title: "similar", url: "https://example.com/similar", summary: "summary", content: "full" }],
-			});
+		fetchImpl: async () => {
+			throw new Error("a refused query must not reach the network");
 		},
 	});
-	assert.equal(body.need_content, false);
-	assert.equal(similar.results[0].content, undefined);
-	assert.equal(similar.include_content, false);
+	assert.equal(refused.ok, false);
+	assert.equal(refused.status, "refused");
+	assert.equal(refused.attempted, false);
 });
 
 test("HTTP failures are reported, not retried or hidden", async () => {
