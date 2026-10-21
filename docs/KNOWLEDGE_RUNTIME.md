@@ -1,10 +1,14 @@
 # 本地知识库与图板入口
 
-知识文件、编译 seed 与索引统一保存在仓库根的 `knowledge/`。整个目录由 Git 忽略，迁移时单独复制；代码和本文纳管，知识内容不推送远程。运行日志、当前任务图板与 RAM 快照仍由 `Pi_Agent_base/runtime/` 管理，它们属于任务状态。
+知识文件、编译 seed 与索引统一保存在 **`$AEGIS_HOME/knowledge/`**（默认 `~/.Aegis/knowledge/`）。该目录不在仓库内、由 Git 忽略，迁移时单独复制；代码和本文纳管，知识内容不推送远程。
+
+仓库根的 `knowledge/` **只保留自有产物**：`knowledge/techniques/`（技法卡，纳管）与 `knowledge/ctf-wiki-crawl/`（旧抓取归档，检索排除）。仓库里的 `knowledge/ctf-wiki/` 已废弃并移除——2026-10-21 整份 772 个 seed 迁到 `~/.Aegis/knowledge/ctf-wiki/`，它在本地是唯一副本，删除前先确认目标位置存在。
+
+两个入口都在缺失时自动指向 Aegis home：`run-aegis.sh` / `run-pi.sh` 在 `AEGIS_KNOWLEDGE_DIR` 未设置且 `$AEGIS_HOME/knowledge` 存在时导出后者；`run-experiment.sh` 用同样的回落。`AEGIS_KNOWLEDGE_DIR` 显式设置时始终优先。运行日志、当前任务图板与 RAM 快照仍由 `Pi_Agent_base/runtime/` 管理，它们属于任务状态。
 
 ## 本地目录
 
-- `knowledge/ctf-wiki/`：默认使用的 GitHub Markdown 编译产物，按 `web/`、`pwn/`、`crypto/`、`reverse/` 等分类，语言作为子目录。SQL 注入位于 `ctf-wiki/web/`。
+- `~/.Aegis/knowledge/ctf-wiki/`：默认使用的 GitHub Markdown 编译产物（772 个 seed），按 `web/`、`pwn/`、`crypto/`、`reverse/` 等分类，语言作为子目录。SQL 注入位于 `ctf-wiki/web/`。
 - `knowledge/documents/`：`run-ram-test.sh --compile FILE.md` 编译的本地文档 seed。
 - `knowledge/ctf-wiki-crawl/`：本次保留的旧站点抓取归档；检索明确排除，避免导航页与重复内容参与召回。
 

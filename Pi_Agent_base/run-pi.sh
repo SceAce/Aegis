@@ -49,6 +49,12 @@ RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
 export AEGIS_HOME
+# Knowledge lives in the Aegis home now (the repository copy is deprecated). Only
+# set it when the directory exists, so an explicit AEGIS_KNOWLEDGE_DIR always wins
+# and a missing tree never turns into a silently empty knowledge base.
+if [[ -z "${AEGIS_KNOWLEDGE_DIR:-}" && -d "$AEGIS_HOME/knowledge" ]]; then
+	export AEGIS_KNOWLEDGE_DIR="$AEGIS_HOME/knowledge"
+fi
 export PI_CODING_AGENT_DIR="$AGENT_DIR"
 export PI_CODING_AGENT_SESSION_DIR="$SESSION_DIR"
 export PI_SERVER_DIR="$SERVER_DIR"

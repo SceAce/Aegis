@@ -38,6 +38,12 @@ RAM_DIR="${AEGIS_RAM_DIR:-$RUNTIME_DIR/ram}"
 mkdir -p "$AGENT_DIR" "$SESSION_DIR" "$SERVER_DIR" "$RUNTIME_DIR" "$RAM_DIR" "$(dirname "$EVENT_LOG")"
 
 export AEGIS_HOME
+# Knowledge lives in the Aegis home now (the repository copy is deprecated). Only
+# set it when the directory exists, so an explicit AEGIS_KNOWLEDGE_DIR always wins
+# and a missing tree never turns into a silently empty knowledge base.
+if [[ -z "${AEGIS_KNOWLEDGE_DIR:-}" && -d "$AEGIS_HOME/knowledge" ]]; then
+	export AEGIS_KNOWLEDGE_DIR="$AEGIS_HOME/knowledge"
+fi
 if [[ -n "$AEGIS_CTF_VENV" ]]; then
 	if [[ ! -x "$AEGIS_CTF_VENV/bin/python" ]]; then
 		printf 'AEGIS_CTF_VENV must contain an executable bin/python: %s\n' "$AEGIS_CTF_VENV" >&2

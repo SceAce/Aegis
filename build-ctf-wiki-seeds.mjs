@@ -6,12 +6,21 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { compileDocumentSeed, DOCUMENT_SEED_LIMITS } from "./Pi_Agent_base/memory/document-seed.mjs";
+
+/** `$AEGIS_HOME/knowledge/<name>` by default; `AEGIS_HOME` wins over the repo. */
+function aegisKnowledgeDir(name) {
+	const home = process.env.AEGIS_HOME?.trim() || join(homedir(), ".Aegis");
+	return join(home, "knowledge", name);
+}
 
 export const DEFAULTS = Object.freeze({
 	githubRepo: "https://github.com/ctf-wiki/ctf-wiki.git",
 	githubRef: "master",
-	output: "knowledge/ctf-wiki",
+	// Knowledge lives in the Aegis home; a repository copy is deprecated and would
+	// silently become a second, stale corpus. Override with --output if needed.
+	output: aegisKnowledgeDir("ctf-wiki"),
 	proxy: "http://127.0.0.1:7897",
 	maxFiles: 20000,
 	maxRepoBytes: 800000000,

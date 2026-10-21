@@ -16,6 +16,7 @@
 //   * no network, no reads outside --input, no writes outside --output
 //   * deterministic: sorted input, no timestamps in dedupe identity
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -25,8 +26,8 @@ import { validateProposal } from "./Pi_Agent_base/memory/proposal.mjs";
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
 
 export const DEFAULTS = Object.freeze({
-	input: "knowledge/ctf-wiki",
-	output: "knowledge/ctf-wiki-candidates",
+	input: join(process.env.AEGIS_HOME?.trim() || join(homedir(), ".Aegis"), "knowledge", "ctf-wiki"),
+	output: join(process.env.AEGIS_HOME?.trim() || join(homedir(), ".Aegis"), "knowledge", "ctf-wiki-candidates"),
 	maxFiles: 20000,
 	maxSeedBytes: 262144,
 	maxCandidates: 2000,
