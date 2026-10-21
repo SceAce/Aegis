@@ -2,12 +2,14 @@
 
 - id: rev-windows-unpack
 - category: reverse
-- status: verified
-- environment: macos
-- when: pe, packed
+- curation: reviewed
+- environment: any
+- triggers: pe, packed
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/direct-oep.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/fix-iat.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/esp.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/fix-iat.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/unpack/esp.md
+- reviewed-by: human
 
 ## When
 PE 加壳，入口在壳代码；需要 dump 原程序并修复导入表。
@@ -21,5 +23,5 @@ PE 加壳，入口在壳代码；需要 dump 原程序并修复导入表。
 ## Expect
 dump 的程序在 OEP 可运行，导入表正确。
 
-## Pitfalls
+## Limits
 多阶段壳；IAT 加密/重定向；注意 TLS 回调。

@@ -2,10 +2,12 @@
 
 - id: rev-control-flow-flatten
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, control_flow_flatten
+- curation: reviewed
+- environment: any
+- triggers: binary, control_flow_flatten
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/control-flow-flatten.md
+- reviewed-by: human
 
 ## When
 函数体是一个 dispatcher + 状态变量 + switch/if 链；基本块被重排。
@@ -19,5 +21,5 @@
 ## Expect
 还原后的控制流能解释输入检查，且与原二进制行为一致。
 
-## Pitfalls
+## Limits
 状态变量可能被编码；不要手工重写全部逻辑，先恢复关键比较段。

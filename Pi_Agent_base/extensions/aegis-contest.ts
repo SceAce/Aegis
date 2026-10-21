@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { ANY_ENVIRONMENT, isInjectable, parseCard as parseCardV2 } from "../contest/card-schema.mjs";
 
 // ---------------------------------------------------------------------------
 // Configuration (read from the environment so tests can isolate every path)
@@ -65,14 +66,36 @@ export interface ContestCard {
 	id: string;
 	revision: string;
 	title: string;
-	status: "verified" | "candidate";
-	source_refs: string[];
+	/** Text curation quality. Only `reviewed` can be auto-injected. */
+	curation: "draft" | "reviewed" | "disputed";
+	/** What backs the claim. `none` can never be auto-injected. */
+	evidence: {
+		kind: "none" | "document" | "outcome" | "reproduction";
+		refs: string[];
+		implementation_digest?: string;
+	};
 	scope: {
 		task_category: string;
+		/** `any` matches every environment; a concrete value must match exactly. */
 		environment: string;
 	};
-	when: string[];
+	/** Observation tags; all must be confirmed before injection. */
+	triggers: string[];
+	preconditions: string[];
 	hint: string[];
+	postconditions: string[];
+	verification: string | null;
+	limits: string[];
+	source_refs: string[];
+	/**
+	 * DISPLAY ONLY. Derived from curation+evidence so existing renderers keep a
+	 * readable label. Never use it as an injection or authorization gate: use
+	 * `isInjectable` from contest/card-schema.mjs.
+	 */
+	status: "verified" | "candidate";
+	/** DISPLAY ONLY alias of `triggers` retained for older render paths. */
+	when: string[];
+	/** DISPLAY ONLY convenience view of postconditions. */
 	expect?: string;
 }
 
@@ -95,43 +118,31 @@ function asStringArray(value: unknown): string[] {
 // Parse and validate one card. Unknown/malformed cards are dropped (fail to
 // "no card"), never widened into a wildcard or promoted.
 function parseCard(value: unknown, index: number): { card?: ContestCard; error?: string } {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return { error: `card[${index}] is not an object` };
-	}
-	const raw = value as Record<string, unknown>;
-	const id = typeof raw.id === "string" ? raw.id.trim() : "";
-	const revision = typeof raw.revision === "string" ? raw.revision.trim() : "";
-	const title = typeof raw.title === "string" ? raw.title.trim() : "";
-	const status = raw.status;
-	const scope =
-		raw.scope && typeof raw.scope === "object" && !Array.isArray(raw.scope)
-			? (raw.scope as Record<string, unknown>)
-			: null;
-	const taskCategory = scope && typeof scope.task_category === "string" ? scope.task_category.trim() : "";
-	const environment = scope && typeof scope.environment === "string" ? scope.environment.trim() : "";
-	const when = asStringArray(raw.when);
-	const hint = asStringArray(raw.hint);
-	const sourceRefs = asStringArray(raw.source_refs);
-
-	if (!id) return { error: `card[${index}] missing id` };
-	if (!revision) return { error: `card ${id} missing revision` };
-	if (status !== "verified" && status !== "candidate") return { error: `card ${id} has invalid status` };
-	if (!taskCategory) return { error: `card ${id} missing scope.task_category` };
-	if (!environment) return { error: `card ${id} missing scope.environment` };
-	if (when.length === 0) return { error: `card ${id} missing when conditions` };
-	if (hint.length === 0) return { error: `card ${id} has no hint` };
-
+	// Schema, validation and v1 compatibility live in ONE place:
+	// contest/card-schema.mjs. This adapter only maps it to the display shape the
+	// extension renders, and derives the legacy `status` label.
+	const parsed = parseCardV2(value, { index });
+	if (!parsed.ok) return { error: parsed.reason };
+	const card = parsed.card;
+	const injectableShape = card.curation === "reviewed" && card.evidence && card.evidence.kind !== "none";
 	return {
 		card: {
-			id,
-			revision,
-			title: title || id,
-			status,
-			source_refs: sourceRefs,
-			scope: { task_category: taskCategory, environment },
-			when,
-			hint: hint.slice(0, MAX_HINT_LINES),
-			expect: typeof raw.expect === "string" ? raw.expect.trim() : undefined,
+			id: card.id,
+			revision: card.revision,
+			title: card.title,
+			curation: card.curation,
+			evidence: card.evidence,
+			scope: card.scope,
+			triggers: card.triggers,
+			preconditions: card.preconditions ?? [],
+			hint: card.hint.slice(0, MAX_HINT_LINES),
+			postconditions: card.postconditions ?? [],
+			verification: card.verification ?? null,
+			limits: card.limits ?? [],
+			source_refs: card.source?.uri ? [card.source.uri] : (card.evidence?.refs ?? []),
+			status: injectableShape ? "verified" : "candidate",
+			when: card.triggers,
+			expect: card.postconditions?.length ? card.postconditions.join("; ") : undefined,
 		},
 	};
 }
@@ -189,7 +200,7 @@ export interface MatchResult {
 
 /** True when every `when` clause is present in the confirmed observations. */
 function conditionsMet(card: ContestCard, observations: Set<string>): boolean {
-	return card.when.every((condition) => observations.has(condition));
+	return card.triggers.every((condition) => observations.has(condition));
 }
 
 /**
@@ -215,10 +226,23 @@ export function matchCardsDetailed(
 	const matched: MatchResult[] = [];
 	const rejected: Array<{ card: ContestCard; reason: string }> = [];
 	for (const card of cards) {
-		if (card.status !== "verified") {
+		// Injectability is DERIVED from curation + evidence, not read off a single
+		// authored boolean. Each failed condition is reported separately.
+		if (card.curation !== "reviewed") {
 			rejected.push({
 				card,
-				reason: `status=${card.status} is not auto-injectable (candidates require manual selection)`,
+				reason: `curation=${card.curation} is not auto-injectable (only reviewed cards are; others need manual selection)`,
+			});
+			continue;
+		}
+		if (!card.evidence || card.evidence.kind === "none") {
+			rejected.push({ card, reason: "evidence.kind=none is not auto-injectable" });
+			continue;
+		}
+		if (card.evidence.kind === "reproduction" && !card.evidence.implementation_digest) {
+			rejected.push({
+				card,
+				reason: "evidence.kind=reproduction needs implementation_digest pinned to the registered script action",
 			});
 			continue;
 		}
@@ -226,22 +250,27 @@ export function matchCardsDetailed(
 			rejected.push({ card, reason: `scope.task_category=${card.scope.task_category} != ${context.taskCategory}` });
 			continue;
 		}
-		if (card.scope.environment !== context.environment) {
+		if (card.scope.environment !== ANY_ENVIRONMENT && card.scope.environment !== context.environment) {
 			rejected.push({ card, reason: `scope.environment=${card.scope.environment} != ${context.environment}` });
 			continue;
 		}
 		if (!conditionsMet(card, observations)) {
-			const missing = card.when.filter((condition) => !observations.has(condition));
-			rejected.push({ card, reason: `unmet when: ${missing.join(", ")}` });
+			const missing = card.triggers.filter((condition) => !observations.has(condition));
+			rejected.push({ card, reason: `unmet triggers: ${missing.join(", ")}` });
 			continue;
 		}
 		if (matched.length >= MAX_INJECTED) {
 			rejected.push({ card, reason: `matched but dropped by MAX_INJECTED=${MAX_INJECTED}` });
 			continue;
 		}
+		// Belt and braces: the shared predicate must agree with the checks above.
+		if (!isInjectable(card, { scopeMatches: true, triggersMet: true })) {
+			rejected.push({ card, reason: "isInjectable() rejected the card (curation/evidence mismatch)" });
+			continue;
+		}
 		matched.push({
 			card,
-			reason: `scope(task_category=${card.scope.task_category}, environment=${card.scope.environment}) + when[${card.when.join(", ")}]`,
+			reason: `scope(task_category=${card.scope.task_category}, environment=${card.scope.environment}) + triggers[${card.triggers.join(", ")}]`,
 		});
 	}
 	return { matched, rejected };
@@ -267,7 +296,12 @@ export function renderSection(results: MatchResult[], manual: boolean): string {
 	for (const { card, reason } of results) {
 		const provenance = card.source_refs.length > 0 ? card.source_refs.join(", ") : "(no source refs)";
 		lines.push("");
-		lines.push(`- [${card.status}] ${card.id} rev ${card.revision} — ${card.title}`);
+		// Keep the legacy `[status]` token (manual selection must never turn a card
+		// into `verified`) and show the v2 dimensions next to it.
+		lines.push(
+			`- [${card.status}] ${card.id} rev ${card.revision} — ${card.title} ` +
+				`(curation=${card.curation}, evidence=${card.evidence.kind})`,
+		);
 		lines.push(`  matched on: ${reason}`);
 		lines.push(`  provenance: ${provenance}`);
 		if (manual) lines.push("  selected manually by the human; UNVERIFIED for this specific task");
@@ -280,6 +314,9 @@ export function renderSection(results: MatchResult[], manual: boolean): string {
 			}
 		}
 		if (card.expect) lines.push(`  to verify: ${sanitizeHintLine(card.expect)}`);
+		for (const limit of card.limits ?? []) {
+			lines.push(`  does NOT apply when: ${sanitizeHintLine(limit)}`);
+		}
 	}
 	lines.push("");
 	lines.push(

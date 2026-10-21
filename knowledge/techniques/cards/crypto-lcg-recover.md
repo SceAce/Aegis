@@ -2,10 +2,12 @@
 
 - id: crypto-lcg-recover
 - category: crypto
-- status: verified
-- environment: macos
-- when: lcg
+- curation: reviewed
+- environment: any
+- triggers: lcg
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/streamcipher/lcg/intro.md
+- reviewed-by: human
 
 ## When
 输出满足 x_{i+1} = (a*x_i + c) mod m；参数或高位/低位可能部分未知。
@@ -19,5 +21,5 @@
 ## Expect
 重放已知序列完全一致，预测值与下一组观测一致。
 
-## Pitfalls
+## Limits
 模数未知且差分 gcd 不唯一时不要武断；截断位数决定枚举成本。

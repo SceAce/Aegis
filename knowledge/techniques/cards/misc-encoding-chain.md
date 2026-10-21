@@ -2,11 +2,13 @@
 
 - id: misc-encoding-chain
 - category: misc
-- status: verified
-- environment: macos
-- when: text, encoding
+- curation: reviewed
+- environment: any
+- triggers: text, encoding
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/encode/computer.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/encode/communication.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/encode/communication.md
+- reviewed-by: human
 
 ## When
 文本由 base64/hex/url/morse/进制/压缩等一层或多层编码叠加。
@@ -20,5 +22,5 @@
 ## Expect
 逐层可逆，最终得到可读文本/合法文件。
 
-## Pitfalls
+## Limits
 base64 可能缺 padding；十六进制大小写混用。

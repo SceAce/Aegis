@@ -2,10 +2,12 @@
 
 - id: rev-static-triage
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, unfamiliar
+- curation: reviewed
+- environment: any
+- triggers: binary, unfamiliar
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/introduction.md
+- reviewed-by: human
 
 ## When
 拿到未知二进制/固件片段；先判断格式、架构、语言、保护、入口和输入面。
@@ -19,5 +21,5 @@
 ## Expect
 能说明输入从哪进、在哪比较、成功路径大致在哪。
 
-## Pitfalls
+## Limits
 strings 可能被混淆；静态结论要用动态断点验证。

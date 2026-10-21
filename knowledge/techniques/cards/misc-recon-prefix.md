@@ -2,11 +2,13 @@
 
 - id: misc-recon-prefix
 - category: misc
-- status: verified
-- environment: macos
-- when: misc, unknown_file
+- curation: reviewed
+- environment: any
+- triggers: misc, unknown_file
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/recon.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/prefix.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/prefix.md
+- reviewed-by: human
 
 ## When
 附件类型不明（unknown file type），或文件头/magic bytes 被改、嵌套多层 archive/压缩。
@@ -20,5 +22,5 @@
 ## Expect
 恢复出合法文件/可读文本，并解释前缀修复点。
 
-## Pitfalls
+## Limits
 不要一次改多个字节；保留原始副本。

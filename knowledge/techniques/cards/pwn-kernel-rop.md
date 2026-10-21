@@ -2,11 +2,13 @@
 
 - id: pwn-kernel-rop
 - category: pwn
-- status: verified
-- environment: macos
-- when: kernel, rop, kpti
+- curation: reviewed
+- environment: any
+- triggers: kernel, rop, kpti
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/rop/rop.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/rop/kpti-bypass.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/rop/kpti-bypass.md
+- reviewed-by: human
 
 ## When
 有内核栈溢出/控制流原语；需要 commit_creds 并返回用户态。
@@ -20,5 +22,5 @@
 ## Expect
 内核执行 commit_creds(0)，用户态拿到 root shell。
 
-## Pitfalls
+## Limits
 SMEP/SMAP/KPTI 组合；栈对齐与偏移随内核版本变化。

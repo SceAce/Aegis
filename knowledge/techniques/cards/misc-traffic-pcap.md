@@ -2,11 +2,13 @@
 
 - id: misc-traffic-pcap
 - category: misc
-- status: verified
-- environment: macos
-- when: pcap
+- curation: reviewed
+- environment: any
+- triggers: pcap
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/introduction.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/protocols/usb.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/traffic/protocols/usb.md
+- reviewed-by: human
 
 ## When
 pcap/pcapng 里有 HTTP/DNS/USB/自定义协议流量。
@@ -20,5 +22,5 @@ pcap/pcapng 里有 HTTP/DNS/USB/自定义协议流量。
 ## Expect
 重组出可读内容或合法文件，且与流量时间线一致。
 
-## Pitfalls
+## Limits
 分片/重传要按流重组；USB 键盘要确认 HID 报告格式。

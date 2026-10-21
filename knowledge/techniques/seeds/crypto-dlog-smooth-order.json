@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+  "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "离散对数：小/光滑阶",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "离散对数：小/光滑阶",
       "section": [
         "离散对数：小/光滑阶"
       ],
-      "content": "- id: crypto-dlog-smooth-order\n- category: crypto\n- status: verified\n- environment: macos\n- when: dlog, smooth_order\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/discrete-log/discrete-log.md",
+      "content": "- id: crypto-dlog-smooth-order\n- category: crypto\n- curation: reviewed\n- environment: any\n- triggers: dlog, smooth_order\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/discrete-log/discrete-log.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "离散对数：小/光滑阶",
-      "section": [
-        "离散对数：小/光滑阶",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "离散对数：小/光滑阶",
+      "section": [
+        "离散对数：小/光滑阶",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "离散对数：小/光滑阶",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "g^x=h 的群阶光滑或很小；可分解为小素数幂。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "离散对数：小/光滑阶",
-      "section": [
-        "离散对数：小/光滑阶",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "离散对数：小/光滑阶",
+      "section": [
+        "离散对数：小/光滑阶",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "离散对数：小/光滑阶",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 分解群阶；对每个小因子用 BSGS/Pohlig-Hellman 求 x mod p_i^k。\n2. CRT 合并各余数得到 x；验证 g^x=h。\n3. 阶未知时先从 g 的幂/因子推断。",
-      "line_start": 14,
-      "line_end": 16,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "离散对数：小/光滑阶",
-      "section": [
-        "离散对数：小/光滑阶",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 18,
+      "line_start": 16,
       "line_end": 18,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "离散对数：小/光滑阶",
+      "section": [
+        "离散对数：小/光滑阶",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 20,
+      "line_end": 20,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "离散对数：小/光滑阶",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "g^x 等于 h；x 在合理范围内。",
-      "line_start": 19,
-      "line_end": 19,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "离散对数：小/光滑阶",
-      "section": [
-        "离散对数：小/光滑阶",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 21,
       "line_end": 21,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "离散对数：小/光滑阶",
+      "section": [
+        "离散对数：小/光滑阶",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 23,
+      "line_end": 23,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-dlog-smooth-order.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "离散对数：小/光滑阶",
       "section": [
         "离散对数：小/光滑阶",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "大素数因子无法分解时方法不成立；注意群是模 p 还是椭圆曲线。",
-      "line_start": 22,
-      "line_end": 22,
+      "line_start": 24,
+      "line_end": 24,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 470,
+  "content_chars": 514,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:e43f4569ae3d70feb260402174a298172bfd7a85aefbccb64fd75c1efcd83a2a"
+    "source_digest": "sha256:509fea88f404becfc64b626e5c34b7b520930907b549479677194d93f6a31f79"
   },
-  "semantic_digest": "sha256:69a231dde5ec2e6b6b387cbbb63922645e9d6186d17f0a3e2b137146f8821244",
+  "semantic_digest": "sha256:7675bcd0020773b50f19db9b4f77b4524c470121b4ba1439ea364b7aff072cf0",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

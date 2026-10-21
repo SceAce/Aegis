@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+  "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
       "section": [
         "RSA 共模攻击（同一 n，多组 e）"
       ],
-      "content": "- id: crypto-rsa-common-modulus\n- category: crypto\n- status: verified\n- environment: macos\n- when: rsa, same_modulus\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_module_attack.md#共模攻击",
+      "content": "- id: crypto-rsa-common-modulus\n- category: crypto\n- curation: reviewed\n- environment: any\n- triggers: rsa, same_modulus\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_module_attack.md#共模攻击\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 共模攻击（同一 n，多组 e）",
-      "section": [
-        "RSA 共模攻击（同一 n，多组 e）",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 共模攻击（同一 n，多组 e）",
+      "section": [
+        "RSA 共模攻击（同一 n，多组 e）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "两组或多组密文使用同一个 n，但 e 不同（e1,e2 通常互素）；明文相同或相关。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 共模攻击（同一 n，多组 e）",
-      "section": [
-        "RSA 共模攻击（同一 n，多组 e）",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 共模攻击（同一 n，多组 e）",
+      "section": [
+        "RSA 共模攻击（同一 n，多组 e）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 确认 n 相同且 gcd(e1,e2)=1；若 gcd>1，先约分或换一对。\n2. 用扩展欧几里得求 a,b 使 a*e1+b*e2=1。\n3. m = c1^a * c2^b mod n；负指数用模逆（pow(c,-1,n)）。\n4. 把 m 转 bytes，检查可打印/结构（JSON、flag 格式、padding）。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 共模攻击（同一 n，多组 e）",
-      "section": [
-        "RSA 共模攻击（同一 n，多组 e）",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 共模攻击（同一 n，多组 e）",
+      "section": [
+        "RSA 共模攻击（同一 n，多组 e）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "m 重新用 e1/e2 加密分别得到 c1/c2；明文结构合理。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 共模攻击（同一 n，多组 e）",
-      "section": [
-        "RSA 共模攻击（同一 n，多组 e）",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 共模攻击（同一 n，多组 e）",
+      "section": [
+        "RSA 共模攻击（同一 n，多组 e）",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-common-modulus.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 共模攻击（同一 n，多组 e）",
       "section": [
         "RSA 共模攻击（同一 n，多组 e）",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "gcd(e1,e2)!=1 时不能直接套；负指数必须先求逆；明文可能带 PKCS#1 填充。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 594,
+  "content_chars": 638,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:cbef649bdf275072e89ff1383a2de0592a0712a29c5ad4b5deda09fcaf53044e"
+    "source_digest": "sha256:5cb6578a3b9fa07da4707720b8f728f41d6d56f111bd08462be89c1b3be09ea5"
   },
-  "semantic_digest": "sha256:7835491e00d6ed99295bdeb69261c082111b85057b859da4179d024970888ef8",
+  "semantic_digest": "sha256:c93dae234e9c62b84266ab732794bbc27b52c87284e7c5df82f7af09f9b9d6ba",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

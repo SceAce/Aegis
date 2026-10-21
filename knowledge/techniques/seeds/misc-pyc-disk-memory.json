@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+  "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "pyc、磁盘镜像与内存取证",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "pyc、磁盘镜像与内存取证",
       "section": [
         "pyc、磁盘镜像与内存取证"
       ],
-      "content": "- id: misc-pyc-disk-memory\n- category: misc\n- status: verified\n- environment: macos\n- when: pyc\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/disk-memory/introduction.md",
+      "content": "- id: misc-pyc-disk-memory\n- category: misc\n- curation: reviewed\n- environment: any\n- triggers: pyc\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md\n- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/disk-memory/introduction.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 9,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "pyc、磁盘镜像与内存取证",
-      "section": [
-        "pyc、磁盘镜像与内存取证",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 11,
       "line_end": 11,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "pyc、磁盘镜像与内存取证",
+      "section": [
+        "pyc、磁盘镜像与内存取证",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "pyc、磁盘镜像与内存取证",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "给出 pyc/磁盘镜像/内存 dump，需要恢复源码或进程数据。",
-      "line_start": 12,
-      "line_end": 12,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "pyc、磁盘镜像与内存取证",
-      "section": [
-        "pyc、磁盘镜像与内存取证",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 14,
       "line_end": 14,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "pyc、磁盘镜像与内存取证",
+      "section": [
+        "pyc、磁盘镜像与内存取证",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 16,
+      "line_end": 16,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "pyc、磁盘镜像与内存取证",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. pyc：确认 magic 与 Python 版本，用对应 decompyle/uncompyle 或手工反汇编。\n2. 磁盘：mmls/tsk_recover 找分区与删除文件；看文件系统日志。\n3. 内存：volatility 先 imageinfo，再按插件找进程/网络/凭据/文件。\n4. 恢复结果检查完整性与可读性。",
-      "line_start": 15,
-      "line_end": 18,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "pyc、磁盘镜像与内存取证",
-      "section": [
-        "pyc、磁盘镜像与内存取证",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 20,
+      "line_start": 17,
       "line_end": 20,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "pyc、磁盘镜像与内存取证",
+      "section": [
+        "pyc、磁盘镜像与内存取证",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "pyc、磁盘镜像与内存取证",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "恢复出源码/文件/进程数据，且版本与镜像一致。",
-      "line_start": 21,
-      "line_end": 21,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "pyc、磁盘镜像与内存取证",
-      "section": [
-        "pyc、磁盘镜像与内存取证",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 23,
       "line_end": 23,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "pyc、磁盘镜像与内存取证",
+      "section": [
+        "pyc、磁盘镜像与内存取证",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 25,
+      "line_end": 25,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/misc-pyc-disk-memory.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "pyc、磁盘镜像与内存取证",
       "section": [
         "pyc、磁盘镜像与内存取证",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "pyc magic 不匹配时要换工具；内存镜像要先用正确 profile。",
-      "line_start": 24,
-      "line_end": 24,
+      "line_start": 26,
+      "line_end": 26,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 648,
+  "content_chars": 698,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:3450601b187fde3a822ded339c7824404ec32b4f380c82a607d0b4b96b5f17ad"
+    "source_digest": "sha256:69464f6998c116b62158738f7683e6afe1f7d0a55861302119e50c1a38e925ea"
   },
-  "semantic_digest": "sha256:b4f0771f855a7fc334f0fea038854427872a35cf9d24fe2a13024518cb126cd8",
+  "semantic_digest": "sha256:003ddae214065b63578a71b8fb620c12c1483ec5a9bbf63740ba3e228b33d7f8",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

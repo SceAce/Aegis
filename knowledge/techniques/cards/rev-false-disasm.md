@@ -2,10 +2,12 @@
 
 - id: rev-false-disasm
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, obfuscated, junk_code
+- curation: reviewed
+- environment: any
+- triggers: binary, obfuscated, junk_code
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/linux/false-disasm.md
+- reviewed-by: human
 
 ## When
 反汇编出现明显跳转错位/重叠指令；真实入口被花指令遮挡。
@@ -19,5 +21,5 @@
 ## Expect
 重建后的反汇编连续且能解释执行路径。
 
-## Pitfalls
+## Limits
 手工重建容易漏分支；以动态 trace 为准。

@@ -2,11 +2,13 @@
 
 - id: crypto-rsa-wiener-small-d
 - category: crypto
-- status: verified
-- environment: macos
-- when: rsa, small_d
+- curation: reviewed
+- environment: any
+- triggers: rsa, small_d
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/d_attacks/rsa_d_attack.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/d_attacks/rsa_extending_wiener.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/d_attacks/rsa_extending_wiener.md
+- reviewed-by: human
 
 ## When
 d 明显偏小（约 < N^(1/4)），或 e/N 的连分数收敛中出现可疑的 k/d。
@@ -20,5 +22,5 @@ d 明显偏小（约 < N^(1/4)），或 e/N 的连分数收敛中出现可疑的
 ## Expect
 p*q=N，phi 与 d 自洽，解密明文可读。
 
-## Pitfalls
+## Limits
 k=0 或 phi 非整数要跳过；d 超过界时连分数不够。

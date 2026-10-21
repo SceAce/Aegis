@@ -2,11 +2,13 @@
 
 - id: rev-anti-debug
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, anti_debug
+- curation: reviewed
+- environment: any
+- triggers: binary, anti_debug
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/linux/detect-dbg.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/anti-debug/isdebuggerpresent.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/platform/windows/anti-debug/isdebuggerpresent.md
+- reviewed-by: human
 
 ## When
 调试时程序退出/走假分支；出现 ptrace、IsDebuggerPresent、时间差、异常处理检查。
@@ -20,5 +22,5 @@
 ## Expect
 断点能停在目标逻辑，程序不再因调试器退出。
 
-## Pitfalls
+## Limits
 多处反调试要一起处理；patch 后要重算校验和。

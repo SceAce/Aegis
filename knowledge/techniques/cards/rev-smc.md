@@ -2,10 +2,12 @@
 
 - id: rev-smc
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, self_modifying
+- curation: reviewed
+- environment: any
+- triggers: binary, self_modifying
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/smc.md
+- reviewed-by: human
 
 ## When
 代码在运行前被解密/改写；静态字节与执行时不一致。
@@ -19,5 +21,5 @@
 ## Expect
 dump 后的代码可读并解释检查；与原程序行为一致。
 
-## Pitfalls
+## Limits
 解密可能分段/多次；dump 时机不对会拿到半成品。

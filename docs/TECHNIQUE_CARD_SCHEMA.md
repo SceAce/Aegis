@@ -193,3 +193,64 @@ injectable = curation == "reviewed"
 3. 机械迁移 47 张卡（补 `preconditions` / `limits` / `verification`，`environment` 改 `any`）。
 4. 文档：`KNOWLEDGE_RUNTIME.md` 或新页登记 v2 契约；更新 `AEGIS_ENTRY_CAPABILITIES.md` 的卡片行。
 5. 回归：`contest-smoke`、`aegis-contest-pi-integration`、`aegis-observer-contest-pi`、`aegis-ram-knowledge-reserve`。
+
+## 8. 实现与验证记录
+
+### 8.1 变更
+
+| 文件 | 变更 |
+| --- | --- |
+| `Pi_Agent_base/contest/card-schema.mjs` | 新增。v2 解析、v1 兼容映射、`isInjectable` 派生判定、`reproduction` 校验、禁止字段检查 |
+| `Pi_Agent_base/extensions/aegis-contest.ts` | 卡片模型改为 v2；注入门控改为派生判定；`environment: "any"` 支持；渲染显示 `curation`/`evidence` 与 `does NOT apply when:` |
+| `knowledge/techniques/build_cards.py` | 既有单一生成器升级为 v2 输出（`curation`/`evidence`/`triggers`/`environment: any`/`## Limits`），并纳入 Git 跟踪 |
+| `knowledge/techniques/cards/*.md` | 47 个文件由生成器重新产出 v2（不手改） |
+| `.gitignore` | 作用域例外：`knowledge/*` 仍忽略，放行 `knowledge/techniques/**` |
+| `Pi_Agent_base/tests/aegis-card-schema.mjs` | 新增 15 例 |
+
+### 8.2 迁移前后对照
+
+| 维度 | v1 | v2 |
+| --- | --- | --- |
+| 整理质量 | `status: verified` | `curation: reviewed` |
+| 证据 | 隐含（来自 wiki URL） | `evidence.kind: document` + refs |
+| 触发 | `when` | `triggers` |
+| 适用条件 | `## When` 散文 | `preconditions` |
+| 预期结果 | `expect` 单串 | `postconditions` |
+| 已知限制 | `## Pitfalls` | `limits` |
+| 平台 | 全部 `macos`（实际会阻断非 macOS） | 全部 `any` |
+
+行为等价性：47 张卡迁移前 `status=verified` 会注入；迁移后 `curation=reviewed` +
+`evidence=document` 仍注入。判定从单一布尔变成两个可核对字段，结果不变。
+
+### 8.3 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `aegis-card-schema.mjs` | **15 pass / 0 fail** |
+| `contest-smoke` | exit 0 |
+| `aegis-contest-pi-integration`（需 resolver） | exit 0 |
+| `aegis-observer-contest-pi`（需 resolver） | exit 0 |
+| `aegis-ram-knowledge-reserve` | exit 0 |
+| required 清单 | 68 scripts, 0 failed |
+| `tsc tsconfig.aegis-campaign.json` | 193，无新增 |
+| 卡片生成 | `python3 knowledge/techniques/build_cards.py` → 47 张；`curation=reviewed`×47、`evidence=document`×47、`environment=any`×47、`limits` 47/47 |
+| 生成结果过共享 schema | `parseCards(cards.json)` ok，47 张全部 `isInjectable` |
+
+### 8.4 对本文早期表述的更正
+
+§4 最初写「`md → cards.json` 的脚本当前缺失」。这是错的：`knowledge/techniques/build_cards.py`
+一直存在且是唯一来源，只是**未纳入 Git**， repository 视角看不见。同理，`status=verified`
+「只表示人看过」也已写在 `knowledge/techniques/README.md` 里。本文的两个结论仍然成立
+（字段在代码路径上确实混用、自动注入确实依赖单个布尔），但不应当写成「未记录」或「无生成器」。
+
+另：期间曾新增 `build-technique-cards.mjs` 做同样的 md→json 转换，已删除——保留两套生成器
+会让 `cards/*.md` 的作者与产物关系分叉。
+
+### 8.5 已知限制
+
+1. `reproduction` 已在 schema 与判定层实现，但当前**没有卡片使用**它：需要先有
+   `execution/script-registry.mjs` 的人工登记项，才会出现第一张。
+2. `isInjectable` 的 digest 比对需要调用方传入 `scriptDigests`；扩展侧目前只校验 digest
+   是否存在，未接 registry（尚无 reproduction 卡，不影响现状）。
+3. `limits` 不强制；当前 47/47 有值是因为 v1 的 `## Pitfalls` 被生成器映射，新卡不强制。
+4. `preconditions` 直接取 v1 的 `when_text`，未逐卡人工润色。

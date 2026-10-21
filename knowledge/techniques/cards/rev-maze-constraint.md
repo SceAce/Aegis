@@ -2,10 +2,12 @@
 
 - id: rev-maze-constraint
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, maze, constraint
+- curation: reviewed
+- environment: any
+- triggers: binary, maze, constraint
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/maze/maze.md
+- reviewed-by: human
 
 ## When
 程序走格子/状态机，输入决定移动；成功路径由地图或约束决定。
@@ -19,5 +21,5 @@
 ## Expect
 输入使程序到达成功状态/输出 flag。
 
-## Pitfalls
+## Limits
 地图可能动态生成；符号执行要注意路径爆炸。

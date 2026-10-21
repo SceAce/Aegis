@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+  "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
       "section": [
         "SQLi 文件写入：INTO OUTFILE / load_file"
       ],
-      "content": "- id: web-sqli-into-outfile\n- category: web\n- status: verified\n- environment: macos\n- when: http, sqli, file_privilege\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md",
+      "content": "- id: web-sqli-into-outfile\n- category: web\n- curation: reviewed\n- environment: any\n- triggers: http, sqli, file_privilege\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
-      "section": [
-        "SQLi 文件写入：INTO OUTFILE / load_file",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
+      "section": [
+        "SQLi 文件写入：INTO OUTFILE / load_file",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "SQL 注入可用，且数据库用户有 FILE 权限、secure_file_priv 允许目标目录。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
-      "section": [
-        "SQLi 文件写入：INTO OUTFILE / load_file",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
+      "section": [
+        "SQLi 文件写入：INTO OUTFILE / load_file",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 先用 load_file('/etc/passwd') 或报错确认文件读权限；确认可写 Web 目录。\n2. 用 UNION SELECT ... INTO OUTFILE '/path/x.php' 写入一个只执行固定查询的查询器（不要写破坏性内容）。\n3. 如果引号被过滤，用 0x... 十六进制或 CHAR() 构造路径/内容。\n4. 访问写入的文件读回结果，确认查询器可执行；记录文件路径与权限。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
-      "section": [
-        "SQLi 文件写入：INTO OUTFILE / load_file",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
+      "section": [
+        "SQLi 文件写入：INTO OUTFILE / load_file",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "目标路径出现新文件，访问后能返回 SQL 查询结果。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
-      "section": [
-        "SQLi 文件写入：INTO OUTFILE / load_file",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
+      "section": [
+        "SQLi 文件写入：INTO OUTFILE / load_file",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-into-outfile.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQLi 文件写入：INTO OUTFILE / load_file",
       "section": [
         "SQLi 文件写入：INTO OUTFILE / load_file",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "secure_file_priv 限制目录；FILE 权限可能没有；写入前确认目标目录可写且不会覆盖现有文件。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 626,
+  "content_chars": 670,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:aacf86ae42c52656aa3118a1ad730a2f0d5ef54a3fb9e2dee40e2ffc5e2aa919"
+    "source_digest": "sha256:4286d022efde53055e45efd50367031aa7f6df8cbb74b5b5fe76b29d8382b51d"
   },
-  "semantic_digest": "sha256:5dc6fc407a7b2c1431449adccf1c41896ebab8b209f8932ee4dae13948f12bf1",
+  "semantic_digest": "sha256:4b0e1577e7e292f1b4a29d54df5f2b6cd9a0e2a43153f28f4c08247973600675",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

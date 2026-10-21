@@ -2,10 +2,12 @@
 
 - id: pwn-pie-aslr-leak
 - category: pwn
-- status: verified
-- environment: macos
-- when: elf, pie
+- curation: reviewed
+- environment: any
+- triggers: elf, pie
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stack-intro.md
+- reviewed-by: human
 
 ## When
 PIE 开启；有栈/格式化/堆泄漏，或可做部分返回地址覆盖。
@@ -19,5 +21,5 @@ PIE 开启；有栈/格式化/堆泄漏，或可做部分返回地址覆盖。
 ## Expect
 目标地址落在正确页内，控制流/调用到达预期函数。
 
-## Pitfalls
+## Limits
 ASLR 每次运行变化；部分覆盖要保证目标与当前地址同页。

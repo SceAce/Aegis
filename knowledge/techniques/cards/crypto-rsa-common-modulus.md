@@ -2,10 +2,12 @@
 
 - id: crypto-rsa-common-modulus
 - category: crypto
-- status: verified
-- environment: macos
-- when: rsa, same_modulus
+- curation: reviewed
+- environment: any
+- triggers: rsa, same_modulus
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_module_attack.md#共模攻击
+- reviewed-by: human
 
 ## When
 两组或多组密文使用同一个 n，但 e 不同（e1,e2 通常互素）；明文相同或相关。
@@ -19,5 +21,5 @@
 ## Expect
 m 重新用 e1/e2 加密分别得到 c1/c2；明文结构合理。
 
-## Pitfalls
+## Limits
 gcd(e1,e2)!=1 时不能直接套；负指数必须先求逆；明文可能带 PKCS#1 填充。

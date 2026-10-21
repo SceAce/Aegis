@@ -2,10 +2,12 @@
 
 - id: crypto-rsa-low-exponent
 - category: crypto
-- status: verified
-- environment: macos
-- when: rsa, small_e
+- curation: reviewed
+- environment: any
+- triggers: rsa, small_e
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数攻击
+- reviewed-by: human
 
 ## When
 e 很小（常见 3），且明文短、没有填充，c = m^e 未发生模回绕。
@@ -19,5 +21,5 @@ e 很小（常见 3），且明文短、没有填充，c = m^e 未发生模回�
 ## Expect
 m^e == c（或 CRT 合并后的值）；明文可解析。
 
-## Pitfalls
+## Limits
 有 padding 时不能直接开根；k 的枚举要有上限，否则是盲目爆破。

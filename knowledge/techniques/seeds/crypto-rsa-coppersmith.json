@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
+  "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "RSA Coppersmith：已知高位/小根",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA Coppersmith：已知高位/小根",
       "section": [
         "RSA Coppersmith：已知高位/小根"
       ],
-      "content": "- id: crypto-rsa-coppersmith\n- category: crypto\n- status: verified\n- environment: macos\n- when: rsa, partial_plaintext\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_coppersmith_attack.md",
+      "content": "- id: crypto-rsa-coppersmith\n- category: crypto\n- curation: reviewed\n- environment: any\n- triggers: rsa, partial_plaintext\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_coppersmith_attack.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-coppersmith.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA Coppersmith：已知高位/小根",
-      "section": [
-        "RSA Coppersmith：已知高位/小根",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA Coppersmith：已知高位/小根",
+      "section": [
+        "RSA Coppersmith：已知高位/小根",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-coppersmith.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA Coppersmith：已知高位/小根",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "已知明文高位、相关消息、p 的高位，或可写成模 N/模 p 的小根多项式。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-coppersmith.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA Coppersmith：已知高位/小根",
-      "section": [
-        "RSA Coppersmith：已知高位/小根",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA Coppersmith：已知高位/小根",
+      "section": [
+        "RSA Coppersmith：已知高位/小根",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-coppersmith.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA Coppersmith：已知高位/小根",
@@ -116,17 +116,17 @@
         "Do"
       ],
       "content": "1. 把已知信息写成首一多项式 f(x)=0 (mod N 或 mod p)，未知量为小根。\n2. 按界选择格：小根 |x|",
-      "line_start": 14,
-      "line_end": 15,
+      "line_start": 16,
+      "line_end": 17,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 400,
+  "content_chars": 446,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:a9ea17d3cbce997bd24e4338f6fbed14cb22a02cd577bc0f6708b572ec011ae9"
+    "source_digest": "sha256:5736e9c938b4fcd30ffc2e768525ac1f5c5ed5aa1ed4a6b4d07e655b1e7a2c8d"
   },
-  "semantic_digest": "sha256:ded19f5c689f85e7e928a5c19a28e1c69ef027626e51b54574b30d97348bc933",
+  "semantic_digest": "sha256:0f198ba050b491c7affa79c96fb4de9abab55548a806b2d9db1d584eaa56d388",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

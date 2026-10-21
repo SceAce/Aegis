@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+  "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
       "section": [
         "RSA 广播攻击（同明文，多模数，小 e）"
       ],
-      "content": "- id: crypto-rsa-hastad-broadcast\n- category: crypto\n- status: verified\n- environment: macos\n- when: rsa, same_message, small_e\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数广播攻击",
+      "content": "- id: crypto-rsa-hastad-broadcast\n- category: crypto\n- curation: reviewed\n- environment: any\n- triggers: rsa, same_message, small_e\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数广播攻击\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
-      "section": [
-        "RSA 广播攻击（同明文，多模数，小 e）",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
+      "section": [
+        "RSA 广播攻击（同明文，多模数，小 e）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "同一明文用不同 n_i、同一小 e 加密给多个接收方。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
-      "section": [
-        "RSA 广播攻击（同明文，多模数，小 e）",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
+      "section": [
+        "RSA 广播攻击（同明文，多模数，小 e）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 确认各组 e 相同、n_i 两两互素。\n2. 对 c_i 做 CRT 得到 C = m^e mod prod(n_i)。\n3. 若 prod(n_i) > m^e，直接整数开 e 次根得到 m。\n4. 若已知线性 padding，用 Coppersmith 求小根而不是硬开根。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
-      "section": [
-        "RSA 广播攻击（同明文，多模数，小 e）",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
+      "section": [
+        "RSA 广播攻击（同明文，多模数，小 e）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "开根结果的 e 次方等于 CRT 合并值；明文结构合理。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
-      "section": [
-        "RSA 广播攻击（同明文，多模数，小 e）",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "RSA 广播攻击（同明文，多模数，小 e）",
+      "section": [
+        "RSA 广播攻击（同明文，多模数，小 e）",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-rsa-hastad-broadcast.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "RSA 广播攻击（同明文，多模数，小 e）",
       "section": [
         "RSA 广播攻击（同明文，多模数，小 e）",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "n_i 不互素时先 gcd 分解；e 大于接收方数量时普通 CRT 不够。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 556,
+  "content_chars": 600,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:28f76f900b4bf762b95b9c77a5cf69e5fe316a14c07dfd95757cc887cff84867"
+    "source_digest": "sha256:cdac672c29bfb437313c445fae600fb0b1cf4fcdaafd43cb5e26c12331bbd5af"
   },
-  "semantic_digest": "sha256:466e0f1801a2e460fcd691be5b663731ced194a54005204ce69422ae5d458d5d",
+  "semantic_digest": "sha256:428f941ed5396e9b99013b45c4aef7f0170eb5142ccb311cc1abdd1787c2d041",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

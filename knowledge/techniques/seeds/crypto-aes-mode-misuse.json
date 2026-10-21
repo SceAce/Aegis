@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+  "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "AES 模式误用（ECB / CBC）",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "AES 模式误用（ECB / CBC）",
       "section": [
         "AES 模式误用（ECB / CBC）"
       ],
-      "content": "- id: crypto-aes-mode-misuse\n- category: crypto\n- status: verified\n- environment: macos\n- when: aes, ecb\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/aes.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md",
+      "content": "- id: crypto-aes-mode-misuse\n- category: crypto\n- curation: reviewed\n- environment: any\n- triggers: aes, ecb\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/aes.md\n- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 9,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "AES 模式误用（ECB / CBC）",
-      "section": [
-        "AES 模式误用（ECB / CBC）",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 11,
       "line_end": 11,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "AES 模式误用（ECB / CBC）",
+      "section": [
+        "AES 模式误用（ECB / CBC）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "AES 模式误用（ECB / CBC）",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "ECB 出现重复块；CBC 有可控 IV/明文且无认证；或存在 padding oracle。",
-      "line_start": 12,
-      "line_end": 12,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "AES 模式误用（ECB / CBC）",
-      "section": [
-        "AES 模式误用（ECB / CBC）",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 14,
       "line_end": 14,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "AES 模式误用（ECB / CBC）",
+      "section": [
+        "AES 模式误用（ECB / CBC）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 16,
+      "line_end": 16,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "AES 模式误用（ECB / CBC）",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. ECB：找相同密文块，重排/拼接块，观察明文结构或权限字段。\n2. CBC 位翻转：改 C_{i-1} 的字节，精确翻转 P_i 的对应字节（保留后续块损坏）。\n3. CBC IV 可控时翻转首块；有 padding oracle 时按字节恢复明文。\n4. 每次改动后只提交一次，记录服务端响应差异。",
-      "line_start": 15,
-      "line_end": 18,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "AES 模式误用（ECB / CBC）",
-      "section": [
-        "AES 模式误用（ECB / CBC）",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 20,
+      "line_start": 17,
       "line_end": 20,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "AES 模式误用（ECB / CBC）",
+      "section": [
+        "AES 模式误用（ECB / CBC）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "AES 模式误用（ECB / CBC）",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "目标字段按预期改变（如 role=admin），且 MAC/认证未被触发。",
-      "line_start": 21,
-      "line_end": 21,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "AES 模式误用（ECB / CBC）",
-      "section": [
-        "AES 模式误用（ECB / CBC）",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 23,
       "line_end": 23,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "AES 模式误用（ECB / CBC）",
+      "section": [
+        "AES 模式误用（ECB / CBC）",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 25,
+      "line_end": 25,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/crypto-aes-mode-misuse.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "AES 模式误用（ECB / CBC）",
       "section": [
         "AES 模式误用（ECB / CBC）",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "有 AEAD/MAC 时位翻转会失败；padding oracle 探测要控制请求量。",
-      "line_start": 24,
-      "line_end": 24,
+      "line_start": 26,
+      "line_end": 26,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 692,
+  "content_chars": 742,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:73cabfe88f11ac09a8dd00f4e8b2fcb69f6b970b5273b4ab6e0351ca3552d656"
+    "source_digest": "sha256:b6eea2b82ce288cc017f0b6bdfeeffc6dae8acaffa6d2e0938260643b28555f3"
   },
-  "semantic_digest": "sha256:8e90f4153f1265bdf48220b51065b94c7a40867650e4dfc6d338b82977243750",
+  "semantic_digest": "sha256:42ad70f33d22862ef734936e08a9ebdf88f43c9dec83a313c5a27f66a2bedb87",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+  "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "自修改代码（SMC）",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "自修改代码（SMC）",
       "section": [
         "自修改代码（SMC）"
       ],
-      "content": "- id: rev-smc\n- category: reverse\n- status: verified\n- environment: macos\n- when: binary, self_modifying\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/smc.md",
+      "content": "- id: rev-smc\n- category: reverse\n- curation: reviewed\n- environment: any\n- triggers: binary, self_modifying\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/obfuscate/smc.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "自修改代码（SMC）",
-      "section": [
-        "自修改代码（SMC）",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "自修改代码（SMC）",
+      "section": [
+        "自修改代码（SMC）",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "自修改代码（SMC）",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "代码在运行前被解密/改写；静态字节与执行时不一致。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "自修改代码（SMC）",
-      "section": [
-        "自修改代码（SMC）",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "自修改代码（SMC）",
+      "section": [
+        "自修改代码（SMC）",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "自修改代码（SMC）",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 找解密 stub 和目标内存区间；在写完后下断点。\n2. dump 解密后的代码/数据，重新反汇编。\n3. 若反调试，先绕过；必要时 patch 掉校验。\n4. 用 dump 的逻辑恢复输入检查。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "自修改代码（SMC）",
-      "section": [
-        "自修改代码（SMC）",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "自修改代码（SMC）",
+      "section": [
+        "自修改代码（SMC）",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "自修改代码（SMC）",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "dump 后的代码可读并解释检查；与原程序行为一致。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "自修改代码（SMC）",
-      "section": [
-        "自修改代码（SMC）",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "自修改代码（SMC）",
+      "section": [
+        "自修改代码（SMC）",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/rev-smc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "自修改代码（SMC）",
       "section": [
         "自修改代码（SMC）",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "解密可能分段/多次；dump 时机不对会拿到半成品。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 443,
+  "content_chars": 487,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:15c85fa7ff508cb7d4e5a26b29db31b2839e8ecbc6b196e2b29419e95270e056"
+    "source_digest": "sha256:5b50e7f57febe9d2ffa811cf029307703e9c0dd7d72a3c544e7ededa7d287492"
   },
-  "semantic_digest": "sha256:e399a0b04a582db5e8d2ee5d3b98dfcc499c32843e599b03228be321ada79bde",
+  "semantic_digest": "sha256:2789e3f0fcab3a98c2b1d9704cfbc69bfed8e5aa6b913aa2aaac9ed9214f0d9f",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

@@ -2,10 +2,12 @@
 
 - id: web-recon-surface
 - category: web
-- status: verified
-- environment: macos
-- when: http, web_target
+- curation: reviewed
+- environment: any
+- triggers: http, web_target
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/introduction.md
+- reviewed-by: human
 
 ## When
 拿到一个 web 目标，先枚举路由、参数、认证、技术栈和可见源码。
@@ -19,5 +21,5 @@
 ## Expect
 得到有界的入口清单和每个入口的观测证据。
 
-## Pitfalls
+## Limits
 不要对目标做大规模目录/参数爆破；先读页面和 JS。

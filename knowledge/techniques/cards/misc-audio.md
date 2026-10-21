@@ -2,10 +2,12 @@
 
 - id: misc-audio
 - category: misc
-- status: verified
-- environment: macos
-- when: audio, stego
+- curation: reviewed
+- environment: any
+- triggers: audio, stego
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/audio/introduction.md
+- reviewed-by: human
 
 ## When
 wav/mp3 等音频文件异常，可能藏摩斯/DTMF/频谱/LSB。
@@ -19,5 +21,5 @@ wav/mp3 等音频文件异常，可能藏摩斯/DTMF/频谱/LSB。
 ## Expect
 得到可读文本/图像，且能解释编码方式。
 
-## Pitfalls
+## Limits
 有损压缩会破坏 LSB；先确认容器/编码。

@@ -2,10 +2,12 @@
 
 - id: crypto-rsa-coppersmith
 - category: crypto
-- status: verified
-- environment: macos
-- when: rsa, partial_plaintext
+- curation: reviewed
+- environment: any
+- triggers: rsa, partial_plaintext
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_coppersmith_attack.md
+- reviewed-by: human
 
 ## When
 已知明文高位、相关消息、p 的高位，或可写成模 N/模 p 的小根多项式。
@@ -19,5 +21,5 @@
 ## Expect
 根满足多项式且解密结果结构合理；对 p 高位场景能分解 N。
 
-## Pitfalls
+## Limits
 界不满足时不会成立；多项式必须首一；纯 Python 做大格很慢。

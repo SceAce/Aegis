@@ -2,10 +2,12 @@
 
 - id: web-php-type-juggle
 - category: web
-- status: verified
-- environment: macos
-- when: php, type_juggle
+- curation: reviewed
+- environment: any
+- triggers: php, type_juggle
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/php/php.md
+- reviewed-by: human
 
 ## When
 源码可见或可推断；出现 == 比较、preg_replace /e、unserialize、文件包含/包装器。
@@ -19,5 +21,5 @@
 ## Expect
 用最小输入触发目标分支（读源码/写文件/绕过比较），并有可重复的响应。
 
-## Pitfalls
+## Limits
 PHP 8 收紧了部分比较和 /e；phar 需要能上传文件并触发文件操作。

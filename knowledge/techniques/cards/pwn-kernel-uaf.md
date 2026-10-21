@@ -2,10 +2,12 @@
 
 - id: pwn-kernel-uaf
 - category: pwn
-- status: verified
-- environment: macos
-- when: kernel, uaf, heap
+- curation: reviewed
+- environment: any
+- triggers: kernel, uaf, heap
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/kernel-mode/exploitation/heap/slub/uaf.md
+- reviewed-by: human
 
 ## When
 内核模块/驱动存在 UAF；能分配同 cache 的对象并控制内容。
@@ -19,5 +21,5 @@
 ## Expect
 获得内核读写/执行，最终拿到 root/flag。
 
-## Pitfalls
+## Limits
 内核版本与缓解不同；错误对象会导致 panic。

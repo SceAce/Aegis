@@ -2,10 +2,12 @@
 
 - id: web-xss-execution
 - category: web
-- status: verified
-- environment: macos
-- when: http, xss
+- curation: reviewed
+- environment: any
+- triggers: http, xss
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/xss.md
+- reviewed-by: human
 
 ## When
 用户输入回显到 HTML/属性/JS/URL；可能有 CSP、HttpOnly、存储型入口。
@@ -19,5 +21,5 @@
 ## Expect
 在真实渲染环境中执行到目标 JS（弹窗/请求回调），且不是仅字符串反射。
 
-## Pitfalls
+## Limits
 CSP 会阻止 inline；HttpOnly 下改打 CSRF/账户操作而不是偷 cookie。

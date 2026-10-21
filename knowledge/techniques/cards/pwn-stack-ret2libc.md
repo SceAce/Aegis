@@ -2,11 +2,13 @@
 
 - id: pwn-stack-ret2libc
 - category: pwn
-- status: verified
-- environment: macos
-- when: elf, stack_overflow
+- curation: reviewed
+- environment: any
+- triggers: elf, stack_overflow
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stackoverflow-basic.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/basic-rop.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/basic-rop.md
+- reviewed-by: human
 
 ## When
 存在栈溢出、无 canary 或可绕过；NX 开启，需要 ROP/ret2libc。
@@ -20,5 +22,5 @@
 ## Expect
 拿到 shell 或读出目标文件；地址与 libc 版本一致。
 
-## Pitfalls
+## Limits
 PIE 下先泄基址；不同 libc 的偏移不同，别猜。

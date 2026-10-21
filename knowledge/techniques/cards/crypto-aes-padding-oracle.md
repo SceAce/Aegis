@@ -2,10 +2,12 @@
 
 - id: crypto-aes-padding-oracle
 - category: crypto
-- status: verified
-- environment: macos
-- when: aes, cbc, padding_oracle
+- curation: reviewed
+- environment: any
+- triggers: aes, cbc, padding_oracle
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md
+- reviewed-by: human
 
 ## When
 CBC + PKCS#7，且服务端对 padding 是否合法给出可区分信号（错误/状态/时间）。
@@ -19,5 +21,5 @@ CBC + PKCS#7，且服务端对 padding 是否合法给出可区分信号（错�
 ## Expect
 恢复出的明文重新加密/校验一致；padding 始终合法。
 
-## Pitfalls
+## Limits
 有 MAC/AEAD 时不可用；错误信号可能是统一状态码或时间差。

@@ -795,36 +795,105 @@ MORE_CARDS = [
 CARDS = CARDS + MORE_CARDS
 
 
+# Schema v2 (docs/TECHNIQUE_CARD_SCHEMA.md). The two dimensions that v1 collapsed
+# into `status: verified` are emitted separately:
+#   curation  - how carefully the text was reviewed (draft|reviewed|disputed)
+#   evidence  - what backs the claim (none|document|outcome|reproduction)
+# Auto-injection is derived from both, so `verified` no longer has to mean two
+# things at once. All cards here are human-authored from the wiki, which is a
+# DOCUMENT source, never outcome evidence.
+DEFAULT_CURATION = "reviewed"
+DEFAULT_EVIDENCE = "document"
+DEFAULT_ENVIRONMENT = "any"
+
+
+def curation(card: dict) -> str:
+    return card.get("curation", DEFAULT_CURATION)
+
+
+def evidence_block(card: dict) -> dict:
+    kind = card.get("evidence", DEFAULT_EVIDENCE)
+    block = {"kind": kind, "refs": list(card.get("evidence_refs", card["sources"]))}
+    if kind == "reproduction":
+        if not card.get("implementation_digest"):
+            raise SystemExit(f"card {card['id']}: evidence=reproduction needs implementation_digest")
+        block["implementation_digest"] = card["implementation_digest"]
+    return block
+
+
+# Schema v2 (docs/TECHNIQUE_CARD_SCHEMA.md). The two dimensions that v1 collapsed
+# into `status: verified` are emitted separately:
+#   curation  - how carefully the text was reviewed (draft|reviewed|disputed)
+#   evidence  - what backs the claim (none|document|outcome|reproduction)
+# Auto-injection is derived from both, so `verified` no longer has to mean two
+# things at once. Every card here is human-authored from the wiki, which is a
+# DOCUMENT source, never outcome evidence.
+DEFAULT_CURATION = "reviewed"
+DEFAULT_EVIDENCE = "document"
+DEFAULT_ENVIRONMENT = "any"
+
+
+def curation(card: dict) -> str:
+    return card.get("curation", DEFAULT_CURATION)
+
+
+def evidence_block(card: dict) -> dict:
+    kind = card.get("evidence", DEFAULT_EVIDENCE)
+    block = {"kind": kind, "refs": list(card.get("evidence_refs", card["sources"]))}
+    if kind == "reproduction":
+        if not card.get("implementation_digest"):
+            raise SystemExit(f"card {card['id']}: evidence=reproduction needs implementation_digest")
+        block["implementation_digest"] = card["implementation_digest"]
+    return block
+
+
 def md(card: dict) -> str:
     lines = [f"# {card['title']}", ""]
     lines += [
         f"- id: {card['id']}",
         f"- category: {card['category']}",
-        "- status: verified",
-        "- environment: macos",
-        f"- when: {', '.join(card['when'])}",
+        f"- curation: {curation(card)}",
+        f"- environment: {card.get('environment', DEFAULT_ENVIRONMENT)}",
+        f"- triggers: {', '.join(card['when'])}",
+        f"- evidence: {card.get('evidence', DEFAULT_EVIDENCE)}",
     ]
-    lines += [f"- source: {s}" for s in card["sources"]]
+    # First source is the canonical provenance; the rest are additional evidence refs.
+    lines.append(f"- source: {card['sources'][0]}")
+    lines += [f"- evidence-ref: {s}" for s in card["sources"][1:]]
+    if card.get("implementation_digest"):
+        lines.append(f"- implementation-digest: {card['implementation_digest']}")
+    lines.append("- reviewed-by: human")
     lines += ["", "## When", card["when_text"], "", "## Do"]
     lines += [f"{i + 1}. {step}" for i, step in enumerate(card["steps"])]
     lines += ["", "## Expect", card["expect"]]
     if card.get("pitfalls"):
-        lines += ["", "## Pitfalls", card["pitfalls"]]
+        lines += ["", "## Limits", card["pitfalls"]]
     lines.append("")
     return "\n".join(lines)
 
 
 def contest(card: dict) -> dict:
+    """Card JSON v2. `status` is kept only as a derived display label."""
     return {
+        "schema_version": "2.0",
         "id": card["id"],
         "revision": "1",
         "title": card["title"],
-        "status": "verified",
-        "source_refs": card["sources"],
-        "scope": {"task_category": card["category"], "environment": "macos"},
-        "when": card["when"],
+        "curation": curation(card),
+        "evidence": evidence_block(card),
+        "scope": {
+            "task_category": card["category"],
+            "environment": card.get("environment", DEFAULT_ENVIRONMENT),
+        },
+        "triggers": card["when"],
+        "preconditions": [card["when_text"]],
         "hint": card["steps"][:4] + [f"Verify: {card['expect']}"],
-        "expect": card["expect"],
+        "postconditions": [card["expect"]],
+        "limits": [card["pitfalls"]] if card.get("pitfalls") else [],
+        "source": {
+            "kind": "ctf-wiki",
+            "uri": card["sources"][0],
+        },
     }
 
 

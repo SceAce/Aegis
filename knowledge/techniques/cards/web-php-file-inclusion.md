@@ -2,10 +2,12 @@
 
 - id: web-php-file-inclusion
 - category: web
-- status: verified
-- environment: macos
-- when: php, file_include
+- curation: reviewed
+- environment: any
+- triggers: php, file_include
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/php/php.md
+- reviewed-by: human
 
 ## When
 include/require 参数可控；可尝试读源码、日志或临时文件。
@@ -19,5 +21,5 @@ include/require 参数可控；可尝试读源码、日志或临时文件。
 ## Expect
 包含成功并返回可读源码/配置，而不是仅报错。
 
-## Pitfalls
+## Limits
 allow_url_include 常关闭；phar 需要能上传并触发文件操作。

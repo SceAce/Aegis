@@ -2,11 +2,13 @@
 
 - id: rev-go-rust-runtime
 - category: reverse
-- status: verified
-- environment: macos
-- when: binary, go_binary
+- curation: reviewed
+- environment: any
+- triggers: binary, go_binary
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/go/introduction.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/rust/introduction.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/rust/introduction.md
+- reviewed-by: human
 
 ## When
 二进制含 Go/Rust 运行时特征（gopclntab、panic 字符串、mangled symbols）。
@@ -20,5 +22,5 @@
 ## Expect
 定位到输入处理和判定函数，并解释成功条件。
 
-## Pitfalls
+## Limits
 strip 后符号可能只剩 pclntab；Rust 泛型会生成大量重复代码。

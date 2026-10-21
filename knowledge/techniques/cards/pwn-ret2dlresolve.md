@@ -2,10 +2,12 @@
 
 - id: pwn-ret2dlresolve
 - category: pwn
-- status: verified
-- environment: macos
-- when: elf, stack_overflow, no_libc_leak
+- curation: reviewed
+- environment: any
+- triggers: elf, stack_overflow, no_libc_leak
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/advanced-rop/ret2dlresolve.md
+- reviewed-by: human
 
 ## When
 栈溢出但没有 libc 地址泄漏；有可写内存和调用 PLT0 的能力。
@@ -19,5 +21,5 @@
 ## Expect
 解析到 system 并执行指定命令；无崩溃。
 
-## Pitfalls
+## Limits
 需要足够大的溢出/读写原语；不同架构/链接器布局不同。

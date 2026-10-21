@@ -2,10 +2,12 @@
 
 - id: web-sqli-into-outfile
 - category: web
-- status: verified
-- environment: macos
-- when: http, sqli, file_privilege
+- curation: reviewed
+- environment: any
+- triggers: http, sqli, file_privilege
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md
+- reviewed-by: human
 
 ## When
 SQL 注入可用，且数据库用户有 FILE 权限、secure_file_priv 允许目标目录。
@@ -19,5 +21,5 @@ SQL 注入可用，且数据库用户有 FILE 权限、secure_file_priv 允许�
 ## Expect
 目标路径出现新文件，访问后能返回 SQL 查询结果。
 
-## Pitfalls
+## Limits
 secure_file_priv 限制目录；FILE 权限可能没有；写入前确认目标目录可写且不会覆盖现有文件。

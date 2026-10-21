@@ -2,10 +2,12 @@
 
 - id: web-sqli-union-blind
 - category: web
-- status: verified
-- environment: macos
-- when: http, sqli
+- curation: reviewed
+- environment: any
+- triggers: http, sqli
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md
+- reviewed-by: human
 
 ## When
 输入进入 SQL 且回显/报错/布尔/时间差异可控；参数可能是数字或字符串。
@@ -19,5 +21,5 @@
 ## Expect
 按同一 payload 稳定得到库名/表名/目标值，且与页面差异一致。
 
-## Pitfalls
+## Limits
 WAF 会改写关键字；盲注速率要有上限，别把时间盲注写成爆破。

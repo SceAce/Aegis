@@ -2,10 +2,12 @@
 
 - id: web-csrf-state-change
 - category: web
-- status: verified
-- environment: macos
-- when: http, csrf
+- curation: reviewed
+- environment: any
+- triggers: http, csrf
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/csrf.md
+- reviewed-by: human
 
 ## When
 状态变更请求只靠 cookie 认证，缺少 CSRF token 或 SameSite 防护。
@@ -19,5 +21,5 @@
 ## Expect
 服务端状态真的改变；重复触发不会产生未预期副作用。
 
-## Pitfalls
+## Limits
 SameSite=Lax 会拦跨站 POST；JSON 端点可能需要 text/plain 或 form 编码。

@@ -2,10 +2,12 @@
 
 - id: crypto-rsa-hastad-broadcast
 - category: crypto
-- status: verified
-- environment: macos
-- when: rsa, same_message, small_e
+- curation: reviewed
+- environment: any
+- triggers: rsa, same_message, small_e
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/asymmetric/rsa/rsa_e_attack.md#低加密指数广播攻击
+- reviewed-by: human
 
 ## When
 同一明文用不同 n_i、同一小 e 加密给多个接收方。
@@ -19,5 +21,5 @@
 ## Expect
 开根结果的 e 次方等于 CRT 合并值；明文结构合理。
 
-## Pitfalls
+## Limits
 n_i 不互素时先 gcd 分解；e 大于接收方数量时普通 CRT 不够。

@@ -2,11 +2,13 @@
 
 - id: misc-image-stego
 - category: misc
-- status: verified
-- environment: macos
-- when: image, stego
+- curation: reviewed
+- environment: any
+- triggers: image, stego
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/picture/introduction.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/picture/png.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/picture/png.md
+- reviewed-by: human
 
 ## When
 图片文件异常大/有可疑元数据/像素最低位可能藏数据。
@@ -20,5 +22,5 @@
 ## Expect
 提取出的数据是合法文件或可读文本，并能解释嵌入方式。
 
-## Pitfalls
+## Limits
 LSB 位序/通道顺序会变；先确认 PNG 颜色类型。

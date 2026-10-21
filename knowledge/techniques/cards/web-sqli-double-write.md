@@ -2,10 +2,12 @@
 
 - id: web-sqli-double-write
 - category: web
-- status: verified
-- environment: macos
-- when: http, sqli, keyword_filter
+- curation: reviewed
+- environment: any
+- triggers: http, sqli, keyword_filter
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md
+- reviewed-by: human
 
 ## When
 输入进入 SQL，但 WAF/过滤器把 or、and、union、select、from、where、information_schema 等关键词**单次全局删除或替换一次**。
@@ -19,5 +21,5 @@
 ## Expect
 过滤后的字符串仍包含原关键词；同一 payload 的布尔/错误响应稳定。
 
-## Pitfalls
+## Limits
 不同过滤器的替换次数/顺序不同；先小步验证，不要一次批量试几十个变体。

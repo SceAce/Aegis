@@ -2,11 +2,13 @@
 
 - id: crypto-aes-mode-misuse
 - category: crypto
-- status: verified
-- environment: macos
-- when: aes, ecb
+- curation: reviewed
+- environment: any
+- triggers: aes, ecb
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/aes.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/crypto/blockcipher/mode/cbc.md
+- reviewed-by: human
 
 ## When
 ECB 出现重复块；CBC 有可控 IV/明文且无认证；或存在 padding oracle。
@@ -20,5 +22,5 @@ ECB 出现重复块；CBC 有可控 IV/明文且无认证；或存在 padding or
 ## Expect
 目标字段按预期改变（如 role=admin），且 MAC/认证未被触发。
 
-## Pitfalls
+## Limits
 有 AEAD/MAC 时位翻转会失败；padding oracle 探测要控制请求量。

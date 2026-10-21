@@ -2,11 +2,13 @@
 
 - id: misc-pyc-disk-memory
 - category: misc
-- status: verified
-- environment: macos
-- when: pyc
+- curation: reviewed
+- environment: any
+- triggers: pyc
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/disk-memory/introduction.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/disk-memory/introduction.md
+- reviewed-by: human
 
 ## When
 给出 pyc/磁盘镜像/内存 dump，需要恢复源码或进程数据。
@@ -20,5 +22,5 @@
 ## Expect
 恢复出源码/文件/进程数据，且版本与镜像一致。
 
-## Pitfalls
+## Limits
 pyc magic 不匹配时要换工具；内存镜像要先用正确 profile。

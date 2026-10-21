@@ -2,10 +2,12 @@
 
 - id: web-ssrf-internal
 - category: web
-- status: verified
-- environment: macos
-- when: http, ssrf
+- curation: reviewed
+- environment: any
+- triggers: http, ssrf
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/ssrf.md
+- reviewed-by: human
 
 ## When
 URL/图片/回调参数由服务端发起请求；可指定 host、端口、scheme。
@@ -19,5 +21,5 @@ URL/图片/回调参数由服务端发起请求；可指定 host、端口、sche
 ## Expect
 拿到只在内网可达的响应/元数据，或用带外请求证明服务端访问。
 
-## Pitfalls
+## Limits
 云元数据可能要求特定 header；gopher 能构造多协议请求但要按目标协议编码。

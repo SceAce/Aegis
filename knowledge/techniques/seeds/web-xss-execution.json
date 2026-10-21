@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+  "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "XSS：上下文相关的执行",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "XSS：上下文相关的执行",
       "section": [
         "XSS：上下文相关的执行"
       ],
-      "content": "- id: web-xss-execution\n- category: web\n- status: verified\n- environment: macos\n- when: http, xss\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/xss.md",
+      "content": "- id: web-xss-execution\n- category: web\n- curation: reviewed\n- environment: any\n- triggers: http, xss\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/xss.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "XSS：上下文相关的执行",
-      "section": [
-        "XSS：上下文相关的执行",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "XSS：上下文相关的执行",
+      "section": [
+        "XSS：上下文相关的执行",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "XSS：上下文相关的执行",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "用户输入回显到 HTML/属性/JS/URL；可能有 CSP、HttpOnly、存储型入口。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "XSS：上下文相关的执行",
-      "section": [
-        "XSS：上下文相关的执行",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "XSS：上下文相关的执行",
+      "section": [
+        "XSS：上下文相关的执行",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "XSS：上下文相关的执行",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 先判断上下文：HTML 文本、属性值、script 字符串、URL。\n2. 按上下文闭合标签/引号，避免被转义；先弹窗/写 DOM 验证执行。\n3. 检查 CSP 与 cookie 标志；存储型要确认持久化和触发页面。\n4. 用浏览器或 headless 实际执行验证，而不是只看源码。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "XSS：上下文相关的执行",
-      "section": [
-        "XSS：上下文相关的执行",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "XSS：上下文相关的执行",
+      "section": [
+        "XSS：上下文相关的执行",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "XSS：上下文相关的执行",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "在真实渲染环境中执行到目标 JS（弹窗/请求回调），且不是仅字符串反射。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "XSS：上下文相关的执行",
-      "section": [
-        "XSS：上下文相关的执行",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "XSS：上下文相关的执行",
+      "section": [
+        "XSS：上下文相关的执行",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-xss-execution.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "XSS：上下文相关的执行",
       "section": [
         "XSS：上下文相关的执行",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "CSP 会阻止 inline；HttpOnly 下改打 CSRF/账户操作而不是偷 cookie。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 523,
+  "content_chars": 567,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:00c8b6b980d723ad60e9a5a4010ef6f84760e9003bb022e17f191ace16ecb1e4"
+    "source_digest": "sha256:29947e3cf99cf326bc18bd227c7db0375e0b0baaaffa01f8df4a0569a253d9d0"
   },
-  "semantic_digest": "sha256:d9bfe239d849b0e8580644e6f250e1dfa077550e324d47ca2014c60bcbee7e17",
+  "semantic_digest": "sha256:e7656cb105b0f9161d50ce8a60ec9431876cd11fa502ffb5e80b788447b0b3f8",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

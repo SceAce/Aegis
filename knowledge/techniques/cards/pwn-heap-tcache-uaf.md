@@ -2,11 +2,13 @@
 
 - id: pwn-heap-tcache-uaf
 - category: pwn
-- status: verified
-- environment: macos
-- when: elf, heap, uaf
+- curation: reviewed
+- environment: any
+- triggers: elf, heap, uaf
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/heap-overview.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/tcache-attack.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/heap/ptmalloc2/tcache-attack.md
+- reviewed-by: human
 
 ## When
 存在 use-after-free/double-free；能控制 chunk 内容；glibc 版本已知或可泄。
@@ -20,5 +22,5 @@
 ## Expect
 分配器返回受控地址，写入后触发目标（hook 被调用/返回地址被改）。
 
-## Pitfalls
+## Limits
 safe-linking 需要先泄 heap 地址；不同 glibc 的 hook 可能已移除（2.34+）。

@@ -2,11 +2,13 @@
 
 - id: rev-python-bytecode
 - category: reverse
-- status: verified
-- environment: macos
-- when: pyc, python
+- curation: reviewed
+- environment: any
+- triggers: pyc, python
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/reverse/language/python/introduction.md
-- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md
+- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/other/pyc.md
+- reviewed-by: human
 
 ## When
 给出 .pyc/字节码，需要恢复逻辑或常量。
@@ -20,5 +22,5 @@
 ## Expect
 恢复出的逻辑能解释输入检查，且与原字节码一致。
 
-## Pitfalls
+## Limits
 不同 Python 版本字节码差异大；反编译失败时用 dis。

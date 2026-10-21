@@ -2,10 +2,12 @@
 
 - id: misc-zip-symlink
 - category: web
-- status: verified
-- environment: macos
-- when: http, zip, upload
+- curation: reviewed
+- environment: any
+- triggers: http, zip, upload
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/misc/archive/zip.md
+- reviewed-by: human
 
 ## When
 上传的 zip 被服务端解压并读取包内文件；应用跟随符号链接或允许 ../ 路径。
@@ -19,5 +21,5 @@
 ## Expect
 响应包含目标文件内容（如进程环境变量或 flag），而不是仅回显上传内容。
 
-## Pitfalls
+## Limits
 解压器可能禁用 symlink/路径穿越；目标路径需存在且可读；不要把 zip slip 写成破坏性写入。

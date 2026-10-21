@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+  "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "CSRF：利用已认证会话",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "CSRF：利用已认证会话",
       "section": [
         "CSRF：利用已认证会话"
       ],
-      "content": "- id: web-csrf-state-change\n- category: web\n- status: verified\n- environment: macos\n- when: http, csrf\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/csrf.md",
+      "content": "- id: web-csrf-state-change\n- category: web\n- curation: reviewed\n- environment: any\n- triggers: http, csrf\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/csrf.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "CSRF：利用已认证会话",
-      "section": [
-        "CSRF：利用已认证会话",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CSRF：利用已认证会话",
+      "section": [
+        "CSRF：利用已认证会话",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "CSRF：利用已认证会话",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "状态变更请求只靠 cookie 认证，缺少 CSRF token 或 SameSite 防护。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "CSRF：利用已认证会话",
-      "section": [
-        "CSRF：利用已认证会话",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CSRF：利用已认证会话",
+      "section": [
+        "CSRF：利用已认证会话",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "CSRF：利用已认证会话",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 找状态变更端点（改密、加管理员、转账），确认参数可预测。\n2. 检查 token/Referer/Origin/SameSite 校验；尝试去掉 token 或复用。\n3. 构造跨站表单/请求，在已登录会话中触发。\n4. 从服务端状态变化确认效果（而不是只看响应码）。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "CSRF：利用已认证会话",
-      "section": [
-        "CSRF：利用已认证会话",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CSRF：利用已认证会话",
+      "section": [
+        "CSRF：利用已认证会话",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "CSRF：利用已认证会话",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "服务端状态真的改变；重复触发不会产生未预期副作用。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "CSRF：利用已认证会话",
-      "section": [
-        "CSRF：利用已认证会话",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "CSRF：利用已认证会话",
+      "section": [
+        "CSRF：利用已认证会话",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-csrf-state-change.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "CSRF：利用已认证会话",
       "section": [
         "CSRF：利用已认证会话",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "SameSite=Lax 会拦跨站 POST；JSON 端点可能需要 text/plain 或 form 编码。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 517,
+  "content_chars": 561,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:8077c1c671ab9495f7d161908d74cc313035a70b89b6419d5f93f10e2fbb7d22"
+    "source_digest": "sha256:56c9848740208985c20937492fc163c9319903af6156a5b6bcb138bfb754d74a"
   },
-  "semantic_digest": "sha256:2c1573ab3f10917addfb1e3996471dd32b59dda831cae6ef8f84aee117a1bb97",
+  "semantic_digest": "sha256:031b689c58f5b06b3e2dc3abcd8f1a900d08f83b5783b52c474e5f80ab9290ec",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

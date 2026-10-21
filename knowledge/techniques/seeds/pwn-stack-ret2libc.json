@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+  "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "栈溢出与 ret2libc / ROP",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "栈溢出与 ret2libc / ROP",
       "section": [
         "栈溢出与 ret2libc / ROP"
       ],
-      "content": "- id: pwn-stack-ret2libc\n- category: pwn\n- status: verified\n- environment: macos\n- when: elf, stack_overflow\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stackoverflow-basic.md\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/basic-rop.md",
+      "content": "- id: pwn-stack-ret2libc\n- category: pwn\n- curation: reviewed\n- environment: any\n- triggers: elf, stack_overflow\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/stackoverflow-basic.md\n- evidence-ref: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/stackoverflow/x86/basic-rop.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 9,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "栈溢出与 ret2libc / ROP",
-      "section": [
-        "栈溢出与 ret2libc / ROP",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 11,
       "line_end": 11,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "栈溢出与 ret2libc / ROP",
+      "section": [
+        "栈溢出与 ret2libc / ROP",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 13,
+      "line_end": 13,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "栈溢出与 ret2libc / ROP",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "存在栈溢出、无 canary 或可绕过；NX 开启，需要 ROP/ret2libc。",
-      "line_start": 12,
-      "line_end": 12,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "栈溢出与 ret2libc / ROP",
-      "section": [
-        "栈溢出与 ret2libc / ROP",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 14,
       "line_end": 14,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "栈溢出与 ret2libc / ROP",
+      "section": [
+        "栈溢出与 ret2libc / ROP",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 16,
+      "line_end": 16,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "栈溢出与 ret2libc / ROP",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. checksec：确认 canary/NX/PIE/RELRO；用 cyclic 找返回地址偏移。\n2. 有 puts/read 等泄漏函数时先泄 libc 地址，算 libc base。\n3. 用 ROP 调 system('/bin/sh')；注意 64 位栈对齐（ret gadget）。\n4. 无 libc 时考虑 ret2dlresolve 或 syscall ROP。",
-      "line_start": 15,
-      "line_end": 18,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "栈溢出与 ret2libc / ROP",
-      "section": [
-        "栈溢出与 ret2libc / ROP",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 20,
+      "line_start": 17,
       "line_end": 20,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "栈溢出与 ret2libc / ROP",
+      "section": [
+        "栈溢出与 ret2libc / ROP",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 22,
+      "line_end": 22,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "栈溢出与 ret2libc / ROP",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "拿到 shell 或读出目标文件；地址与 libc 版本一致。",
-      "line_start": 21,
-      "line_end": 21,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "栈溢出与 ret2libc / ROP",
-      "section": [
-        "栈溢出与 ret2libc / ROP",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 23,
       "line_end": 23,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "栈溢出与 ret2libc / ROP",
+      "section": [
+        "栈溢出与 ret2libc / ROP",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 25,
+      "line_end": 25,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/pwn-stack-ret2libc.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "栈溢出与 ret2libc / ROP",
       "section": [
         "栈溢出与 ret2libc / ROP",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "PIE 下先泄基址；不同 libc 的偏移不同，别猜。",
-      "line_start": 24,
-      "line_end": 24,
+      "line_start": 26,
+      "line_end": 26,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 764,
+  "content_chars": 814,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:844e0b4f2c02a73674d000d48b610d9d90b0467dd3b02d80d4fea260aaea0875"
+    "source_digest": "sha256:b8b0a75c7565a1bdb9f806106cf43dfa87361911ecea26c053de553f7c1f52eb"
   },
-  "semantic_digest": "sha256:bd2985b18c418d375731c1b30ba417faf5692dcc0a160eae42bf66633db7ad92",
+  "semantic_digest": "sha256:3fa4950c469f43e0ea9efe4c96cc67998b100c5271273f36ef98f43662e8f426",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

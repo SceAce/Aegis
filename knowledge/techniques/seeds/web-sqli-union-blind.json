@@ -4,7 +4,7 @@
   "source_kind": "local_document",
   "verified": false,
   "action_policy": "none",
-  "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+  "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
   "compiler_version": "1.0.0",
   "limits": {
     "maxBytes": 262144,
@@ -19,7 +19,7 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "heading",
       "topic": "SQL 注入：联合查询与盲注",
@@ -36,33 +36,15 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "SQL 注入：联合查询与盲注",
       "section": [
         "SQL 注入：联合查询与盲注"
       ],
-      "content": "- id: web-sqli-union-blind\n- category: web\n- status: verified\n- environment: macos\n- when: http, sqli\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md",
+      "content": "- id: web-sqli-union-blind\n- category: web\n- curation: reviewed\n- environment: any\n- triggers: http, sqli\n- evidence: document\n- source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/web/sqli.md\n- reviewed-by: human",
       "line_start": 3,
-      "line_end": 8,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQL 注入：联合查询与盲注",
-      "section": [
-        "SQL 注入：联合查询与盲注",
-        "When"
-      ],
-      "content": "When",
-      "line_start": 10,
       "line_end": 10,
       "truncated": false
     },
@@ -71,7 +53,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQL 注入：联合查询与盲注",
+      "section": [
+        "SQL 注入：联合查询与盲注",
+        "When"
+      ],
+      "content": "When",
+      "line_start": 12,
+      "line_end": 12,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQL 注入：联合查询与盲注",
@@ -80,24 +80,6 @@
         "When"
       ],
       "content": "输入进入 SQL 且回显/报错/布尔/时间差异可控；参数可能是数字或字符串。",
-      "line_start": 11,
-      "line_end": 11,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQL 注入：联合查询与盲注",
-      "section": [
-        "SQL 注入：联合查询与盲注",
-        "Do"
-      ],
-      "content": "Do",
       "line_start": 13,
       "line_end": 13,
       "truncated": false
@@ -107,7 +89,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQL 注入：联合查询与盲注",
+      "section": [
+        "SQL 注入：联合查询与盲注",
+        "Do"
+      ],
+      "content": "Do",
+      "line_start": 15,
+      "line_end": 15,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "list",
       "topic": "SQL 注入：联合查询与盲注",
@@ -116,25 +116,7 @@
         "Do"
       ],
       "content": "1. 先用单引号、注释、算术表达式确认注入点和数据库类型。\n2. 联合查询：ORDER BY 或 UNION SELECT 探列数与回显位。\n3. 无回显时用布尔/时间盲注逐字符取 information_schema/表/列/值。\n4. 用十六进制或 CHAR() 绕过引号过滤；记录每个字符的判定条件。",
-      "line_start": 14,
-      "line_end": 17,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQL 注入：联合查询与盲注",
-      "section": [
-        "SQL 注入：联合查询与盲注",
-        "Expect"
-      ],
-      "content": "Expect",
-      "line_start": 19,
+      "line_start": 16,
       "line_end": 19,
       "truncated": false
     },
@@ -143,7 +125,25 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQL 注入：联合查询与盲注",
+      "section": [
+        "SQL 注入：联合查询与盲注",
+        "Expect"
+      ],
+      "content": "Expect",
+      "line_start": 21,
+      "line_end": 21,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQL 注入：联合查询与盲注",
@@ -152,24 +152,6 @@
         "Expect"
       ],
       "content": "按同一 payload 稳定得到库名/表名/目标值，且与页面差异一致。",
-      "line_start": 20,
-      "line_end": 20,
-      "truncated": false
-    },
-    {
-      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
-      "source_kind": "local_document",
-      "verified": false,
-      "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
-      "compiler_version": "1.0.0",
-      "kind": "heading",
-      "topic": "SQL 注入：联合查询与盲注",
-      "section": [
-        "SQL 注入：联合查询与盲注",
-        "Pitfalls"
-      ],
-      "content": "Pitfalls",
       "line_start": 22,
       "line_end": 22,
       "truncated": false
@@ -179,26 +161,44 @@
       "source_kind": "local_document",
       "verified": false,
       "action_policy": "none",
-      "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
+      "compiler_version": "1.0.0",
+      "kind": "heading",
+      "topic": "SQL 注入：联合查询与盲注",
+      "section": [
+        "SQL 注入：联合查询与盲注",
+        "Limits"
+      ],
+      "content": "Limits",
+      "line_start": 24,
+      "line_end": 24,
+      "truncated": false
+    },
+    {
+      "source_uri": "file:///Users/scemac/My_github/Aegis/knowledge/techniques/cards/web-sqli-union-blind.md",
+      "source_kind": "local_document",
+      "verified": false,
+      "action_policy": "none",
+      "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a",
       "compiler_version": "1.0.0",
       "kind": "paragraph",
       "topic": "SQL 注入：联合查询与盲注",
       "section": [
         "SQL 注入：联合查询与盲注",
-        "Pitfalls"
+        "Limits"
       ],
       "content": "WAF 会改写关键字；盲注速率要有上限，别把时间盲注写成爆破。",
-      "line_start": 23,
-      "line_end": 23,
+      "line_start": 25,
+      "line_end": 25,
       "truncated": false
     }
   ],
   "truncated": false,
-  "content_chars": 510,
+  "content_chars": 554,
   "provenance": {
     "extractor": "deterministic-markdown-blocks",
-    "source_digest": "sha256:3b464f488114174c106a6b95fc6b5c01af25dcb3717fa39951e8588b249d5111"
+    "source_digest": "sha256:f08dd62efe483150bff2ecb65368c12ab8524867de99c5c4ccdb40866085c46a"
   },
-  "semantic_digest": "sha256:0f1ccab59874efa9cb5e8205a5259de28de8dee1edee262d2cfb6867d8cb10d7",
+  "semantic_digest": "sha256:e1e71bea7ad26764aceeead18467c8b0eeadcb881fa4cb0b6897c7d766fc80b8",
   "generated_at": "1970-01-01T00:00:00.000Z"
 }

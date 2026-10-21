@@ -2,10 +2,12 @@
 
 - id: pwn-format-string
 - category: pwn
-- status: verified
-- environment: macos
-- when: elf, format_string
+- curation: reviewed
+- environment: any
+- triggers: elf, format_string
+- evidence: document
 - source: https://github.com/ctf-wiki/ctf-wiki/blob/e225ddfcd420a7f54a5940f47336ebdf8c29b875/docs/zh/docs/pwn/linux/user-mode/fmtstr/fmtstr-exploit.md
+- reviewed-by: human
 
 ## When
 用户输入直接作为 printf 格式串；可控制参数位置。
@@ -19,5 +21,5 @@
 ## Expect
 目标地址的值按预期改变（GOT 指向 system、返回地址跳 shellcode/one_gadget）。
 
-## Pitfalls
+## Limits
 写入字节数很大时用 %hn 分段；FORTIFY 可能拦 %n。
