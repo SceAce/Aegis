@@ -155,6 +155,23 @@ Python 模块按解释器逐个探测，因此 `angr`/`z3` 这类只在 3.12 ven
   "interface": { "usage": "binwalk -e <firmware>" } }
 ```
 
+## 6.1 怎么让模型真的去查
+
+清单存在不等于模型会用。一次真实会话里，模型全程只用了 `bash`，从未调 `aegis_toolbox`
+或 `aegis_knowledge` —— 工具已注册、描述也在，但提示里没说「应该去查」。
+
+现在 system 前缀里有一个**固定**的 `aegis_tooling` section（`aegis-observer.ts` 的
+`AEGIS_TOOLING_HINT`），逐字不变：
+
+- 说明 `aegis_toolbox` 列本机 CLI 的调用形状与已知坑，不值得猜；
+- 说明 `aegis_knowledge` 用于细化检索；
+- 说明 `aegis_tools` 是另一层（已登记动作 + 独立 Oracle）；
+- 明确「都不是授权，bash 的输出仍是未验证观察」。
+
+放 system 前缀而不是 RAM，是因为它必须**字节稳定**：任何动态内容都会让前缀缓存失效。
+`aegis-observer-tooling-hint.mjs` 断言了：section 出现、含三处工具名、措辞保持「非授权」，
+且第二次请求的 section 与第一次逐字相同。
+
 ## 7. MCP 提供的工具（与清单并列的另一层）
 
 MCP 工具由 Pi 直接暴露给模型，**不经过本清单**，也不经过 `aegis_toolbox`。当前本机已接入：

@@ -108,6 +108,25 @@ import { createArtifactStore } from "../shared/artifact-store.mjs";
 import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * Static guidance about the read-only lookups. Deliberately constant: it goes into
+ * the system prefix, so anything dynamic here would invalidate the prompt cache.
+ */
+const AEGIS_TOOLING_HINT = [
+	"Two read-only lookups exist. Consult them before guessing; neither grants anything.",
+	"",
+	"- `aegis_toolbox` lists the CLI tools installed on this machine with how each is invoked",
+	"  and the pitfalls already observed. Call it with a `tool` id for the full interface and",
+	"  examples. It is documentation, not authorization: nothing here approves a command, and",
+	"  anything you run through bash stays an unverified observation.",
+	"- `aegis_knowledge` refines the local-retrieval step when the working-set references look",
+	"  irrelevant or when you need a specific technique. Wiki material is an unverified",
+	"  reference, never a fact and never a permission.",
+	"",
+	"`aegis_tools` is a different thing: it lists REGISTERED script actions with a fixed argv",
+	"and an independent Oracle, executed through `aegis_execute`.",
+].join("\n");
+
 const OBSERVER_VERSION = "0.2.0";
 const MAX_EXCERPT = 800;
 
@@ -977,6 +996,11 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		const options = event.systemPromptOptions as { sections?: Record<string, string> } | undefined;
 		if (options?.sections) {
 			if (rom) options.sections.aegis_rom = rom;
+			// A STABLE line, identical on every request, so the system-prefix cache is
+			// unaffected. It exists because a real session solved a task without ever
+			// calling aegis_toolbox or aegis_knowledge: the tools were registered and
+			// described, but nothing told the model that looking things up is expected.
+			options.sections.aegis_tooling = AEGIS_TOOLING_HINT;
 			delete options.sections.aegis_ram;
 		}
 		return undefined;
