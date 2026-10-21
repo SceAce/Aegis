@@ -15,7 +15,12 @@
 #   <root>/<label>/runtime/        event log, RAM, projections, experiences
 #   <root>/<label>/sessions/       Pi sessions
 #   <root>/<label>/server/         Pi server state
-#   <root>/<label>/agent/          Pi agent dir (models/auth), created if absent
+#   <root>/<label>/agent/          only with --isolate-agent
+#
+# Credentials are NOT experiment state. The agent directory (auth.json,
+# models.json, settings.json, mcp.json) defaults to $AEGIS_HOME/agent and is
+# shared, because isolating it would leave every run unauthenticated. Sessions,
+# server state and the event log stay per-experiment.
 #
 # Isolation rules kept from run-aegis.sh:
 #   * never reads or writes ~/.pi
@@ -39,6 +44,8 @@ THINKING=""
 TASK_ID=""
 SEED_FILE=""
 KNOWLEDGE_DIR=""
+AGENT_DIR_OVERRIDE=""
+ISOLATE_AGENT=0
 DRY_RUN=0
 LIST=0
 PASSTHROUGH=()
@@ -65,6 +72,11 @@ Options:
   --seed FILE         inject one bounded, unverified RAM reference
   --knowledge DIR     knowledge root (default: $AEGIS_HOME/knowledge if present,
                       else the repository knowledge/)
+  --agent-dir DIR     Pi agent dir (auth/models/settings). Default:
+                      $AEGIS_HOME/agent, i.e. your normal credentials.
+  --isolate-agent     use a private, empty agent dir for this run. You will have
+                      to authenticate inside it first; credentials are never
+                      copied for you.
   --dry-run           print the resolved configuration and exit
   --list              list existing experiments and exit
   -h, --help          this help
@@ -72,6 +84,8 @@ Options:
 Behaviour worth knowing:
   * An existing label is refused unless --resume is given. Reusing an event log
     by accident would mix Episodes and corrupt independence counts.
+  * Sessions, server state and the event log are per-experiment; credentials
+    and model settings are shared unless --isolate-agent is given.
   * --dry-run changes nothing on disk except creating the experiment directory
     only when it does not exist yet; with --list nothing is created at all.
 USAGE
@@ -93,6 +107,8 @@ while (($#)); do
 		--task-id) TASK_ID="${2:-}"; shift 2 ;;
 		--seed) SEED_FILE="${2:-}"; shift 2 ;;
 		--knowledge) KNOWLEDGE_DIR="${2:-}"; shift 2 ;;
+		--agent-dir) AGENT_DIR_OVERRIDE="${2:-}"; shift 2 ;;
+		--isolate-agent) ISOLATE_AGENT=1; shift ;;
 		--dry-run) DRY_RUN=1; shift ;;
 		--list) LIST=1; shift ;;
 		-h | --help) usage; exit 0 ;;
@@ -165,7 +181,22 @@ EVENT_LOG="$RUNTIME_DIR/events.jsonl"
 HANDOFF_FILE="$RAM_DIR/handoff.json"
 SESSION_DIR="$EXP_DIR/sessions"
 SERVER_DIR="$EXP_DIR/server"
-AGENT_DIR="$EXP_DIR/agent"
+
+# Credentials and model settings are user configuration, not experiment state.
+# Isolating them by default makes every run start unauthenticated, so the
+# default is the shared Aegis agent dir; --isolate-agent opts into a private
+# empty one (the user then authenticates inside it).
+if [[ -n "$AGENT_DIR_OVERRIDE" ]]; then
+	AGENT_MODE="explicit"
+	AGENT_DIR="$AGENT_DIR_OVERRIDE"
+	[[ "$AGENT_DIR" = /* ]] || AGENT_DIR="$PWD/$AGENT_DIR"
+elif ((ISOLATE_AGENT)); then
+	AGENT_MODE="isolated"
+	AGENT_DIR="$EXP_DIR/agent"
+else
+	AGENT_MODE="shared"
+	AGENT_DIR="$AEGIS_HOME/agent"
+fi
 
 if [[ -z "$TASK_ID" ]]; then
 	TASK_ID="$LABEL"
@@ -194,10 +225,24 @@ if [[ -n "$WORKSPACE" ]]; then
 fi
 
 for f in "$WORKSPACE" "$RUNTIME_DIR" "$RAM_DIR" "$PROJECTION_DIR" "$EXPERIENCE_DIR" \
-	"$SESSION_DIR" "$SERVER_DIR" "$AGENT_DIR"; do
+	"$SESSION_DIR" "$SERVER_DIR"; do
 	[[ -d "$f" ]] || mkdir -p "$f"
 done
+# The agent dir is only created when this run owns it. A shared or explicit dir
+# must already exist: creating an empty one would silently drop the credentials.
+if [[ "$AGENT_MODE" != "shared" ]]; then
+	[[ -d "$AGENT_DIR" ]] || mkdir -p "$AGENT_DIR"
+fi
 chmod 700 "$EXP_DIR" 2>/dev/null || true
+
+AUTH_WARNING=""
+if [[ "$AGENT_MODE" == "shared" ]]; then
+	[[ -d "$AGENT_DIR" ]] || die "shared agent dir does not exist: $AGENT_DIR
+  create it or point at one with --agent-dir" 1
+	if [[ ! -f "$AGENT_DIR/auth.json" ]]; then
+		AUTH_WARNING="no auth.json in $AGENT_DIR; the model will start unauthenticated"
+	fi
+fi
 
 # --- export the run's environment -----------------------------------------
 export AEGIS_HOME
@@ -245,6 +290,7 @@ if [[ ! -f "$RUN_JSON" ]]; then
     "agent_dir": "$AGENT_DIR",
     "knowledge_dir": "$KNOWLEDGE_DIR"
   },
+  "agent_mode": "$AGENT_MODE",
   "seed_file": ${SEED_FILE:+\"$SEED_FILE\"}${SEED_FILE:-null},
   "note": "derived parameters only; no credentials are stored here"
 }
@@ -261,7 +307,10 @@ printf '  workspace  %s\n' "$WORKSPACE"
 printf '  events     %s\n' "$EVENT_LOG"
 printf '  ram        %s\n' "$RAM_DIR"
 printf '  knowledge  %s\n' "$KNOWLEDGE_DIR"
-printf '  agent      %s\n' "$AGENT_DIR"
+printf '  agent      %s (%s)\n' "$AGENT_DIR" "$AGENT_MODE"
+if [[ -n "$AUTH_WARNING" ]]; then
+	printf '  warning    %s\n' "$AUTH_WARNING" >&2
+fi
 printf '  task id    %s\n' "$TASK_ID"
 [[ -n "$SEED_FILE" ]] && printf '  seed       %s\n' "$SEED_FILE"
 [[ -n "$MODEL" ]] && printf '  model      %s\n' "$MODEL"
@@ -278,12 +327,29 @@ fi
 
 # --- launch ---------------------------------------------------------------
 ARGS=()
-[[ -n "$MODEL" ]] && ARGS+=(--model "$MODEL")
-[[ -n "$PROVIDER" ]] && ARGS+=(--provider "$PROVIDER")
-if [[ -n "$THINKING" ]]; then
-	ARGS+=(--thinking "$THINKING")
+
+# run-aegis.sh routes install/remove/update/list/config/auth only when the
+# management command is the FIRST argument. Injecting --model in front of it
+# silently turns "auth check" into a chat prompt, so management subcommands are
+# passed through untouched.
+MANAGEMENT_FIRST=0
+if (( ${#PASSTHROUGH[@]} )); then
+	case "${PASSTHROUGH[0]}" in
+		install | remove | uninstall | update | list | config | auth) MANAGEMENT_FIRST=1 ;;
+	esac
 fi
-(( ${#PASSTHROUGH[@]} )) && ARGS+=("${PASSTHROUGH[@]}")
+
+if ((MANAGEMENT_FIRST)); then
+	printf '  note       management command passed through without model flags\n'
+	ARGS=("${PASSTHROUGH[@]}")
+else
+	[[ -n "$MODEL" ]] && ARGS+=(--model "$MODEL")
+	[[ -n "$PROVIDER" ]] && ARGS+=(--provider "$PROVIDER")
+	if [[ -n "$THINKING" ]]; then
+		ARGS+=(--thinking "$THINKING")
+	fi
+	(( ${#PASSTHROUGH[@]} )) && ARGS+=("${PASSTHROUGH[@]}")
+fi
 
 cd "$WORKSPACE"
 if [[ "$ENTRY" == "bundle" ]]; then

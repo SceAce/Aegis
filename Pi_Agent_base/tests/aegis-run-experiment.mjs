@@ -5,7 +5,7 @@
 // overwritten.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,15 +20,29 @@ function run(args, { home, env = {} } = {}) {
 	});
 }
 
-function freshHome() {
-	return mkdtempSync(join(tmpdir(), "aegis-exp-"));
+function freshHome({ withAgent = true } = {}) {
+	const home = mkdtempSync(join(tmpdir(), "aegis-exp-"));
+	// The launcher refuses to start when the shared agent dir is missing, so most
+	// cases need a home that already looks like a configured Aegis install.
+	if (withAgent) {
+		mkdirSync(join(home, "agent"), { recursive: true });
+		writeFileSync(join(home, "agent", "auth.json"), "{}\n", "utf8");
+	}
+	return home;
 }
 
 test("one label derives the whole isolated layout", () => {
+	const bare = freshHome({ withAgent: false });
 	const home = freshHome();
 	try {
-		const result = run(["ram-001", "--dry-run"], { home });
-		assert.equal(result.status, 0, result.stderr);
+		// A fresh home with no agent dir is refused rather than started
+		// unauthenticated; that is the documented behaviour, not a fallback.
+		const refused = run(["ram-001", "--dry-run"], { home: bare });
+		assert.equal(refused.status, 1);
+		assert.match(refused.stderr, /shared agent dir does not exist/);
+
+		const ok = run(["ram-001", "--dry-run"], { home });
+		assert.equal(ok.status, 0, ok.stderr);
 		const dir = join(home, "experiments", "ram-001");
 		assert.ok(existsSync(join(dir, "workspace")), "workspace created");
 		assert.ok(existsSync(join(dir, "runtime", "ram")), "ram dir created");
@@ -36,11 +50,72 @@ test("one label derives the whole isolated layout", () => {
 		assert.ok(existsSync(join(dir, "runtime", "experiences")), "experiences created");
 		assert.ok(existsSync(join(dir, "sessions")), "sessions created");
 		assert.ok(existsSync(join(dir, "server")), "server created");
-		assert.ok(existsSync(join(dir, "agent")), "agent dir created");
-		assert.match(result.stdout, /AEGIS_TASK_ID=ram-001/);
-		assert.match(result.stdout, /cwd=.*ram-001\/workspace/);
+		assert.equal(existsSync(join(dir, "agent")), false, "the shared agent dir is not duplicated into the run");
+		assert.match(ok.stdout, /AEGIS_TASK_ID=ram-001/);
+		assert.match(ok.stdout, /cwd=.*ram-001\/workspace/);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
+		rmSync(bare, { recursive: true, force: true });
+	}
+});
+
+test("credentials default to the shared Aegis agent dir, not the experiment", () => {
+	const home = freshHome();
+	try {
+		const result = run(["cred-001", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(
+			result.stdout,
+			new RegExp(`agent\\s+${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/agent \\(shared\\)`),
+		);
+
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "cred-001", "run.json"), "utf8"));
+		assert.equal(runJson.agent_mode, "shared");
+		assert.equal(runJson.paths.agent_dir, join(home, "agent"));
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("a shared agent dir without auth.json warns instead of failing silently", () => {
+	const home = freshHome({ withAgent: false });
+	try {
+		mkdirSync(join(home, "agent"), { recursive: true });
+		const result = run(["cred-002", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /no auth\.json/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("--isolate-agent gives a private agent dir without copying credentials", () => {
+	const home = freshHome();
+	try {
+		const result = run(["iso-001", "--isolate-agent", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		const dir = join(home, "experiments", "iso-001", "agent");
+		assert.ok(existsSync(dir), "an isolated agent dir is created");
+		assert.equal(existsSync(join(dir, "auth.json")), false, "credentials are never copied");
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "iso-001", "run.json"), "utf8"));
+		assert.equal(runJson.agent_mode, "isolated");
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("--agent-dir overrides the agent directory explicitly", () => {
+	const home = freshHome({ withAgent: false });
+	const agent = mkdtempSync(join(tmpdir(), "aegis-agent-"));
+	try {
+		const result = run(["exp-001", "--agent-dir", agent, "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "exp-001", "run.json"), "utf8"));
+		assert.equal(runJson.agent_mode, "explicit");
+		assert.equal(runJson.paths.agent_dir, agent);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(agent, { recursive: true, force: true });
 	}
 });
 
@@ -222,6 +297,22 @@ test("a seed file must exist when given", () => {
 		const result = run(["s-001", "--seed", "/nonexistent/seed.json", "--dry-run"], { home });
 		assert.equal(result.status, 2);
 		assert.match(result.stderr, /seed file not found/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("a management subcommand is passed through without model flags", () => {
+	// run-aegis.sh routes auth/list/config only when the management command is the
+	// FIRST argument. Injecting --model in front turns "auth check" into a chat
+	// prompt, which is how a real run silently ended up unauthenticated.
+	const home = freshHome();
+	try {
+		const result = run(["mgmt-001", "--model", "p/m", "--dry-run", "--", "auth", "check"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		const script = readFileSync(new URL("../../run-experiment.sh", import.meta.url), "utf8");
+		assert.match(script, /MANAGEMENT_FIRST/);
+		assert.match(script, /install \| remove \| uninstall \| update \| list \| config \| auth/);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
