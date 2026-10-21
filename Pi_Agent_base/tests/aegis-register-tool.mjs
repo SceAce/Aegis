@@ -7,11 +7,11 @@
 //     otherwise it has to guess an action id and its parameter names.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
-import { createScriptRegistry } from "../execution/script-registry.mjs";
+import { createScriptRegistry, scriptContracts } from "../execution/script-registry.mjs";
 
 const REGISTER = new URL("../../aegis-register-tool.mjs", import.meta.url).pathname;
 
@@ -363,6 +363,103 @@ test("malformed metadata is refused at registration", () => {
 			const result = run(["--recipe", f.recipe, "--roster", f.roster]);
 			assert.equal(result.status, 2, `expected refusal for ${JSON.stringify(patch).slice(0, 40)}`);
 		}
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("--scaffold learns argv, parameters and an Oracle from one real run", () => {
+	const base = mkdtempSync(join(tmpdir(), "aegis-scaf-"));
+	try {
+		const tool = join(base, "double.mjs");
+		writeFileSync(
+			tool,
+			[
+				"#!/usr/bin/env node",
+				'import { readFileSync, writeFileSync } from "node:fs";',
+				"const [input, out] = process.argv.slice(2);",
+				"const data = JSON.parse(readFileSync(input, 'utf8'));",
+				"writeFileSync(out, JSON.stringify({ doubled: data.value * 2 }));",
+			].join("\n"),
+			"utf8",
+		);
+		chmodSync(tool, 0o755);
+		const input = join(base, "input.json");
+		writeFileSync(input, JSON.stringify({ value: 21 }), "utf8");
+		const recipe = join(base, "learned.json");
+
+		const result = run(["--scaffold", tool, "--sample", `${input} out.json`, "--out", recipe]);
+		assert.equal(result.status, 0, result.stderr);
+		const report = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("\n\nReview these")));
+
+		assert.equal(report.recipe.argv.length, 3);
+		assert.equal(report.recipe.argv[1], "{in1}");
+		assert.equal(report.recipe.argv[2], "{out}");
+		assert.equal(report.recipe.parameters.in1.direction, "in");
+		assert.equal(report.recipe.parameters.out.direction, "out");
+		assert.equal(report.recipe.verify.kind, "json_post_state");
+		assert.equal(report.recipe.verify.resource, "out");
+		assert.equal(report.recipe.workspace, "{workspace}", "portable by default");
+		assert.deepEqual(report.primary_keys, ["doubled"]);
+
+		// The learned recipe validates as-is; only the human prose is a placeholder.
+		const validated = run(["--validate", recipe]);
+		assert.equal(validated.status, 0, validated.stderr);
+		assert.ok(report.review.some((item) => /placeholders/.test(item)));
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});
+
+test("--scaffold refuses to guess when no output file appears", () => {
+	const base = mkdtempSync(join(tmpdir(), "aegis-scaf2-"));
+	try {
+		const tool = join(base, "silent.mjs");
+		writeFileSync(tool, '#!/usr/bin/env node\nconsole.log("only stdout");\n', "utf8");
+		chmodSync(tool, 0o755);
+		const recipe = join(base, "silent.json");
+		const result = run(["--scaffold", tool, "--sample", "", "--out", recipe]);
+		assert.equal(result.status, 0, result.stderr);
+		const report = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("\n\nReview these")));
+		assert.equal(report.primary_output, null);
+		assert.ok(report.review.some((item) => /writes to stdout/.test(item)));
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});
+
+test("--scaffold requires --sample", () => {
+	const f = fixture();
+	try {
+		const result = run(["--scaffold", f.script]);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /needs --sample/);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("a run-bound registration is injected with the run workspace and re-validates", () => {
+	const f = fixture();
+	try {
+		const recipe = JSON.parse(readFileSync(f.recipe, "utf8"));
+		writeFileSync(f.recipe, JSON.stringify({ ...recipe, workspace: "{workspace}" }), "utf8");
+		assert.equal(run(["--recipe", f.recipe, "--roster", f.roster]).status, 0);
+
+		const roster = JSON.parse(readFileSync(f.roster, "utf8"));
+		assert.equal(roster.scripts[0].workspace_binding, "run");
+		assert.equal(roster.scripts[0].allowed_root, undefined);
+
+		// Without a run workspace it must refuse rather than guess.
+		assert.throws(() => createScriptRegistry(roster), /needs a workspaceRoot/);
+
+		// With one, the paths are pinned and the contract builds.
+		const registry = createScriptRegistry(roster, { workspaceRoot: f.workspace });
+		const registration = registry.get("demo-add", 1);
+		assert.equal(registration.allowed_root, f.workspace);
+		assert.equal(registration.cwd, f.workspace);
+		assert.equal(registration.workspace_binding, undefined);
+		assert.equal(scriptContracts(registry).length, 1);
 	} finally {
 		f.cleanup();
 	}

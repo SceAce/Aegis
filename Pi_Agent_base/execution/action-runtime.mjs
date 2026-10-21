@@ -29,9 +29,9 @@ import { resolve } from "node:path";
 
 import { digest, getPath, resolveInside } from "../shared/contracts.mjs";
 import { ActionRegistry, createActionBroker } from "./action-contract.mjs";
+import { authorizeAction, createAuthorization, describeAuthorization } from "./authorization.mjs";
+import { createScriptRegistry, executableDigest, scriptContracts } from "./script-registry.mjs";
 import { workspaceObservationContracts } from "./workspace-info-actions.mjs";
-import { createScriptRegistry, scriptContracts, executableDigest } from "./script-registry.mjs";
-import { createAuthorization, authorizeAction, describeAuthorization } from "./authorization.mjs";
 
 /**
  * The one place the Observer (and later B2) may look up a real record from a
@@ -56,7 +56,8 @@ export function createRefResolver({ observations = new Map(), actions = new Map(
 		// never merely echo the ref back.
 		if (ref.digest !== undefined && ref.digest !== null) {
 			const contentDigest = record.content_digest ?? record.digest ?? null;
-			if (contentDigest !== ref.digest) return { ok: false, reason: `${kind} content_digest does not match the ref digest` };
+			if (contentDigest !== ref.digest)
+				return { ok: false, reason: `${kind} content_digest does not match the ref digest` };
 		}
 		return { ok: true, record, content_digest: record.content_digest ?? record.digest ?? null };
 	};
@@ -87,7 +88,9 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
 	const actions = new Map();
 	const outcomes = new Map();
 	const requested = new Map();
-	const superseded = new Set(Array.isArray(supersededOutcomeIds) ? supersededOutcomeIds.filter((id) => typeof id === "string" && id) : []);
+	const superseded = new Set(
+		Array.isArray(supersededOutcomeIds) ? supersededOutcomeIds.filter((id) => typeof id === "string" && id) : [],
+	);
 
 	for (const event of events) {
 		if (!event || typeof event !== "object") continue;
@@ -177,7 +180,8 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
 	/** Re-check a recorded data target against the CURRENT workspace file. */
 	function dataCurrent(record) {
 		if (!record) return { current: null, reason: "no record" };
-		if (!workspaceRoot || !record.subject || record.kind !== "file_identity") return { current: null, reason: "no re-checkable workspace target" };
+		if (!workspaceRoot || !record.subject || record.kind !== "file_identity")
+			return { current: null, reason: "no re-checkable workspace target" };
 		const value = record.data;
 		if (!value || typeof value !== "object") return { current: null, reason: "no observed value to re-check" };
 		try {
@@ -185,11 +189,19 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
 			const buffer = readFileSync(absolute);
 			const fileDigest = digest(buffer.toString("hex"));
 			if (value.file_digest && fileDigest !== value.file_digest) {
-				return { current: false, reason: "target content changed since the observation", expected: value.file_digest, observed: fileDigest };
+				return {
+					current: false,
+					reason: "target content changed since the observation",
+					expected: value.file_digest,
+					observed: fileDigest,
+				};
 			}
 			return { current: true, reason: "target matches the recorded revision" };
 		} catch (error) {
-			return { current: false, reason: `target cannot be re-read: ${error instanceof Error ? error.message : String(error)}` };
+			return {
+				current: false,
+				reason: `target cannot be re-read: ${error instanceof Error ? error.message : String(error)}`,
+			};
 		}
 	}
 
@@ -204,7 +216,17 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
 				return { ok: false, reason: "data content_digest does not match the ref digest" };
 			}
 			const current = dataCurrent(record);
-			return { ok: true, record: { ...record, current: current.current, current_reason: current.reason, current_expected: current.expected ?? null, current_observed: current.observed ?? null }, content_digest: record.content_digest };
+			return {
+				ok: true,
+				record: {
+					...record,
+					current: current.current,
+					current_reason: current.reason,
+					current_expected: current.expected ?? null,
+					current_observed: current.observed ?? null,
+				},
+				content_digest: record.content_digest,
+			};
 		}
 		if (kind === "action") {
 			const record = actions.get(refId);
@@ -214,7 +236,8 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
 		if (kind === "outcome") {
 			const record = outcomes.get(refId);
 			if (!record) return { ok: false, reason: `no outcome record for ${refId}` };
-			if (record.superseded) return { ok: false, reason: `outcome ${refId} was superseded in the current effective view` };
+			if (record.superseded)
+				return { ok: false, reason: `outcome ${refId} was superseded in the current effective view` };
 			return { ok: true, record, content_digest: record.content_digest ?? null };
 		}
 		return { ok: false, reason: `unsupported ref kind: ${String(kind)}` };
@@ -234,8 +257,14 @@ export function createEventRefResolver({ events = [], workspaceRoot = null, supe
  * @param {object} [input.authorizationConfig]         `createAuthorization` input (auto/normal)
  * @param {object} [input.resolver]                    trusted ref resolver (optional)
  */
-export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationConfig = {}, authorizationConfig = null, resolver = null } = {}) {
-	if (typeof workspaceRoot !== "string" || !workspaceRoot) throw new Error("createObserveActionRuntime requires a workspaceRoot");
+export function createObserveActionRuntime({
+	workspaceRoot,
+	scriptRegistrationConfig = {},
+	authorizationConfig = null,
+	resolver = null,
+} = {}) {
+	if (typeof workspaceRoot !== "string" || !workspaceRoot)
+		throw new Error("createObserveActionRuntime requires a workspaceRoot");
 
 	// Human-registered scripts. Empty config is VALID and means unconfigured: the
 	// runtime never self-registers a contest/remote script. A malformed/invalid
@@ -244,7 +273,7 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 	let scriptRegistry;
 	let scriptRegistryError = null;
 	try {
-		scriptRegistry = createScriptRegistry(scriptRegistrationConfig ?? {});
+		scriptRegistry = createScriptRegistry(scriptRegistrationConfig ?? {}, { workspaceRoot });
 	} catch (error) {
 		scriptRegistryError = error instanceof Error ? error.message : String(error);
 		scriptRegistry = createScriptRegistry({});
@@ -300,9 +329,24 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 	 * @param {boolean} [input.approved]  explicit human approval (normal mode only)
 	 * @param {string} [input.target_path] workspace-relative target (ELF)
 	 */
-	async function run({ action_ref, arguments: args = {}, episodeId = null, actionEventId = null, approved = false, target_path = null, data_bindings = {}, resolver = null } = {}) {
+	async function run({
+		action_ref,
+		arguments: args = {},
+		episodeId = null,
+		actionEventId = null,
+		approved = false,
+		target_path = null,
+		data_bindings = {},
+		resolver = null,
+	} = {}) {
 		const contract = registry.get(action_ref);
-		if (!contract) return { ok: false, status: "rejected", reason: `unknown action: ${String(action_ref)}`, gaps: [{ field: "action_ref", value: action_ref, reason: "not a registered action" }] };
+		if (!contract)
+			return {
+				ok: false,
+				status: "rejected",
+				reason: `unknown action: ${String(action_ref)}`,
+				gaps: [{ field: "action_ref", value: action_ref, reason: "not a registered action" }],
+			};
 		if (!OBSERVE_ACTIONS.has(contract.id) && !contract.id.startsWith(EXECUTE_PREFIX)) {
 			return { ok: false, status: "rejected", reason: `action ${contract.id} is not exposed to the model` };
 		}
@@ -333,7 +377,10 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 			if (!dataRef.ref_id) bindingReasons.push(`binding ${name} has no ref_id`);
 			if (typeof binding.field !== "string" || !binding.field) bindingReasons.push(`binding ${name} needs a field`);
 			if (!dataRef.ref_id || typeof binding.field !== "string" || !binding.field) continue;
-			const resolved = typeof resolver === "function" ? resolver({ kind: "data", ref: dataRef }) : { ok: false, reason: "no trusted resolver is available" };
+			const resolved =
+				typeof resolver === "function"
+					? resolver({ kind: "data", ref: dataRef })
+					: { ok: false, reason: "no trusted resolver is available" };
 			if (!resolved?.ok) {
 				bindingReasons.push(`binding ${name}: ${resolved?.reason ?? "the data ref did not resolve"}`);
 				continue;
@@ -348,7 +395,9 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 				continue;
 			}
 			if (record.current === false) {
-				bindingReasons.push(`binding ${name}: ${record.current_reason ?? "the target changed"}; refusing to bind stale data`);
+				bindingReasons.push(
+					`binding ${name}: ${record.current_reason ?? "the target changed"}; refusing to bind stale data`,
+				);
 				staleTargets.push({
 					name,
 					ref: dataRef,
@@ -366,8 +415,16 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 				continue;
 			}
 			const scalar = value !== null && typeof value === "object" ? JSON.stringify(value) : value;
-			if (args[name] !== undefined && args[name] !== null && value !== null && typeof value !== "object" && String(args[name]) !== String(scalar)) {
-				bindingReasons.push(`binding ${name}: explicit argument "${String(args[name])}" contradicts the resolved field value "${String(scalar)}"`);
+			if (
+				args[name] !== undefined &&
+				args[name] !== null &&
+				value !== null &&
+				typeof value !== "object" &&
+				String(args[name]) !== String(scalar)
+			) {
+				bindingReasons.push(
+					`binding ${name}: explicit argument "${String(args[name])}" contradicts the resolved field value "${String(scalar)}"`,
+				);
 				continue;
 			}
 			// Coerce the bound value to the DECLARED parameter type so a numeric
@@ -379,10 +436,20 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 			if (spec.type === "string") bound = String(scalar);
 			else if (spec.type === "integer") bound = Number.isInteger(Number(scalar)) ? Number(scalar) : scalar;
 			else if (spec.type === "number") bound = Number.isNaN(Number(scalar)) ? scalar : Number(scalar);
-			else if (spec.type === "boolean") bound = scalar === true || scalar === "true" ? true : scalar === false || scalar === "false" ? false : scalar;
+			else if (spec.type === "boolean")
+				bound = scalar === true || scalar === "true" ? true : scalar === false || scalar === "false" ? false : scalar;
 			finalArgs[name] = bound;
 			useRefs.push(dataRef);
-			resolvedBindings.push({ name, field: binding.field, ref: dataRef, value: scalar, bound_value: bound, parameter_type: spec.type ?? null, current: record.current, content_digest: resolved.content_digest ?? null });
+			resolvedBindings.push({
+				name,
+				field: binding.field,
+				ref: dataRef,
+				value: scalar,
+				bound_value: bound,
+				parameter_type: spec.type ?? null,
+				current: record.current,
+				content_digest: resolved.content_digest ?? null,
+			});
 		}
 		if (bindingReasons.length > 0) {
 			return {
@@ -400,7 +467,10 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 		// Re-derive the authorization config for THIS call. A normal-mode call only
 		// proceeds when the Observer received an explicit human approval; the model
 		// can never set `approved`.
-		const effectiveAuth = { ...authorization, approved: authorization.mode === "normal" ? approved === true : authorization.approved };
+		const effectiveAuth = {
+			...authorization,
+			approved: authorization.mode === "normal" ? approved === true : authorization.approved,
+		};
 		// Re-derive the authorization target from the REGISTERED action, never from
 		// the model. An ELF observation targets the named workspace file; a script
 		// action targets its human-registered cwd (which must still be inside the
@@ -436,7 +506,13 @@ export function createObserveActionRuntime({ workspaceRoot, scriptRegistrationCo
 			network: contract.network === true,
 		});
 
-		const result = await broker.invoke({ action_ref: contract.id, arguments: finalArgs, context, authorization: effectiveAuth, state: {} });
+		const result = await broker.invoke({
+			action_ref: contract.id,
+			arguments: finalArgs,
+			context,
+			authorization: effectiveAuth,
+			state: {},
+		});
 		return {
 			...result,
 			authorization_decision: decision,
@@ -536,7 +612,13 @@ export function observationDataNote({ dataRef, value = null, episodeId = null, a
  * unknown action, a missing approval, an out-of-workspace target). It records
  * the gap explicitly; it never records success.
  */
-export function rejectionNote({ action_ref = null, reason, episodeId = null, arguments: args = null, target_path = null } = {}) {
+export function rejectionNote({
+	action_ref = null,
+	reason,
+	episodeId = null,
+	arguments: args = null,
+	target_path = null,
+} = {}) {
 	// Never echo raw arguments that could carry a secret; keep a redacted digest.
 	return {
 		event_type: "runtime.note",
@@ -619,7 +701,8 @@ export function inspectScriptRegistration(registration) {
 		interpreter: null,
 	};
 	if (typeof registration.script_path === "string" && registration.script_path) {
-		if (!existsSync(registration.script_path)) return { ok: false, reason: "registered script_path is missing", ...info };
+		if (!existsSync(registration.script_path))
+			return { ok: false, reason: "registered script_path is missing", ...info };
 		// Re-hash the REAL script body so a symlink swap is visible before running.
 		const real = resolve(registration.script_path);
 		info.script_path_real = real;
@@ -635,7 +718,13 @@ export function inspectScriptRegistration(registration) {
 	info.pins_match =
 		info.executable_digest_now === info.executable_digest_pinned &&
 		(info.script_digest_now === null || info.script_digest_now === info.script_digest_pinned);
-	return { ok: info.pins_match, reason: info.pins_match ? "registered pins match the current files" : "registered file(s) changed since registration; a new version and re-verification are required", ...info };
+	return {
+		ok: info.pins_match,
+		reason: info.pins_match
+			? "registered pins match the current files"
+			: "registered file(s) changed since registration; a new version and re-verification are required",
+		...info,
+	};
 }
 
 export { executableDigest };

@@ -58,7 +58,22 @@ aegis_execute → 用 aegis_tools 给出的 id 和参数名执行
 | --- | --- | --- |
 | 手工写 recipe | `--recipe` | 少量、需要精确控制 |
 | **侦察起步** | `--probe /path/to/tool --out draft.json` | 只给路径：得到 realpath、类型、digest、`--version`，再补 argv/Oracle |
+| **一次运行学习** | `--scaffold /path/to/tool --sample "<你平时怎么跑>" --out recipe.json` | 自动推断 argv/参数/Oracle，只剩 description/notes 要写 |
 | **交给其他 Agent** | 按 [接入规范](TOOL_INTEGRATION_SPEC.md) 产出 recipe，`--validate` 迭代 | 批量接入；规范里写明硬规则与检查清单 |
+
+`--scaffold` 会**真实执行一次**该工具（在临时目录里，输入文件先复制进去），然后观察磁盘上
+出现了什么，据此推断：
+
+| 推断项 | 依据 |
+| --- | --- |
+| `{in1}…` 输入参数 | 样本命令里**存在**的文件路径 → 复制进临时目录，`direction: in` |
+| `{out}` 输出参数 | 样本命令里**不存在但像路径**的 token（含 `/` 或扩展名）→ `direction: out` |
+| `verify.checks` | 输出文件能解析成 JSON 时，取首个顶层字段做 `exists` 检查 |
+| `argv` | 上述替换后的固定模板；其余 flag/值原样保留 |
+
+生成的 recipe 默认 `workspace: "{workspace}"`——**绑定到运行时的 workspace**，所以一份 roster
+在所有实验里通用（注入发生在 `createScriptRegistry`，见下）。若工具不写文件而是打 stdout，
+scaffold **不会**编造 Oracle，而是在 review 里指出需要包装脚本。
 
 `--probe` **只报事实**：路径、文件类型、解释器、digest、`--version` 首行。它不猜 argv、
 不猜参数、不猜 Oracle——那三项是"被审阅的部分"，猜错会产生看起来能用的错误动作。
@@ -101,6 +116,7 @@ aegis_execute → 用 aegis_tools 给出的 id 和参数名执行
 | `script` | 解释器类必须提供，脚本体被 digest 锁定；`{script}` 在 argv 中展开 |
 | `argv` | 固定模板；`{name}` 替换为声明过的参数；不得含 `;` `\|` `&` `` ` `` 或 eval token |
 | `parameters` | 只有声明过的参数可传，模型只能提供数据；`direction: in/out` 的路径必须落在 workspace 内 |
+| `workspace` | 绝对路径，或 `"{workspace}"`：后者绑定到**本次运行的 workspace**，一份 roster 全实验通用；注入后仍按普通登记项校验 |
 | `verify` | 唯一支持的 kind 是 `json_post_state`：从 `resource_bindings` 取路径、**重读磁盘并解析**，不看 stdout / 退出码 |
 | `category`/`notes`/`examples` | 模型选工具与调用所需：分类、**何时不该用**、一组可照抄的参数。由 `aegis_tools` 返回 |
 | `timeout_ms`/`risk_class`/`network` | 超时（1–600000，默认 10000）、风险级别、网络标记（标记不等于授权） |

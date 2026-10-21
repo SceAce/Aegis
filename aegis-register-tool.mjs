@@ -16,6 +16,7 @@
 //   node aegis-register-tool.mjs --recipe recipe.json --dry-run
 //   node aegis-register-tool.mjs --list [--roster roster.json]
 //   node aegis-register-tool.mjs --probe /path/to/tool [--out draft.json]
+//   node aegis-register-tool.mjs --scaffold /path/to/tool --sample "<args>" [--out recipe.json]
 //   node aegis-register-tool.mjs --validate recipe.json
 //
 // Recipe (the only thing a human writes):
@@ -45,7 +46,19 @@
 // body is digest-pinned so a later edit is refused until it is re-reviewed.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	isInterpreter as registryIsInterpreter,
@@ -94,6 +107,7 @@ function usage() {
   node aegis-register-tool.mjs --recipe recipe.json [--roster roster.json] [--dry-run]
   node aegis-register-tool.mjs --list [--roster roster.json]
 //   node aegis-register-tool.mjs --probe /path/to/tool [--out draft.json]
+//   node aegis-register-tool.mjs --scaffold /path/to/tool --sample "<args>" [--out recipe.json]
 //   node aegis-register-tool.mjs --validate recipe.json
 
 The recipe is the human-reviewed part: argv shape, parameters, and the
@@ -108,6 +122,8 @@ function parseArgs(argv) {
 		list: false,
 		recipe: null,
 		probe: null,
+		scaffold: null,
+		sample: null,
 		validate: null,
 		out: null,
 	};
@@ -124,6 +140,8 @@ function parseArgs(argv) {
 		else if (arg === "--dry-run") options.dryRun = true;
 		else if (arg === "--list") options.list = true;
 		else if (arg === "--probe") options.probe = value();
+		else if (arg === "--scaffold") options.scaffold = value();
+		else if (arg === "--sample") options.sample = value();
 		else if (arg === "--validate") options.validate = value();
 		else if (arg === "--out") options.out = value();
 		else if (arg === "--help" || arg === "-h") options.help = true;
@@ -179,8 +197,12 @@ export function buildRegistration(recipe, { baseDir = process.cwd() } = {}) {
 	if (scriptPath && !expandedArgv.includes(scriptPath))
 		fail("recipe.argv must reference {script} as an executable token");
 
-	const workspaceHint = typeof recipe.workspace === "string" && recipe.workspace ? recipe.workspace : baseDir;
-	if (!isAbsolute(workspaceHint)) fail("recipe.workspace must be an absolute path");
+	// `"{workspace}"` binds the tool to whatever workspace the run uses, so one
+	// reviewed roster works in every experiment. A concrete path stays supported for
+	// tools that must run in a fixed location.
+	const workspaceHint = typeof recipe.workspace === "string" && recipe.workspace ? recipe.workspace : "{workspace}";
+	const runBound = workspaceHint === "{workspace}";
+	if (!runBound && !isAbsolute(workspaceHint)) fail('recipe.workspace must be an absolute path or "{workspace}"');
 
 	// Optional metadata that makes the action callable by a model rather than only
 	// runnable by a human: what it is for, when NOT to use it, and a worked call.
@@ -225,8 +247,7 @@ export function buildRegistration(recipe, { baseDir = process.cwd() } = {}) {
 		executable_digest: sha256(executable),
 		...(scriptPath ? { script_path: scriptPath, script_digest: sha256(scriptPath) } : {}),
 		argv_template: expandedArgv,
-		allowed_root: workspaceHint,
-		cwd: workspaceHint,
+		...(runBound ? { workspace_binding: "run" } : { allowed_root: workspaceHint, cwd: workspaceHint }),
 		parameters: recipe.parameters ?? {},
 		verify_spec: recipe.verify,
 	};
@@ -347,6 +368,174 @@ function probe(target, { out = null } = {}) {
 }
 
 /** Validate one recipe without writing anything, for agent iteration. */
+/**
+ * Learn a recipe shape from ONE real run.
+ *
+ * Opt-in (`--sample "args"`), because it executes the tool: it runs in a throwaway
+ * directory with copies of the input paths it recognised, so the operator's
+ * workspace is not touched. It then observes what appeared on disk and maps that
+ * back to `argv` + `parameters` + a suggested Oracle.
+ *
+ * It still cannot invent MEANING: the field it suggests as the success check is a
+ * structural guess, so the report says which fields need review.
+ */
+function scaffold(target, { sample, out = null, timeoutMs = 20000 } = {}) {
+	const facts = probe(target);
+	const executable = facts.executable;
+	const script = facts.script ?? null;
+	const prefix = script ? [script] : [];
+
+	const tokens = String(sample).trim().split(/\s+/).filter(Boolean);
+	const base = mkdtempSync(join(tmpdir(), "aegis-scaffold-"));
+	const workspace = join(base, "workspace");
+	mkdirSync(workspace, { recursive: true });
+
+	try {
+		// Classify the sample tokens: things that already exist are INPUTS, a path-like
+		// token that does not exist yet is the OUTPUT (the tool is being told where to
+		// write). Everything else is a flag/value literal and stays as-is.
+		const params = {};
+		const argv = [...prefix];
+		let inIndex = 0;
+		let outToken = null;
+		for (const token of tokens) {
+			const resolved = isAbsolute(token) ? token : resolve(process.cwd(), token);
+			if (existsSync(resolved) && lstatSync(resolved).isFile()) {
+				inIndex += 1;
+				const name = `in${inIndex}`;
+				cpSync(resolved, join(workspace, basename(resolved)));
+				params[name] = { type: "string", required: true, direction: "in" };
+				argv.push(`{${name}}`);
+				continue;
+			}
+			// Output candidate: path-like, not an existing file, and not a flag.
+			const pathLike = !token.startsWith("-") && (token.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(token));
+			if (!outToken && pathLike && !existsSync(resolved)) {
+				outToken = token;
+				params.out = { type: "string", required: true, direction: "out" };
+				argv.push("{out}");
+				continue;
+			}
+			argv.push(token);
+		}
+
+		// Execute with the operator's literal tokens (the placeholders are only for the
+		// generated recipe). Input paths were copied, so rewrite them to basenames and
+		// keep the output token as the out path inside the temp workspace.
+		const runTokens = tokens.map((token) => {
+			const resolved = isAbsolute(token) ? token : resolve(process.cwd(), token);
+			if (existsSync(resolved) && lstatSync(resolved).isFile()) return basename(resolved);
+			if (token === outToken) return "out";
+			return token;
+		});
+		const before = new Set(walkFiles(workspace));
+		const run = spawnSync(executable, script ? [script, ...runTokens] : runTokens, {
+			cwd: workspace,
+			timeout: timeoutMs,
+			shell: false,
+			encoding: "utf8",
+			maxBuffer: 8 * 1024 * 1024,
+		});
+		const after = walkFiles(workspace);
+		const created = after.filter((file) => !before.has(file));
+
+		// Pick the likely result: prefer JSON, then non-empty.
+		let primary = null;
+		let parsed = null;
+		for (const file of created) {
+			const full = join(workspace, file);
+			try {
+				const text = readFileSync(full, "utf8");
+				if (!text.trim()) continue;
+				const asJson = JSON.parse(text);
+				if (asJson && typeof asJson === "object") {
+					primary = file;
+					parsed = asJson;
+					break;
+				}
+			} catch {
+				/* not JSON */
+			}
+			if (!primary) primary = file;
+		}
+
+		const review = [];
+		if (!primary)
+			review.push("no output file appeared: this tool writes to stdout, so it needs a wrapper that writes JSON");
+		if (primary && !parsed) review.push(`${primary} is not JSON, so json_post_state cannot check it yet`);
+		review.push("description and notes are placeholders");
+
+		const recipe = {
+			id: facts.draft.id,
+			version: 1,
+			description: `Run ${basename(executable)} (TODO: say what it does)`,
+			category: "",
+			notes: "",
+			executable,
+			...(script ? { script } : {}),
+			argv,
+			workspace: "{workspace}",
+			parameters: {
+				...params,
+				...(primary ? { out: { type: "string", required: true, direction: "out" } } : {}),
+			},
+			verify: primary
+				? {
+						kind: "json_post_state",
+						resource: "out",
+						checks: parsed
+							? [{ path: Object.keys(parsed)[0] ?? "result", op: "exists" }]
+							: [{ path: "result", op: "exists" }],
+					}
+				: { kind: "json_post_state", resource: "out", checks: [{ path: "result", op: "exists" }] },
+		};
+		if (!outToken) {
+			// No output argument was given, so the tool writes a fixed name. The Oracle can
+			// still read it, but the model cannot choose the path: say so.
+			review.push(
+				`the run wrote ${primary ?? "no file"} without an output argument; add one to argv if the tool supports choosing the path`,
+			);
+			if (primary) {
+				params.out = { type: "string", required: true, direction: "out" };
+				// Point the parameter at the fixed name the tool actually produced.
+				recipe.parameters = { ...params };
+				recipe.argv = [...argv];
+				review.push(`verify.resource=out expects the tool to write {out}; the observed name was ${primary}`);
+			}
+		}
+
+		if (out) writeFileSync(out, `${JSON.stringify(recipe, null, 2)}\n`);
+		return {
+			executable,
+			...(script ? { script } : {}),
+			ran_argv: executable === (script ?? executable) ? tokens : [script, ...tokens],
+			exit_code: run.status,
+			timed_out: Boolean(run.error?.code === "ETIMEDOUT"),
+			stdout_excerpt: String(run.stdout ?? "").slice(0, 300),
+			stderr_excerpt: String(run.stderr ?? "").slice(0, 300),
+			created_files: created,
+			primary_output: primary,
+			primary_keys:
+				parsed && typeof parsed === "object" && !Array.isArray(parsed) ? Object.keys(parsed).slice(0, 10) : null,
+			recipe,
+			review,
+			...(out ? { recipe_written: resolve(out) } : {}),
+		};
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+}
+
+/** Every regular file under `dir`, relative to it. */
+function walkFiles(dir, acc = [], root = dir) {
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) walkFiles(full, acc, root);
+		else if (entry.isFile()) acc.push(full.slice(root.length + 1));
+	}
+	return acc;
+}
+
 function validateRecipe(recipePath) {
 	if (!existsSync(recipePath)) fail(`recipe not found: ${recipePath}`);
 	let recipe;
@@ -362,6 +551,18 @@ function validateRecipe(recipePath) {
 function main() {
 	const options = parseArgs(process.argv.slice(2));
 	if (options.help) return usage();
+
+	if (options.scaffold) {
+		// An empty --sample is valid: some tools take no arguments.
+		if (options.sample === null || options.sample === undefined)
+			fail('--scaffold needs --sample "<args you would run>" so it can observe a real run');
+		const report = scaffold(options.scaffold, { sample: options.sample, out: options.out });
+		console.log(JSON.stringify(report, null, 2));
+		console.log("\nReview these before registering:");
+		for (const item of report.review) console.log(`  - ${item}`);
+		console.log("\nThen: --validate <recipe.json>, then --recipe <recipe.json> --roster ~/.Aegis/tools/roster.json");
+		return;
+	}
 
 	if (options.probe) {
 		const report = probe(options.probe, { out: options.out });

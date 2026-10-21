@@ -30,7 +30,10 @@ node aegis-register-tool.mjs --validate <recipe.json>
 # 1) 侦察：路径 → 事实（realpath、类型、digest、--version）
 node aegis-register-tool.mjs --probe /path/to/tool --out draft.json
 
-# 2) 补全 draft：argv / parameters / verify（这三项不能自动推断）
+# 2a) 或者：给一条你平时怎么跑的样本命令，让它推断 argv/参数/Oracle
+node aegis-register-tool.mjs --scaffold /path/to/tool --sample "<args>" --out draft.json
+
+# 2b) 或手工补全 draft：argv / parameters / verify
 $EDITOR draft.json
 
 # 3) 校验，循环到通过
@@ -59,7 +62,7 @@ node aegis-register-tool.mjs --list --roster ~/.Aegis/tools/roster.json
 | `executable` | 是 | 绝对路径；解释器类会被 digest 绑定 |
 | `script` | 解释器类必填 | 绝对路径；脚本体被 digest 绑定，改动后必须升版本 |
 | `argv` | 是 | 固定数组；`{script}` 展开为脚本路径，`{name}` 展开为参数 |
-| `workspace` | 是 | 绝对路径；运行时所有路径参数必须落在它里面 |
+| `workspace` | 是 | 绝对路径，或 `"{workspace}"`（推荐）：绑定到运行时的实验 workspace，一份 roster 通用 |
 | `parameters` | 是 | 见下 |
 | `verify` | 是 | 目前唯一 kind：`json_post_state` |
 | `timeout_ms` | 否 | 1–600000，默认 10000 |

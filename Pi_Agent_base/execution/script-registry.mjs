@@ -270,17 +270,26 @@ export function validateScriptRegistration(registration) {
 		}
 	}
 
-	if (
+	const runBound = registration.workspace_binding === "run";
+	if (runBound) {
+		// The human declared "bind to whatever workspace this run uses" instead of
+		// baking one machine's path into the registration. The registry injects the
+		// real root before use; without one it refuses (see createScriptRegistry).
+		if (registration.allowed_root !== undefined || registration.cwd !== undefined) {
+			reasons.push("workspace_binding=run must not also pin allowed_root/cwd");
+		}
+	} else if (
 		typeof registration.allowed_root !== "string" ||
 		!registration.allowed_root ||
 		!isAbsolute(registration.allowed_root)
 	)
 		reasons.push("allowed_root (absolute workspace path) is required");
-	if (typeof registration.cwd !== "string" || !registration.cwd || !isAbsolute(registration.cwd))
+	if (!runBound && (typeof registration.cwd !== "string" || !registration.cwd || !isAbsolute(registration.cwd)))
 		reasons.push("cwd (absolute path) is required");
 	// cwd must be inside the allowed root (real, symlink-resolved). A lexical
 	// check alone would let a symlinked cwd escape.
 	if (
+		!runBound &&
 		typeof registration.allowed_root === "string" &&
 		isAbsolute(registration.allowed_root) &&
 		typeof registration.cwd === "string" &&
@@ -319,10 +328,22 @@ export function validateScriptRegistration(registration) {
 }
 
 /** Build a Map keyed by `id@version`. Empty config is a valid (unconfigured) registry. */
-export function createScriptRegistry(config = {}) {
+export function createScriptRegistry(config = {}, { workspaceRoot = null } = {}) {
 	const scripts = new Map();
 	const registrations = Array.isArray(config.scripts) ? config.scripts : [];
-	for (const registration of registrations) {
+	for (const entry of registrations) {
+		// A run-bound registration gets the real workspace injected here, so one
+		// reviewed roster works for every experiment instead of one machine path.
+		let registration = entry;
+		if (entry?.workspace_binding === "run") {
+			if (typeof workspaceRoot !== "string" || !workspaceRoot) {
+				throw new Error(`refusing script registration ${entry.id}: workspace_binding=run needs a workspaceRoot`);
+			}
+			// Drop the marker and pin the resolved paths: the stored registration is now
+			// concrete, so re-validation (createScriptContract) sees a normal entry.
+			const { workspace_binding, ...rest } = entry;
+			registration = { ...rest, allowed_root: resolve(workspaceRoot), cwd: resolve(workspaceRoot) };
+		}
 		const review = validateScriptRegistration(registration);
 		if (!review.ok)
 			throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
