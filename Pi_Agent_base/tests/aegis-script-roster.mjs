@@ -44,6 +44,7 @@ function roster(overrides = {}) {
 		allowed_root: workspace,
 		cwd: workspace,
 		parameters: { out: { type: "string", required: true, direction: "out" } },
+		description: "恢复同一模数下的明文",
 		verify_spec: SPEC,
 		...overrides,
 	};
@@ -165,6 +166,31 @@ test("a roster file is plain JSON that round-trips", () => {
 		assert.equal(parsed.scripts[0].verify_spec.kind, "json_post_state");
 		const registry = createScriptRegistry({ scripts: parsed.scripts });
 		assert.equal(registry.get("common-modulus", 1) !== null, true);
+	} finally {
+		env.cleanup();
+	}
+});
+
+test("description is an optional one-line purpose, bounded and exposed", () => {
+	const env = roster();
+	try {
+		const registry = createScriptRegistry({ scripts: [env.registration] });
+		assert.equal(registry.describe()[0].description, "恢复同一模数下的明文");
+
+		// Optional: a registration without it is still valid.
+		const { description, ...withoutDescription } = env.registration;
+		assert.equal(description, "恢复同一模数下的明文");
+		assert.equal(validateScriptRegistration(withoutDescription).ok, true);
+		assert.equal(createScriptRegistry({ scripts: [withoutDescription] }).describe()[0].description, "");
+
+		// Bounded: a long blurb or blank text is refused.
+		assert.equal(validateScriptRegistration({ ...env.registration, description: "x".repeat(201) }).ok, false);
+		assert.match(
+			validateScriptRegistration({ ...env.registration, description: "x".repeat(201) }).reasons.join(" "),
+			/description must be <= 200 characters/,
+		);
+		assert.equal(validateScriptRegistration({ ...env.registration, description: "   " }).ok, false);
+		assert.equal(validateScriptRegistration({ ...env.registration, description: 42 }).ok, false);
 	} finally {
 		env.cleanup();
 	}

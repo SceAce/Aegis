@@ -18,7 +18,7 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 | `agent/` | 固定 ROM 指令 |
 | `tests/` | 单元/集成/故障恢复/审计用例，`helpers/` 放辅助子进程和运行器 |
 
-`pi/` 是独立的内嵌 Pi 仓库。`config/` 保存私有配置、凭据与会话；`runtime/` 保存运行产物，`tmp/` 保存临时文件。这些目录不属于 Aegis 主仓库源码。
+`pi/` 是独立的内嵌 Pi 仓库，**已冻结于 `aegis-base-20261021`**（官方 `16f5f0af4` + Aegis shell-slot 提交 `2ba451d99`）；不再跟随官方同步，详见 [工程规则](AGENTS.md)。`config/` 保存私有配置、凭据与会话；`runtime/` 保存运行产物，`tmp/` 保存临时文件。这些目录不属于 Aegis 主仓库源码。
 
 ## 主要入口
 

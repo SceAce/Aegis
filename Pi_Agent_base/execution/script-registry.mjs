@@ -102,7 +102,8 @@ export const VERIFY_SPEC_KINDS = Object.freeze(["json_post_state"]);
  * @returns {{ok: boolean, reasons: string[]}}  `reasons` is empty when ok.
  */
 export function validateVerifySpec(spec) {
-	if (!spec || typeof spec !== "object" || Array.isArray(spec)) return { ok: false, reasons: ["verify_spec must be an object"] };
+	if (!spec || typeof spec !== "object" || Array.isArray(spec))
+		return { ok: false, reasons: ["verify_spec must be an object"] };
 	const value = /** @type {VerifySpec} */ (spec);
 	const reasons = [];
 	if (!VERIFY_SPEC_KINDS.includes(value.kind)) {
@@ -219,6 +220,16 @@ export function validateScriptRegistration(registration) {
 			reasons.push("the argv_template must reference script_path as an executable token");
 	}
 
+	// A one-line purpose is optional but bounded: the roster exists so a human can
+	// choose a technique at a glance, which a long blurb defeats.
+	if (registration.description !== undefined) {
+		if (typeof registration.description !== "string" || !registration.description.trim()) {
+			reasons.push("description must be a non-empty string when provided");
+		} else if (registration.description.length > 200) {
+			reasons.push("description must be <= 200 characters");
+		}
+	}
+
 	if (
 		typeof registration.allowed_root !== "string" ||
 		!registration.allowed_root ||
@@ -293,6 +304,7 @@ export function createScriptRegistry(config = {}) {
 			[...scripts.values()].map((r) => ({
 				id: r.id,
 				version: r.version,
+				description: r.description ?? "",
 				executable: r.executable,
 				risk_class: r.risk_class ?? "medium",
 				network: r.network === true,
