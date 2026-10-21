@@ -288,10 +288,15 @@ export function createScriptRegistry(config = {}) {
 			throw new Error(`refusing invalid script registration ${registration?.id}: ${review.reasons.join("; ")}`);
 		// A JSON roster has no functions, so the declarative Oracle is compiled here.
 		// Downstream code therefore always sees a callable `verify`.
-		const compiled =
-			typeof registration.verify === "function"
-				? registration
-				: { ...registration, verify: compileVerifySpec(registration.verify_spec) };
+		// Compiling MOVES the declarative spec: the stored registration has exactly one
+		// Oracle form (`verify`), with the original spec kept for introspection. Keeping
+		// both under their original names would make createScriptContract's re-check
+		// read a compiled entry as a human declaring two Oracles.
+		let compiled = registration;
+		if (typeof registration.verify !== "function") {
+			const { verify_spec, ...rest } = registration;
+			compiled = { ...rest, verify: compileVerifySpec(verify_spec), verify_spec_source: verify_spec };
+		}
 		const key = `${registration.id}@${registration.version}`;
 		if (scripts.has(key)) throw new Error(`duplicate script registration: ${key}`);
 		scripts.set(key, compiled);

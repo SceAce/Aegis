@@ -17,6 +17,7 @@ import {
 	compileVerifySpec,
 	createScriptRegistry,
 	executableDigest,
+	scriptContracts,
 	validateScriptRegistration,
 	validateVerifySpec,
 } from "../execution/script-registry.mjs";
@@ -67,7 +68,7 @@ test("the registry compiles the declarative Oracle into a callable verify", () =
 		const registry = createScriptRegistry({ scripts: [env.registration] });
 		const registration = registry.get("common-modulus", 1);
 		assert.equal(typeof registration.verify, "function");
-		assert.equal(registration.verify_spec.kind, "json_post_state", "the roster data is preserved");
+		assert.deepEqual(registration.verify_spec_source, SPEC, "the roster data is preserved for introspection");
 	} finally {
 		env.cleanup();
 	}
@@ -191,6 +192,36 @@ test("description is an optional one-line purpose, bounded and exposed", () => {
 		);
 		assert.equal(validateScriptRegistration({ ...env.registration, description: "   " }).ok, false);
 		assert.equal(validateScriptRegistration({ ...env.registration, description: 42 }).ok, false);
+	} finally {
+		env.cleanup();
+	}
+});
+
+test("a compiled roster survives re-validation (scriptContracts path)", () => {
+	// Regression: createScriptRegistry compiles verify_spec into verify, and
+	// createScriptContract re-validates. While the compiled entry kept BOTH fields
+	// every verify_spec roster was refused at contract time: the registry looked
+	// configured but no action was ever built, and aegis_tools reported an error.
+	const env = roster();
+	try {
+		const registry = createScriptRegistry({ scripts: [env.registration] });
+		const registration = registry.get("common-modulus", 1);
+		assert.equal(typeof registration.verify, "function");
+		assert.equal(registration.verify_spec, undefined, "the compiled form has exactly one Oracle");
+		assert.deepEqual(registration.verify_spec_source, SPEC, "the declarative spec is kept for introspection");
+		assert.equal(validateScriptRegistration(registration).ok, true, "compiled form must re-validate");
+		assert.equal(scriptContracts(registry).length, 1);
+	} finally {
+		env.cleanup();
+	}
+});
+
+test("a human declaring both verify() and verify_spec is still refused", () => {
+	const env = roster({ verify: () => ({ ok: true }) });
+	try {
+		const review = validateScriptRegistration(env.registration);
+		assert.equal(review.ok, false);
+		assert.match(review.reasons.join(" "), /not both/);
 	} finally {
 		env.cleanup();
 	}

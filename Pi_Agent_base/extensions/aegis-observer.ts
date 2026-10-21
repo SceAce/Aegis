@@ -1637,10 +1637,67 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 	pi.registerTool(
 		defineTool({
+			name: "aegis_tools",
+			label: "Aegis: list registered tools",
+			description:
+				"List the HUMAN-REGISTERED script actions this run can execute, with their data-only parameters, description, risk class and network flag, plus the current authorization mode. Read-only: it never runs anything. Call this BEFORE aegis_execute so you use a registered action id and the exact parameter names instead of guessing them. An empty list means nothing is registered and aegis_execute will refuse.",
+			promptSnippet: "List the registered Aegis script actions and their parameters (read-only)",
+			parameters: Type.Object({}),
+			async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+				commandCtx = ctx;
+				await ensureLog(ctx);
+				refreshProjections();
+				const workspaceRoot = workspaceRootOrCwd(cliWorkspace || ctx.cwd);
+				const runtime = await actionRuntimeFor(workspaceRoot);
+				const catalog = runtime.catalog();
+				// Bounded projection: ids, shapes and flags only. Paths, digests and
+				// argv stay out of the model's context; they are auditable on disk.
+				const scripts = (catalog.scripts ?? []).map((entry: Record<string, unknown>) => ({
+					id: entry.id,
+					version: entry.version,
+					description: entry.description ?? "",
+					risk_class: entry.risk_class,
+					network: entry.network === true,
+					parameters: Object.fromEntries(
+						Object.entries((entry.parameters as Record<string, Record<string, unknown>>) ?? {}).map(([name, spec]) => [
+							name,
+							{
+								type: spec?.type ?? "string",
+								required: spec?.required === true,
+								...(spec?.direction ? { direction: spec.direction } : {}),
+							},
+						]),
+					),
+				}));
+				const payload = {
+					scripts_configured: catalog.scripts_configured === true,
+					...(catalog.script_registry_error ? { script_registry_error: catalog.script_registry_error } : {}),
+					authorization_mode: (catalog.authorization as Record<string, unknown>)?.mode ?? "unknown",
+					allow_network: (catalog.authorization as Record<string, unknown>)?.allow_network === true,
+					workspace_root: catalog.workspace_root,
+					scripts,
+				};
+				const text =
+					scripts.length === 0
+						? "Aegis: no script action is registered for this run, so aegis_execute will refuse. Register one with aegis-register-tool.mjs and start the run with AEGIS_SCRIPT_CONFIG."
+						: `Aegis: ${scripts.length} registered script action(s). Cite the exact id and parameter names in aegis_execute.`;
+				return {
+					content: [{ type: "text", text: `${text}\n\n${JSON.stringify(payload, null, 2)}` }],
+					details: { ok: true, scripts_configured: payload.scripts_configured, count: scripts.length },
+				};
+			},
+		}),
+	);
+
+	// -----------------------------------------------------------------------
+	// aegis_execute: run one registered script action (see aegis_tools).
+	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
 			name: "aegis_execute",
 			label: "Aegis: run a registered script action",
 			description:
-				"Run a HUMAN-REGISTERED script action against the task workspace. You supply only the registered action id and data-only arguments (numbers/strings declared by the registration). The runtime uses the fixed executable + pinned digests, checks the registered post-condition Oracle on the real post-state, and never uses a shell or eval. If no script is registered, the runtime is unconfigured and refuses.",
+				"Run a HUMAN-REGISTERED script action against the task workspace. You supply only the registered action id and data-only arguments (numbers/strings declared by the registration). The runtime uses the fixed executable + pinned digests, checks the registered post-condition Oracle on the real post-state, and never uses a shell or eval. Call aegis_tools first to see the registered action ids and their exact parameter names. If no script is registered, the runtime is unconfigured and refuses.",
 			promptSnippet: "Run a human-registered Aegis script action (data-only arguments; no shell)",
 			parameters: Type.Object({
 				action: Type.String({ description: "Registered script action id, e.g. script.parse_leak" }),

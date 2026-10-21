@@ -48,6 +48,7 @@ SEED_FILE=""
 KNOWLEDGE_DIR=""
 AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
+SCRIPT_CONFIG_OVERRIDE=""
 ATTACH=()
 MAX_ATTACH_BYTES=536870912
 MCP_MODE="off"       # off | on
@@ -70,6 +71,11 @@ Options:
   --workspace DIR     use DIR as the task workspace (default: <label>/workspace)
   --here              use the CURRENT directory as the workspace (no isolation).
                       Use this when the challenge files already sit in a folder.
+  --script-config PATH
+                      script roster for aegis_execute (default: the experiment's
+                      roster.json, else $AEGIS_HOME/tools/roster.json, else the
+                      repository roster.json). Registers tools; see
+                      aegis-register-tool.mjs.
   --attach PATH       copy a file or directory into the workspace before launch.
                       Repeatable. An existing destination is never overwritten.
   --max-attach-bytes N
@@ -116,6 +122,11 @@ while (($#)); do
 	case "$1" in
 		--workspace) WORKSPACE="${2:-}"; shift 2 ;;
 		--here) USE_CWD=1; shift ;;
+		--script-config)
+			[[ $# -ge 2 ]] || { printf -- '--script-config needs a path\n' >&2; exit 2; }
+			SCRIPT_CONFIG_OVERRIDE="$2"
+			shift 2
+			;;
 		--attach)
 			[[ $# -ge 2 ]] || { printf -- '--attach needs a path\n' >&2; exit 2; }
 			ATTACH+=("$2")
@@ -318,6 +329,24 @@ else
 fi
 
 # --- export the run's environment -----------------------------------------
+# Script roster: what aegis_execute may run. An explicit flag wins; otherwise the
+# experiment's own roster, then the shared tools roster, then the repo one. The
+# file is validated by the registry at load time, so an invalid roster is
+# reported rather than silently ignored.
+if [[ -n "$SCRIPT_CONFIG_OVERRIDE" ]]; then
+	SCRIPT_CONFIG="$SCRIPT_CONFIG_OVERRIDE"
+	[[ "$SCRIPT_CONFIG" = /* ]] || SCRIPT_CONFIG="$LAUNCH_DIR/$SCRIPT_CONFIG"
+	[[ -f "$SCRIPT_CONFIG" ]] || die "script roster not found: $SCRIPT_CONFIG"
+elif [[ -f "$EXP_DIR/roster.json" ]]; then
+	SCRIPT_CONFIG="$EXP_DIR/roster.json"
+elif [[ -f "$AEGIS_HOME/tools/roster.json" ]]; then
+	SCRIPT_CONFIG="$AEGIS_HOME/tools/roster.json"
+elif [[ -f "$BASE_DIR/roster.json" ]]; then
+	SCRIPT_CONFIG="$BASE_DIR/roster.json"
+else
+	SCRIPT_CONFIG=""
+fi
+
 export AEGIS_HOME
 export AEGIS_TASK_ID="$TASK_ID"
 export AEGIS_EVENT_LOG="$EVENT_LOG"
@@ -329,6 +358,11 @@ export AEGIS_KNOWLEDGE_DIR="$KNOWLEDGE_DIR"
 export AEGIS_PI_AGENT_DIR="$AGENT_DIR"
 export AEGIS_PI_SESSION_DIR="$SESSION_DIR"
 export AEGIS_PI_SERVER_DIR="$SERVER_DIR"
+if [[ -n "$SCRIPT_CONFIG" ]]; then
+	export AEGIS_SCRIPT_CONFIG="$SCRIPT_CONFIG"
+else
+	unset AEGIS_SCRIPT_CONFIG
+fi
 if [[ -n "$SEED_FILE" ]]; then
 	export AEGIS_RAM_SEED_FILE="$SEED_FILE"
 else
@@ -449,6 +483,11 @@ printf '  ram        %s\n' "$RAM_DIR"
 printf '  knowledge  %s\n' "$KNOWLEDGE_DIR"
 printf '  agent      %s (%s)\n' "$AGENT_DIR" "$AGENT_MODE"
 printf '  mcp        %s%s\n' "$MCP_MODE" "${MCP_NOTE:+ - $MCP_NOTE}"
+if [[ -n "$SCRIPT_CONFIG" ]]; then
+	printf '  scripts    %s\n' "$SCRIPT_CONFIG"
+else
+	printf '  scripts    (none registered: aegis_execute will refuse; see aegis-register-tool.mjs)\n'
+fi
 if [[ -n "$AUTH_WARNING" ]]; then
 	printf '  warning    %s\n' "$AUTH_WARNING" >&2
 fi
