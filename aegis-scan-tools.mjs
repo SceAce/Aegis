@@ -168,11 +168,22 @@ function versionOf(binary, args) {
  * exactly what made the first scan report installed tools as missing.
  */
 /** Homebrew ruby installs gems outside PATH; ask gem where. */
-function gemBinDir() {
+function gemEnvironmentDirs() {
 	const result = spawnSync("gem", ["environment"], { encoding: "utf8", timeout: 10_000 });
-	const line = (result.stdout ?? "").split("\n").find((entry) => entry.includes("EXECUTABLE DIRECTORY"));
-	const dir = line?.split(":").slice(1).join(":").trim();
-	return dir && existsSync(dir) ? dir : join("/opt/homebrew/lib/ruby/gems", "bin");
+	const lines = (result.stdout ?? "").split("\n");
+	const valueFor = (label) => {
+		const line = lines.find((entry) => entry.includes(label));
+		return line?.split(":").slice(1).join(":").trim() || null;
+	};
+	const executable = valueFor("EXECUTABLE DIRECTORY");
+	const user = valueFor("USER INSTALLATION DIRECTORY");
+	const dirs = [];
+	if (executable && existsSync(executable)) dirs.push(executable);
+	// `gem install --user-install` writes executables below <user>/bin; this is
+	// common for tools like wpscan and must be scanned too.
+	if (user && existsSync(join(user, "bin"))) dirs.push(join(user, "bin"));
+	if (dirs.length === 0) dirs.push(join("/opt/homebrew/lib/ruby/gems", "bin"));
+	return dirs;
 }
 
 function searchDirs() {
@@ -184,7 +195,10 @@ function searchDirs() {
 		join(homedir(), ".local", "bin"),
 		join(homedir(), "Tools", "PyVenv", "CTF", "bin"),
 		join(homedir(), "Tools", "PyVenv", "CTF312", "bin"),
-		gemBinDir(),
+		"/opt/metasploit-framework/bin",
+		join(homedir(), "metasploit-framework", "bin"),
+		...gemEnvironmentDirs(),
+		join(homedir(), ".gem", "bin"),
 		"/usr/bin",
 		"/bin",
 	];
