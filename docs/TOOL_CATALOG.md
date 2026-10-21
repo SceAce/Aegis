@@ -101,7 +101,28 @@ condition（什么条件下成立） + symptom（会出什么错） + correct_in
 Aegis: recorded human outcome=success … ; confirmed 1 tool pitfall(s)
 ```
 
-## 5. 怎么加一个工具
+## 5. 从工具清单批量生成
+
+本机已有 `~/.Aegis/tools/ctf/tool-inventory.json`（发现结果：路径 + 版本）。用生成器补上
+用途/用法/坑，**知识入库、路径本机解析**：
+
+```bash
+node aegis-seed-tool-catalog.mjs            # 写入 ~/.Aegis/tools/catalog.json
+node aegis-seed-tool-catalog.mjs --dry-run  # 先看
+node aegis-seed-tool-catalog.mjs --only pwn.ropgadget
+```
+
+- 知识表（`TOOL_KNOWLEDGE`）在 `aegis-seed-tool-catalog.mjs` 里，**随仓库跟踪**，可 review；
+- `executable` 从 inventory 解析（含 `pwn.ropgadget` → `ROPgadget` 这类命名差异）；
+- inventory 里有但知识表没覆盖的条目**跳过并报告**，不会编造；
+- 重新生成时**保留**已 confirmed 的坑，不会降级；
+- 种子坑一律是 `candidate`：只有真实解出并由 `checkFlag` 确认后才会变 `confirmed`，
+  所以种子里写的"坑"只是待验证的提示，不是已验证结论。
+
+当前已覆盖：`pwntools`、`ropgadget`、`checksec`、`binwalk`、`nmap`、`gdb`、`lldb`、
+`docker`、`colima`（`pwninit` 装了才会出现）。
+
+## 6. 怎么加一个工具
 
 手工编辑 `catalog.json` 即可（它是数据，不是代码）；或用 `install.sh --smoke` 之后的小脚本生初稿。
 校验在加载时进行：非法条目会被报出来并**丢弃**，不会带着半条数据进入上下文。
@@ -114,17 +135,18 @@ Aegis: recorded human outcome=success … ; confirmed 1 tool pitfall(s)
   "interface": { "usage": "binwalk -e <firmware>" } }
 ```
 
-## 6. 边界（不变）
+## 7. 边界（不变）
 
 - 清单不是授权：不会让任何命令变成"已批准"。
 - 通过 bash 的结果仍是**不透明观察**，不自动成为 Fact 或 Outcome。
 - 需要**可复算、可独立判定**的技法，仍应走脚本动作注册表（`aegis_execute` + Oracle）。
 - 清单文件是本机私有（`$AEGIS_HOME`），不入库；工具路径因机器而异。
 
-## 7. 验证
+## 8. 验证
 
 | 检查 | 结果 |
 | --- | --- |
 | `aegis-tool-catalog.mjs` | **10 pass**（结构校验、summary 不含路径、坑的三元组、candidate→confirmed、坏文件被拒） |
 | 真实 SDK 端到端 | 模型看到 2 个工具与 usage → 提议坑存为 candidate → `checkFlag` 后变 confirmed |
 | `run-experiment.sh` | 打印 `toolbox` 路径；清单目录进入 `PATH` |
+| `aegis-seed-tool-catalog.mjs` | **6 pass**（生成、跳过未覆盖项、保留 confirmed、dry-run/--only、不覆盖坏文件） |

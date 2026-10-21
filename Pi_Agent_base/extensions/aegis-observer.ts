@@ -203,42 +203,31 @@ function readToolCatalog() {
 
 /**
  * Promote the tool pitfalls proposed during THIS episode to `confirmed`, because a
- * human just confirmed the solve they belong to. A note proposed in another episode
- * is never promoted by this one, so one solve cannot launder unrelated guesses.
+ * human just confirmed the solve they belong to.
  *
- * @param {{path: string|null, episodeId: string|null, events: unknown[]}} input
+ * Only notes that carry `episode:<this episode>` are promoted. Seeded knowledge has
+ * no episode ref, so one solve cannot confirm documentation nobody exercised; and a
+ * note proposed in another episode cannot ride on this success either.
+ *
+ * @param {{path: string|null, episodeId: string|null}} input
  * @returns {{confirmed: number}}
  */
-function confirmToolNotesForEpisode({
-	path,
-	episodeId,
-	events,
-}: {
-	path: string | null;
-	episodeId: string | null;
-	events: unknown[];
-}): { confirmed: number } {
+function confirmToolNotesForEpisode({ path, episodeId }: { path: string | null; episodeId: string | null }): {
+	confirmed: number;
+} {
 	if (!path || !episodeId) return { confirmed: 0 };
 	const { ok, catalog } = loadToolCatalog(path);
 	if (!ok) return { confirmed: 0 };
-	const episodeEventIds = new Set(
-		(events as Array<{ event_id?: string; episode_id?: string }>)
-			.filter((row) => row?.episode_id === episodeId)
-			.map((row) => row.event_id)
-			.filter(Boolean) as string[],
-	);
+	const marker = `episode:${episodeId}`;
 	let confirmed = 0;
 	const now = new Date().toISOString();
 	for (const tool of catalog.tools as Array<{ pitfalls?: Array<Record<string, unknown>> }>) {
 		for (const note of tool.pitfalls ?? []) {
 			if (note.status !== "candidate") continue;
 			const refs = Array.isArray(note.refs) ? (note.refs as string[]) : [];
-			// A note with refs must cite an event from this episode; a note without refs
-			// is treated as belonging to the current episode (it was just proposed).
-			if (refs.length > 0 && !refs.some((ref) => episodeEventIds.has(ref))) continue;
+			if (!refs.includes(marker)) continue;
 			note.status = "confirmed";
 			note.recorded_at = now;
-			note.refs = [...new Set([...refs, refs.length > 0 ? "" : `episode:${episodeId}`].filter(Boolean))].slice(0, 8);
 			confirmed += 1;
 		}
 	}
@@ -1814,11 +1803,17 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					};
 				}
 				const input = params as { tool?: string; condition?: string; symptom?: string; correct_invocation?: string };
-				const result = addToolNote(catalog, String(input.tool ?? ""), {
-					condition: input.condition,
-					symptom: input.symptom,
-					correct_invocation: input.correct_invocation,
-				});
+				const result = addToolNote(
+					catalog,
+					String(input.tool ?? ""),
+					{
+						condition: input.condition,
+						symptom: input.symptom,
+						correct_invocation: input.correct_invocation,
+						refs: [`episode:${episodeId}`],
+					},
+					{ recordedAt: new Date().toISOString() },
+				);
 				if (!result.ok) {
 					return {
 						content: [{ type: "text", text: `Aegis: tool note refused: ${result.reason}` }],
@@ -3242,7 +3237,6 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					const promoted = confirmToolNotesForEpisode({
 						path: toolCatalogPath(),
 						episodeId: episodeId ?? null,
-						events: log ? log.replay() : [],
 					});
 					notify(
 						`Aegis: recorded human outcome=success for task=${taskId} session=${sessionId} (flag value not stored)` +
