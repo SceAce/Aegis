@@ -12,10 +12,11 @@ import test from "node:test";
 
 const SCRIPT = new URL("../../run-experiment.sh", import.meta.url).pathname;
 
-function run(args, { home, env = {} } = {}) {
+function run(args, { home, env = {}, cwd } = {}) {
 	return spawnSync("bash", [SCRIPT, ...args], {
 		encoding: "utf8",
 		timeout: 120_000,
+		...(cwd ? { cwd } : {}),
 		env: { ...process.env, ...(home ? { AEGIS_HOME: home } : {}), ...env },
 	});
 }
@@ -396,4 +397,64 @@ test("the launcher never reads or writes ~/.pi", () => {
 	assert.match(code, /AEGIS_PI_AGENT_DIR/);
 	assert.match(code, /AEGIS_PI_SESSION_DIR/);
 	assert.match(code, /AEGIS_PI_SERVER_DIR/);
+});
+
+test("--here uses the launch directory instead of a fresh workspace", () => {
+	const home = freshHome();
+	const challenge = mkdtempSync(join(tmpdir(), "aegis-chal-"));
+	try {
+		writeFileSync(join(challenge, "题目.txt"), "attachment\n", "utf8");
+		const result = run(["here-001", "--here", "--dry-run"], { home, cwd: challenge });
+		assert.equal(result.status, 0, result.stderr);
+		assert.ok(
+			result.stdout.includes(`workspace  ${challenge}`) || result.stdout.includes(`workspace  /private${challenge}`),
+		);
+		// The run.json must record the real workspace, not the derived one.
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "here-001", "run.json"), "utf8"));
+		assert.equal(runJson.workspace.endsWith("/aegis-chal-") || runJson.workspace.includes("aegis-chal-"), true);
+		assert.equal(existsSync(join(home, "experiments", "here-001", "workspace")), false);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(challenge, { recursive: true, force: true });
+	}
+});
+
+test("--here and --workspace are mutually exclusive", () => {
+	const home = freshHome();
+	try {
+		const result = run(["both-001", "--here", "--workspace", "/tmp", "--dry-run"], { home });
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /mutually exclusive/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("an empty default workspace warns when the launch directory has files", () => {
+	const home = freshHome();
+	const launch = mkdtempSync(join(tmpdir(), "aegis-launch-"));
+	try {
+		writeFileSync(join(launch, "题面.txt"), "x\n", "utf8");
+		const result = run(["warn-001", "--dry-run"], { home, cwd: launch });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /workspace is EMPTY/);
+		assert.match(result.stderr, /--here/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(launch, { recursive: true, force: true });
+	}
+});
+
+test("no warning when the launch directory is the workspace", () => {
+	const home = freshHome();
+	const launch = mkdtempSync(join(tmpdir(), "aegis-launch2-"));
+	try {
+		writeFileSync(join(launch, "题面.txt"), "x\n", "utf8");
+		const result = run(["warn-002", "--here", "--dry-run"], { home, cwd: launch });
+		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stderr, /workspace is EMPTY/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+		rmSync(launch, { recursive: true, force: true });
+	}
 });

@@ -34,10 +34,12 @@ AEGIS_BASE="$BASE_DIR/Pi_Agent_base"
 AEGIS_HOME="${AEGIS_HOME:-${HOME:-$BASE_DIR}/.Aegis}"
 EXPERIMENTS_ROOT="${AEGIS_EXPERIMENTS_ROOT:-$AEGIS_HOME/experiments}"
 
+LAUNCH_DIR="$(pwd -P)"
 LABEL=""
 MODE="new"           # new | resume
 ENTRY="source"       # source | bundle
 WORKSPACE=""
+USE_CWD=0
 MODEL=""
 PROVIDER=""
 THINKING=""
@@ -64,6 +66,8 @@ all live under $AEGIS_HOME/experiments/<label>.
 
 Options:
   --workspace DIR     use DIR as the task workspace (default: <label>/workspace)
+  --here              use the CURRENT directory as the workspace (no isolation).
+                      Use this when the challenge files already sit in a folder.
   --resume            reuse an existing <label> instead of refusing
   --bundle            launch the built bundle (run-pi.sh) instead of source
   --model PROVIDER/MODEL
@@ -104,6 +108,7 @@ die() {
 while (($#)); do
 	case "$1" in
 		--workspace) WORKSPACE="${2:-}"; shift 2 ;;
+		--here) USE_CWD=1; shift ;;
 		--resume) MODE="resume"; shift ;;
 		--bundle) ENTRY="bundle"; shift ;;
 		--model) MODEL="${2:-}"; shift 2 ;;
@@ -179,7 +184,12 @@ fi
 # --- derive paths ----------------------------------------------------------
 mkdir -p "$EXP_DIR"
 EXP_DIR="$(cd "$EXP_DIR" && pwd -P)"
-WORKSPACE="${WORKSPACE:-$EXP_DIR/workspace}"
+if ((USE_CWD)); then
+	[[ -z "$WORKSPACE" ]] || die "--here and --workspace are mutually exclusive"
+	WORKSPACE="$LAUNCH_DIR"
+else
+	WORKSPACE="${WORKSPACE:-$EXP_DIR/workspace}"
+fi
 RUNTIME_DIR="$EXP_DIR/runtime"
 RAM_DIR="$RUNTIME_DIR/ram"
 PROJECTION_DIR="$RUNTIME_DIR/projections"
@@ -351,6 +361,19 @@ fi
 printf 'Aegis experiment: %s%s\n' "$LABEL" "$([[ "$MODE" == "resume" ]] && echo ' (resume)')"
 printf '  entry      %s\n' "$([[ "$ENTRY" == bundle ]] && echo 'run-pi.sh (bundle)' || echo 'run-aegis.sh (source)')"
 printf '  workspace  %s\n' "$WORKSPACE"
+
+# The default workspace is a fresh, empty directory. If the operator launched from
+# a folder that already holds files, they will otherwise be surprised when the
+# model reports an empty workspace, so say it before the session starts.
+if [[ "$WORKSPACE" != "$LAUNCH_DIR" ]]; then
+	workspace_items="$(find "$WORKSPACE" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+	launch_items="$(find "$LAUNCH_DIR" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+	if [[ "$workspace_items" == "0" && "$launch_items" != "0" ]]; then
+		printf '\n  NOTE: the workspace is EMPTY. Files in %s are not visible to this run.\n' "$LAUNCH_DIR" >&2
+		printf '        To work on those files: %s %s --here\n' "$0" "$LABEL" >&2
+		printf '        Or point at another folder:  %s %s --workspace DIR\n' "$0" "$LABEL" >&2
+	fi
+fi
 printf '  events     %s\n' "$EVENT_LOG"
 printf '  ram        %s\n' "$RAM_DIR"
 printf '  knowledge  %s\n' "$KNOWLEDGE_DIR"
