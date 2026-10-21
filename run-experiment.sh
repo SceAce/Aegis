@@ -46,6 +46,7 @@ SEED_FILE=""
 KNOWLEDGE_DIR=""
 AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
+MCP_MODE="off"       # off | on
 DRY_RUN=0
 LIST=0
 PASSTHROUGH=()
@@ -77,6 +78,10 @@ Options:
   --isolate-agent     use a private, empty agent dir for this run. You will have
                       to authenticate inside it first; credentials are never
                       copied for you.
+  --mcp               start the MCP servers configured in the agent dir. Default
+                      is OFF: the launcher derives an agent dir that links your
+                      real credential files but ships an empty mcp.json, so no MCP
+                      process starts. Your global mcp.json is left untouched.
   --dry-run           print the resolved configuration and exit
   --list              list existing experiments and exit
   -h, --help          this help
@@ -109,6 +114,8 @@ while (($#)); do
 		--knowledge) KNOWLEDGE_DIR="${2:-}"; shift 2 ;;
 		--agent-dir) AGENT_DIR_OVERRIDE="${2:-}"; shift 2 ;;
 		--isolate-agent) ISOLATE_AGENT=1; shift ;;
+		--mcp) MCP_MODE="on"; shift ;;
+		--no-mcp) MCP_MODE="off"; shift ;;
 		--dry-run) DRY_RUN=1; shift ;;
 		--list) LIST=1; shift ;;
 		-h | --help) usage; exit 0 ;;
@@ -182,10 +189,13 @@ HANDOFF_FILE="$RAM_DIR/handoff.json"
 SESSION_DIR="$EXP_DIR/sessions"
 SERVER_DIR="$EXP_DIR/server"
 
-# Credentials and model settings are user configuration, not experiment state.
-# Isolating them by default makes every run start unauthenticated, so the
-# default is the shared Aegis agent dir; --isolate-agent opts into a private
-# empty one (the user then authenticates inside it).
+# Credentials and model settings are user configuration, not experiment state, so
+# they are shared by default. MCP is the one thing that is NOT shared: Pi has no
+# global switch and a project-level .pi/mcp.json only applies to a trusted
+# project, which we must not grant on the user's behalf. Instead the launcher
+# derives an agent dir that links the real credential files and ships an empty
+# mcp.json, so no MCP process starts while auth keeps working.
+SHARED_AGENT_DIR="$AEGIS_HOME/agent"
 if [[ -n "$AGENT_DIR_OVERRIDE" ]]; then
 	AGENT_MODE="explicit"
 	AGENT_DIR="$AGENT_DIR_OVERRIDE"
@@ -193,9 +203,12 @@ if [[ -n "$AGENT_DIR_OVERRIDE" ]]; then
 elif ((ISOLATE_AGENT)); then
 	AGENT_MODE="isolated"
 	AGENT_DIR="$EXP_DIR/agent"
+elif [[ "$MCP_MODE" == "off" ]]; then
+	AGENT_MODE="derived-no-mcp"
+	AGENT_DIR="$EXP_DIR/agent"
 else
 	AGENT_MODE="shared"
-	AGENT_DIR="$AEGIS_HOME/agent"
+	AGENT_DIR="$SHARED_AGENT_DIR"
 fi
 
 if [[ -z "$TASK_ID" ]]; then
@@ -235,13 +248,46 @@ if [[ "$AGENT_MODE" != "shared" ]]; then
 fi
 chmod 700 "$EXP_DIR" 2>/dev/null || true
 
+# --- MCP --------------------------------------------------------------------
+# Pi has no global MCP switch, and a project-level .pi/mcp.json is honoured only
+# for a TRUSTED project. Granting trust on the operator's behalf is a security
+# decision this launcher must not make, so "no MCP by default" is implemented by
+# deriving an agent dir: symlink the real credential/config files (Pi writes them
+# with writeFileSync, so links survive) and ship an empty mcp.json.
+MCP_NOTE=""
 AUTH_WARNING=""
-if [[ "$AGENT_MODE" == "shared" ]]; then
+LINKED_FILES=()
+
+if [[ "$AGENT_MODE" == "derived-no-mcp" ]]; then
+	[[ -d "$SHARED_AGENT_DIR" ]] ||
+		die "shared agent dir does not exist: $SHARED_AGENT_DIR
+  create it or point at one with --agent-dir" 1
+	for name in auth.json models.json settings.json models-store.json; do
+		src="$SHARED_AGENT_DIR/$name"
+		[[ -f "$src" ]] || continue
+		ln -sfn "$src" "$AGENT_DIR/$name"
+		LINKED_FILES+=("$name")
+	done
+	if [[ ${#LINKED_FILES[@]} -eq 0 ]]; then
+		AUTH_WARNING="no credential files found in $SHARED_AGENT_DIR; the model will start unauthenticated"
+	fi
+	# An empty server map is the whole override; a resumed run keeps whatever it
+	# already has so an operator edit is not clobbered.
+	if [[ ! -f "$AGENT_DIR/mcp.json" ]]; then
+		printf '{\n  "mcpServers": {}\n}\n' >"$AGENT_DIR/mcp.json"
+	fi
+	MCP_NOTE="off (derived agent dir, empty mcp.json)"
+elif [[ "$AGENT_MODE" == "shared" ]]; then
 	[[ -d "$AGENT_DIR" ]] || die "shared agent dir does not exist: $AGENT_DIR
   create it or point at one with --agent-dir" 1
 	if [[ ! -f "$AGENT_DIR/auth.json" ]]; then
 		AUTH_WARNING="no auth.json in $AGENT_DIR; the model will start unauthenticated"
 	fi
+	MCP_NOTE="on (shared agent dir)"
+elif [[ "$AGENT_MODE" == "isolated" ]]; then
+	MCP_NOTE="on (isolated agent dir; authenticate first)"
+else
+	MCP_NOTE="on (explicit agent dir)"
 fi
 
 # --- export the run's environment -----------------------------------------
@@ -291,6 +337,7 @@ if [[ ! -f "$RUN_JSON" ]]; then
     "knowledge_dir": "$KNOWLEDGE_DIR"
   },
   "agent_mode": "$AGENT_MODE",
+  "mcp": "$MCP_MODE",
   "seed_file": ${SEED_FILE:+\"$SEED_FILE\"}${SEED_FILE:-null},
   "note": "derived parameters only; no credentials are stored here"
 }
@@ -308,6 +355,7 @@ printf '  events     %s\n' "$EVENT_LOG"
 printf '  ram        %s\n' "$RAM_DIR"
 printf '  knowledge  %s\n' "$KNOWLEDGE_DIR"
 printf '  agent      %s (%s)\n' "$AGENT_DIR" "$AGENT_MODE"
+printf '  mcp        %s%s\n' "$MCP_MODE" "${MCP_NOTE:+ - $MCP_NOTE}"
 if [[ -n "$AUTH_WARNING" ]]; then
 	printf '  warning    %s\n' "$AUTH_WARNING" >&2
 fi

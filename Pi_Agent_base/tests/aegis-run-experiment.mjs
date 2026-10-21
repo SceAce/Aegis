@@ -50,7 +50,8 @@ test("one label derives the whole isolated layout", () => {
 		assert.ok(existsSync(join(dir, "runtime", "experiences")), "experiences created");
 		assert.ok(existsSync(join(dir, "sessions")), "sessions created");
 		assert.ok(existsSync(join(dir, "server")), "server created");
-		assert.equal(existsSync(join(dir, "agent")), false, "the shared agent dir is not duplicated into the run");
+		assert.ok(existsSync(join(dir, "agent")), "a derived agent dir is created for the MCP override");
+		assert.deepEqual(JSON.parse(readFileSync(join(dir, "agent", "mcp.json"), "utf8")), { mcpServers: {} });
 		assert.match(ok.stdout, /AEGIS_TASK_ID=ram-001/);
 		assert.match(ok.stdout, /cwd=.*ram-001\/workspace/);
 	} finally {
@@ -64,14 +65,18 @@ test("credentials default to the shared Aegis agent dir, not the experiment", ()
 	try {
 		const result = run(["cred-001", "--dry-run"], { home });
 		assert.equal(result.status, 0, result.stderr);
-		assert.match(
-			result.stdout,
-			new RegExp(`agent\\s+${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/agent \\(shared\\)`),
-		);
-
 		const runJson = JSON.parse(readFileSync(join(home, "experiments", "cred-001", "run.json"), "utf8"));
-		assert.equal(runJson.agent_mode, "shared");
-		assert.equal(runJson.paths.agent_dir, join(home, "agent"));
+		// MCP is off by default, so the run gets a derived dir; the credential files
+		// inside it must still be the real ones.
+		assert.equal(runJson.agent_mode, "derived-no-mcp");
+		assert.ok(
+			runJson.paths.agent_dir.endsWith("experiments/cred-001/agent"),
+			`agent dir must live inside the run, got ${runJson.paths.agent_dir}`,
+		);
+		assert.equal(
+			readFileSync(join(runJson.paths.agent_dir, "auth.json"), "utf8"),
+			readFileSync(join(home, "agent", "auth.json"), "utf8"),
+		);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
@@ -83,7 +88,7 @@ test("a shared agent dir without auth.json warns instead of failing silently", (
 		mkdirSync(join(home, "agent"), { recursive: true });
 		const result = run(["cred-002", "--dry-run"], { home });
 		assert.equal(result.status, 0, result.stderr);
-		assert.match(result.stderr, /no auth\.json/);
+		assert.match(result.stderr, /no credential files found/);
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
@@ -313,6 +318,67 @@ test("a management subcommand is passed through without model flags", () => {
 		const script = readFileSync(new URL("../../run-experiment.sh", import.meta.url), "utf8");
 		assert.match(script, /MANAGEMENT_FIRST/);
 		assert.match(script, /install \| remove \| uninstall \| update \| list \| config \| auth/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("MCP is off by default through a derived agent dir that still authenticates", () => {
+	const home = freshHome();
+	try {
+		const result = run(["mcp-001", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		const agent = join(home, "experiments", "mcp-001", "agent");
+		const mcp = join(agent, "mcp.json");
+		assert.ok(existsSync(mcp), "a derived mcp.json is written");
+		assert.deepEqual(JSON.parse(readFileSync(mcp, "utf8")), { mcpServers: {} });
+
+		// Credentials are linked, not copied: the run must still authenticate.
+		const authPath = join(agent, "auth.json");
+		assert.ok(existsSync(authPath), "auth.json is present in the derived dir");
+		assert.equal(
+			readFileSync(authPath, "utf8"),
+			readFileSync(join(home, "agent", "auth.json"), "utf8"),
+			"the link exposes the real credentials",
+		);
+
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "mcp-001", "run.json"), "utf8"));
+		assert.equal(runJson.mcp, "off");
+		assert.equal(runJson.agent_mode, "derived-no-mcp");
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("--mcp uses the shared agent dir so the real mcp.json applies", () => {
+	const home = freshHome();
+	try {
+		writeFileSync(
+			join(home, "agent", "mcp.json"),
+			JSON.stringify({ mcpServers: { demo: { command: "true" } } }),
+			"utf8",
+		);
+		const result = run(["mcp-002", "--mcp", "--dry-run"], { home });
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /agent\s+.*\/agent \(shared\)/);
+		const runJson = JSON.parse(readFileSync(join(home, "experiments", "mcp-002", "run.json"), "utf8"));
+		assert.equal(runJson.mcp, "on");
+		assert.equal(runJson.agent_mode, "shared");
+		assert.equal(existsSync(join(home, "experiments", "mcp-002", "agent")), false);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+test("a resumed run keeps its derived mcp.json instead of rewriting it", () => {
+	const home = freshHome();
+	try {
+		assert.equal(run(["mcp-003", "--dry-run"], { home }).status, 0);
+		const mcp = join(home, "experiments", "mcp-003", "agent", "mcp.json");
+		writeFileSync(mcp, JSON.stringify({ mcpServers: { operator: { enabled: true } } }, null, 2), "utf8");
+		const resumed = run(["mcp-003", "--resume", "--dry-run"], { home });
+		assert.equal(resumed.status, 0, resumed.stderr);
+		assert.deepEqual(JSON.parse(readFileSync(mcp, "utf8")), { mcpServers: { operator: { enabled: true } } });
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
