@@ -33,6 +33,7 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 
   CTF 工具发现清单位于 `~/.Aegis/tools/ctf/tool-inventory.json`。如需让 CTF venv 的 CLI 出现在 Pi 子进程 PATH，显式设置 `AEGIS_CTF_VENV=/path/to/venv`；未设置时启动器不修改 PATH。PATH 可见只表示 CLI 可被本机 shell 找到，不表示它已成为模型可调用的 Aegis action 或 MCP server。要执行工具，仍需按任务固定 argv、约束工作区/目标、配置独立检查，并由当前 work permit 授权。
 - 预构建 Pi bundle 隔离启动：`./run-pi.sh`（要求 bundle 与 Pi 源码一致；默认也使用 `~/.Aegis/`，可用 `AEGIS_HOME` 或 `AEGIS_PI_*_DIR` 覆盖）。
+- 实验启动：仓库根 `./run-experiment.sh <label>`（如 `ram-001`）。只需一个标签，其余参数自动推导到 `$AEGIS_HOME/experiments/<label>/`：`workspace/`（会话 cwd）、`runtime/`（EventLog、RAM、投影、经验）、`sessions/`、`server/`、`agent/`，并写 `run.json` 记录解析后的路径与 repo revision。已有同名实验默认拒绝启动（避免把不同 Episode 混进同一日志），续跑用 `--resume`；`--dry-run` 只打印将导出的环境，`--list` 列出已有实验。
 - 手动任务启动：仓库根 `./run-ram-test.sh`；默认使用 `maxapi/deepseek-v4.1-flash`，可显式切换到官方 DeepSeek 配置，见 [模型配置](../docs/DEEPSEEK_MODEL_REFERENCE.md)。
 - 本地知识库：根目录 ignored `knowledge/`；自动候选召回和 `aegis_knowledge` 模型选择接入 Board/RAM，迁移与调用时机见 [知识库接口](../docs/KNOWLEDGE_RUNTIME.md)。
 - Fixture 离线演示：`node Pi_Agent_base/fixtures/demo.mjs`（从仓库根运行）。
