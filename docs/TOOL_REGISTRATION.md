@@ -39,6 +39,19 @@ aegis_execute → 用 aegis_tools 给出的 id 和参数名执行
 
 `aegis_tools` 只返回**形状**：id / version / description / risk_class / network / parameters / authorization。**不返回路径、digest 或 argv**——那些留在磁盘上供审计，不进模型上下文。
 
+## 2.1 三种接入方式
+
+| 方式 | 命令 | 适用 |
+| --- | --- | --- |
+| 手工写 recipe | `--recipe` | 少量、需要精确控制 |
+| **侦察起步** | `--probe /path/to/tool --out draft.json` | 只给路径：得到 realpath、类型、digest、`--version`，再补 argv/Oracle |
+| **交给其他 Agent** | 按 [接入规范](TOOL_INTEGRATION_SPEC.md) 产出 recipe，`--validate` 迭代 | 批量接入；规范里写明硬规则与检查清单 |
+
+`--probe` **只报事实**：路径、文件类型、解释器、digest、`--version` 首行。它不猜 argv、
+不猜参数、不猜 Oracle——那三项是"被审阅的部分"，猜错会产生看起来能用的错误动作。
+符号链接会被解析（homebrew 的工具就是链接），digest 绑定真实文件。
+`/usr/bin/env python3` 这类 shebang 会解析到**真实解释器**，而不是 `env`。
+
 ## 3. recipe 格式
 
 ```json
@@ -76,6 +89,8 @@ aegis_execute → 用 aegis_tools 给出的 id 和参数名执行
 | `argv` | 固定模板；`{name}` 替换为声明过的参数；不得含 `;` `\|` `&` `` ` `` 或 eval token |
 | `parameters` | 只有声明过的参数可传，模型只能提供数据；`direction: in/out` 的路径必须落在 workspace 内 |
 | `verify` | 唯一支持的 kind 是 `json_post_state`：从 `resource_bindings` 取路径、**重读磁盘并解析**，不看 stdout / 退出码 |
+| `category`/`notes`/`examples` | 模型选工具与调用所需：分类、**何时不该用**、一组可照抄的参数。由 `aegis_tools` 返回 |
+| `timeout_ms`/`risk_class`/`network` | 超时（1–600000，默认 10000）、风险级别、网络标记（标记不等于授权） |
 
 `--list` 查看已有条目，`--dry-run` 只校验不写盘。
 

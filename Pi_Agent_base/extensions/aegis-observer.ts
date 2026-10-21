@@ -1656,6 +1656,13 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					id: entry.id,
 					version: entry.version,
 					description: entry.description ?? "",
+					// What a model needs to pick and call correctly: what it is for, when
+					// NOT to use it, and a worked argument set.
+					...(entry.category ? { category: entry.category } : {}),
+					...(entry.notes ? { notes: entry.notes } : {}),
+					...(Array.isArray(entry.examples) && entry.examples.length > 0
+						? { examples: entry.examples.slice(0, 3) }
+						: {}),
 					risk_class: entry.risk_class,
 					network: entry.network === true,
 					parameters: Object.fromEntries(

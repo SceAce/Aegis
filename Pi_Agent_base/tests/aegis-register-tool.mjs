@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import { createScriptRegistry } from "../execution/script-registry.mjs";
 
@@ -32,6 +32,7 @@ function fixture() {
 	writeFileSync(
 		script,
 		[
+			"#!/usr/bin/env node",
 			'import { writeFileSync } from "node:fs";',
 			"const [out, a, b] = process.argv.slice(2);",
 			"writeFileSync(out, JSON.stringify({ sum: Number(a) + Number(b), verified: true }));",
@@ -244,6 +245,124 @@ test("--list on a missing roster reports zero tools instead of failing", () => {
 		const result = run(["--list", "--roster", join(f.base, "absent.json")]);
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /no registered tools/);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("--probe reports facts and writes a draft without guessing argv or Oracle", () => {
+	const f = fixture();
+	try {
+		const draft = join(f.base, "draft.json");
+		const result = run(["--probe", f.script, "--out", draft]);
+		assert.equal(result.status, 0, result.stderr);
+		const report = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("\n\nThis is a DRAFT")));
+		assert.equal(report.kind.startsWith("script ("), true, report.kind);
+		assert.match(report.executable_digest, /^sha256:[0-9a-f]{64}$/);
+		assert.match(report.script_digest, /^sha256:[0-9a-f]{64}$/);
+		assert.deepEqual(report.refusals, []);
+
+		// The draft is a starting point, not a registration: the Oracle and argv are
+		// placeholders a human replaces.
+		const written = JSON.parse(readFileSync(draft, "utf8"));
+		assert.equal(written.description, "");
+		assert.deepEqual(written.argv, ["{script}", "{out}"]);
+		assert.equal(written.verify.kind, "json_post_state");
+
+		// And it must NOT already pass validation with those placeholders.
+		const before = run(["--validate", draft]);
+		assert.notEqual(before.status, 0, "a placeholder draft must not validate as-is");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("--probe resolves /usr/bin/env shebangs to the real interpreter", () => {
+	const f = fixture();
+	try {
+		const py = join(f.base, "tool.py");
+		writeFileSync(py, "#!/usr/bin/env python3\nprint('hi')\n", "utf8");
+		const result = run(["--probe", py]);
+		assert.equal(result.status, 0, result.stderr);
+		const report = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("\n\nThis is a DRAFT")));
+		assert.notEqual(report.executable, "/usr/bin/env", "env must not be the pinned executable");
+		assert.match(basename(report.executable), /^python/);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("--probe flags a shell as unregisterable", () => {
+	const result = run(["--probe", "/bin/sh"]);
+	const report = JSON.parse(result.stdout.slice(0, result.stdout.indexOf("\n\nThis is a DRAFT")));
+	assert.equal(result.status, 1, "a refusal must be non-zero");
+	assert.ok(
+		report.refusals.some((r) => /shell interpreter/.test(r)),
+		JSON.stringify(report.refusals),
+	);
+});
+
+test("--validate accepts a complete recipe and refuses an incomplete one", () => {
+	const f = fixture();
+	try {
+		const ok = run(["--validate", f.recipe]);
+		assert.equal(ok.status, 0, ok.stderr);
+		assert.match(ok.stdout, /valid: demo-add@1/);
+
+		const recipe = JSON.parse(readFileSync(f.recipe, "utf8"));
+		writeFileSync(f.recipe, JSON.stringify({ ...recipe, verify: undefined }), "utf8");
+		const bad = run(["--validate", f.recipe]);
+		assert.equal(bad.status, 2);
+		assert.match(bad.stderr, /verify\(\) or verify_spec/);
+		assert.equal(existsSync(f.roster), false, "--validate writes nothing");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("callable metadata is carried, bounded and surfaced", () => {
+	const f = fixture();
+	try {
+		const recipe = JSON.parse(readFileSync(f.recipe, "utf8"));
+		writeFileSync(
+			f.recipe,
+			JSON.stringify({
+				...recipe,
+				category: "general",
+				notes: "不要用于浮点加法",
+				examples: [{ arguments: { a: "1", b: "2", out: "sum.json" }, note: "整数相加" }],
+				timeout_ms: 5000,
+				risk_class: "low",
+			}),
+			"utf8",
+		);
+		assert.equal(run(["--recipe", f.recipe, "--roster", f.roster]).status, 0);
+		const registry = createScriptRegistry(JSON.parse(readFileSync(f.roster, "utf8")));
+		const described = registry.describe()[0];
+		assert.equal(described.category, "general");
+		assert.equal(described.notes, "不要用于浮点加法");
+		assert.deepEqual(described.examples, [{ arguments: { a: "1", b: "2", out: "sum.json" }, note: "整数相加" }]);
+		assert.equal(described.risk_class, "low");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("malformed metadata is refused at registration", () => {
+	const f = fixture();
+	try {
+		const recipe = JSON.parse(readFileSync(f.recipe, "utf8"));
+		for (const patch of [
+			{ notes: "x".repeat(501) },
+			{ examples: [{ arguments: "nope" }] },
+			{ timeout_ms: 0 },
+			{ risk_class: "extreme" },
+			{ category: "x".repeat(41) },
+		]) {
+			writeFileSync(f.recipe, JSON.stringify({ ...recipe, ...patch }), "utf8");
+			const result = run(["--recipe", f.recipe, "--roster", f.roster]);
+			assert.equal(result.status, 2, `expected refusal for ${JSON.stringify(patch).slice(0, 40)}`);
+		}
 	} finally {
 		f.cleanup();
 	}

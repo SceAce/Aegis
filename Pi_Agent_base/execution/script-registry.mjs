@@ -63,7 +63,12 @@ const MAX_CAPTURE_BYTES = 256 * 1024;
 
 /** True when this executable is a known interpreter needing a pinned script arg. */
 export function isInterpreter(executable) {
-	return INTERPRETER_BASENAMES.has(basename(executable).toLowerCase());
+	const base = basename(executable).toLowerCase();
+	if (INTERPRETER_BASENAMES.has(base)) return true;
+	// VERSIONED interpreters: `python3.14`, `python3`, `ruby3.3`, `node22`. A fixed
+	// list would treat a newer interpreter as a plain binary, which silently drops
+	// the script-body pin - the exact hole this check exists to close.
+	return /^(?:python|node|ruby|perl)(?:\d+(?:\.\d+)*)?$/.test(base);
 }
 
 export function fileDigestHex(path) {
@@ -220,6 +225,41 @@ export function validateScriptRegistration(registration) {
 			reasons.push("the argv_template must reference script_path as an executable token");
 	}
 
+	// Callable metadata. These are what a model reads before choosing an action, so
+	// they are bounded and shape-checked like the rest of the registration.
+	if (
+		registration.category !== undefined &&
+		(typeof registration.category !== "string" || registration.category.length > 40)
+	) {
+		reasons.push("category must be a string of <= 40 characters");
+	}
+	if (registration.notes !== undefined && (typeof registration.notes !== "string" || registration.notes.length > 500)) {
+		reasons.push("notes must be a string of <= 500 characters");
+	}
+	if (registration.examples !== undefined) {
+		if (!Array.isArray(registration.examples) || registration.examples.length > 5) {
+			reasons.push("examples must be an array of <= 5 entries");
+		} else {
+			for (const [index, example] of registration.examples.entries()) {
+				if (
+					!example ||
+					typeof example !== "object" ||
+					Array.isArray(example) ||
+					!example.arguments ||
+					typeof example.arguments !== "object"
+				) {
+					reasons.push(`examples[${index}] needs an arguments object`);
+				}
+			}
+		}
+	}
+	if (
+		registration.timeout_ms !== undefined &&
+		(!Number.isInteger(registration.timeout_ms) || registration.timeout_ms < 1 || registration.timeout_ms > 600000)
+	) {
+		reasons.push("timeout_ms must be an integer between 1 and 600000");
+	}
+
 	// A one-line purpose is optional but bounded: the roster exists so a human can
 	// choose a technique at a glance, which a long blurb defeats.
 	if (registration.description !== undefined) {
@@ -310,6 +350,9 @@ export function createScriptRegistry(config = {}) {
 				id: r.id,
 				version: r.version,
 				description: r.description ?? "",
+				category: r.category ?? "",
+				notes: r.notes ?? "",
+				examples: Array.isArray(r.examples) ? r.examples : [],
 				executable: r.executable,
 				risk_class: r.risk_class ?? "medium",
 				network: r.network === true,

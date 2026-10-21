@@ -15,6 +15,8 @@
 //   node aegis-register-tool.mjs --recipe recipe.json [--roster roster.json]
 //   node aegis-register-tool.mjs --recipe recipe.json --dry-run
 //   node aegis-register-tool.mjs --list [--roster roster.json]
+//   node aegis-register-tool.mjs --probe /path/to/tool [--out draft.json]
+//   node aegis-register-tool.mjs --validate recipe.json
 //
 // Recipe (the only thing a human writes):
 //   {
@@ -41,10 +43,14 @@
 // `{script}` is expanded to the absolute script path; every other `{name}` is a
 // declared parameter. The registered argv never contains a shell, and the script
 // body is digest-pinned so a later edit is refused until it is re-reviewed.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
-import { validateScriptRegistration } from "./Pi_Agent_base/execution/script-registry.mjs";
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+	isInterpreter as registryIsInterpreter,
+	validateScriptRegistration,
+} from "./Pi_Agent_base/execution/script-registry.mjs";
 
 const DEFAULT_ROSTER = process.env.AEGIS_SCRIPT_CONFIG || "roster.json";
 const SHELLS = new Set([
@@ -62,7 +68,7 @@ const SHELLS = new Set([
 	"pwsh",
 ]);
 const EVAL_TOKENS = new Set(["-e", "--eval", "-c", "-Command", "-EncodedCommand", "--command"]);
-const INTERPRETERS = new Set([
+const _INTERPRETERS = new Set([
 	"node",
 	"node.exe",
 	"python",
@@ -87,6 +93,8 @@ function usage() {
 	console.log(`Usage:
   node aegis-register-tool.mjs --recipe recipe.json [--roster roster.json] [--dry-run]
   node aegis-register-tool.mjs --list [--roster roster.json]
+//   node aegis-register-tool.mjs --probe /path/to/tool [--out draft.json]
+//   node aegis-register-tool.mjs --validate recipe.json
 
 The recipe is the human-reviewed part: argv shape, parameters, and the
 post-condition Oracle. This script computes digests and validates the result
@@ -94,7 +102,15 @@ against the same gate the runtime uses.`);
 }
 
 function parseArgs(argv) {
-	const options = { roster: DEFAULT_ROSTER, dryRun: false, list: false, recipe: null };
+	const options = {
+		roster: DEFAULT_ROSTER,
+		dryRun: false,
+		list: false,
+		recipe: null,
+		probe: null,
+		validate: null,
+		out: null,
+	};
 	for (let i = 0; i < argv.length; i += 1) {
 		const arg = argv[i];
 		const value = () => {
@@ -107,6 +123,9 @@ function parseArgs(argv) {
 		else if (arg === "--roster") options.roster = value();
 		else if (arg === "--dry-run") options.dryRun = true;
 		else if (arg === "--list") options.list = true;
+		else if (arg === "--probe") options.probe = value();
+		else if (arg === "--validate") options.validate = value();
+		else if (arg === "--out") options.out = value();
 		else if (arg === "--help" || arg === "-h") options.help = true;
 		else fail(`unknown option: ${arg}`);
 	}
@@ -155,7 +174,7 @@ export function buildRegistration(recipe, { baseDir = process.cwd() } = {}) {
 			fail(`recipe.argv must not contain shell metacharacters: ${token}`);
 	}
 	const expandedArgv = argvTemplate.map((token) => token.replaceAll("{script}", scriptPath ?? "{script}"));
-	if (INTERPRETERS.has(basename(executable).toLowerCase()) && !scriptPath)
+	if (registryIsInterpreter(executable) && !scriptPath)
 		fail("an interpreter registration needs recipe.script so the script body can be digest-pinned");
 	if (scriptPath && !expandedArgv.includes(scriptPath))
 		fail("recipe.argv must reference {script} as an executable token");
@@ -163,11 +182,45 @@ export function buildRegistration(recipe, { baseDir = process.cwd() } = {}) {
 	const workspaceHint = typeof recipe.workspace === "string" && recipe.workspace ? recipe.workspace : baseDir;
 	if (!isAbsolute(workspaceHint)) fail("recipe.workspace must be an absolute path");
 
+	// Optional metadata that makes the action callable by a model rather than only
+	// runnable by a human: what it is for, when NOT to use it, and a worked call.
+	// These are surfaced by aegis_tools; they never affect execution.
+	if (recipe.notes !== undefined && (typeof recipe.notes !== "string" || recipe.notes.length > 500))
+		fail("recipe.notes must be a string of <= 500 characters");
+	if (recipe.examples !== undefined) {
+		if (!Array.isArray(recipe.examples) || recipe.examples.length > 5)
+			fail("recipe.examples must be an array of <= 5 entries");
+		for (const [index, example] of recipe.examples.entries()) {
+			if (!example || typeof example !== "object" || Array.isArray(example))
+				fail(`recipe.examples[${index}] must be an object`);
+			if (!example.arguments || typeof example.arguments !== "object" || Array.isArray(example.arguments))
+				fail(`recipe.examples[${index}].arguments must be an object`);
+			if (example.note !== undefined && typeof example.note !== "string")
+				fail(`recipe.examples[${index}].note must be a string`);
+		}
+	}
+	if (
+		recipe.timeout_ms !== undefined &&
+		(!Number.isInteger(recipe.timeout_ms) || recipe.timeout_ms < 1 || recipe.timeout_ms > 600000)
+	)
+		fail("recipe.timeout_ms must be an integer between 1 and 600000");
+	if (recipe.risk_class !== undefined && !["observe", "low", "medium", "high"].includes(recipe.risk_class))
+		fail("recipe.risk_class must be observe|low|medium|high");
+	if (recipe.network !== undefined && typeof recipe.network !== "boolean") fail("recipe.network must be a boolean");
+	if (recipe.category !== undefined && (typeof recipe.category !== "string" || recipe.category.length > 40))
+		fail("recipe.category must be a string of <= 40 characters");
+
 	const registration = {
 		schema_version: "1.0",
 		id,
 		version,
 		description: recipe.description,
+		...(recipe.category ? { category: recipe.category } : {}),
+		...(recipe.notes ? { notes: recipe.notes } : {}),
+		...(recipe.examples ? { examples: recipe.examples } : {}),
+		...(recipe.risk_class ? { risk_class: recipe.risk_class } : {}),
+		...(recipe.network !== undefined ? { network: recipe.network === true } : {}),
+		...(recipe.timeout_ms ? { timeout_ms: recipe.timeout_ms } : {}),
 		executable,
 		executable_digest: sha256(executable),
 		...(scriptPath ? { script_path: scriptPath, script_digest: sha256(scriptPath) } : {}),
@@ -182,9 +235,151 @@ export function buildRegistration(recipe, { baseDir = process.cwd() } = {}) {
 	return registration;
 }
 
+/**
+ * Inspect a path and write a DRAFT recipe.
+ *
+ * Probing deliberately stops at observable facts: real path, file kind, digests,
+ * and the first line of `--version` when the tool accepts it. It never guesses the
+ * argv shape, the parameters or the Oracle, because those are the reviewed parts
+ * and a wrong guess would look like a working registration.
+ */
+function probe(target, { out = null } = {}) {
+	const resolved = resolve(target);
+	if (!existsSync(resolved)) fail(`path not found: ${resolved}`);
+	const stat = lstatSync(resolved);
+	// Homebrew and most package managers install symlinks into bin/, so resolving is
+	// the normal case. The digest pins the REAL file, and the report says so.
+	const symlinked = stat.isSymbolicLink();
+	const real = realpathSync(resolved);
+	const realStat = lstatSync(real);
+	if (realStat.isDirectory()) fail(`probe expects a file; for a directory pass its entry script: ${resolved}`);
+	const digest = sha256(real);
+
+	const head = readFileSync(real).subarray(0, 200).toString("utf8");
+	const shebang = head.startsWith("#!") ? head.split("\n")[0].slice(2).trim() : null;
+	const shebangParts = shebang ? shebang.split(/\s+/) : [];
+	// `#!/usr/bin/env python3` must pin PYTHON, not env: registering /usr/bin/env
+	// would leave the real interpreter unpinned.
+	const rawInterpreter =
+		shebangParts[0] && basename(shebangParts[0]) === "env" ? (shebangParts[1] ?? null) : (shebangParts[0] ?? null);
+	let interpreter = null;
+	if (rawInterpreter) {
+		if (isAbsolute(rawInterpreter) && existsSync(rawInterpreter)) interpreter = realpathSync(rawInterpreter);
+		else {
+			for (const dir of (process.env.PATH ?? "").split(":").filter(Boolean)) {
+				const candidate = join(dir, rawInterpreter);
+				if (existsSync(candidate)) {
+					interpreter = realpathSync(candidate);
+					break;
+				}
+			}
+		}
+	}
+	const kind = interpreter ? `script (${interpreter})` : "binary";
+	const unknownInterpreter = Boolean(rawInterpreter) && !interpreter;
+
+	// `--version` is the one invocation that is conventionally side-effect free. It
+	// only makes sense for something directly runnable; a non-executable script is
+	// not, and probing it would report EACCES as if the tool were broken.
+	let version = null;
+	let versionError = null;
+	const files = interpreter ? [interpreter, real] : [real];
+	if (files.every((file) => (lstatSync(file).mode & 0o111) !== 0)) {
+		const probeRun = spawnSync(real, ["--version"], {
+			encoding: "utf8",
+			timeout: 5000,
+			shell: false,
+			maxBuffer: 64 * 1024,
+		});
+		if (probeRun.error) versionError = probeRun.error.message;
+		else {
+			const text = `${probeRun.stdout ?? ""}${probeRun.stderr ?? ""}`.trim().split("\n")[0] ?? "";
+			version = text.slice(0, 200) || null;
+		}
+	}
+	const isShell = SHELLS.has(basename(real).toLowerCase());
+
+	const draft = {
+		id: basename(real)
+			.replace(/[^A-Za-z0-9._-]/g, "-")
+			.toLowerCase(),
+		version: 1,
+		description: "",
+		category: "",
+		notes: "",
+		executable: interpreter ?? real,
+		...(interpreter ? { script: real } : {}),
+		argv: interpreter ? ["{script}", "{out}"] : ["{out}"],
+		workspace: process.cwd(),
+		parameters: { out: { type: "string", required: true, direction: "out" } },
+		verify: { kind: "json_post_state", resource: "out", checks: [{ path: "result", op: "exists" }] },
+	};
+
+	const report = {
+		path: real,
+		...(symlinked ? { symlinked_from: resolved } : {}),
+		kind,
+		executable: interpreter ?? real,
+		executable_digest: interpreter ? sha256(interpreter) : digest,
+		...(interpreter ? { script: real, script_digest: digest } : {}),
+		version,
+		version_error: versionError,
+		refusals: [
+			...(isShell ? ["this is a shell interpreter; the registry refuses those"] : []),
+			...(unknownInterpreter
+				? [`shebang interpreter could not be resolved: ${shebangParts.slice(0, 2).join(" ")}`]
+				: []),
+			...(interpreter && !registryIsInterpreter(interpreter) && !isShell
+				? [
+						`interpreter ${basename(interpreter)} is not one the registry pins; use a known interpreter or register the script's wrapper`,
+					]
+				: []),
+			...(!interpreter && !(realStat.mode & 0o111) ? ["file is not executable"] : []),
+		],
+		draft,
+	};
+
+	if (out) {
+		writeFileSync(out, `${JSON.stringify(draft, null, 2)}\n`);
+		report.draft_written = resolve(out);
+	}
+	return report;
+}
+
+/** Validate one recipe without writing anything, for agent iteration. */
+function validateRecipe(recipePath) {
+	if (!existsSync(recipePath)) fail(`recipe not found: ${recipePath}`);
+	let recipe;
+	try {
+		recipe = JSON.parse(readFileSync(recipePath, "utf8"));
+	} catch (error) {
+		fail(`recipe is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	const registration = buildRegistration(recipe, { baseDir: dirname(recipePath) });
+	return registration;
+}
+
 function main() {
 	const options = parseArgs(process.argv.slice(2));
 	if (options.help) return usage();
+
+	if (options.probe) {
+		const report = probe(options.probe, { out: options.out });
+		console.log(JSON.stringify(report, null, 2));
+		console.log(
+			"\nThis is a DRAFT. Fill in description/category/notes/argv/parameters/verify, then run --validate and --recipe.",
+		);
+		if (report.refusals.length > 0) process.exitCode = 1;
+		return;
+	}
+
+	if (options.validate) {
+		const registration = validateRecipe(options.validate);
+		console.log(`valid: ${registration.id}@${registration.version}`);
+		console.log(`  argv    ${registration.argv_template.join(" ")}`);
+		console.log(`  oracle  ${registration.verify_spec.kind} on ${registration.verify_spec.resource}`);
+		return;
+	}
 
 	const roster = readRoster(options.roster);
 
