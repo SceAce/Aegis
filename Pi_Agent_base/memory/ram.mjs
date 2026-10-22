@@ -162,7 +162,8 @@ export function buildRamProjection({
 		}
 	}
 	const knowledge = [...knowledgeById.values()]
-		.slice(-6)
+		.sort((a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"))
+		.slice(0, 6)
 		.map((item) => ({ knowledge_reference: true, ...item, verified: false, action_policy: "none" }));
 	const checkpoints = (Array.isArray(state.round_checkpoints) ? state.round_checkpoints : [])
 		.filter((item) => item && item.episode_id === episodeId && typeof item.text === "string")
@@ -312,12 +313,14 @@ export function buildRamProjection({
 				verified: false,
 				action_policy: "none",
 				knowledge_id: node.knowledge_id ?? null,
+				bundle_source_ids: Array.isArray(node.bundle_source_ids) ? node.bundle_source_ids.slice(0, 16) : [],
+				selection_mode: node.selection_mode ?? "automatic",
 				source_uri: node.source_uri ?? null,
 				source_digest: node.source_digest ?? null,
 				topic: node.topic ?? null,
 				section: Array.isArray(node.section) ? node.section.slice(0, 6) : [],
 				lines: [node.line_start ?? null, node.line_end ?? null],
-				content: safe(node.content, 650),
+				content: safe(node.content, 7000),
 			};
 		return {
 			event: node.event_id ? ref("event", node.event_id) : null,
@@ -328,7 +331,7 @@ export function buildRamProjection({
 			source_kind: node.source_kind ?? "external_reference",
 			source_uri: node.source_uri ?? null,
 			source_digest: node.source_digest ?? null,
-			content: safe(node.content, 650),
+			content: safe(node.content, 7000),
 		};
 	}
 	function registerRule(row) {
@@ -361,7 +364,10 @@ export function buildRamProjection({
 		const referenceRows = [];
 		for (const node of raw.human_hint) referenceRows.push(registerReference(node));
 		for (const node of raw.external_reference) referenceRows.push(registerReference(node));
-		for (const node of raw.knowledge.slice(-REGISTER_KNOWLEDGE)) referenceRows.push(registerReference(node));
+		const knowledgeRows = [...raw.knowledge].sort(
+			(a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"),
+		);
+		for (const node of knowledgeRows.slice(0, REGISTER_KNOWLEDGE)) referenceRows.push(registerReference(node));
 		const ruleRows = [];
 		for (const row of Array.isArray(rules) ? rules : []) {
 			const rule = registerRule(row);
@@ -607,7 +613,8 @@ export function buildRamProjection({
 		let text = serialize();
 		if (text.length > budget) {
 			for (const row of registers.facts) row.text = safe(row.text, 160);
-			for (const row of registers.references) row.content = safe(row.content, 450);
+			for (const row of registers.references)
+				row.content = safe(row.content, row.kind === "knowledge" && row.selection_mode === "model_query" ? 7000 : 450);
 			for (const row of registers.claims) row.text = safe(row.text, 200);
 			for (const row of registers.rules) row.text = safe(row.text, 220);
 			text = serialize();
@@ -618,9 +625,18 @@ export function buildRamProjection({
 			// hint for this Episode is the last reference to go, matching its admission
 			// priority (document seed -> retrieved knowledge -> human hint).
 			const externalIndex = registers.references.findIndex((row) => row.kind === "external_reference");
-			const knowledgeIndex = registers.references.findIndex((row) => row.kind === "knowledge");
+			const knowledgeIndex = registers.references.findIndex(
+				(row) => row.kind === "knowledge" && row.selection_mode !== "model_query",
+			);
+			const selectedKnowledgeIndex = registers.references.findIndex(
+				(row) => row.kind === "knowledge" && row.selection_mode === "model_query",
+			);
 			if (externalIndex >= 0) {
 				registers.references.splice(externalIndex, 1);
+				registers.omitted.references += 1;
+				changed = true;
+			} else if (knowledgeIndex >= 0) {
+				registers.references.splice(knowledgeIndex, 1);
 				registers.omitted.references += 1;
 				changed = true;
 			} else if (registers.referenced.length) {
@@ -673,10 +689,13 @@ export function buildRamProjection({
 			} else if (data.task?.current_prompt) {
 				delete data.task.current_prompt;
 				changed = true;
-			} else if (knowledgeIndex >= 0) {
-				// Retrieved knowledge goes before a human hint: the operator's instruction is
-				// the more authoritative guidance for this Episode.
-				registers.references.splice(knowledgeIndex, 1);
+			} else if (selectedKnowledgeIndex >= 0 && registers.references[selectedKnowledgeIndex].content.length > 450) {
+				const row = registers.references[selectedKnowledgeIndex];
+				row.content = safe(row.content, Math.max(450, row.content.length - 1000));
+				row.truncated = true;
+				changed = true;
+			} else if (selectedKnowledgeIndex >= 0 && registers.references.length > 1) {
+				registers.references.splice(selectedKnowledgeIndex, 1);
 				registers.omitted.references += 1;
 				changed = true;
 			} else if (registers.references.some((row) => row.kind === "human_hint")) {

@@ -50,6 +50,40 @@ test("bounded sections, total content, individual content and heading depth", ()
 	assert.throws(() => compile({ limits: { maxBytes: 999999 } }));
 });
 
+test("PHP/XML examples inside fenced code blocks survive HTML cleanup", () => {
+	const seed = compile({
+		markdown: [
+			"# PHP bypass",
+			"",
+			"```php",
+			"<?php",
+			"eval($_POST['x']);",
+			"?>",
+			"```",
+			"",
+			"## XML",
+			"",
+			"```xml",
+			'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///tmp/example">]>',
+			"```",
+			"",
+		].join("\n"),
+	});
+	const code = seed.sections.filter((section) => section.kind === "code").map((section) => section.content);
+	assert.ok(
+		code.some((content) => content.includes("<?php")),
+		"PHP open tag must remain in the seed",
+	);
+	assert.ok(
+		code.some((content) => content.includes("eval($_POST['x'])")),
+		"PHP source must remain intact",
+	);
+	assert.ok(
+		code.some((content) => content.includes("<!DOCTYPE")),
+		"XML declarations inside code must remain intact",
+	);
+});
+
 test("HTML, scripts, multiline keys and credentials removed before clipping; refs survive", () => {
 	const raw =
 		"# Safe\n<script>\nsteal-secret\n</script>\n<!-- hidden -->\n<p>visible</p>\npassword=hunter2\nBearer abcdef\n-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----\nhttps://user:pass@example.invalid/x\n";

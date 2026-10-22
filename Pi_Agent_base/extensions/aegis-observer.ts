@@ -81,7 +81,7 @@ import { contextPolicy, contextProjectionInput } from "../memory/context-policy.
 import { contributionPayload, recordStageContribution } from "../memory/contribution.mjs";
 import { normalizeExperienceDecision } from "../memory/experience.mjs";
 import { captureTextFragments } from "../memory/fragments.mjs";
-import { knowledgeRootFromEnv, selectKnowledge } from "../memory/knowledge.mjs";
+import { buildKnowledgeRecallQuery, knowledgeRootFromEnv, selectKnowledge } from "../memory/knowledge.mjs";
 import { createLearningBridge } from "../memory/learning-bridge.mjs";
 import * as learningCommands from "../memory/learning-commands.mjs";
 import { createLearningStore } from "../memory/learning-store.mjs";
@@ -706,14 +706,62 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		}
 	}
 
+	/**
+	 * A short follow-up such as "继续" is not a useful retrieval query. Reuse
+	 * the durable goal, current Intent and latest observations so continuation
+	 * prompts do not reset retrieval to generic topic matches.
+	 */
+	function isShortKnowledgeFollowUp(query: string): boolean {
+		return /^(?:继续|继续吧|继续分析|接着|好的?|嗯|是的?|ok|okay|continue|go on)$/iu.test(String(query ?? "").trim());
+	}
+
+	function knowledgeRecallQuery(query: string): string {
+		const intents = (board.currentByType?.Intent ?? [])
+			.filter((node) => node.episode_id === episodeId && typeof node.text === "string")
+			.slice(-2)
+			.map((node) => `current subgoal: ${node.text}`);
+		const claims = (board.currentByType?.Hint ?? [])
+			.filter((node) => node.episode_id === episodeId && typeof node.text === "string")
+			.slice(-2)
+			.map((node) => `recent hypothesis: ${node.text}`);
+		const observations = (board.currentByType?.Artifact ?? [])
+			.filter((node) => node.episode_id === episodeId && node.action_id && typeof node.text === "string")
+			.slice(-3)
+			.map((node) => `recent observation: ${node.text}`);
+		return buildKnowledgeRecallQuery({
+			query,
+			goal: episodeId ? (state.episodes[episodeId]?.goal?.description ?? "") : "",
+			currentPrompt: currentGoal,
+			subgoals: intents,
+			claims,
+			observations,
+		});
+	}
+
 	/** Select reference material from the current user message. This is a
 	 * deterministic retrieval step: the LLM does not decide whether the text is
 	 * trusted, executable, or a verified fact. The selected rows are durable so
 	 * the same RAM can be rebuilt after a short-session handoff or restart. */
 	async function autoSelectKnowledge(query: string): Promise<void> {
-		if (!contextPolicy().knowledge || !episodeId || !log?.healthy || auditUnavailable || !query.trim()) return;
+		const shortFollowUp = isShortKnowledgeFollowUp(query);
+		// A continuation is not a new retrieval decision. In particular, do not
+		// replace a model's explicit technique selection with generic auto-recall.
+		if (
+			shortFollowUp &&
+			log
+				?.replay()
+				.some(
+					(row) =>
+						row.payload?.kind === "knowledge.selected" &&
+						row.payload?.mode === "model_query" &&
+						row.episode_id === episodeId,
+				)
+		)
+			return;
+		const recallQuery = knowledgeRecallQuery(query);
+		if (!contextPolicy().knowledge || !episodeId || !log?.healthy || auditUnavailable || !recallQuery) return;
 		try {
-			const safeQuery = redactMemoryText(query);
+			const safeQuery = redactMemoryText(recallQuery);
 			const boundedQuery = safeQuery.length <= 800 ? safeQuery : `${safeQuery.slice(0, 399)} ${safeQuery.slice(-400)}`;
 			const selected = await selectKnowledge({
 				root: knowledgeRootFromEnv(),
@@ -2389,7 +2437,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 				max_results: Type.Optional(Type.Integer({ minimum: 1, maximum: 4 })),
 				knowledge_ids: Type.Optional(
 					Type.Array(Type.String(), {
-						maxItems: 4,
+						maxItems: 16,
 						description: "Previously returned knowledge_id values to keep or revisit",
 					}),
 				),
@@ -2437,7 +2485,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 							root: knowledgeRootFromEnv(),
 							query: String((params as { query?: string }).query ?? ""),
 							maxResults: Math.min(4, Math.max(1, Number((params as { max_results?: number }).max_results ?? 3))),
-							maxChars: 6000,
+							maxChars: 7000,
 							ids: Array.isArray((params as { knowledge_ids?: unknown }).knowledge_ids)
 								? (params as { knowledge_ids: unknown[] }).knowledge_ids.filter(
 										(id): id is string => typeof id === "string",
@@ -2533,16 +2581,14 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					description: "Technique/CVE/tool query (max 128 chars). Do not include the target host or challenge title.",
 				}),
 				purpose: Type.Optional(
-					Type.Union(
-						[Type.Literal("technique"), Type.Literal("cve"), Type.Literal("tool")],
-						{ description: "Why the reference is needed; write-up queries are refused" },
-					),
+					Type.Union([Type.Literal("technique"), Type.Literal("cve"), Type.Literal("tool")], {
+						description: "Why the reference is needed; write-up queries are refused",
+					}),
 				),
 				count: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
 				include_content: Type.Optional(
 					Type.Boolean({
-						description:
-							"Request bounded page text for a technique/CVE/tool query",
+						description: "Request bounded page text for a technique/CVE/tool query",
 					}),
 				),
 			}),
@@ -2636,8 +2682,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					attempted: result.attempted === true,
 					query: result.query ?? queryText,
 					purpose: result.purpose ?? (typeof params.purpose === "string" ? params.purpose : "technique"),
-					requested_count:
-						result.requested_count ?? (typeof params.count === "number" ? params.count : config.count),
+					requested_count: result.requested_count ?? (typeof params.count === "number" ? params.count : config.count),
 					returned: Array.isArray(result.results) ? result.results.length : 0,
 					total: result.total ?? 0,
 					filtered: result.filtered ?? 0,

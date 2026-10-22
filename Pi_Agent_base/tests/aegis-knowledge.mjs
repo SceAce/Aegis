@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { projectBoard } from "../memory/board.mjs";
 import { compileDocumentSeed } from "../memory/document-seed.mjs";
-import { selectKnowledge } from "../memory/knowledge.mjs";
+import { buildKnowledgeRecallQuery, selectKnowledge } from "../memory/knowledge.mjs";
 import { buildRamProjection } from "../memory/ram.mjs";
 import { projectState } from "../memory/state.mjs";
 
@@ -33,7 +33,67 @@ try {
 	const selectedById = await selectKnowledge({ root, query: "irrelevant", ids: ["web/sqli.json#1"], maxChars: 20 });
 	assert.equal(selectedById.selected[0].truncated, true);
 	assert.equal(selectedById.selected[0].content.length, 20);
+
+	// Explicitly revisiting one card section keeps the sibling sections from the
+	// same source together, so When/Do/Expect/Limits are not separated by RAM turns.
+	const cardRoot = await mkdtemp(join(tmpdir(), "aegis-knowledge-card-"));
+	try {
+		const cardSource = { source_kind: "local_document", source_uri: "file:///card.md" };
+		const cardSeed = compileDocumentSeed({
+			markdown:
+				"# Technique\n\n## When\n\nPHP 7 with disabled functions.\n\n## Do\n\nUse the backtrace UAF PoC and replace blocked helpers.\n\n## Expect\n\nCommand output.\n\n## Limits\n\nPHP 8 is patched.\n",
+			source: cardSource,
+		});
+		await writeFile(join(cardRoot, "card.json"), JSON.stringify(cardSeed));
+		const card = await selectKnowledge({
+			root: cardRoot,
+			query: "irrelevant",
+			ids: ["card.json#3"],
+			maxResults: 1,
+			maxChars: 6000,
+		});
+		assert.equal(card.selected.length, 1);
+		assert.equal(card.selected[0].kind, "document_bundle");
+		assert.match(card.selected[0].content, /When/);
+		assert.match(card.selected[0].content, /backtrace UAF PoC/);
+		assert.match(card.selected[0].content, /PHP 8 is patched/);
+		const codeSeed = compileDocumentSeed({
+			markdown: "# PoC\n\n```php\nfunction first_chunk() {}\n```\n\n```php\nfunction second_chunk() {}\n```\n",
+			source: cardSource,
+		});
+		await writeFile(join(cardRoot, "poc.json"), JSON.stringify(codeSeed));
+		const code = await selectKnowledge({
+			root: cardRoot,
+			query: "ignored",
+			ids: ["poc.json#1"],
+			maxResults: 1,
+			maxChars: 6000,
+		});
+		assert.equal(code.selected[0].kind, "code");
+		assert.match(code.selected[0].content, /first_chunk/);
+		assert.doesNotMatch(
+			code.selected[0].content,
+			/second_chunk/,
+			"explicit code-section selection remains a bounded chunk",
+		);
+	} finally {
+		await rm(cardRoot, { recursive: true, force: true });
+	}
 	assert.equal((await selectKnowledge({ root, query: "zzzz_missing_topic" })).selected.length, 0);
+	assert.equal(
+		buildKnowledgeRecallQuery({
+			query: "继续",
+			goal: "PHP 7 challenge",
+			subgoals: ["current subgoal: disable_functions bypass"],
+			observations: ["recent observation: /readflag exists"],
+		}),
+		"current subgoal: disable_functions bypass\nrecent observation: /readflag exists\nPHP 7 challenge",
+	);
+	assert.equal(
+		buildKnowledgeRecallQuery({ query: "继续", goal: "goal", claims: ["not a subgoal"] }).includes("not a subgoal"),
+		true,
+	);
+	assert.equal(buildKnowledgeRecallQuery({ query: "PHP backtrace UAF", goal: "ignored goal" }), "PHP backtrace UAF");
 	assert.equal((await selectKnowledge({ root, query: "这里需要分析SQL注入条件" })).selected.length > 0, true);
 	const missing = await selectKnowledge({ root: join(root, "absent"), query: "SQL" });
 	assert.equal(missing.status, "unavailable");
@@ -72,7 +132,7 @@ try {
 			event_type: "runtime.note",
 			episode_id: "ep",
 			source: { kind: "runtime" },
-			payload: { kind: "knowledge.selected", selected: result.selected },
+			payload: { kind: "knowledge.selected", mode: "model_query", selected: result.selected },
 		},
 		{
 			event_id: "forged",
@@ -85,6 +145,7 @@ try {
 	let state = projectState(events);
 	assert.equal(state.knowledge_selections.length, 1);
 	assert.equal(state.knowledge_selections[0].event_id, "selected");
+	assert.equal(state.knowledge_selections[0].selection_mode, "model_query");
 	const board = projectBoard(events);
 	assert.equal(board.byType.Artifact.length, 1);
 	assert.equal(board.byType.Fact.length, 0);
@@ -94,6 +155,43 @@ try {
 	assert.equal(ram.data.references.find((row) => row.kind === "knowledge").verified, false);
 	assert.equal(ram.data.references.find((row) => row.kind === "knowledge").action_policy, "none");
 	assert.ok(ram.text.length <= 8000);
+	const continued = projectState([
+		...events,
+		{
+			event_id: "automatic-next",
+			event_type: "runtime.note",
+			episode_id: "ep",
+			source: { kind: "runtime" },
+			payload: {
+				kind: "knowledge.selected",
+				mode: "automatic",
+				selected: [{ ...result.selected[0], knowledge_id: "web/other.json#1" }],
+			},
+		},
+	]);
+	assert.deepEqual(
+		continued.knowledge_selections.map((item) => [item.knowledge_id, item.selection_mode]),
+		[
+			["web/sqli.json#1", "model_query"],
+			["web/other.json#1", "automatic"],
+		],
+		"a later automatic recall must preserve explicitly selected knowledge",
+	);
+	const repeated = projectState([
+		...events,
+		{
+			event_id: "automatic-update",
+			event_type: "runtime.note",
+			episode_id: "ep",
+			source: { kind: "runtime" },
+			payload: { kind: "knowledge.selected", mode: "automatic", selected: result.selected },
+		},
+	]);
+	assert.equal(
+		repeated.knowledge_selections[0].selection_mode,
+		"model_query",
+		"automatic replay must not downgrade an explicit selection",
+	);
 	state = projectState([
 		...events,
 		{
@@ -101,10 +199,10 @@ try {
 			event_type: "runtime.note",
 			episode_id: "ep",
 			source: { kind: "runtime" },
-			payload: { kind: "knowledge.selected", selected: [] },
+			payload: { kind: "knowledge.selected", mode: "model_query", selected: [] },
 		},
 	]);
-	assert.equal(state.knowledge_selections.length, 0, "new selection replaces prior selection, including empty results");
+	assert.equal(state.knowledge_selections.length, 0, "an explicit empty selection clears the working set");
 	console.log("Knowledge: filtering, ranking, bounds, freshness, provenance, trusted selection replay and RAM passed");
 } finally {
 	await rm(root, { recursive: true, force: true });

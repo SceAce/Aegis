@@ -186,9 +186,14 @@ try {
 			return fauxAssistantMessage("Recovered same task without declaring success.");
 		},
 	]);
-	await session.prompt("Continue checking offset encoding.");
+	await session.prompt("Continue");
 	assert.equal(requests, 4);
 	assert.equal(rows().filter((row) => row.event_type === "episode.started").length, 1);
+	assert.equal(
+		rows().filter((row) => row.payload?.kind === "knowledge.selected").length,
+		2,
+		"a short continuation preserves the deliberate technique selection instead of auto-recalling unrelated topics",
+	);
 	assert.equal(verifyChain(rows()).ok, true);
 	assert.equal(rows().filter((row) => row.event_type === "outcome.recorded").length, 0);
 	console.log(

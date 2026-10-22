@@ -145,16 +145,41 @@ export function projectState(events) {
 				if (event.source?.kind === "runtime" || event.source?.kind === "human") {
 					if (event.payload?.version === "work-control-1") bump(state);
 					if (event.payload?.kind === "knowledge.selected" && event.episode_id) {
+						const mode =
+							event.payload.mode === "model_query"
+								? "model_query"
+								: event.payload.mode === "automatic"
+									? "automatic"
+									: null;
 						const selected = Array.isArray(event.payload.selected) ? event.payload.selected.slice(0, 8) : [];
-						state.knowledge_selections = state.knowledge_selections.filter(
-							(item) => item.episode_id !== event.episode_id,
-						);
+						const existing = state.knowledge_selections.filter((item) => item.episode_id === event.episode_id);
+						// Empty explicit selections clear the current working set; a normal
+						// automatic miss leaves existing references intact.
+						if (selected.length === 0) {
+							if (mode !== "automatic") {
+								state.knowledge_selections = state.knowledge_selections.filter(
+									(item) => item.episode_id !== event.episode_id,
+								);
+								bump(state);
+							}
+							break;
+						}
+						const byId = new Map(existing.map((item) => [item.knowledge_id, item]));
 						for (const item of selected) {
 							if (!item || typeof item !== "object" || typeof item.knowledge_id !== "string") continue;
-							state.knowledge_selections.push({
+							const prior = byId.get(item.knowledge_id);
+							if (mode === "automatic" && prior?.selection_mode === "model_query") {
+								byId.set(item.knowledge_id, { ...prior, event_id: event.event_id });
+								continue;
+							}
+							byId.set(item.knowledge_id, {
 								event_id: event.event_id,
 								episode_id: event.episode_id,
 								knowledge_id: item.knowledge_id,
+								selection_mode:
+									mode === "automatic" && prior?.selection_mode === "model_query"
+										? "model_query"
+										: (mode ?? prior?.selection_mode ?? "automatic"),
 								source_kind: item.source_kind ?? "external_reference",
 								line_start: item.line_start ?? null,
 								line_end: item.line_end ?? null,
@@ -162,10 +187,18 @@ export function projectState(events) {
 								source_digest: item.source_digest ?? null,
 								topic: item.topic ?? null,
 								section: Array.isArray(item.section) ? item.section.slice(0, 6) : [],
-								content: typeof item.content === "string" ? item.content.slice(0, 2000) : "",
+								content: typeof item.content === "string" ? item.content.slice(0, 7000) : "",
 								truncated: item.truncated === true,
+								bundle_source_ids: Array.isArray(item.bundle_source_ids) ? item.bundle_source_ids.slice(0, 16) : [],
 							});
 						}
+						const merged = [...byId.values()].sort(
+							(a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"),
+						);
+						state.knowledge_selections = [
+							...state.knowledge_selections.filter((item) => item.episode_id !== event.episode_id),
+							...merged.slice(0, 8),
+						];
 						bump(state);
 					}
 					// A human hint is a single, Episode-bound piece of natural-language

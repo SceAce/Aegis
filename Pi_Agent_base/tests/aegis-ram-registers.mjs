@@ -74,6 +74,7 @@ function fixture() {
 				topic: "crypto",
 				section: ["crypto"],
 				content: "CRYPTO_REFERENCE",
+				selection_mode: "model_query",
 			},
 			{
 				episode_id: ep,
@@ -124,6 +125,7 @@ test("relevant judgments and multiple knowledge references are selected, with tr
 			.every((row) => row.verified === false && row.action_policy === "none"),
 	);
 	assert.ok(p.text.includes("WEB_REFERENCE") && p.text.includes("PWN_REFERENCE"), "cross-direction cards coexist");
+	assert.ok(p.text.length <= 8000);
 	assert.deepEqual(data.rules, []);
 	assert.deepEqual(JSON.parse(p.text), p.data);
 	assert.equal(p.data.meta.ram_budget_chars, 8000);

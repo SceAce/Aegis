@@ -23,7 +23,7 @@
 | --- | --- |
 | 每次 `before_agent_start`，已创建/恢复当前 Episode 后 | Observer 对当前用户消息做一次机械候选召回，只注入**一张相关性最高**的卡，不调用额外模型；长消息先脱敏，再保留头尾共最多 800 字符查询 |
 | 当前 LLM 判断需要具体技法、条件或不同子目标的知识 | 调用 `aegis_knowledge`，根据当前消息、工具观察和图板自主形成查询；也可提交上次返回的 `knowledge_ids` |
-| 检索完成 | Observer 单写 `runtime.note kind=knowledge.selected`，记录模式、查询、实际片段、URI/digest/行号、缺失与限额状态；本次选择替换当前 Episode 的上次选择；已有选择时空结果清除旧选择，无旧选择且无命中时不写空 Artifact |
+| 检索完成 | Observer 单写 `runtime.note kind=knowledge.selected`，记录模式、查询、实际片段、URI/digest/行号、缺失与限额状态；同一 Episode 按 `knowledge_id` 有界合并，显式 `model_query` 优先保留，短消息自动召回不能清除已选技法；自动空结果保留已有选择，显式空选择才清除 |
 | 每次 `context_with_system`，包括同一 prompt 内的工具后续请求 | 从已提交 Board/RuntimeState 重建 RAM，选中的知识按预算进入 RAM `references` 寄存器；保留固定 system 前缀，RAM 不累积到 Session 历史 |
 | 新假设、子目标、路线变化 | LLM 使用已有 `aegis_propose` 写 Claim/Intent/Candidate 及来源关联；候选的 `when/do/expect` 现在保留到 Board 和 RAM |
 | 子目标/验证结束、路径切换或上下文临近预算 | LLM 可请求 `aegis_switch_session`；实际交接仍由现有 Host/`/aegis switch` 在安全边界执行，Session 不等于新 Episode |
@@ -48,7 +48,7 @@ C6 默认 SDK 工具白名单包含 `aegis_knowledge`，其工具调用继续经
 
 检索只返回本地编译参考，固定 `verified=false`、`action_policy=none`。文本不能授予动作权限或替代当前环境证据；它与 active Experience 的 Compiler/Router/Skill 链路不同。本次没有让知识 seed 自动执行技法，也没有自动晋升 Experience。
 
-检索每次重新读取有界目录，避免迁移/编辑后命中旧内存索引；目录文件 symlink 不参与扫描。上限为 4,096 个 JSON、每文件 1 MiB、总读取 64 MiB、目录深度 16。自动召回最多选择 3 张相关卡（总计最多 6,000 内容字符）；模型工具默认返回 3 张卡，需要时最多 4 段/6,000 内容字符；RAM `references` 最多保留当前 4 张，所有内容仍受 8,000 字符 RAM 总预算。事实、未决动作与近期工具观察优先，装不下的知识通过 `shown/omitted` 公开；工具返回可查看本次完整有界选择。来源正文先脱敏，段落内容和元信息有界。
+检索每次重新读取有界目录，避免迁移/编辑后命中旧内存索引；目录文件 symlink 不参与扫描。上限为 4,096 个 JSON、每文件 1 MiB、总读取 64 MiB、目录深度 16。自动召回最多选择 3 张相关卡（总计最多 6,000 内容字符）；模型工具默认返回 3 张卡，需要时最多 4 段/6,000 内容字符。显式指定任一段落时，会合并同一 seed 的 When/Do/Expect/Limits 等兄弟段落；这仍受总字符上限约束。RAM `references` 最多保留当前 4 张，显式 `model_query` 优先于 automatic 选择，知识内容使用更大的有界摘要但仍受 8,000 字符 RAM 总预算。事实、未决动作与近期工具观察优先，装不下的知识通过 `shown/omitted` 公开；工具返回可查看本次完整有界选择。来源正文先脱敏，代码 fence 内的示例按代码处理，不当作 HTML 清洗。
 
 知识选择会把本次引用片段记录到本地私有任务日志，这是重建 RAM 的依据；复制 `$AEGIS_HOME/knowledge/` 迁移知识库不需要复制旧任务日志。要迁移进行中的任务，再单独迁移其日志和运行状态。
 

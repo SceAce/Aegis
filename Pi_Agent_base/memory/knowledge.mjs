@@ -132,10 +132,11 @@ function sectionRecord(path, seed, section, index, root) {
 		topic: text(section.topic || "document", 160),
 		section: Array.isArray(section.section) ? section.section.slice(0, 6).map((s) => text(s, 160)) : [],
 		kind: text(section.kind || "section", 40),
-		content: text(section.content, 2000),
+		content: text(section.content, 7000),
 		line_start: section.line_start,
 		line_end: section.line_end,
 		truncated: section.truncated === true || section.content.length > 2000,
+		section_index: index,
 		verified: false,
 		action_policy: "none",
 	};
@@ -164,6 +165,29 @@ function canonicalText(value) {
 		.replace(/[條爾當頁據種響應恢復數觀兩時]/g, (c) => HAN_TO[HAN_FROM.indexOf(c)])
 		.replace(/\s+/g, " ")
 		.trim();
+}
+
+/** Replace a bare continuation with bounded durable task context for recall. */
+export function buildKnowledgeRecallQuery({
+	query = "",
+	goal = "",
+	currentPrompt = "",
+	subgoals = [],
+	claims = [],
+	observations = [],
+} = {}) {
+	const input = typeof query === "string" ? query.trim() : "";
+	const continuation = /^(?:继续|继续吧|继续分析|接着|好的?|嗯|是的?|ok|okay|continue|go on)$/iu.test(input);
+	if (!continuation) return input.slice(0, MAX_QUERY_CHARS);
+	const bounded = (value, limit) => (typeof value === "string" ? value.trim().slice(0, limit) : "");
+	const rows = [
+		...subgoals.map((value) => bounded(value, 180)),
+		...observations.map((value) => bounded(value, 220)),
+		...claims.map((value) => bounded(value, 120)),
+		bounded(currentPrompt, 120),
+		bounded(goal, 160),
+	];
+	return rows.filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join("\n").slice(0, MAX_QUERY_CHARS);
 }
 
 // Direction hints in the request. A message that names its domain ("CTF web",
@@ -344,7 +368,7 @@ export async function selectKnowledge({
 		throw new Error("invalid knowledge result bound");
 	if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 12000)
 		throw new Error("invalid knowledge character bound");
-	if (!Array.isArray(ids) || ids.length > 8 || ids.some((id) => typeof id !== "string" || id.length > 1024))
+	if (!Array.isArray(ids) || ids.length > 16 || ids.some((id) => typeof id !== "string" || id.length > 1024))
 		throw new Error("invalid knowledge selection ids");
 	const resolvedRoot = resolve(root);
 	let files;
@@ -403,13 +427,45 @@ export async function selectKnowledge({
 					return recordDirection === direction || (recordDirection === null && isCuratedPath(record.knowledge_id));
 				});
 	const pool = sameDirection.length > 0 ? sameDirection : records;
-	const rankedWithScore =
-		ids.length > 0
-			? [...new Set(ids)].map((id) => ({ record: byId.get(id), score: null })).filter((entry) => entry.record)
-			: pool
-					.map((record) => ({ record, score: score(record, words) }))
-					.filter((entry) => entry.score >= MIN_RELEVANCE || hasSpecificWord(entry.record, words))
-					.sort((a, b) => b.score - a.score || a.record.knowledge_id.localeCompare(b.record.knowledge_id));
+	let rankedWithScore;
+	if (ids.length > 0) {
+		// An explicit section id is usually a request to revisit a document/card,
+		// not a request to receive one isolated heading. Bundle sibling sections
+		// from the same seed so a technique's When/Do/Expect/Limits remain together.
+		const requested = [...new Set(ids)].map((id) => byId.get(id)).filter(Boolean);
+		const sourceKey = (record) => `${record.source_uri}\u0000${record.source_digest}`;
+		rankedWithScore = requested.filter((record) => record.kind === "code").map((record) => ({ record, score: null }));
+		const sources = new Set(requested.filter((record) => record.kind !== "code").map(sourceKey));
+		for (const source of sources) {
+			const first = requested.find((record) => record.kind !== "code" && sourceKey(record) === source);
+			const siblings = records
+				.filter((record) => sourceKey(record) === source)
+				.sort(
+					(a, b) => (a.section_index ?? 0) - (b.section_index ?? 0) || a.knowledge_id.localeCompare(b.knowledge_id),
+				);
+			const card = first ?? siblings[0];
+			const bundle = {
+				...card,
+				knowledge_id: card.knowledge_id,
+				kind: "document_bundle",
+				section: siblings
+					.flatMap((record) => record.section ?? [])
+					.filter(Boolean)
+					.slice(0, 12),
+				content: siblings
+					.map((record) => `[${record.kind} ${record.section?.join(" / ") ?? ""}]\n${record.content}`)
+					.join("\n\n"),
+				truncated: siblings.some((record) => record.truncated),
+				bundle_source_ids: siblings.map((record) => record.knowledge_id),
+			};
+			rankedWithScore.push({ record: bundle, score: null });
+		}
+	} else {
+		rankedWithScore = pool
+			.map((record) => ({ record, score: score(record, words) }))
+			.filter((entry) => entry.score >= MIN_RELEVANCE || hasSpecificWord(entry.record, words))
+			.sort((a, b) => b.score - a.score || a.record.knowledge_id.localeCompare(b.record.knowledge_id));
+	}
 	const ranked = rankedWithScore.map((entry) => entry.record);
 	const scoreById = new Map(rankedWithScore.map((entry) => [entry.record.knowledge_id, entry.score]));
 	let remaining = maxChars;
@@ -421,8 +477,9 @@ export async function selectKnowledge({
 	const seenSection = new Set();
 	for (const record of ranked) {
 		if (remaining <= 0 || selected.length >= (taskWords.length ? maxResults : 1)) break;
-		const contentKey = canonicalText(record.content);
-		const sectionKey = `${record.source_uri}|${canonicalText(record.section.join("/"))}`;
+		const selectedRecord = record;
+		const contentKey = canonicalText(selectedRecord.content);
+		const sectionKey = `${selectedRecord.source_uri}|${canonicalText(selectedRecord.section.join("/"))}`;
 		if (seenSection.has(sectionKey)) continue;
 		if (
 			record.kind === "heading" &&
@@ -447,12 +504,12 @@ export async function selectKnowledge({
 			continue;
 		seenContent.add(contentKey);
 		seenSection.add(sectionKey);
-		const content = record.content.slice(0, remaining);
+		const content = selectedRecord.content.slice(0, remaining);
 		remaining -= content.length;
 		selected.push({
-			...record,
+			...selectedRecord,
 			content,
-			truncated: record.truncated || content.length !== record.content.length,
+			truncated: selectedRecord.truncated || content.length !== selectedRecord.content.length,
 			// Why this row was recalled; null for an explicit id lookup.
 			score: scoreById.get(record.knowledge_id) ?? null,
 		});

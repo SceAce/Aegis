@@ -100,8 +100,10 @@ async function main() {
 	const eventLog = join(base, "events.jsonl");
 	const ramDir = join(base, "ram");
 	const handoffFile = join(ramDir, "handoff.json");
+	const knowledgeDir = join(base, "knowledge");
 	const cancelExtPath = join(base, "cancel-ext.ts");
 	mkdirSync(agentDir, { recursive: true });
+	mkdirSync(knowledgeDir, { recursive: true });
 	mkdirSync(cwd, { recursive: true });
 	mkdirSync(sessionDir, { recursive: true });
 
@@ -115,6 +117,7 @@ async function main() {
 	process.env.AEGIS_HANDOFF_FILE = handoffFile;
 	process.env.AEGIS_ROM_FILE = join(BASE_DIR, "agent", "ROM.md");
 	process.env.AEGIS_TASK_ID = "task-c2-rotation";
+	process.env.AEGIS_KNOWLEDGE_DIR = knowledgeDir;
 	delete process.env.AEGIS_TEST_CANCEL_SWITCH;
 
 	const faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-c2", name: "FauxC2" }] });

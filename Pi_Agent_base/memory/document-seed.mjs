@@ -56,8 +56,28 @@ function sourceMetadata(source) {
 // Keep physical source lines through removal and redact multiline keys before
 // per-line credential handling. Line refs always address the original document.
 function safeDocument(markdown) {
+	const lines = markdown.split("\n");
+	const protectedLines = new Set();
+	let fence = null;
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index];
+		const opening = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+		if (fence) {
+			protectedLines.add(index);
+			if (new RegExp(`^\\s{0,3}${fence[0]}{${fence.length},}\\s*$`).test(line)) fence = null;
+		} else if (opening) {
+			fence = opening[1];
+			protectedLines.add(index);
+		}
+	}
+	// HTML-looking text inside a fenced code block is source content, not markup.
+	// Mask those lines while applying the document sanitizer, then restore them
+	// before parsing sections so PHP/XML examples survive seed compilation.
+	const masked = lines
+		.map((line, index) => (protectedLines.has(index) ? line.replace(/[^\r\n]/g, " ") : line))
+		.join("\n");
 	const blankLines = (text) => text.replace(/[^\r\n]/g, " ");
-	return markdown
+	const sanitized = masked
 		.replace(/<!--[\s\S]*?(?:-->|$)/g, blankLines)
 		.replace(/<(script|style|iframe|object)\b[^>]*(?:>|$)[\s\S]*?(?:<\/\1\s*>|$)/gi, blankLines)
 		.replace(/<[^>]*(?:>|$)/g, blankLines)
@@ -66,8 +86,9 @@ function safeDocument(markdown) {
 			(text) => `[REDACTED_KEY]${text.match(/\n/g)?.join("") ?? ""}`,
 		)
 		.split("\n")
-		.map((line) => redactMemoryText(line))
+		.map((line, index) => redactMemoryText(protectedLines.has(index) ? lines[index] : line))
 		.join("\n");
+	return sanitized;
 }
 /** @param {{markdown:string,source:object,limits?:object,generatedAt?:string}} input */
 export function compileDocumentSeed({
