@@ -116,7 +116,7 @@ Options:
   --bundle            launch the built bundle (run-pi.sh) instead of source
   --model PROVIDER/MODEL
   --provider NAME     provider id (only with --model omitted)
-  --thinking LEVEL    off|minimal|low|medium|high|max
+  --thinking LEVEL    off|minimal|low|medium|high|xhigh|max (clamped to the model)
   --task-id ID        explicit task id (default: the label)
   --seed FILE         inject one bounded, unverified RAM reference
   --knowledge DIR     knowledge root (default: $AEGIS_HOME/knowledge; there is no
@@ -267,6 +267,9 @@ fi
 [[ "$LABEL" == *..* ]] && die "invalid label '$LABEL': '..' is not allowed"
 [[ "$WEB_SEARCH" =~ ^(on|off)$ ]] || die "--web-search value must be on or off"
 [[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-block must not contain quotes or newlines"
+if [[ -n "$THINKING" && ! "$THINKING" =~ ^(off|minimal|low|medium|high|xhigh|max)$ ]]; then
+	die "--thinking must be one of off|minimal|low|medium|high|xhigh|max"
+fi
 if [[ -n "$TOOLS" && ! "$TOOLS" =~ ^[a-z0-9_,]+$ ]]; then
 	die "--tools must be a comma-separated list of tool ids"
 fi
@@ -301,6 +304,15 @@ if [[ "$MODE" == "resume" && (-z "$MODEL" || -z "$PROVIDER") && -f "$EXP_DIR/run
 	saved_model="${resolved#*$'\t'}"
 	[[ -z "$PROVIDER" && -n "$saved_provider" ]] && PROVIDER="$saved_provider"
 	[[ -z "$MODEL" && -n "$saved_model" ]] && MODEL="$saved_model"
+fi
+if [[ "$MODE" == "resume" && -z "$THINKING" && -f "$EXP_DIR/run.json" ]]; then
+	THINKING="$(node -e '
+		const fs = require("node:fs");
+		try {
+			const run = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+			process.stdout.write(typeof run.thinking === "string" ? run.thinking : "");
+		} catch { process.stdout.write(""); }
+	' "$EXP_DIR/run.json" 2>/dev/null || true)"
 fi
 if [[ "$MODE" == "resume" && -z "$TOOLS" && -f "$EXP_DIR/run.json" ]]; then
 	TOOLS="$(node -e '
@@ -542,6 +554,8 @@ export AEGIS_CONSOLE_MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-${AEGIS_CONSOLE_MAX
 if [[ -n "$TOOLS" ]]; then export AEGIS_CONSOLE_TOOLS="$TOOLS"; else unset AEGIS_CONSOLE_TOOLS; fi
 TOOL_ARGS=()
 [[ -n "$TOOLS" ]] && TOOL_ARGS=(--tools "$TOOLS")
+THINKING_ARGS=()
+[[ -n "$THINKING" ]] && THINKING_ARGS=(--thinking "$THINKING")
 if [[ -n "$PROVIDER" ]]; then export AEGIS_CONSOLE_PROVIDER="$PROVIDER"; fi
 if [[ -n "$MODEL" ]]; then export AEGIS_CONSOLE_MODEL="$MODEL"; fi
 if [[ -n "$SCRIPT_CONFIG" ]]; then
@@ -596,6 +610,8 @@ RUN_PROVIDER_JSON="null"
 [[ -n "$PROVIDER" ]] && RUN_PROVIDER_JSON="\"$PROVIDER\""
 RUN_MODEL_JSON="null"
 [[ -n "$MODEL" ]] && RUN_MODEL_JSON="\"$MODEL\""
+RUN_THINKING_JSON="null"
+[[ -n "$THINKING" ]] && RUN_THINKING_JSON="\"$THINKING\""
 RUN_TOOLS_JSON="null"
 if [[ -n "$TOOLS" ]]; then
 	RUN_TOOLS_JSON="$(node -e '
@@ -628,6 +644,7 @@ if [[ ! -f "$RUN_JSON" ]]; then
   "provider": $RUN_PROVIDER_JSON,
   "model": $RUN_MODEL_JSON,
   "tools": $RUN_TOOLS_JSON,
+  "thinking": $RUN_THINKING_JSON,
   "console": {
     "entry": "$([[ $CONSOLE_MODE -eq 1 ]] && echo console || echo cli)",
     "max_auto_rotations": "$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS",
@@ -749,6 +766,7 @@ printf '  task id    %s\n' "$TASK_ID"
 [[ -n "$SEED_FILE" ]] && printf '  seed       %s\n' "$SEED_FILE"
 [[ -n "$MODEL" ]] && printf '  model      %s\n' "$MODEL"
 printf '  tools      %s\n' "${TOOLS:-read,bash,edit,write (default)} + Aegis tools"
+[[ -n "$THINKING" ]] && printf '  thinking   %s\n' "$THINKING"
 printf '  recorded   %s\n' "$RUN_JSON"
 
 if ((DRY_RUN)); then
@@ -811,11 +829,11 @@ if ((CONSOLE_MODE)); then
 	(( ${#PASSTHROUGH[@]} )) && exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
 		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
 		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
-		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}" "${PASSTHROUGH[@]}"
+		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}" "${THINKING_ARGS[@]}" "${PASSTHROUGH[@]}"
 	exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
 		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
 		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
-		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}"
+		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}" "${THINKING_ARGS[@]}"
 fi
 if [[ "$ENTRY" == "bundle" ]]; then
 	printf 'run-experiment: --bundle is not used by the console entry; use --cli to run the bundled CLI\n' >&2

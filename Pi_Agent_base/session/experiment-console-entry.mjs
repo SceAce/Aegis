@@ -93,6 +93,7 @@ export function parseConsoleArgs(argv) {
 		nonInteractive: false,
 		control: "console",
 		tools: process.env.AEGIS_CONSOLE_TOOLS ?? null,
+		thinking: process.env.AEGIS_THINKING_LEVEL ?? null,
 		help: false,
 	};
 	for (let index = 0; index < argv.length; index += 1) {
@@ -149,6 +150,9 @@ export function parseConsoleArgs(argv) {
 				break;
 			case "--tools":
 				args.tools = take();
+				break;
+			case "--thinking":
+				args.thinking = take();
 				break;
 			case "-h":
 			case "--help":
@@ -213,6 +217,7 @@ export async function createConsoleSdkRuntime({
 	agentDir,
 	sessionDir,
 	tools = DEFAULT_TOOLS,
+	thinkingLevel = null,
 	onText = null,
 }) {
 	mkdirSync(cwd, { recursive: true });
@@ -223,7 +228,12 @@ export async function createConsoleSdkRuntime({
 	let resolvedModel = null;
 	if (providerKind === "faux") {
 		const factory = fauxProviderFactory ?? (await import("@earendil-works/pi-ai/compat")).registerFauxProvider;
-		const faux = factory({ provider: "faux", models: [{ id: model ?? "console-faux" }] });
+		// `reasoning: true` only so the offline demo/tests can exercise the thinking
+		// level control; the faux provider ignores the level it is given.
+		const faux = factory({
+			provider: "faux",
+			models: [{ id: model ?? "console-faux", reasoning: true }],
+		});
 		// Offline dev/demo only: a scripted faux conversation so the ordinary entry can
 		// be exercised end to end without a model. Read only when provider=faux.
 		const scriptPath = process.env.AEGIS_CONSOLE_FAUX_SCRIPT;
@@ -283,6 +293,9 @@ export async function createConsoleSdkRuntime({
 	let creations = 0;
 	let unsubscribe = null;
 	let streamed = false;
+	const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+	const requestedThinking =
+		typeof thinkingLevel === "string" && THINKING_LEVELS.includes(thinkingLevel) ? thinkingLevel : null;
 	const runtime = await sdk.createAgentSessionRuntime(
 		async ({ cwd: sessionCwd, agentDir: sessionAgentDir, sessionManager, sessionStartEvent }) => {
 			creations += 1;
@@ -307,6 +320,7 @@ export async function createConsoleSdkRuntime({
 				sessionManager,
 				sessionStartEvent,
 				...(resolvedModel ? { model: resolvedModel } : {}),
+				...(requestedThinking ? { thinkingLevel: requestedThinking } : {}),
 				tools,
 			});
 			return { ...created, services, diagnostics: services.diagnostics };
@@ -398,6 +412,25 @@ export async function createConsoleSdkRuntime({
 		 * model without configured auth. This is session configuration: it is not a
 		 * task fact, not an Outcome and it changes no authorization or budget.
 		 */
+		/** Current thinking level and the levels this model actually supports. */
+		thinking: () => {
+			try {
+				const current = runtime.session?.thinkingLevel ?? null;
+				const levels = runtime.session?.getAvailableThinkingLevels?.() ?? [];
+				return { level: current, levels, supported: levels.length > 1 };
+			} catch {
+				return { level: null, levels: [], supported: false };
+			}
+		},
+		/** Set the thinking level; the SDK clamps it to the model's capabilities. */
+		setThinking: (level) => {
+			if (typeof level !== "string" || !THINKING_LEVELS.includes(level))
+				throw new Error(`unknown thinking level ${String(level)}`);
+			runtime.session.setThinkingLevel(level);
+			const current = runtime.session.thinkingLevel ?? null;
+			const levels = runtime.session.getAvailableThinkingLevels?.() ?? [];
+			return { level: current, levels, supported: levels.length > 1 };
+		},
 		/** Models this run's runtime actually knows (what a switch may choose). */
 		models: () =>
 			modelRuntime
@@ -562,6 +595,9 @@ async function serveControlChannel({ host, label, taskId, workspace }) {
 				case "models":
 					result = await control.models();
 					break;
+				case "set_thinking":
+					result = await control.setThinking(params.level);
+					break;
 				case "set_model":
 					result = await control.setModel({ provider: params.provider, id: params.model });
 					break;
@@ -695,6 +731,7 @@ async function main(argv) {
 				agentDir,
 				sessionDir,
 				tools: selected.tools,
+				thinkingLevel: args.thinking ?? null,
 				onText: controlMode ? emitDelta : null,
 			});
 			return adapter;

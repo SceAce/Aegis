@@ -639,6 +639,13 @@ OWN-01_EVIDENCE
 - 修复深链切换：`#/e/<label>` 的 hash 变化（浏览器前进/后退、直接改地址）现在会切换运行，而不只在首屏生效。
 - 测试：`aegis-webui` 99 checks（新增 WEB-11a/b）；浏览器 1280 CSS px 实测图板折叠/证据/详情、模型弹出与切换、文案；截图在 `runtime/dev/p4-web-ui5-*/`。
 
+## W.6e 思考等级（thinking level）
+
+- 入口此前只在 CLI 分支导出 `AEGIS_THINKING_LEVEL`，console 入口从未把它交给 SDK，所以控制台无法调思考等级。现在 `run-experiment.sh --thinking` 直达 console 入口（并写入 `run.json.thinking`、`--resume` 沿用），入口把等级交给 `createAgentSessionFromServices({thinkingLevel})`。
+- Host 暴露 `status.thinking = { level, levels, supported }` 与 `setThinking()`；`POST …/thinking` 走 Host，未知等级 400、超出模型能力的由 SDK 夹紧并回报实际值（如 `xhigh → high`）。
+- 顶栏「思考 <level>」胶囊可点击切换；新建任务对话框可选等级。均为会话配置：不写 EventLog、不改授权/预算。
+- 测试：`aegis-webui` 108 checks（WEB-12a..c）；浏览器实测胶囊列表与切换（`思考 high`）；截图 `runtime/dev/p4-web-ui6-*/thinking-switch-zh.png`。
+
 ## W.7 回归与静态检查
 
 见矩阵 W.3：`aegis-webui` 66 checks；12 脚本（Web + Phase 3 六 + Phase 2 五补测）0 failed；22 项受影响回归 0 failed；required 68 0 failed；module-layout 342/1047；Aegis 类型 66/193/190（新文件无诊断）；Biome 0 error；UI `check` 0、`lint` 0、`test` 379/384（5 项基线失败，见矩阵 W.1）。

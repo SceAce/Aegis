@@ -198,6 +198,17 @@ export function createControlChannel({ host, limits = { text: 200_000 } }) {
 		 * cannot interleave with a running prompt. It is session configuration: no
 		 * EventLog row, no authorization/budget change, no success claim.
 		 */
+		/** Set the live Session's thinking level (session configuration). */
+		setThinking(level) {
+			return serial(async () => {
+				if (!isNonEmptyString(level, 20))
+					return { ok: false, code: CONTROL_ERRORS.invalid, reason: "a thinking level is required" };
+				if (typeof host.setThinking !== "function")
+					return { ok: false, code: CONTROL_ERRORS.invalid, reason: "this Host cannot set a thinking level" };
+				return host.setThinking(level);
+			});
+		},
+
 		/** Models the live Session can switch to. */
 		models() {
 			return serial(async () => {

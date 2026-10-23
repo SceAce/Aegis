@@ -88,6 +88,7 @@ Aegis Web Console aegis-web-console-1
 | POST | `/api/experiments/:label/detach` | 关闭 Host（等于 stop） |
 | POST | `/api/experiments/:label/messages` | `{text, request_id}` → `202`（受理，不是成功） |
 | POST | `/api/experiments/:label/model` | `{provider, model}` → 切换当前 Session 的模型（会话配置；不改授权/预算） |
+| POST | `/api/experiments/:label/thinking` | `{level}` → 设置当前 Session 的思考等级；模型不支持的等级由 SDK 夹紧，响应报告实际值 |
 | POST | `/api/experiments/:label/pause` | 停止派发（不中止正在运行的工具） |
 | POST | `/api/experiments/:label/resume` | 走现有 recovery 检查后恢复派发 |
 | POST | `/api/experiments/:label/stop` | 关闭 Host；未知副作用保留责任 |
@@ -157,6 +158,13 @@ Aegis Web Console aegis-web-console-1
 - 顶栏模型胶囊可点击：弹出的列表来自 `GET /api/experiments/:label/models`，即该运行 `ModelRuntime` 里**有凭据**的模型（不会列出无法切换的内置目录模型）。选择后调用 `POST …/model`。
 - 切换是**会话配置**：只影响后续 provider 请求使用的模型，不写 EventLog、不改授权/预算、不产生进度或 Outcome；Pi 自己会拒绝没有凭据的模型，未知 provider/model 也由 Host 拒绝。
 - 新建任务对话框的模型下拉仍来自配置目录（`GET /api/models`），因为那时还没有运行。
+
+## 思考等级（thinking level）
+
+- 顶栏「思考 <level>」胶囊可点击切换，列表**只来自当前 Session 实际支持的等级**（`status.thinking.levels`；非推理模型只有 `off`，此时按钮禁用并说明）。
+- 也可在新建任务时选择等级（`off|minimal|low|medium|high|xhigh|max`），写入 `run.json.thinking`，`--resume` 沿用；命令行等价开关 `./run-experiment.sh <label> --thinking high`。
+- 支持范围由模型能力决定：超出范围的请求会被 SDK 夹紧到最近的可用等级，界面显示**实际生效值**（例如 `xhigh → high`），不会假装已生效。
+- 与模型切换一样是**会话配置**：不写 EventLog、不改授权/预算、不产生进度或 Outcome。
 
 ## 附件上传（写入工作区）
 

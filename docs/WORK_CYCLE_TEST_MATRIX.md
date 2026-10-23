@@ -516,6 +516,10 @@ ownership 缺陷已独立关闭，范围为启动顺序、冲突无写入、资�
 | WEB-11d | 图板节点长文本折叠/展开；「证据」就地展开引用与可解析摘要；「打开详情」滚动到节点详情 | 浏览器（含真实 committed 日志 fixture） | pass |
 | WEB-11e | 「安全边界」标注为只读说明（不可编辑），新建任务文案改为「Aegis 配置」 | 浏览器 + i18n 词典断言 | pass |
 | WEB-11f | `#/e/<label>` 变更（深链/前进后退）会切换运行 | 浏览器 | pass |
+| WEB-12a | `status.thinking` 报告当前等级与模型支持的等级（非推理模型仅 off） | aegis-webui | pass |
+| WEB-12b | `POST …/thinking` 应用支持等级；非法等级 400；超出能力的等级被夹紧并回报实际值；不写任何 committed 行 | aegis-webui | pass |
+| WEB-12c | 新建任务可选思考等级并写入 `run.json.thinking`；非法等级 400 | aegis-webui | pass |
+| WEB-12d | 顶栏「思考」胶囊可点击切换（浏览器实测：列表、选择、提示与状态更新） | 浏览器（1280 CSS px） | pass |
 
 ## W.3 命令与真实退出码（最终树）
 

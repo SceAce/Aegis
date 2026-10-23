@@ -868,6 +868,66 @@ async function main() {
 			);
 		}
 
+		// ---- WEB-12: thinking level (session configuration) --------------------
+		{
+			const view = await api.get(`/api/experiments/${label}/view`);
+			const thinking = view.body?.status?.thinking ?? null;
+			check(
+				"WEB-12: the status reports the Session's thinking level and supported levels",
+				Boolean(thinking) &&
+					typeof thinking.level === "string" &&
+					Array.isArray(thinking.levels) &&
+					thinking.levels.length > 1,
+				JSON.stringify(thinking),
+			);
+			const applied = await api.post(`/api/experiments/${label}/thinking`, { level: "high" });
+			check(
+				"WEB-12: a supported thinking level is applied",
+				applied.status === 200 && applied.body?.thinking?.level === "high",
+				applied.text,
+			);
+			const after = await api.get(`/api/experiments/${label}/view`);
+			check("WEB-12: the new level is visible in the live status", after.body?.status?.thinking?.level === "high");
+			check(
+				"WEB-12: a thinking change writes no committed row (session configuration)",
+				readCommitted(eventLogPath).every((row) => row.event_type !== "outcome.recorded"),
+			);
+			const invalid = await api.post(`/api/experiments/${label}/thinking`, { level: "bogus" });
+			check(
+				"WEB-12: an unknown level is refused",
+				invalid.status === 400 && invalid.body?.code === "invalid_thinking",
+				invalid.text,
+			);
+			const clamped = await api.post(`/api/experiments/${label}/thinking`, { level: "xhigh" });
+			check(
+				"WEB-12: a level the model cannot do is clamped and the effective value is reported",
+				clamped.status === 200 &&
+					clamped.body?.thinking?.level !== "xhigh" &&
+					(clamped.body?.thinking?.levels ?? []).includes(clamped.body?.thinking?.level),
+				clamped.text,
+			);
+			const createdWithThinking = await api.post("/api/experiments", {
+				label: "web-thinking",
+				workspace,
+				provider: "faux",
+				model: "web-fixture",
+				thinking: "low",
+			});
+			check(
+				"WEB-12: a new run records the requested thinking level",
+				createdWithThinking.status === 201,
+				createdWithThinking.text,
+			);
+			const thinkingRunJson = JSON.parse(readFileSync(join(home, "experiments", "web-thinking", "run.json"), "utf8"));
+			check(
+				"WEB-12: the level is in run.json for --resume",
+				thinkingRunJson.thinking === "low",
+				String(thinkingRunJson.thinking),
+			);
+			const badCreate = await api.post("/api/experiments", { label: "web-bad-thinking", thinking: "loud" });
+			check("WEB-12: an invalid level at creation is refused", badCreate.status === 400, badCreate.text);
+		}
+
 		// ---- i18n: both dictionaries complete, Chinese default, switchable -----
 		{
 			const i18n = await import("../UI/Aegis-pocket/web/aegis/i18n.js");

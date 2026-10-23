@@ -860,6 +860,11 @@ export async function startWebConsole({
 				throw new HttpError(400, "invalid_provider", "invalid provider");
 			if (body.model !== undefined && !MODEL_RE.test(String(body.model)))
 				throw new HttpError(400, "invalid_model", "invalid model");
+			if (body.thinking !== undefined) {
+				const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+				if (typeof body.thinking !== "string" || !LEVELS.includes(body.thinking))
+					throw new HttpError(400, "invalid_thinking", `thinking must be one of ${LEVELS.join(", ")}`);
+			}
 			const selection = resolveToolSelection(Array.isArray(body.tools) && body.tools.length > 0 ? body.tools : null);
 			if (!selection.ok) throw new HttpError(400, "invalid_tools", selection.error);
 			let workspace = null;
@@ -891,6 +896,7 @@ export async function startWebConsole({
 			if (body.provider) args.push("--provider", String(body.provider));
 			if (body.model) args.push("--model", String(body.model));
 			if (selection.coding.length > 0) args.push("--tools", selection.coding.join(","));
+			if (body.thinking) args.push("--thinking", String(body.thinking));
 			// Create the isolated layout through the launcher itself (ONE init path:
 			// paths, run.json, workspace, knowledge). `--dry-run` writes nothing else
 			// and starts no Host, no SDK Session and no EventLog writer; the Host is
@@ -1040,6 +1046,33 @@ export async function startWebConsole({
 					models: catalog.models,
 					default: catalog.default,
 				});
+			}
+
+			if (action === "thinking" && req.method === "POST") {
+				const body = await readBody(req);
+				const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+				if (typeof body.level !== "string" || !LEVELS.includes(body.level))
+					throw new HttpError(400, "invalid_thinking", `level must be one of ${LEVELS.join(", ")}`);
+				const attached = await hostFor(record);
+				if (!attached.ok)
+					return json(res, attached.state === "conflict" ? 409 : 503, {
+						ok: false,
+						code: attached.state === "conflict" ? CONTROL_ERRORS.conflict_owner : CONTROL_ERRORS.unavailable,
+						error: attached.reason ?? "the Host is not available",
+					});
+				try {
+					const answer = await attached.host.request("set_thinking", { level: body.level }, { timeout: 20_000 });
+					return json(res, answer.ok === false ? 409 : 200, {
+						ok: answer.ok !== false,
+						reason: answer.reason ?? null,
+						thinking: answer.thinking ?? null,
+						status: answer.status ?? null,
+					});
+				} catch (error) {
+					if (error instanceof HttpError)
+						return json(res, error.status, { ok: false, code: error.code, error: error.message });
+					throw error;
+				}
 			}
 
 			if (action === "model" && req.method === "POST") {

@@ -379,6 +379,7 @@ export function createExperimentConsole({
 			session_file: typeof session?.sessionFile === "function" ? session.sessionFile() : null,
 			session_creations: typeof session?.creations === "function" ? session.creations() : null,
 			model: typeof session?.model === "function" ? session.model() : null,
+			thinking: typeof session?.thinking === "function" ? session.thinking() : null,
 			rotation_attempts: [...attemptedBoundaries],
 			rotations_completed: rotationCompleted.length,
 			auto_rotations: autoRotations,
@@ -888,6 +889,24 @@ export function createExperimentConsole({
 		}
 	}
 
+	/**
+	 * Set the thinking level of the CURRENT Session. The SDK clamps it to what the
+	 * model supports; the returned snapshot is the effective value, never the request.
+	 * Like a model switch this is session configuration: no EventLog row.
+	 */
+	async function setThinking(level) {
+		if (!started || !session) return { ok: false, reason: "no live Session" };
+		if (typeof session.setThinking !== "function")
+			return { ok: false, reason: "this Session adapter cannot set a thinking level" };
+		if (typeof level !== "string" || !level) return { ok: false, reason: "a thinking level is required" };
+		try {
+			const applied = session.setThinking(level);
+			return { ok: true, thinking: applied ?? null, status: await status() };
+		} catch (error) {
+			return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
 	async function setModel({ provider, id } = {}) {
 		if (!started || !session) return { ok: false, reason: "no live Session to switch" };
 		if (typeof session.setModel !== "function")
@@ -958,6 +977,7 @@ export function createExperimentConsole({
 		appendControlReceipt,
 		availableModels,
 		setModel,
+		setThinking,
 		recover,
 		dispatch,
 		status,
