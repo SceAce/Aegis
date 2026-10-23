@@ -34,6 +34,11 @@ export const CONTROL_TOOLS_ALLOWED = Object.freeze([
 	"aegis_knowledge",
 	"aegis_submit_candidate",
 	"aegis_switch_session",
+	// Work-cycle review/checkpoint records are audit notes, not workspace
+	// effects. They are admitted here so the model can review a stall and
+	// checkpoint a unit; any real effect still goes through the Broker gate.
+	"aegis_work_review",
+	"aegis_work_checkpoint",
 	"aegis_task_decision",
 	"aegis_submit_plan",
 	"aegis_observe",

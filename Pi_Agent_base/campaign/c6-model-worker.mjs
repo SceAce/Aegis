@@ -370,20 +370,27 @@ export function createToolCallRegistry() {
  * action_ref is passed through (the Broker will reject it), so the failure is
  * recorded honestly rather than silently dropped.
  *
- * @param {{ decisionsByTask: Map<string, any[]>, evidenceRefFor?: (task: any, step: any) => string }} args
+ * @param {{ decisionsByTask: Map<string, any[]>, evidenceRefFor?: (task: any, step: any) => string, generationStart?: number }} args
  * @returns {(task: any) => ({task_id: string, steps: any[]}|null)}
  */
-export function createModelPlan({ decisionsByTask, evidenceRefFor = null }) {
+export function createModelPlan({ decisionsByTask, evidenceRefFor = null, generationStart = 0 }) {
+	// A dispatch-specific generation keeps step/action ids unique across a
+	// recovered or rotated dispatch. Re-using `model:0` would make two distinct
+	// effects share one audit id (double-charge/replay ambiguity).
+	let generation = Number.isSafeInteger(generationStart) && generationStart >= 0 ? generationStart : 0;
 	return function planFor(task) {
 		const decisions = decisionsByTask.get(task?.task_id) ?? [];
 		if (decisions.length === 0) return null;
+		const stamp = generation;
+		generation += 1;
 		const stages = Array.isArray(task?.stages) ? task.stages : [];
 		const steps = decisions.map((decision, index) => ({
-			step_id: `${task.task_id}:model:${index}`,
+			step_id: `${task.task_id}:model:${stamp}:${index}`,
 			stage_id: stages[index]?.stage_id ?? stages[0]?.stage_id ?? null,
 			action_ref: decision.action_ref,
 			arguments: decision.arguments ?? {},
 			criterion_id: decision.criterion_id ?? stages[index]?.criteria?.[0] ?? stages[0]?.criteria?.[0] ?? null,
+			source_refs: Array.isArray(decision.source_refs) ? decision.source_refs.slice(0, 8) : [],
 			evidence_ref: typeof evidenceRefFor === "function" ? evidenceRefFor(task, decision) : `artifact:${task.task_id}`,
 		}));
 		return { task_id: task.task_id, steps };
@@ -426,6 +433,19 @@ export function createDecisionCaptureTool({
 						Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
 					),
 					criterion_id: Type.Optional(Type.String()),
+					source_refs: Type.Optional(
+						Type.Array(
+							Type.Union([
+								Type.String({ maxLength: 200 }),
+								Type.Object({ ref_type: Type.Optional(Type.String()), ref_id: Type.String({ maxLength: 200 }) }),
+							]),
+							{
+								maxItems: 8,
+								description:
+									"Optional committed event refs: cite the Intent and knowledge selection this action implements",
+							},
+						),
+					),
 				}),
 			),
 			propose_task: Type.Optional(
@@ -463,12 +483,22 @@ export function createDecisionCaptureTool({
 			const units = [];
 			for (const [index, action] of rawActions.entries()) {
 				if (!action || typeof action.action_ref !== "string" || action.action_ref.length === 0) continue;
+				const sourceRefs = Array.isArray(action.source_refs)
+					? [
+							...new Set(
+								action.source_refs
+									.map((ref) => (typeof ref === "string" ? ref : ref?.ref_id))
+									.filter((ref) => typeof ref === "string" && ref.length > 0 && ref.length <= 200),
+							),
+						].slice(0, 8)
+					: [];
 				units.push({
 					unit_id: `action:${index}`,
 					original_index: index,
 					action_ref: action.action_ref,
 					arguments: action.arguments && typeof action.arguments === "object" ? action.arguments : {},
 					criterion_id: typeof action.criterion_id === "string" ? action.criterion_id : null,
+					source_refs: sourceRefs,
 				});
 			}
 			if (units.length === 0)
@@ -485,6 +515,7 @@ export function createDecisionCaptureTool({
 					action_ref: unit.action_ref,
 					arguments: unit.arguments,
 					criterion_id: unit.criterion_id,
+					source_refs: unit.source_refs,
 					propose_task: shared,
 				});
 				let permit;
@@ -519,7 +550,12 @@ export function createDecisionCaptureTool({
 			if (admittedUnits > 0) {
 				for (const unit of admittedActions)
 					if (unit.action_ref)
-						buffer.push({ action_ref: unit.action_ref, arguments: unit.arguments, criterion_id: unit.criterion_id });
+						buffer.push({
+							action_ref: unit.action_ref,
+							arguments: unit.arguments,
+							criterion_id: unit.criterion_id,
+							source_refs: unit.source_refs ?? [],
+						});
 				if (shared && typeof buffer.pushTask === "function") buffer.pushTask(shared);
 			}
 			// Every charged unit's body has now returned: record `finished` durably.

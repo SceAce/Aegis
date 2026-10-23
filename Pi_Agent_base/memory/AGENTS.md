@@ -16,6 +16,7 @@
 
 - Board/状态：aegis-runtime-core-smoke、aegis-runtime-effective-board。
 - RAM：aegis-ram-reaudit、aegis-ram-reaudit-sdk、aegis-ram-cache-payload。
+- Work-cycle：aegis-work-cycle、aegis-work-cycle-ram、aegis-work-cycle-phase2、aegis-work-cycle-sdk；C6 Host 链路见 aegis-work-cycle-host-rotation / -checkpoint-campaign / -recovery / -policy；启动门与 bootstrap review 见 aegis-work-cycle-bootstrap-intent；投影缓存见 aegis-work-cycle-checkpoint-tail（SDK 启动见测试规则）。
 - 学习：memory-runtime-learning-evidence-smoke、aegis-learning-bridge-e；Campaign 学习接线加 aegis-c6-learning-closure、aegis-c6-learning-reuse。
 
 审计脚本可能包含尚未修复的行为失败；按任务记录核对基线，不将其输出固化为正确预期。

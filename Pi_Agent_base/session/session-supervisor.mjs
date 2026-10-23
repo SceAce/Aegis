@@ -24,6 +24,7 @@ import { readFile } from "node:fs/promises";
 import { projectBoard } from "../memory/board.mjs";
 import { buildRam } from "../memory/ram.mjs";
 import { projectState, resolveOpenEpisode } from "../memory/state.mjs";
+import { projectWorkCycle, resolveWorkCyclePolicy } from "../memory/work-cycle.mjs";
 import { EventLog } from "../shared/events.mjs";
 import { evaluateHandoff } from "./handoff.mjs";
 import { applyStagedHandoff } from "./handoff-host.mjs";
@@ -156,7 +157,14 @@ export function createSessionSupervisor({
 		const usedRotations = committedRotations(events, episodeId);
 		const budgetCheck = budgetAllowsSession(budget, usedRotations);
 		if (!budgetCheck.allowed) return { allowed: false, reason: budgetCheck.reason, blocking: [] };
-		const ram = buildRam({ board, state, episodeId, goal: state.episodes[episodeId]?.goal?.description || "" });
+		const workCycle = projectWorkCycle(events, episodeId, resolveWorkCyclePolicy(process.env));
+		const ram = buildRam({
+			board,
+			state,
+			episodeId,
+			goal: state.episodes[episodeId]?.goal?.description || "",
+			workCycle,
+		});
 		const verdict = evaluateHandoff({
 			state,
 			board,
@@ -164,6 +172,7 @@ export function createSessionSupervisor({
 			episodeId,
 			reason: handoff?.reason || "automatic post-settle rotation",
 			requestId: handoff?.request_id,
+			workCycle,
 		});
 		if (!verdict.allowed) {
 			const blocking = (verdict.pending_actions ?? []).map(
@@ -214,7 +223,14 @@ export function createSessionSupervisor({
 		if (!budgetCheck.allowed)
 			return { applied: false, reason: budgetCheck.reason, episode_id: episodeId, request_id: effectiveRequestId };
 
-		const ram = buildRam({ board, state, episodeId, goal: state.episodes[episodeId]?.goal?.description || "" });
+		const workCycle = projectWorkCycle(events, episodeId, resolveWorkCyclePolicy(process.env));
+		const ram = buildRam({
+			board,
+			state,
+			episodeId,
+			goal: state.episodes[episodeId]?.goal?.description || "",
+			workCycle,
+		});
 		const verdict = evaluateHandoff({
 			state,
 			board,
@@ -222,6 +238,7 @@ export function createSessionSupervisor({
 			episodeId,
 			reason: reason || handoff?.reason || "automatic post-settle rotation",
 			requestId: effectiveRequestId,
+			workCycle,
 		});
 		if (!verdict.allowed)
 			return { applied: false, reason: verdict.reason, episode_id: episodeId, request_id: effectiveRequestId };
@@ -341,8 +358,14 @@ export function createSessionSupervisor({
 		}
 		const result = await rotate({ requestId: handoff.request_id, reason: handoff.reason });
 		if (result.applied)
-			return { recovered: true, applied: true, request_id: result.request_id, episode_id: result.episode_id };
-		return { recovered: false, applied: false, reason: result.reason, request_id: result.request_id };
+			return {
+				...result,
+				recovered: true,
+				applied: true,
+				request_id: result.request_id,
+				episode_id: result.episode_id,
+			};
+		return { ...result, recovered: false, applied: false, reason: result.reason, request_id: result.request_id };
 	}
 
 	return { canRotate, rotate, recoverInterrupted };

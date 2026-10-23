@@ -195,6 +195,9 @@ export function createBrokerWorker(
 				action_id: actionEventKey,
 				action_ref: step.action_ref,
 				tool_name: contract?.tool ?? step.action_ref,
+				...(Array.isArray(step.source_refs) && step.source_refs.length > 0
+					? { source_refs: step.source_refs.slice(0, 8) }
+					: {}),
 				version: contract?.version ?? null,
 				implementation_digest: contract?.implementation_digest ?? null,
 				episode_id: episodeId,
@@ -218,6 +221,7 @@ export function createBrokerWorker(
 				: (step.arguments?.target ?? step.arguments?.path ?? null);
 		// The Broker is the ONLY execution path.
 		let result;
+		let workCycleBlocked = false;
 		try {
 			// The intent append is awaited; re-check final parameters/grants at the
 			// actual execution boundary as well.
@@ -225,9 +229,16 @@ export function createBrokerWorker(
 			const work = workPermit();
 			if (!work.ok) grant = { ok: false, reason: work.code };
 			if (executionPermit) {
-				const latest = await executionPermit({ task, step });
-				if (latest?.ok !== true)
+				const latest = await executionPermit({ task, step, tool_name: "aegis_script" });
+				if (latest?.ok !== true) {
+					workCycleBlocked = (latest?.reasons ?? []).some(
+						(reason) =>
+							reason.code === "work_review_required" ||
+							reason.code === "work_unit_unscoped" ||
+							reason.code === "work_cycle_projection_failed",
+					);
 					grant = { ok: false, reason: latest?.reasons?.map((r) => r.code).join("; ") || "execution_not_permitted" };
+				}
 			}
 			result = grant.ok
 				? await broker.invoke({
@@ -301,7 +312,13 @@ export function createBrokerWorker(
 			};
 		}
 		if (result?.status === "rejected") {
-			return { ok: false, phase: "rejected", error: result.reason, effect_probe: false };
+			return {
+				ok: false,
+				phase: "rejected",
+				error: result.reason,
+				work_cycle_blocked: workCycleBlocked,
+				effect_probe: false,
+			};
 		}
 		return {
 			ok: true,
@@ -359,14 +376,16 @@ export function createBrokerWorker(
 				if (!stepResult.ok) {
 					return {
 						ok: false,
-						failure_mode:
-							stepResult.phase === "permit"
+						failure_mode: stepResult.work_cycle_blocked
+							? "work_review_required"
+							: stepResult.phase === "permit"
 								? stepResult.error
 								: stepResult.phase === "rejected"
 									? "action_rejected"
 									: stepResult.phase === "intent"
 										? "intent_not_durable"
 										: "result_not_durable",
+						work_cycle_blocked: stepResult.work_cycle_blocked === true,
 						audit_degraded: stepResult.phase === "intent" || stepResult.phase === "result",
 						detail: stepResult.error,
 						effects,

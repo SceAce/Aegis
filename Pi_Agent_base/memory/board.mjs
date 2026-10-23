@@ -368,6 +368,12 @@ export function permittedNodeType(event) {
 				if (typeof event.payload?.text !== "string" || event.payload.text.trim() === "") return null;
 				return { type: "Hint" };
 			}
+			// Structured work-cycle records: planning metadata only. They project as
+			// Artifacts (unverified) so they can never become a Fact/Outcome, and a
+			// foreign/model-authored row is refused the same way as other notes.
+			if (["work.checkpoint", "work.review"].includes(event.payload?.kind)) {
+				return event.source?.kind === "runtime" ? { type: "Artifact" } : null;
+			}
 			return ["knowledge.selected", "round.checkpoint", "web.search"].includes(event.payload?.kind) &&
 				["runtime", "human"].includes(event.source?.kind)
 				? { type: "Artifact" }
@@ -628,6 +634,13 @@ function nodeText(event, type) {
 			}
 			if (payload.kind === "knowledge.selected") {
 				return `knowledge selected: ${payload.selected?.length ?? 0} reference(s) for ${payload.mode ?? "manual"} query`;
+			}
+			if (payload.kind === "work.checkpoint") {
+				return `work ${payload.unit_status ?? "continue"}: ${String(payload.work_unit_id ?? "(unit)").slice(0, 120)} — ${String(payload.model_claim?.summary ?? "").slice(0, 400)} (unverified planning metadata, not success)`;
+			}
+			if (payload.kind === "work.review") {
+				const selection = payload.retrieval?.selection_event_id ? "recorded retrieval" : "no retrieval record";
+				return `work review for ${String(payload.work_unit_id ?? "(unit)").slice(0, 120)}: ${String(payload.blocker?.text ?? "").slice(0, 300)} (${selection}; unverified, not an Outcome)`;
 			}
 			if (payload.kind === "web.search") {
 				return `web search ${payload.status ?? "unknown"}: ${payload.returned ?? 0} allowed / ${payload.total ?? 0} total result(s) for ${payload.purpose ?? "technique"} (unverified reference, not a Fact)`;

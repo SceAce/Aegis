@@ -28,7 +28,7 @@ const SECTION_ORDER = [
 ];
 
 /**
- * @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null, discipline?: {workspace?: string, tool_calls?: number, rules?: string[]}|null, rules?: Array<{kind?: string, text?: string, experience_id?: string|null, revision?: number|null, route?: string|null, source?: string|null}>|null, aliasRegistry?: Record<string, string>|null}} args
+ * @param {{board: any, state: any, episodeId: string|null, goal?: string, budgetChars?: number, seed?: any|null, discipline?: {workspace?: string, tool_calls?: number, rules?: string[]}|null, rules?: Array<{kind?: string, text?: string, experience_id?: string|null, revision?: number|null, route?: string|null, source?: string|null}>|null, workCycle?: any|null, contextUsage?: any|null, aliasRegistry?: Record<string, string>|null}} args
  */
 export function buildRamProjection({
 	board,
@@ -39,6 +39,8 @@ export function buildRamProjection({
 	seed = null,
 	discipline = null,
 	rules = [],
+	workCycle = null,
+	contextUsage = null,
 	aliasRegistry = null,
 }) {
 	const budget = Number.isSafeInteger(budgetChars) && budgetChars > 0 ? budgetChars : DEFAULT_BUDGET;
@@ -162,7 +164,11 @@ export function buildRamProjection({
 		}
 	}
 	const knowledge = [...knowledgeById.values()]
-		.sort((a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"))
+		.sort(
+			(a, b) =>
+				Number(["model_query", "work_review"].includes(b.selection_mode)) -
+				Number(["model_query", "work_review"].includes(a.selection_mode)),
+		)
 		.slice(0, 6)
 		.map((item) => ({ knowledge_reference: true, ...item, verified: false, action_policy: "none" }));
 	const checkpoints = (Array.isArray(state.round_checkpoints) ? state.round_checkpoints : [])
@@ -365,7 +371,9 @@ export function buildRamProjection({
 		for (const node of raw.human_hint) referenceRows.push(registerReference(node));
 		for (const node of raw.external_reference) referenceRows.push(registerReference(node));
 		const knowledgeRows = [...raw.knowledge].sort(
-			(a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"),
+			(a, b) =>
+				Number(["model_query", "work_review"].includes(b.selection_mode)) -
+				Number(["model_query", "work_review"].includes(a.selection_mode)),
 		);
 		for (const node of knowledgeRows.slice(0, REGISTER_KNOWLEDGE)) referenceRows.push(registerReference(node));
 		const ruleRows = [];
@@ -466,11 +474,128 @@ export function buildRamProjection({
 					trust: "unverified",
 				}
 			: null;
+		// Structured work-cycle frame. It is part of the MANDATORY core: a review
+		// gate or a pending work unit must never be evicted by optional knowledge.
+		// Only the actual review/checkpoint text is model-authored and stays marked
+		// unverified; the gate status is a runtime projection, not an Outcome.
+		const episodeReviews = (Array.isArray(state.work_reviews) ? state.work_reviews : []).filter(
+			(item) => item && item.episode_id === episodeId,
+		);
+		const episodeCheckpoints = (Array.isArray(state.work_checkpoints) ? state.work_checkpoints : []).filter(
+			(item) => item && item.episode_id === episodeId,
+		);
+		const latestReview = workCycle?.review ?? episodeReviews[episodeReviews.length - 1] ?? null;
+		const latestCheckpoint = workCycle?.checkpoint ?? episodeCheckpoints[episodeCheckpoints.length - 1] ?? null;
+		function usageView(value) {
+			if (!value || typeof value !== "object" || value.known !== true) return { known: false };
+			const used = Number(value.used_tokens);
+			const limit = Number(value.limit_tokens);
+			if (!Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) return { known: false };
+			return {
+				known: true,
+				used_tokens: Math.round(used),
+				limit_tokens: Math.round(limit),
+				percent: value.percent ?? null,
+			};
+		}
+		const handoffUsage = usageView(workCycle?.handoff?.context_usage ?? contextUsage);
+		const workEvidence = Array.isArray(workCycle?.evidence_event_ids)
+			? workCycle.evidence_event_ids
+					.slice(-8)
+					.map((id) => ref("event", id))
+					.filter(Boolean)
+			: [];
+		const workFrame =
+			workCycle &&
+			typeof workCycle === "object" &&
+			(workCycle.review_required === true ||
+				(workCycle.unscoped === true && workCycle.start_gate_enabled === true) ||
+				Boolean(workCycle.work_unit_id) ||
+				Boolean(latestCheckpoint) ||
+				workCycle.handoff?.recommended === true)
+				? {
+						status: typeof workCycle.status === "string" ? workCycle.status : "unknown",
+						...(typeof workCycle.work_unit_state === "string" ? { work_unit_state: workCycle.work_unit_state } : {}),
+						...(workCycle.unscoped === true ? { unscoped: true } : {}),
+						...(workCycle.bootstrap_review === true ? { bootstrap_review: true } : {}),
+						...(typeof workCycle.trigger_id === "string" && workCycle.trigger_id
+							? { trigger_id: workCycle.trigger_id }
+							: {}),
+						...(Number.isFinite(workCycle.action_count) ? { action_count: workCycle.action_count } : {}),
+						...(Number.isFinite(workCycle.review_round_action_count)
+							? { review_round_action_count: workCycle.review_round_action_count }
+							: {}),
+						...(Array.isArray(workCycle.consumptions) && workCycle.consumptions.length > 0
+							? {
+									consumptions: workCycle.consumptions.slice(-2).map((entry) => ({
+										review: ref("event", entry.review_event_id),
+										intent: ref("event", entry.intent_event_id),
+										selection: entry.selection_event_id ? ref("event", entry.selection_event_id) : null,
+										trust: "runtime_projection_not_authorization",
+									})),
+								}
+							: {}),
+						...(typeof workCycle.work_unit_id === "string" && workCycle.work_unit_id
+							? { work_unit_id: memoryText(workCycle.work_unit_id, 120) }
+							: {}),
+						...(Array.isArray(workCycle.reasons) && workCycle.reasons.length
+							? { reasons: workCycle.reasons.slice(0, 3) }
+							: {}),
+						...(workEvidence.length ? { evidence: workEvidence } : {}),
+						...(latestReview
+							? {
+									review: {
+										event: ref("event", latestReview.event_id),
+										...(latestReview.blocker ? { blocker: memoryText(latestReview.blocker, 300) } : {}),
+										...(latestReview.next_step ? { next_step: memoryText(latestReview.next_step, 300) } : {}),
+										retrieval: latestReview.retrieval_status ?? "unknown",
+										trust: "unverified_model_summary",
+									},
+								}
+							: {}),
+						...(latestCheckpoint
+							? {
+									checkpoint: {
+										event: ref("event", latestCheckpoint.event_id),
+										unit_status: latestCheckpoint.unit_status ?? "continue",
+										...(latestCheckpoint.summary ? { summary: memoryText(latestCheckpoint.summary, 240) } : {}),
+										trust: "unverified_model_summary",
+									},
+								}
+							: {}),
+						next_step:
+							latestReview?.next_step ??
+							(workCycle.unscoped === true
+								? "Record a non-empty scoped Intent with aegis_propose kind=intent before any side effect; read-only observation and retrieval remain available."
+								: "Compare attempted routes, query the blocking technique, then propose a new scoped Intent citing the review before side effects."),
+						...(Array.isArray(workCycle.usage) && workCycle.usage.length > 0
+							? {
+									usage: workCycle.usage.slice(0, 3).map((entry) => ({
+										selection: ref("event", entry.selection_event_id),
+										knowledge_ids: Array.isArray(entry.knowledge_ids) ? entry.knowledge_ids.slice(0, 3) : [],
+										intent: entry.intent_event_id ? ref("event", entry.intent_event_id) : null,
+										action: entry.action_event_id ? ref("event", entry.action_event_id) : null,
+										outcome: entry.outcome_event_id ? ref("event", entry.outcome_event_id) : null,
+										status: entry.status,
+										trust: "runtime_projection_not_authorization",
+									})),
+								}
+							: {}),
+						handoff: {
+							recommended: workCycle.handoff?.recommended === true,
+							reasons: Array.isArray(workCycle.handoff?.reasons) ? workCycle.handoff.reasons.slice(0, 3) : [],
+							context_usage: handoffUsage,
+							advisory: true,
+						},
+						trust: "runtime_advisory_not_outcome",
+					}
+				: null;
 		const task = {
 			task_id: episode?.task_id ?? null,
 			total_goal: memoryText(episode?.goal?.description ?? goal ?? "(not provided)", 600),
 			...(goal && goal !== episode?.goal?.description ? { current_prompt: memoryText(goal, 240) } : {}),
 			...(subgoal ? { subgoal } : {}),
+			...(workFrame ? { work_cycle: workFrame } : {}),
 			status: episode?.status ?? "unknown",
 			authorization: safe(episode?.authorization ?? "unknown", 300),
 			budget: safe(episode?.budget ?? "unknown", 200),
@@ -484,6 +609,20 @@ export function buildRamProjection({
 			};
 			useRef(task.subgoal?.ref);
 			useRef(task.subgoal?.event);
+			useRef(task.work_cycle?.review?.event);
+			useRef(task.work_cycle?.checkpoint?.event);
+			for (const row of task.work_cycle?.consumptions ?? []) {
+				useRef(row.review);
+				useRef(row.intent);
+				useRef(row.selection);
+			}
+			for (const alias of task.work_cycle?.evidence ?? []) useRef(alias);
+			for (const row of task.work_cycle?.usage ?? []) {
+				useRef(row.selection);
+				useRef(row.intent);
+				useRef(row.action);
+				useRef(row.outcome);
+			}
 			for (const row of registers.facts) {
 				useRef(row.ref);
 				useRef(row.event);
@@ -614,7 +753,10 @@ export function buildRamProjection({
 		if (text.length > budget) {
 			for (const row of registers.facts) row.text = safe(row.text, 160);
 			for (const row of registers.references)
-				row.content = safe(row.content, row.kind === "knowledge" && row.selection_mode === "model_query" ? 7000 : 450);
+				row.content = safe(
+					row.content,
+					row.kind === "knowledge" && ["model_query", "work_review"].includes(row.selection_mode) ? 7000 : 450,
+				);
 			for (const row of registers.claims) row.text = safe(row.text, 200);
 			for (const row of registers.rules) row.text = safe(row.text, 220);
 			text = serialize();
@@ -626,10 +768,10 @@ export function buildRamProjection({
 			// priority (document seed -> retrieved knowledge -> human hint).
 			const externalIndex = registers.references.findIndex((row) => row.kind === "external_reference");
 			const knowledgeIndex = registers.references.findIndex(
-				(row) => row.kind === "knowledge" && row.selection_mode !== "model_query",
+				(row) => row.kind === "knowledge" && !["model_query", "work_review"].includes(row.selection_mode),
 			);
 			const selectedKnowledgeIndex = registers.references.findIndex(
-				(row) => row.kind === "knowledge" && row.selection_mode === "model_query",
+				(row) => row.kind === "knowledge" && ["model_query", "work_review"].includes(row.selection_mode),
 			);
 			if (externalIndex >= 0) {
 				registers.references.splice(externalIndex, 1);

@@ -97,6 +97,21 @@ import {
 	saveToolCatalog,
 	summarizeTools,
 } from "../memory/tool-catalog.mjs";
+import {
+	evaluateWorkCycleGate,
+	evaluateWorkStartGate,
+	normalizeContextUsage,
+	projectWorkCycle,
+	recommendWorkHandoff,
+	resolveWorkCyclePolicy,
+	validateWorkEvidence,
+	WORK_CHECKPOINT_KIND,
+	WORK_CYCLE_VERSION,
+	WORK_READ_ONLY_TOOLS,
+	WORK_REVIEW_KIND,
+	WORK_REVIEW_SELECTION_MODE,
+	workStartGateEnabled,
+} from "../memory/work-cycle.mjs";
 import { observationConfigFromEnv, runObservationCommand } from "../observation/observation-command.mjs";
 import { openAegisTui } from "../observation/tui/session.ts";
 import { AegisComposerBar, AegisLogoHeader, AegisSidebar, AegisTopBar } from "../observation/tui/shell.ts";
@@ -111,6 +126,13 @@ import {
 	workToolAccount,
 } from "../orchestration/work-control.mjs";
 import { evaluateHandoff } from "../session/handoff.mjs";
+import {
+	beginHandoffAttempt,
+	consumeHandoffAttempt,
+	endHandoffAttempt,
+	handoffAttemptAuthorizes,
+	readHandoffAttemptSync,
+} from "../session/handoff-grant.mjs";
 import { createArtifactStore } from "../shared/artifact-store.mjs";
 import { digest, EventLog, eventId, hostEventLog, schemaForEventType } from "../shared/events.mjs";
 
@@ -143,18 +165,9 @@ const OBSERVER_VERSION = "0.2.0";
 const MAX_EXCERPT = 800;
 
 // Tools that never mutate the workspace. They are allowed to continue while the
-// audit log is unavailable; everything else fails closed.
-const READ_ONLY_TOOLS = new Set([
-	"read",
-	"ls",
-	"grep",
-	"find",
-	"glob",
-	"webfetch",
-	"websearch",
-	"aegis_observe",
-	"aegis_remote_request",
-]);
+// audit log is unavailable; everything else fails closed. The list lives in the
+// work-cycle module so the stall gate and this fail-closed guard cannot drift.
+const READ_ONLY_TOOLS = new Set([...WORK_READ_ONLY_TOOLS]);
 
 function aegisHome() {
 	return process.env.AEGIS_HOME || join(process.env.HOME || BASE_DIR, ".Aegis");
@@ -327,6 +340,10 @@ function sectionWrapped(name: string, value: string): string {
 // the board/RAM and makes requested/completed counts disagree).
 const CONTROL_TOOLS = new Set([
 	"aegis_submit_candidate",
+	"aegis_work_review",
+	"aegis_work_checkpoint",
+	"aegis_task_decision",
+	"aegis_submit_plan",
 	"aegis_knowledge",
 	"aegis_propose",
 	"aegis_switch_session",
@@ -338,6 +355,98 @@ function sessionKey(ctx: ExtensionContext): string {
 		return ctx.sessionManager.getSessionId();
 	} catch {
 		return "unknown-session";
+	}
+}
+/**
+ * Trusted host policy for stall detection. Only Host environment variables are
+ * read; a model can never supply a threshold, and an invalid value falls back to
+ * the frozen default instead of widening the limit.
+ */
+function workCyclePolicy() {
+	return resolveWorkCyclePolicy(process.env);
+}
+/**
+ * Real context usage only. `undefined`/unknown stays `{known:false}`; RAM chars
+ * are never converted into a token estimate.
+ */
+function workCycleContextUsage(ctx: ExtensionContext | null | undefined) {
+	try {
+		const usage = ctx && typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined;
+		return normalizeContextUsage(usage);
+	} catch {
+		return { known: false };
+	}
+}
+/**
+ * Resolve RAM aliases inside `source_refs` BEFORE the work-cycle gate inspects
+ * them. The model sees `rN` handles; the committed review is identified by the
+ * canonical event id. Proposal validation resolves aliases too, so the gate must
+ * agree with it instead of rejecting a handle RAM itself printed.
+ */
+function workCycleGateInput(
+	input: Record<string, unknown>,
+	aliases: Record<string, { type?: string; id?: string; digest?: string; eventId?: string }> | null,
+): Record<string, unknown> {
+	if (!Array.isArray(input.source_refs)) return input;
+	const resolved = input.source_refs.map((ref) => {
+		const id =
+			typeof ref === "string" ? ref : ref && typeof ref === "object" ? (ref as { ref_id?: string }).ref_id : null;
+		if (typeof id !== "string" || !id) return ref;
+		const alias = aliases ? aliases[id] : undefined;
+		const target = alias?.eventId ?? alias?.id;
+		if (typeof target !== "string" || !target) return ref;
+		return { ref_type: "event", ref_id: target };
+	});
+	return { ...input, source_refs: resolved };
+}
+
+/**
+ * Fail-closed projection: a broken/missing audit makes the gate request a
+ * review rather than letting effects continue unreviewed.
+ */
+// The return type is intentionally loose: the success branch is the full
+// work-cycle projection plus Host flags, and the fail-closed branch is a small
+// subset with the same gate fields. Callers only read a bounded set of fields.
+function projectWorkCycleSafe(
+	events: unknown,
+	episode: string | null,
+	extra: { board?: unknown; manifest?: unknown } = {},
+): any {
+	try {
+		return {
+			...projectWorkCycle(Array.isArray(events) ? events : [], episode, {
+				...workCyclePolicy(),
+				...(extra.board ? { board: extra.board } : {}),
+				...(extra.manifest ? { manifest: extra.manifest } : {}),
+			}),
+			// The scoped-Intent start gate belongs to the trusted Host contract. When
+			// it is off (standalone interactive Pi), the RAM frame keeps its historical
+			// shape and does not spend budget on an `unscoped` reminder that would not
+			// block anything.
+			start_gate_enabled: workStartGateEnabled(process.env),
+		};
+	} catch (error) {
+		return {
+			status: "unavailable",
+			review_required: true,
+			reasons: ["work_cycle_projection_failed"],
+			trigger_id: null,
+			work_unit_id: null,
+			work_unit_event_id: null,
+			current_intent: null,
+			checkpoint: null,
+			review: null,
+			evidence_event_ids: [],
+			policy: workCyclePolicy(),
+			consumptions: [],
+			unscoped: false,
+			accepted_intent_count: 0,
+			bootstrap_review: false,
+			complete_candidate: false,
+			work_unit_state: "unknown",
+			start_gate_enabled: workStartGateEnabled(process.env),
+			error: error instanceof Error ? error.message : String(error),
+		};
 	}
 }
 function source(kind = "runtime") {
@@ -837,7 +946,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	 * strictly after the SDK rebind/extension bind succeeded).
 	 */
 	async function recordStagedHandoffCompletion(): Promise<void> {
-		let handoff: { episode_id?: string; request_id?: string } | null = null;
+		let handoff: { episode_id?: string; request_id?: string; work_cycle?: { boundary_identity?: string } } | null =
+			null;
 		try {
 			handoff = JSON.parse(await readFile(handoffPath(), "utf8"));
 		} catch {
@@ -852,9 +962,31 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
 			return;
 		}
+		// AUTHORITY: `handoff.completed` is only valid for a replacement that a
+		// trusted Host attempt is creating RIGHT NOW. A staged JSON file (or a plain
+		// initial `session_start` after a restart/refusal) is not a grant, even when
+		// its episode is still open. The live attempt id exists only for the duration
+		// of the Host's `newSession` call.
+		const attempt = readHandoffAttemptSync(handoffPath());
+		const authority = handoffAttemptAuthorizes({ handoff, attempt, sessionId });
+		if (!authority.ok) {
+			process.stderr.write(
+				`[aegis-observer] not completing staged handoff ${handoff.request_id}: ${authority.reason || "no Host authority"}\n`,
+			);
+			return;
+		}
 		const recorded = await emit(
 			"handoff.completed",
-			{ request_id: handoff.request_id, to_session: sessionId, episode_id: handoff.episode_id },
+			{
+				request_id: handoff.request_id,
+				to_session: sessionId,
+				from_session: attempt.from_session,
+				attempt_id: attempt.attempt_id,
+				episode_id: handoff.episode_id,
+				...(typeof handoff.work_cycle?.boundary_identity === "string" && handoff.work_cycle.boundary_identity
+					? { work_cycle_identity: handoff.work_cycle.boundary_identity }
+					: {}),
+			},
 			{ episode_id: handoff.episode_id, source_kind: "runtime" },
 		);
 		if (!recorded.ok) {
@@ -863,6 +995,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			);
 			return;
 		}
+		await consumeHandoffAttempt(handoffPath());
 		await rename(handoffPath(), `${handoffPath()}.applied.json`).catch(() => undefined);
 	}
 
@@ -1093,6 +1226,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			"aegis_switch_session",
 			"aegis_submit_candidate",
 			"aegis_remote_request",
+			"aegis_work_review",
+			"aegis_work_checkpoint",
 		]);
 		// Read-only Router preview: an active, resolver-verified PROCEDURE is a
 		// rule register in this request's RAM. It never executes and never changes
@@ -1131,6 +1266,15 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			// Routing is an optimization; a failure leaves the request unchanged.
 		}
 		const currentEpisode = episodeId ?? null;
+		const contextUsage = workCycleContextUsage(ctx);
+		const workCycle = projectWorkCycleSafe(actionRows, currentEpisode, { board, manifest: hostManifest() });
+		const handoffAdvisory = recommendWorkHandoff({
+			cycle: workCycle,
+			contextUsage,
+			policy: workCycle.policy ?? workCyclePolicy(),
+			sourceSessionId: sessionId,
+		});
+		const workCycleView = { ...workCycle, handoff: handoffAdvisory };
 		if (ramAliasEpisodeId !== currentEpisode) {
 			ramAliasHistory = {};
 			ramAliasRegistry = {};
@@ -1140,6 +1284,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			...contextProjectionInput({ board, state, seed: ramSeed(), policy }),
 			episodeId,
 			goal: currentGoal,
+			workCycle: workCycleView,
+			contextUsage,
 			discipline: {
 				workspace: workspaceRootOrCwd(cliWorkspace || undefined),
 				tool_calls: actionRows.filter(
@@ -1190,6 +1336,14 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			},
 		];
 		const projectionAudit = {
+			work_cycle_status: workCycleView.status,
+			work_cycle_reasons: workCycleView.reasons,
+			work_cycle_trigger_id: workCycleView.trigger_id ?? null,
+			work_cycle_work_unit_id: workCycleView.work_unit_id ?? null,
+			work_cycle_policy: workCycleView.policy,
+			work_cycle_handoff: handoffAdvisory.recommended
+				? { recommended: true, reasons: handoffAdvisory.reasons, context_usage_known: contextUsage.known === true }
+				: { recommended: false, context_usage_known: contextUsage.known === true },
 			ram_digest: ramDigest,
 			ram_estimated_chars: ram.length,
 			ram_version: projection.version,
@@ -1294,6 +1448,46 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			// fsync-before-effect ordering is inside the tool, not the generic hook),
 			// and they fail closed themselves when the audit is unavailable.
 			const isControl = CONTROL_TOOLS.has(event.toolName);
+			// Stall gate: derived from committed action identities/results only. It is
+			// advisory state, never a verdict; it blocks effect-capable tools until a
+			// review is recorded AND a new scoped Intent cites it. Read-only
+			// observation, retrieval and review tools stay available.
+			const workCycle = projectWorkCycleSafe(log?.replay() ?? [], episodeId, { board, manifest: hostManifest() });
+			if (workCycle.review_required) {
+				const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
+				const gate = evaluateWorkCycleGate(workCycle, {
+					tool_name: event.toolName,
+					input: workCycleGateInput(input, ramAliasHistory),
+				});
+				if (!gate.allowed) {
+					const where = workCycle.review?.event_id ?? workCycle.trigger_id;
+					return {
+						block: true,
+						...(gate.terminate ? { terminate: true } : {}),
+						reason: `Aegis work review required (${workCycle.reasons.join(", ")}; ${gate.reason}). Record aegis_work_review with a real local-knowledge retrieval, then propose a new scoped Intent citing ${where ?? "the review"} before any side effect.`,
+					};
+				}
+			}
+			// Work-unit START gate. A trusted Host (the Experiment Console) binds this.
+			// While the Episode has NO accepted scoped Intent, every effect-capable call
+			// is refused and the refusal terminates the batch, so a parallel
+			// Intent+effect in one assistant message can never race ahead of the commit.
+			// Read-only observation, retrieval, review/checkpoint and a NON-EMPTY scoped
+			// Intent stay available.
+			if (workStartGateEnabled(process.env) && workCycle.unscoped === true) {
+				const input = event.input && typeof event.input === "object" ? (event.input as Record<string, unknown>) : {};
+				const startGate = evaluateWorkStartGate(workCycle, {
+					tool_name: event.toolName,
+					input: workCycleGateInput(input, ramAliasHistory),
+				});
+				if (!startGate.allowed) {
+					return {
+						block: true,
+						...(startGate.terminate ? { terminate: true } : {}),
+						reason: `Aegis: no accepted scoped work Intent exists for this Episode yet (${startGate.reason}). Read-only observation, knowledge/tool lookup and aegis_propose kind=intent with a NON-EMPTY scope remain available; every side effect is refused until that Intent is durably committed.`,
+					};
+				}
+			}
 			if (!["aegis_submit_candidate", "aegis_switch_session"].includes(event.toolName)) {
 				const permit = inspectWorkPermit({
 					events: log?.replay() ?? [],
@@ -1428,10 +1622,28 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 		// thin Host helper can act outside the agent run (it owns the real
 		// `runtime.newSession`); the Observer never tears down its own run here.
 		const ready = Boolean(state.open_handoff?.episode_id);
+		// Advisory only: the stop/review/handoff recommendation is derived from
+		// committed events + trusted host policy. The Observer NEVER creates a
+		// Session; the Host/Supervisor and `/aegis switch` stay the only paths.
+		const cycle = projectWorkCycleSafe(log?.replay() ?? [], episodeId ?? null, { board, manifest: hostManifest() });
+		const contextUsage = workCycleContextUsage(commandCtx);
+		const handoff = recommendWorkHandoff({
+			cycle,
+			contextUsage,
+			policy: cycle.policy ?? workCyclePolicy(),
+			sourceSessionId: sessionId,
+		});
 		await emit("agent.settled", {
 			outcome_pending: true,
+			session_id: sessionId,
 			handoff_ready: ready,
 			handoff_request_id: state.open_handoff?.request_id ?? null,
+			work_cycle_status: cycle.status,
+			work_cycle_reasons: Array.isArray(cycle.reasons) ? cycle.reasons : [],
+			work_cycle_trigger_id: cycle.trigger_id ?? null,
+			handoff_recommended: handoff.recommended,
+			handoff_reasons: handoff.reasons,
+			context_usage: contextUsage,
 		});
 		refreshProjections();
 	});
@@ -2416,6 +2628,522 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 	);
 
 	// -----------------------------------------------------------------------
+	// Work-cycle review + checkpoint control path.
+	//
+	// The trigger is derived ONLY from committed action identities/results and
+	// trusted host policy. A review is a retrieval-backed, unverified record; it
+	// is never an Outcome, failure or permission. While a review is pending the
+	// tool_call gate allows observation/retrieval/review and requires a new
+	// same-Episode scoped Intent citing the review before any effect.
+	// -----------------------------------------------------------------------
+	pi.registerTool(
+		defineTool({
+			name: "aegis_work_review",
+			label: "Aegis: review stalled work",
+			description:
+				"Review a detected stall (repeated identical actions/results, or several distinct side-effect routes without independently verified progress). Compare the attempted routes, record the blocker, perform ONE bounded local-knowledge retrieval and propose the next experiment. This records no Outcome and grants no permission; the side-effect hold stays until a new scoped Intent cites this review.",
+			promptSnippet: "Review the current blocker and retrieve a different technique",
+			promptGuidelines: [
+				"Use this when Aegis reports a work-review requirement. Cite the committed evidence you actually compared, query a technique/condition that could unblock the current evidence, and then propose a NEW scoped Intent with source_refs including this review event.",
+			],
+			parameters: Type.Object({
+				blocker: Type.String({ minLength: 1, maxLength: 600 }),
+				knowledge_query: Type.String({ minLength: 2, maxLength: 800 }),
+				next_step: Type.String({ minLength: 1, maxLength: 500 }),
+				tried_routes: Type.Array(Type.String({ minLength: 1, maxLength: 180 }), { minItems: 1, maxItems: 6 }),
+				evidence_event_ids: Type.Optional(
+					Type.Array(Type.String(), {
+						maxItems: 12,
+						description:
+							"Committed same-Episode action evidence you compared (defaults to the detected trigger evidence)",
+					}),
+				),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				await ensureLog(ctx);
+				refreshProjections();
+				if (!episodeId || !log?.healthy || auditUnavailable)
+					return {
+						content: [{ type: "text", text: "Work review unavailable without a healthy active Episode audit." }],
+						details: { ok: false, reason: "audit_unavailable" },
+					};
+				// Campaign accounting is part of the CALL contract, not of the content:
+				// a real call (including a content-reusing retry) is charged before any
+				// retrieval and settled on every path. A missing account refuses.
+				const account = workToolAccount(eventLogPath());
+				if (hostManifest()?.campaign_id && !account)
+					return {
+						content: [{ type: "text", text: "Aegis work review: Campaign tool account unavailable." }],
+						details: { ok: false, reason: "tool_account_unavailable" },
+					};
+				if (account) {
+					const admitted = await account.admit({
+						tool_call_id: _toolCallId,
+						tool_name: "aegis_work_review",
+						arguments_digest: digest(params),
+					});
+					if (!admitted?.ok)
+						return {
+							content: [{ type: "text", text: "Aegis work review: tool budget admission refused." }],
+							details: { ok: false, reason: "tool_admission_refused" },
+						};
+				}
+				let outcome: {
+					content: Array<{ type: "text"; text: string }>;
+					details: Record<string, unknown>;
+					terminate?: boolean;
+				};
+				try {
+					outcome = await (async () => {
+						const events = log!.replay();
+						const cycle = projectWorkCycleSafe(events, episodeId, { board, manifest: hostManifest() });
+						if (!cycle.review_required)
+							return {
+								content: [
+									{
+										type: "text",
+										text: "No active stall review is required; continue the current work unit or record a work checkpoint.",
+									},
+								],
+								details: { ok: false, reason: "review_not_required" },
+							};
+						if (!cycle.trigger_id)
+							return {
+								content: [
+									{ type: "text", text: "Work review could not derive a stable trigger from committed evidence." },
+								],
+								details: { ok: false, reason: "trigger_unavailable" },
+							};
+						// Idempotent CONTENT replay: a committed USABLE review for this exact
+						// trigger is reused (no second retrieval event). The call was already
+						// charged above; an `unavailable` review is not reused so the model can
+						// retry the real retrieval for the same trigger.
+						if (cycle.review)
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify({
+											reused: true,
+											trigger_id: cycle.trigger_id,
+											review_event_id: cycle.review.event_id,
+											selection_event_id: cycle.review.selection_event_id,
+											retrieval_status: cycle.review.retrieval_status,
+											selected_knowledge_ids: cycle.review.selected_knowledge_ids,
+											next_action: "propose a new scoped Intent citing the review event before any side effect",
+										}),
+									},
+								],
+								details: {
+									ok: true,
+									reused: true,
+									trigger_id: cycle.trigger_id,
+									review_event_id: cycle.review.event_id,
+									selection_event_id: cycle.review.selection_event_id,
+									selected_ids: cycle.review.selected_knowledge_ids,
+									retrieval_status: cycle.review.retrieval_status,
+								},
+							};
+						// Evidence: either the trigger's committed evidence or an explicit subset
+						// that must already belong to it (no fabricated/future/foreign refs).
+						let evidence = cycle.evidence_event_ids;
+						const explicitEvidence = Array.isArray((params as { evidence_event_ids?: unknown }).evidence_event_ids)
+							? ((params as { evidence_event_ids: unknown[] }).evidence_event_ids.filter(
+									(id): id is string => typeof id === "string",
+								) as string[])
+							: [];
+						if (explicitEvidence.length > 0) {
+							const validated = validateWorkEvidence(events, episodeId, explicitEvidence);
+							if (!validated.ok)
+								return {
+									content: [{ type: "text", text: `Work review evidence rejected: ${validated.reason}` }],
+									details: { ok: false, reason: validated.reason },
+								};
+							const triggerEvidence = new Set(cycle.evidence_event_ids);
+							if (validated.ids.some((id) => !triggerEvidence.has(id)))
+								return {
+									content: [
+										{
+											type: "text",
+											text: "Work review evidence must be part of the committed trigger evidence.",
+										},
+									],
+									details: { ok: false, reason: "evidence_not_part_of_trigger" },
+								};
+							evidence = validated.ids;
+						}
+						const query = String((params as { knowledge_query?: string }).knowledge_query ?? "")
+							.trim()
+							.slice(0, 800);
+						let retrievalStatus = "disabled";
+						let retrievalReason: string | null = "knowledge_disabled";
+						let selected: any = null;
+						if (contextPolicy().knowledge) {
+							try {
+								selected = await selectKnowledge({
+									root: knowledgeRootFromEnv(),
+									query,
+									maxResults: 4,
+									maxChars: 7000,
+								});
+								retrievalStatus = typeof selected.status === "string" ? selected.status : "unknown";
+								retrievalReason = typeof selected.reason === "string" ? selected.reason : null;
+							} catch (error) {
+								// A failed/unavailable retrieval is recorded explicitly; it is never
+								// reported as "knowledge reviewed". The hold remains and the same
+								// trigger may be retried.
+								retrievalStatus = "unavailable";
+								retrievalReason = error instanceof Error ? error.message : String(error);
+							}
+						}
+						const rows = Array.isArray(selected?.selected) ? selected.selected : [];
+						// WORK-REVIEW boundary only: a readable corpus with no selected section is
+						// a real completed search with NO match, not a knowledge hit. The general
+						// `selectKnowledge` API keeps its own return contract; `unavailable` and
+						// `disabled` keep their distinct meanings.
+						if (retrievalStatus === "ready" && rows.length === 0) {
+							retrievalStatus = "no_match";
+							retrievalReason = retrievalReason ?? "no_relevant_local_knowledge";
+						}
+						const selectionEvent = await emit(
+							"runtime.note",
+							{
+								kind: "knowledge.selected",
+								version: "knowledge-selection-1",
+								mode: WORK_REVIEW_SELECTION_MODE,
+								work_review_trigger_id: cycle.trigger_id,
+								query,
+								status: retrievalStatus,
+								reason: retrievalReason,
+								selected: rows,
+								available_sections: Number.isFinite(selected?.available) ? selected.available : 0,
+								omitted: Number.isFinite(selected?.omitted) ? selected.omitted : 0,
+							},
+							{ source_kind: "runtime", causation_id: currentPromptEventId, episode_id: episodeId },
+						);
+						if (!selectionEvent.ok)
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Work review was not durably recorded: ${selectionEvent.error || "audit unavailable"}. The side-effect hold remains.`,
+									},
+								],
+								details: { ok: false, reason: "retrieval_not_durable" },
+							};
+						const selectedIds = rows
+							.map((row: { knowledge_id?: string }) => row?.knowledge_id)
+							.filter((id: unknown): id is string => typeof id === "string");
+						const reviewEvent = await emit(
+							"runtime.note",
+							{
+								kind: WORK_REVIEW_KIND,
+								version: WORK_CYCLE_VERSION,
+								trigger_id: cycle.trigger_id,
+								work_unit_id: cycle.work_unit_id ?? null,
+								work_unit_event_id: cycle.work_unit_event_id ?? null,
+								// EXPLICIT bootstrap variant: the committed trigger evidence predates the
+								// first scoped Intent, so there is no work unit to bind. The projection
+								// only honours this when the accepted prefix really has no Intent yet.
+								...(cycle.unscoped === true && cycle.accepted_intent_count === 0 ? { bootstrap: true } : {}),
+								evidence_event_ids: evidence,
+								blocker: {
+									text: String((params as { blocker?: string }).blocker ?? "").slice(0, 400),
+									trust: "unverified_model_summary",
+								},
+								attempted_routes: (Array.isArray((params as { tried_routes?: unknown }).tried_routes)
+									? (params as { tried_routes: unknown[] }).tried_routes
+											.filter((item): item is string => typeof item === "string")
+											.map((item) => item.slice(0, 180))
+											.slice(0, 6)
+									: []) as string[],
+								retrieval: {
+									query,
+									selection_event_id: selectionEvent.event?.event_id ?? null,
+									status: retrievalStatus,
+									selected_knowledge_ids: selectedIds.slice(0, 8),
+									limits: { max_results: 4, max_chars: 7000 },
+									omitted: Number.isFinite(selected?.omitted) ? selected.omitted : 0,
+								},
+								next_step: {
+									text: String((params as { next_step?: string }).next_step ?? "").slice(0, 400),
+									trust: "unverified_model_summary",
+								},
+								trust: "unverified_model_summary",
+							},
+							{ source_kind: "runtime", causation_id: currentPromptEventId, episode_id: episodeId },
+						);
+						if (!reviewEvent.ok)
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Work review was not durably recorded: ${reviewEvent.error || "audit unavailable"}. The side-effect hold remains.`,
+									},
+								],
+								details: { ok: false, reason: "review_not_durable" },
+							};
+						refreshProjections();
+						const body = {
+							ok: retrievalStatus === "ready" || retrievalStatus === "no_match",
+							trigger_id: cycle.trigger_id,
+							review_event_id: reviewEvent.event?.event_id ?? null,
+							selection_event_id: selectionEvent.event?.event_id ?? null,
+							retrieval_status: retrievalStatus,
+							retrieval_reason: retrievalReason,
+							selected_knowledge_ids: selectedIds,
+							omitted: Number.isFinite(selected?.omitted) ? selected.omitted : 0,
+							next_action:
+								"propose a new scoped Intent citing the review event (or its selection event) from committed refs before any side effect",
+							...(cycle.bootstrap_review === true || (cycle.unscoped === true && cycle.accepted_intent_count === 0)
+								? { bootstrap: true }
+								: {}),
+						};
+						return {
+							content: [{ type: "text", text: JSON.stringify(body) }],
+							details: { ...body, selected_ids: selectedIds },
+						};
+					})();
+				} catch (error) {
+					outcome = {
+						content: [
+							{
+								type: "text",
+								text: `Work review failed: ${error instanceof Error ? error.message : String(error)}. The hold remains.`,
+							},
+						],
+						details: { ok: false, reason: "review_failed" },
+					};
+				}
+				if (account) {
+					const finished = await account.finish({ tool_call_id: _toolCallId, tool_name: "aegis_work_review" });
+					if (!finished?.ok) {
+						auditUnavailable = true;
+						return {
+							content: [{ type: "text", text: "Aegis work review: tool accounting did not settle." }],
+							details: { ok: false, reason: "tool_finish_unconfirmed" },
+							terminate: true,
+						};
+					}
+				}
+				return outcome;
+			},
+		}),
+	);
+
+	pi.registerTool(
+		defineTool({
+			name: "aegis_work_checkpoint",
+			label: "Aegis: record a work-unit checkpoint",
+			description:
+				"Record a bounded, UNVERIFIED planning checkpoint for the current scoped work unit: continue/blocked/complete, summary, blocker and next experiment, with committed same-Episode evidence refs. It cannot create a Fact, Outcome, Stage/Task completion, active Experience or a new Episode, and it never clears a work review.",
+			promptSnippet: "Record work-unit status and evidence (planning only, not success)",
+			promptGuidelines: [
+				"Use this at a work-unit boundary or when recording a blocker. A complete/blocked checkpoint is planning metadata only; success still requires an independent Oracle/human Outcome.",
+			],
+			parameters: Type.Object({
+				unit_status: Type.Union([Type.Literal("continue"), Type.Literal("blocked"), Type.Literal("complete")]),
+				summary: Type.String({ minLength: 1, maxLength: 600 }),
+				blocker: Type.Optional(Type.String({ maxLength: 400 })),
+				next_step: Type.Optional(Type.String({ maxLength: 400 })),
+				work_unit_id: Type.Optional(Type.String({ maxLength: 200 })),
+				work_unit_event_id: Type.Optional(
+					Type.String({
+						maxLength: 200,
+						description: "Optional committed Intent event ref; must equal the Runtime's current unit",
+					}),
+				),
+				evidence_event_ids: Type.Optional(
+					Type.Array(Type.String(), {
+						maxItems: 12,
+						description: "Committed same-Episode event refs supporting this planning checkpoint",
+					}),
+				),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				await ensureLog(ctx);
+				refreshProjections();
+				if (!episodeId || !log?.healthy || auditUnavailable)
+					return {
+						content: [{ type: "text", text: "Work checkpoint unavailable without a healthy active Episode audit." }],
+						details: { ok: false, reason: "audit_unavailable" },
+					};
+				const account = workToolAccount(eventLogPath());
+				if (hostManifest()?.campaign_id && !account)
+					return {
+						content: [{ type: "text", text: "Aegis work checkpoint: Campaign tool account unavailable." }],
+						details: { ok: false, reason: "tool_account_unavailable" },
+					};
+				if (account) {
+					const admitted = await account.admit({
+						tool_call_id: _toolCallId,
+						tool_name: "aegis_work_checkpoint",
+						arguments_digest: digest(params),
+					});
+					if (!admitted?.ok)
+						return {
+							content: [{ type: "text", text: "Aegis work checkpoint: tool budget admission refused." }],
+							details: { ok: false, reason: "tool_admission_refused" },
+						};
+				}
+				let outcome: {
+					content: Array<{ type: "text"; text: string }>;
+					details: Record<string, unknown>;
+					terminate?: boolean;
+				};
+				try {
+					outcome = await (async () => {
+						const events = log!.replay();
+						const cycle = projectWorkCycleSafe(events, episodeId, { board, manifest: hostManifest() });
+						const requestedUnit =
+							typeof (params as { work_unit_id?: string }).work_unit_id === "string"
+								? ((params as { work_unit_id: string }).work_unit_id || "").trim().slice(0, 200)
+								: "";
+						const requestedUnitEvent =
+							typeof (params as { work_unit_event_id?: string }).work_unit_event_id === "string"
+								? ((params as { work_unit_event_id: string }).work_unit_event_id || "").trim()
+								: "";
+						// The Runtime binds the checkpoint to the CURRENT effective Intent.
+						// A model may quote a ref to be validated, but cannot attach an old or
+						// arbitrary unit (which would let an old `complete` follow a new unit).
+						const workUnitEventId = cycle.work_unit_event_id ?? null;
+						const workUnitId = cycle.work_unit_id ?? "";
+						if (!workUnitEventId || !workUnitId)
+							return {
+								content: [
+									{
+										type: "text",
+										text: "Work checkpoint needs a current scoped work unit: propose an Intent with a scope first.",
+									},
+								],
+								details: { ok: false, reason: "no_scoped_work_unit" },
+							};
+						if (requestedUnit && requestedUnit !== workUnitId)
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Work checkpoint unit mismatch: the current unit is ${workUnitId}.`,
+									},
+								],
+								details: { ok: false, reason: "work_unit_mismatch" },
+							};
+						if (requestedUnitEvent && requestedUnitEvent !== workUnitEventId)
+							return {
+								content: [
+									{
+										type: "text",
+										text: "Work checkpoint Intent mismatch: only the current effective Intent can be checkpointed.",
+									},
+								],
+								details: { ok: false, reason: "work_unit_event_mismatch" },
+							};
+						const explicitEvidence = Array.isArray((params as { evidence_event_ids?: unknown }).evidence_event_ids)
+							? ((params as { evidence_event_ids: unknown[] }).evidence_event_ids.filter(
+									(id): id is string => typeof id === "string",
+								) as string[])
+							: [];
+						const validated =
+							explicitEvidence.length > 0
+								? validateWorkEvidence(events, episodeId, explicitEvidence)
+								: { ok: true, ids: cycle.evidence_event_ids, reason: null };
+						if (!validated.ok)
+							return {
+								content: [{ type: "text", text: `Work checkpoint evidence rejected: ${validated.reason}` }],
+								details: { ok: false, reason: validated.reason },
+							};
+						const contextUsage = workCycleContextUsage(ctx);
+						const handoff = recommendWorkHandoff({
+							cycle,
+							contextUsage,
+							policy: cycle.policy ?? workCyclePolicy(),
+							sourceSessionId: sessionId,
+						});
+						const recorded = await emit(
+							"runtime.note",
+							{
+								kind: WORK_CHECKPOINT_KIND,
+								version: WORK_CYCLE_VERSION,
+								work_unit_id: workUnitId,
+								work_unit_event_id: workUnitEventId,
+								unit_status: (params as { unit_status?: string }).unit_status ?? "continue",
+								model_claim: {
+									summary: String((params as { summary?: string }).summary ?? "").slice(0, 600),
+									blocker: params.blocker ? String(params.blocker).slice(0, 400) : null,
+									next_step: params.next_step ? String(params.next_step).slice(0, 400) : null,
+								},
+								evidence_event_ids: validated.ids,
+								context_usage: contextUsage,
+								handoff,
+								trust: "unverified_model_summary",
+							},
+							{ source_kind: "runtime", causation_id: currentPromptEventId, episode_id: episodeId },
+						);
+						if (!recorded.ok)
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Work checkpoint was not durably recorded: ${recorded.error || "audit unavailable"}`,
+									},
+								],
+								details: { ok: false, reason: "checkpoint_not_durable" },
+							};
+						refreshProjections();
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										ok: true,
+										event_id: recorded.event?.event_id ?? null,
+										work_unit_id: workUnitId,
+										work_unit_event_id: workUnitEventId,
+										unit_status: (params as { unit_status?: string }).unit_status ?? "continue",
+										trust: "unverified_model_summary",
+										handoff,
+										next_action: "this is planning metadata only; independent Outcome evidence is still required",
+									}),
+								},
+							],
+							details: {
+								ok: true,
+								event_id: recorded.event?.event_id ?? null,
+								work_unit_id: workUnitId,
+								work_unit_event_id: workUnitEventId,
+								unit_status: (params as { unit_status?: string }).unit_status ?? "continue",
+								handoff,
+							},
+						};
+					})();
+				} catch (error) {
+					outcome = {
+						content: [
+							{
+								type: "text",
+								text: `Work checkpoint failed: ${error instanceof Error ? error.message : String(error)}`,
+							},
+						],
+						details: { ok: false, reason: "checkpoint_failed" },
+					};
+				}
+				if (account) {
+					const finished = await account.finish({ tool_call_id: _toolCallId, tool_name: "aegis_work_checkpoint" });
+					if (!finished?.ok) {
+						auditUnavailable = true;
+						return {
+							content: [{ type: "text", text: "Aegis work checkpoint: tool accounting did not settle." }],
+							details: { ok: false, reason: "tool_finish_unconfirmed" },
+							terminate: true,
+						};
+					}
+				}
+				return outcome;
+			},
+		}),
+	);
+
+	// -----------------------------------------------------------------------
 	// LLM-selected local knowledge. The model supplies a bounded query derived
 	// from the current message; Aegis searches only the ignored knowledge tree,
 	// records the exact selected references, and the next provider request
@@ -2846,6 +3574,81 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 				await ensureLog(ctx);
+				// Defense in depth: the tool_call gate already blocks effect-capable
+				// tools during a review, but a proposal must also be rejected HERE if it
+				// is not the new scoped Intent that cites the committed review. A rejected
+				// proposal never clears the hold.
+				refreshProjections();
+				{
+					const cycle = projectWorkCycleSafe(log?.replay() ?? [], episodeId ?? null, {
+						board,
+						manifest: hostManifest(),
+					});
+					if (cycle.review_required) {
+						const gate = evaluateWorkCycleGate(cycle, {
+							tool_name: "aegis_propose",
+							input: workCycleGateInput(params as Record<string, unknown>, ramAliasHistory),
+						});
+						if (!gate.allowed) {
+							await emit(
+								"proposal.rejected",
+								{
+									kind: (params as { kind?: string }).kind,
+									text_excerpt: excerpt((params as { text?: string }).text || "", 300),
+									rejection_reason: `work_review:${gate.reason}`,
+									work_cycle_trigger_id: cycle.trigger_id,
+									ram_alias_epoch: ramAliasEpoch,
+									ram_alias_count: Object.keys(ramAliasHistory).length,
+								},
+								{ source_kind: "llm", causation_id: currentPromptEventId },
+							);
+							return {
+								content: [
+									{
+										type: "text",
+										text: `Aegis rejected the proposal: a work review is pending (${gate.reason}). Record aegis_work_review, then propose a NEW scoped Intent citing that review event.`,
+									},
+								],
+								details: {
+									accepted: false,
+									reason: gate.reason,
+									work_cycle_trigger_id: cycle.trigger_id,
+								},
+							};
+						}
+					}
+					// Work-unit START gate: while the Episode has no accepted scoped Intent,
+					// an Intent proposal needs a real, bounded, NON-EMPTY scope. A scope-less
+					// intent would commit but never create a work unit, so it is refused
+					// before the durable append instead of silently re-opening the deadlock.
+					if (
+						workStartGateEnabled(process.env) &&
+						(params as { kind?: string }).kind === "intent" &&
+						(typeof (params as { scope?: string }).scope !== "string" || !(params as { scope: string }).scope.trim())
+					) {
+						await emit(
+							"proposal.rejected",
+							{
+								kind: "intent",
+								text_excerpt: excerpt((params as { text?: string }).text || "", 300),
+								rejection_reason: "work_start:intent_scope_required",
+								work_cycle_trigger_id: cycle.trigger_id,
+								ram_alias_epoch: ramAliasEpoch,
+								ram_alias_count: Object.keys(ramAliasHistory).length,
+							},
+							{ source_kind: "llm", causation_id: currentPromptEventId },
+						);
+						return {
+							content: [
+								{
+									type: "text",
+									text: "Aegis rejected the intent: kind=intent requires a non-empty `scope` label because it defines the current work unit. Nothing was committed and no side effect is authorized.",
+								},
+							],
+							details: { accepted: false, reason: "intent_scope_required" },
+						};
+					}
+				}
 				const verdict = validateProposal(params);
 				if (verdict.accepted) {
 					refreshProjections();
@@ -2966,6 +3769,7 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					episodeId,
 					reason: (params as { reason?: string }).reason || "",
 					requestId,
+					workCycle: projectWorkCycleSafe(log?.replay() ?? [], episodeId ?? null, { board, manifest: hostManifest() }),
 				});
 				if (!verdict.allowed) {
 					await emit("handoff.rejected", { request_id: requestId, reason: verdict.reason }, { source_kind: "llm" });
@@ -2991,8 +3795,31 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 						details: { allowed: false, reason: requested.error || "audit unavailable", audit_degraded: true },
 					};
 				}
+				const cycle = projectWorkCycleSafe(log?.replay() ?? [], episodeId ?? null, {
+					board,
+					manifest: hostManifest(),
+				});
+				const advisory = recommendWorkHandoff({
+					cycle,
+					contextUsage: workCycleContextUsage(ctx),
+					policy: cycle.policy ?? workCyclePolicy(),
+					sourceSessionId: sessionId,
+				});
+				const handoffView = verdict.handoff as { work_cycle?: Record<string, unknown> | null } | undefined;
+				const stagedWorkCycle = handoffView?.work_cycle
+					? {
+							...handoffView.work_cycle,
+							boundary_identity: advisory.identity ?? `explicit:${requestId}`,
+							boundary_reasons: advisory.reasons,
+							context_usage: advisory.context_usage,
+						}
+					: null;
 				await mkdir(dirname(handoffPath()), { recursive: true });
-				await writeFile(handoffPath(), JSON.stringify({ ...verdict.handoff, request_id: requestId }, null, 2), "utf8");
+				await writeFile(
+					handoffPath(),
+					JSON.stringify({ ...verdict.handoff, request_id: requestId, work_cycle: stagedWorkCycle }, null, 2),
+					"utf8",
+				);
 				refreshProjections();
 				return {
 					content: [
@@ -3203,7 +4030,13 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					return;
 				}
 				case "switch": {
-					let handoff: { episode_id?: string; task_id?: string; reason?: string; request_id?: string } | null = null;
+					let handoff: {
+						episode_id?: string;
+						task_id?: string;
+						reason?: string;
+						request_id?: string;
+						work_cycle?: Record<string, unknown> | null;
+					} | null = null;
 					try {
 						handoff = JSON.parse(await readFile(handoffPath(), "utf8"));
 					} catch {
@@ -3233,10 +4066,23 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					const verdict = evaluateHandoff({
 						state,
 						board,
-						ram: buildRam({ board, state, episodeId: handoff.episode_id, goal: currentGoal }),
+						ram: buildRam({
+							board,
+							state,
+							episodeId: handoff.episode_id,
+							goal: currentGoal,
+							workCycle: projectWorkCycleSafe(log?.replay() ?? [], handoff.episode_id ?? null, {
+								board,
+								manifest: hostManifest(),
+							}),
+						}),
 						episodeId: handoff.episode_id,
 						reason: handoff.reason || "human-accepted handoff",
 						requestId: handoff.request_id,
+						workCycle: projectWorkCycleSafe(log?.replay() ?? [], handoff.episode_id ?? null, {
+							board,
+							manifest: hostManifest(),
+						}),
 					});
 					if (!verdict.allowed) {
 						notify(`Aegis: handoff refused at execution — ${verdict.reason}`, "warning");
@@ -3246,14 +4092,31 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					const episodeForSession = handoff.episode_id;
 					const reasonForSession = handoff.reason ?? "";
 					const requestForSession = handoff.request_id;
+					// The explicit command is a trusted Host path, so it opens the same
+					// short-lived attempt the replacement Session needs in order to append
+					// the ONE `handoff.completed`. The live id is cleared in `finally`.
+					let attempt = null;
+					try {
+						attempt = await beginHandoffAttempt({
+							handoffPath: handoffPath(),
+							handoff,
+							fromSession: sessionId,
+						});
+					} catch (error) {
+						notify(
+							`Aegis: could not open a handoff attempt: ${error instanceof Error ? error.message : String(error)}. The handoff is still staged.`,
+							"error",
+						);
+						return;
+					}
 					let switchResult: { cancelled?: boolean } | undefined;
 					try {
 						switchResult = await ctx.newSession({
 							withSession: async (next) => {
-								// Continuation only. The completion record is written by the Host
-								// AFTER `newSession` returns non-cancelled, so a rebind/continuation
-								// failure cannot leave a false completion. The new session's
-								// `session_start` no longer writes it (it fires inside the bind).
+								// Continuation only. The completion record is written by the new
+								// Session's Observer at its post-bind boundary, and only because this
+								// Host attempt is live; a rebind/continuation failure cannot leave a
+								// false completion.
 								await next.sendUserMessage(`[Aegis] continuing episode ${episodeForSession}: ${reasonForSession}`);
 							},
 						});
@@ -3265,6 +4128,8 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 							"error",
 						);
 						return;
+					} finally {
+						await endHandoffAttempt({ handoffPath: handoffPath(), attempt });
 					}
 					if (switchResult?.cancelled) {
 						// The host refused the switch before teardown: no completion, keep the
@@ -3277,7 +4142,13 @@ export default function aegisRuntime(pi: ExtensionAPI): void {
 					if (!(await handoffAlreadyCompleted(requestForSession))) {
 						const recorded = await emit(
 							"handoff.completed",
-							{ request_id: requestForSession, to_session: sessionKey(commandCtx), episode_id: episodeForSession },
+							{
+								request_id: requestForSession,
+								to_session: sessionKey(commandCtx),
+								from_session: attempt?.from_session ?? sessionId,
+								attempt_id: attempt?.attempt_id ?? null,
+								episode_id: episodeForSession,
+							},
 							{ episode_id: episodeForSession, source_kind: "runtime" },
 						);
 						if (!recorded.ok) {

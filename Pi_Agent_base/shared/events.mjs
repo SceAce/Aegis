@@ -24,6 +24,7 @@
 // is older than the stale threshold.
 
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -159,6 +160,48 @@ export function parseJsonl(text) {
 		}
 	}
 	return { rows, errors };
+}
+
+/**
+ * Read a committed prefix for DISPLAY/diagnostics only. Unparseable lines are
+ * dropped; a caller making an execution decision must use
+ * `readEventsStrict` instead so a corrupt tail can never look normal.
+ *
+ * @param {string} path
+ * @returns {any[]}
+ */
+export function readEventsSafe(path) {
+	if (typeof path !== "string" || !path) return [];
+	let text;
+	try {
+		text = readFileSync(path, "utf8");
+	} catch {
+		return [];
+	}
+	return parseJsonl(text).rows;
+}
+
+/**
+ * Read the committed stream for an EXECUTION decision. An unparseable line or a
+ * broken chain throws; the caller fails closed. Never filters errors away.
+ *
+ * @param {string} path
+ * @returns {any[]}
+ */
+export function readEventsStrict(path) {
+	if (typeof path !== "string" || !path) return [];
+	let text;
+	try {
+		text = readFileSync(path, "utf8");
+	} catch (error) {
+		if (error && error.code === "ENOENT") return [];
+		throw error;
+	}
+	const { rows, errors } = parseJsonl(text);
+	if (errors.length > 0) throw new Error(`committed event log has unparseable lines: ${errors.slice(0, 2).join("; ")}`);
+	const chain = verifyChain(rows);
+	if (!chain.ok) throw new Error(`committed event log chain is corrupt: ${chain.errors.slice(0, 2).join("; ")}`);
+	return rows;
 }
 
 /**
@@ -680,6 +723,23 @@ export class EventLog {
 	/** Deterministic replay snapshot. */
 	replay() {
 		return this.rows.slice();
+	}
+
+	/**
+	 * Re-read rows committed by another writer (or by a shared in-process writer)
+	 * without appending. Read-only: it never changes the tail or the sequence, and
+	 * a corrupt tail is fatal (fail-closed) rather than merged.
+	 */
+	async refresh() {
+		if (!this.opened) return { ok: false, error: "event log is not open" };
+		try {
+			return await this.withFileLock(async () => this.refreshFromDisk());
+		} catch (error) {
+			this.healthy = false;
+			this.auditError = `event log could not be re-read at ${this.path}: ${String(error)}`;
+			this.report(this.auditError);
+			return { ok: false, error: this.auditError };
+		}
 	}
 
 	isAuditAvailable() {

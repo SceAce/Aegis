@@ -23,6 +23,7 @@
 //   * INT-CHECKPOINT: the checkpoint binds the committed stream offset + tail;
 //     recovery uses cache+tail when it is a verified prefix, else full replay.
 
+import { readWorkCycleRunState } from "../memory/work-cycle.mjs";
 import { inspectWorkPermit, inspectWorkResume, projectWorkControl } from "../orchestration/work-control.mjs";
 import { digest } from "../shared/contracts.mjs";
 import {
@@ -1094,6 +1095,27 @@ export function createCampaignScheduler({
 			if (row.state !== "running") continue;
 			const work = projectWorkControl(readCommittedRows(), row.task_id);
 			if (!inspectWorkPermit({ events: readCommittedRows(), taskId: row.task_id, now: clock() }).ok) continue;
+			// A durable work-cycle hold makes the running Task resumable in the SAME
+			// Task/Episode after the replacement Session starts. It is NOT a blind
+			// retry: the work-cycle gate still blocks effects until review/Intent.
+			const cycleState = readWorkCycleRunState(readCommittedRows(), row.task_id);
+			if (cycleState.pending_hold) {
+				if (!inspectWorkResume(readCommittedRows(), row.task_id).ok) continue;
+				const permit = inspectExecutionPermit({
+					projection,
+					taskId: row.task_id,
+					now: clock(),
+					operation: "provider_request",
+				});
+				if (!permit.ok) continue;
+				const definition = row.definition ?? staticTasks.find((t) => t.task_id === row.task_id);
+				if (!definition) return { ok: false, reason: "work-cycle continuation definition missing" };
+				const continued = await dispatchOne({
+					task: { ...definition, work_cycle_resume_event_id: cycleState.pending_hold.event_id },
+				});
+				if (!continued.ok) return continued;
+				continue;
+			}
 			if (work.resume && !work.resume.consumed) {
 				if (!inspectWorkResume(readCommittedRows(), row.task_id).ok) continue;
 				const permit = inspectExecutionPermit({
@@ -1232,6 +1254,22 @@ export function createCampaignScheduler({
 		if (!control.ok) return { ok: false, reason: control.code };
 		const episodeId = control.work.resume?.episode_id ?? `ep-${task.task_id}`;
 		const continuation = task.work_resume_event_id ?? null;
+		const workCycleResume = task.work_cycle_resume_event_id ?? null;
+		if (workCycleResume) {
+			const written = await sink.append({
+				event_type: "runtime.note",
+				episode_id: episodeId,
+				source: { kind: "runtime", actor_id: ownerId },
+				payload: {
+					kind: "campaign.work_cycle.continued",
+					version: "work-cycle-1",
+					task_id: task.task_id,
+					hold_event_id: workCycleResume,
+				},
+			});
+			if (!written?.ok || written.durable === false)
+				return { ok: false, reason: "work-cycle continuation intent not durable" };
+		}
 		if (continuation) {
 			const written = await sink.append({
 				event_type: "runtime.note",
@@ -1248,24 +1286,25 @@ export function createCampaignScheduler({
 				return { ok: false, reason: "work continuation intent not durable" };
 		}
 		// 1. DURABLE INTENT (+ reservation commit) FIRST.
-		const started = continuation
-			? { ok: true }
-			: await commit(
-					"campaign.task.started",
-					{
-						task_id: task.task_id,
-						episode_id: episodeId,
-						command_id: `start-${task.task_id}-${clock()}`,
-						...(planningContract
-							? {
-									manifest_revision: manifest.revision ?? 0,
-									manifest_digest: manifestDigest,
-									context_digest: planningContract.digest ?? null,
-								}
-							: {}),
-					},
-					{ kind: "runtime", actor_id: ownerId },
-				);
+		const started =
+			continuation || workCycleResume
+				? { ok: true }
+				: await commit(
+						"campaign.task.started",
+						{
+							task_id: task.task_id,
+							episode_id: episodeId,
+							command_id: `start-${task.task_id}-${clock()}`,
+							...(planningContract
+								? {
+										manifest_revision: manifest.revision ?? 0,
+										manifest_digest: manifestDigest,
+										context_digest: planningContract.digest ?? null,
+									}
+								: {}),
+						},
+						{ kind: "runtime", actor_id: ownerId },
+					);
 		if (!started.ok) return { ok: false, reason: `durable intent failed; worker not dispatched: ${started.error}` };
 
 		// 2. Execute the injected worker.
@@ -1297,6 +1336,36 @@ export function createCampaignScheduler({
 			projectWorkControl(readCommittedRows(), task.task_id).state === "waiting_external"
 		)
 			return { ok: true };
+		// A review-only work-cycle turn is a non-terminal boundary too: it executed
+		// no effect and must not be judged. A durable boundary record lets the Host
+		// continue the SAME Task (and rotate on context/complete) without restarting.
+		if (run?.overview === "work_cycle_review_turn") {
+			const boundary = await commit(
+				"campaign.work_cycle.boundary",
+				{ version: "work-cycle-1", task_id: task.task_id, episode_id: episodeId, reason: "review_turn" },
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!boundary.ok) return { ok: false, reason: `work-cycle review boundary not durable: ${boundary.error}` };
+			return { ok: true, work_cycle_review_turn: true };
+		}
+		// A work-cycle hold keeps the Task NON-TERMINAL: no Oracle judgment, no
+		// fabricated failure, and a durable record the Host can continue from.
+		if (run?.overview === "work_cycle_hold") {
+			const hold = await commit(
+				"campaign.work_cycle.hold",
+				{
+					version: "work-cycle-1",
+					task_id: task.task_id,
+					episode_id: episodeId,
+					reason: run?.work_cycle?.reason ?? "work_review_required",
+					trigger_id: run?.work_cycle?.trigger_id ?? null,
+					review_event_id: run?.work_cycle?.review_event_id ?? null,
+				},
+				{ kind: "runtime", actor_id: ownerId },
+			);
+			if (!hold.ok) return { ok: false, reason: `work-cycle hold not durable: ${hold.error}` };
+			return { ok: true, work_cycle_hold: true };
+		}
 
 		// 4. Worker failure → unknown + reconciliation (never a task failure).
 		if (!run || run.ok !== true) {

@@ -5,6 +5,7 @@
 
 import { projectWorkControl } from "../orchestration/work-control.mjs";
 import { digest } from "../shared/events.mjs";
+import { indexEvents, readWorkCheckpoint, readWorkReview } from "./work-cycle.mjs";
 
 export function initialState() {
 	return {
@@ -17,6 +18,10 @@ export function initialState() {
 		knowledge_selections: [],
 		human_hints: [],
 		round_checkpoints: [],
+		// Structured work-cycle planning metadata. Projected from committed
+		// runtime notes; ALWAYS unverified planning state, never a Fact/Outcome.
+		work_checkpoints: [],
+		work_reviews: [],
 		handoffs: [],
 		open_handoff: null,
 		work_state: {},
@@ -28,7 +33,9 @@ export function initialState() {
  * handoff: the handoff request tool would otherwise count itself as a pending
  * action and always refuse its own switch. Real tools still block.
  */
-export const CONTROL_TOOLS = Object.freeze(new Set(["aegis_propose", "aegis_switch_session", "aegis_observe"]));
+export const CONTROL_TOOLS = Object.freeze(
+	new Set(["aegis_propose", "aegis_switch_session", "aegis_observe", "aegis_work_review", "aegis_work_checkpoint"]),
+);
 
 /** True when an action is a genuine side effect that can gate a handoff. */
 export function isSideEffectAction(action) {
@@ -67,7 +74,9 @@ function linkSession(episode, sessionId) {
 
 export function projectState(events) {
 	const state = initialState();
-	for (const event of events) {
+	const byId = indexEvents(events);
+	for (let index = 0; index < events.length; index += 1) {
+		const event = events[index];
 		if (!event || typeof event !== "object") continue;
 		const payload = event.payload || {};
 		switch (event.event_type) {
@@ -145,18 +154,17 @@ export function projectState(events) {
 				if (event.source?.kind === "runtime" || event.source?.kind === "human") {
 					if (event.payload?.version === "work-control-1") bump(state);
 					if (event.payload?.kind === "knowledge.selected" && event.episode_id) {
-						const mode =
-							event.payload.mode === "model_query"
-								? "model_query"
-								: event.payload.mode === "automatic"
-									? "automatic"
-									: null;
+						const mode = ["model_query", "work_review"].includes(event.payload.mode)
+							? event.payload.mode
+							: event.payload.mode === "automatic"
+								? "automatic"
+								: null;
 						const selected = Array.isArray(event.payload.selected) ? event.payload.selected.slice(0, 8) : [];
 						const existing = state.knowledge_selections.filter((item) => item.episode_id === event.episode_id);
 						// Empty explicit selections clear the current working set; a normal
 						// automatic miss leaves existing references intact.
 						if (selected.length === 0) {
-							if (mode !== "automatic") {
+							if (mode !== "automatic" && mode !== "work_review") {
 								state.knowledge_selections = state.knowledge_selections.filter(
 									(item) => item.episode_id !== event.episode_id,
 								);
@@ -168,7 +176,7 @@ export function projectState(events) {
 						for (const item of selected) {
 							if (!item || typeof item !== "object" || typeof item.knowledge_id !== "string") continue;
 							const prior = byId.get(item.knowledge_id);
-							if (mode === "automatic" && prior?.selection_mode === "model_query") {
+							if (mode === "automatic" && ["model_query", "work_review"].includes(prior?.selection_mode)) {
 								byId.set(item.knowledge_id, { ...prior, event_id: event.event_id });
 								continue;
 							}
@@ -177,8 +185,8 @@ export function projectState(events) {
 								episode_id: event.episode_id,
 								knowledge_id: item.knowledge_id,
 								selection_mode:
-									mode === "automatic" && prior?.selection_mode === "model_query"
-										? "model_query"
+									mode === "automatic" && ["model_query", "work_review"].includes(prior?.selection_mode)
+										? prior.selection_mode
 										: (mode ?? prior?.selection_mode ?? "automatic"),
 								source_kind: item.source_kind ?? "external_reference",
 								line_start: item.line_start ?? null,
@@ -193,7 +201,9 @@ export function projectState(events) {
 							});
 						}
 						const merged = [...byId.values()].sort(
-							(a, b) => Number(b.selection_mode === "model_query") - Number(a.selection_mode === "model_query"),
+							(a, b) =>
+								Number(["model_query", "work_review"].includes(b.selection_mode)) -
+								Number(["model_query", "work_review"].includes(a.selection_mode)),
 						);
 						state.knowledge_selections = [
 							...state.knowledge_selections.filter((item) => item.episode_id !== event.episode_id),
@@ -224,6 +234,25 @@ export function projectState(events) {
 										supersedes: typeof event.payload.supersedes === "string" ? event.payload.supersedes : null,
 									},
 								];
+						bump(state);
+					}
+					// A structured work review is a retrieval-backed review record. The
+					// validator rejects foreign/future refs and a review without a real
+					// bounded-retrieval event, so an unusable row cannot clear a hold.
+					const workReview = readWorkReview(event, index, byId, event.episode_id);
+					if (workReview) {
+						state.work_reviews = [
+							...state.work_reviews.filter((item) => item.episode_id !== event.episode_id),
+							{ ...workReview, episode_id: event.episode_id },
+						].slice(-4);
+						bump(state);
+					}
+					const workCheckpoint = readWorkCheckpoint(event, index, byId, event.episode_id);
+					if (workCheckpoint) {
+						state.work_checkpoints = [
+							...state.work_checkpoints.filter((item) => item.episode_id !== event.episode_id),
+							{ ...workCheckpoint, episode_id: event.episode_id },
+						].slice(-4);
 						bump(state);
 					}
 					if (event.payload?.kind === "round.checkpoint" && event.episode_id) {

@@ -39,9 +39,18 @@ async function fixture(t, { recordCompletion = true, previousSessions = 1 } = {}
 			runtime.session = { sessionId: `session-${calls}` };
 			if (recordCompletion) {
 				const staged = JSON.parse(await readFile(handoffPath, "utf8"));
+				// The replacement consumes the Host attempt that is live during this
+				// newSession call (never a bare staged file).
+				const attempt = JSON.parse(await readFile(`${handoffPath}.attempt.json`, "utf8"));
 				await append({
 					event_type: "handoff.completed",
-					payload: { request_id: staged.request_id, to_session: runtime.session.sessionId, episode_id: episodeId },
+					payload: {
+						request_id: staged.request_id,
+						to_session: runtime.session.sessionId,
+						from_session: attempt.from_session,
+						attempt_id: attempt.attempt_id,
+						episode_id: episodeId,
+					},
 				});
 			}
 			return { cancelled: false };

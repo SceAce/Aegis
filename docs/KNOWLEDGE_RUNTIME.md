@@ -28,6 +28,18 @@
 | 新假设、子目标、路线变化 | LLM 使用已有 `aegis_propose` 写 Claim/Intent/Candidate 及来源关联；候选的 `when/do/expect` 现在保留到 Board 和 RAM |
 | 子目标/验证结束、路径切换或上下文临近预算 | LLM 可请求 `aegis_switch_session`；实际交接仍由现有 Host/`/aegis switch` 在安全边界执行，Session 不等于新 Episode |
 
+停滞复核使用同一知识路径：`aegis_work_review` 先执行一次有界 `selectKnowledge`，以
+`mode="work_review"` durable 写入 `knowledge.selected`，再由 `work.review` 引用该 selection 事件。
+`work_review` 选择与 `model_query` 一样优先保留，自动召回不能覆盖或降级；空命中/不可用/检索被策略关闭
+分别记录为 `no_match`/`unavailable`/`disabled`，不得声称“已检查知识”。复核记录与选择引用均为未验证
+参考数据，不授予动作、Fact、Outcome 或 active Experience。
+
+后续实现采用 [工作控制接口](STRUCTURED_RAM_AND_WORK_CONTROL.md) 的一次 review 消费规则与
+[第二阶段任务书](WORK_CYCLE_PHASE2_IMPLEMENTATION_TASK.md)：旧 review/selection 不可反复重开重试窗口；
+`unavailable` 保持 hold，但允许同 trigger 在资源恢复后重试真实检索。当前报告中 `disabled` 正例不证明
+`unavailable` 已通过端到端验证。知识选择、Intent 声明采用、实际 action 关联和独立结果分别记录，
+没有明确关联不报告 used/useful。C6 自动交接启用后也从 committed 源重建选择，保持同 Episode。
+
 自动召回是关键词候选排序，并不是另一个 LLM 在后台理解和决定。语义选择由当前任务 LLM 使用 `aegis_knowledge` 完成，因此没有另建模型服务、付费旁路或独立模型预算。注册工具的固定 guidelines 说明模型何时检索、何时把局部判断写上图板。模型是否实际调用仍由当前模型决定，faux 测试不证明真实模型的选择质量。
 
 C6 默认 SDK 工具白名单包含 `aegis_knowledge`，其工具调用继续经过当前 Campaign/work gate。操作者自定义工具白名单或任务 `allowed_tools` 时需显式允许该工具。普通 Pi 的隔离启动仍沿用 `run-pi.sh`；本次不改变其 bundle 检查或配置位置。

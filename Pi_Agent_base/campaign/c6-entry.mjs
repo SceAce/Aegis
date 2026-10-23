@@ -33,6 +33,15 @@ import {
 } from "../memory/c6-learning.mjs";
 import { buildRam } from "../memory/ram.mjs";
 import { projectState } from "../memory/state.mjs";
+import {
+	completedWorkCycleBoundaries,
+	frozenWorkCyclePolicyPayload,
+	isWorkCycleAdvisoryTool,
+	projectWorkCycle,
+	readFrozenWorkCyclePolicy,
+	readWorkCycleRunState,
+	workStartGateEnabled,
+} from "../memory/work-cycle.mjs";
 import { createObservationServer } from "../observation/observation-server.mjs";
 import { runReportExport } from "../observation/report-entry.mjs";
 import {
@@ -41,10 +50,10 @@ import {
 	inspectWorkPermit,
 	projectWorkControl,
 } from "../orchestration/work-control.mjs";
-import { evaluateHandoff } from "../session/handoff.mjs";
 import { createSessionSupervisor } from "../session/session-supervisor.mjs";
+import { evaluateHostWorkCycleRotation, latestSessionUsage } from "../session/work-cycle-rotation.mjs";
 import { digest } from "../shared/contracts.mjs";
-import { bindHostEventLog, parseJsonl, verifyChain } from "../shared/events.mjs";
+import { bindHostEventLog, EventLog, parseJsonl, verifyChain } from "../shared/events.mjs";
 import { inspectExecutionPermit } from "./authority.mjs";
 import { artifactIndexFromEvents, assembleCampaignHost } from "./c3-entry.mjs";
 import {
@@ -160,6 +169,9 @@ export function createDecisionBuffer() {
 			// when the bound task changes so a business task never re-submits (or sees)
 			// another task's plan.
 			planBatches.length = 0;
+			// A new dispatch must PLAN FRESH. Keeping old decisions would replay an
+			// already-executed action plan after a review/rotation boundary.
+			byTask.delete(taskId);
 		},
 		push(decision) {
 			const key = currentTask ?? "unbound";
@@ -211,6 +223,7 @@ export function createCompositeWorker({
 	onTaskSettled = null,
 	onPlanSubmitted = null,
 	permitEffect = null,
+	workCycleEnabled = false,
 }) {
 	return {
 		bindCampaign(manifest) {
@@ -228,7 +241,28 @@ export function createCompositeWorker({
 				return { ok: true, overview: "waiting_external" };
 			}
 			if (planned?.failure_mode === "waiting_external") return { ok: true, overview: "waiting_external" };
+			// A review-only turn has no broker decision by design. The Observer may have
+			// committed a review/Intent/checkpoint during the model request; the Host
+			// loop checks for real work-cycle progress before spending another request.
+			if (
+				workCycleEnabled &&
+				planned?.ok !== true &&
+				planned?.failure_mode === "no_model_decision" &&
+				buffer.list().length === 0
+			) {
+				if (typeof onTaskSettled === "function")
+					await onTaskSettled({ task, result: { ok: true, overview: "work_cycle_review_turn" } });
+				return { ok: true, overview: "work_cycle_review_turn" };
+			}
 			if (!planned.ok) return planned;
+			// A review-only model turn (review / new Intent / checkpoint, no broker
+			// action) is a valid non-terminal boundary when the work-cycle policy is
+			// enabled. It executes no effect and is NOT judged by the Oracle.
+			if (workCycleEnabled && buffer.list().length === 0) {
+				if (typeof onTaskSettled === "function")
+					await onTaskSettled({ task, result: { ok: true, overview: "work_cycle_review_turn" } });
+				return { ok: true, overview: "work_cycle_review_turn" };
+			}
 			// E1: a PLANNING task returns a candidate plan (no business decision).
 			// Admission is a SEPARATE Host step; submitting a plan never executes
 			// anything and never means the root goal is complete. A rejected/blocked
@@ -252,17 +286,51 @@ export function createCompositeWorker({
 			// hold, never a fabricated Oracle failure.
 			if (typeof permitEffect === "function") {
 				const permit = permitEffect({ task });
-				if (permit && permit.ok !== true)
+				if (permit && permit.ok !== true) {
+					const workCycleHold = (permit.reasons ?? []).some(
+						(reason) => reason.code === "work_review_required" || reason.code === "work_cycle_projection_failed",
+					);
+					if (workCycleHold) {
+						// A hold is NOT a failure: drop the unexecuted buffered remainder so
+						// it cannot be replayed after review/replan, then let the Host record
+						// the non-terminal boundary.
+						buffer.reset();
+						if (typeof onTaskSettled === "function")
+							await onTaskSettled({
+								task,
+								result: { ok: false, failure_mode: "work_review_required" },
+							});
+						return {
+							ok: true,
+							overview: "work_cycle_hold",
+							work_cycle: { reason: "work_review_required", trigger_id: null },
+							provider_requests: planned.provider_requests,
+						};
+					}
 					return {
 						ok: false,
 						failure_mode: permit.reasons?.[0]?.code ?? "execution_not_permitted",
 						detail: (permit.reasons ?? []).map((r) => `${r.code}: ${r.message}`).join("; "),
 						provider_requests: planned.provider_requests,
 					};
+				}
 			}
 			// Execute the model's admitted decision through the existing Broker.
 			brokerWorker.setExecutionPermit?.(permitEffect);
 			const result = await brokerWorker.run({ task });
+			// A blocked Broker effect is a WORK HOLD, not an Oracle failure. The
+			// unexecuted remainder is dropped (never replayed blindly) and the Host
+			// gets a safe boundary to decide rotation/continuation.
+			if (result?.work_cycle_blocked === true) {
+				buffer.reset();
+				if (typeof onTaskSettled === "function") await onTaskSettled({ task, result });
+				return {
+					ok: true,
+					overview: "work_cycle_hold",
+					work_cycle: { reason: "work_review_required", trigger_id: null },
+					effects: result.effects ?? [],
+				};
+			}
 			// A safe settle boundary: the caller may rotate the Session here. The
 			// caller only rotates when idle/settled/committed with no pending effect
 			// and budget allowing; this callback never forces a rotation.
@@ -507,6 +575,101 @@ export async function runC6FromConfig(
 	// decoy) and restore the previous values on exit, so a caller's stale
 	// AEGIS_EVENT_LOG can never silently redirect the SDK writes. This is scoped to
 	// the single Campaign run (C6 runs one Campaign at a time).
+	// -----------------------------------------------------------------------
+	// WORK-CYCLE RUN BINDING. The trusted config section is frozen into the
+	// committed stream BEFORE any SDK object exists, so a restart/replay uses the
+	// bound policy and a mutable env/config cannot silently change the trigger or
+	// clear a hold. The candidate 3/8/4/85 values are NOT calibrated defaults: the
+	// section is disabled unless the config explicitly enables it.
+	// -----------------------------------------------------------------------
+	const WORK_CYCLE_DEFAULTS = {
+		enabled: false,
+		repeat_limit: 3,
+		action_window: 8,
+		min_distinct_routes: 4,
+		context_pressure_percent: 85,
+		max_auto_rotations: 6,
+		max_continuations: 8,
+	};
+	/** @type {{enabled: boolean, repeat_limit: number, action_window: number, min_distinct_routes: number, context_pressure_percent: number, max_auto_rotations: number, max_continuations: number, policy_event_id?: string|null, policy_origin?: string}} */
+	let boundWorkCycle = { ...WORK_CYCLE_DEFAULTS };
+	{
+		const configured = { ...WORK_CYCLE_DEFAULTS, ...(config.work_cycle ?? {}) };
+		const prior = readFrozenWorkCyclePolicy(readEventsSafe(eventLogPath), manifest.campaign_id);
+		if (prior.ok) {
+			const boundConfig = {
+				enabled: prior.raw?.enabled === true,
+				repeat_limit: prior.policy.repeat_limit,
+				action_window: prior.policy.action_window,
+				min_distinct_routes: prior.policy.min_distinct_routes,
+				context_pressure_percent: prior.policy.context_pressure_percent,
+				max_auto_rotations: Number.isSafeInteger(prior.raw?.max_auto_rotations)
+					? prior.raw.max_auto_rotations
+					: WORK_CYCLE_DEFAULTS.max_auto_rotations,
+				max_continuations: Number.isSafeInteger(prior.raw?.max_continuations)
+					? prior.raw.max_continuations
+					: WORK_CYCLE_DEFAULTS.max_continuations,
+			};
+			const changed = Object.keys(WORK_CYCLE_DEFAULTS).filter((key) => boundConfig[key] !== configured[key]);
+			if (!READ_ONLY_SCENARIO && changed.length > 0)
+				return {
+					ok: false,
+					stage: "config",
+					reasons: [
+						`work_cycle_policy_conflict: the configured work_cycle differs from the run's frozen policy (${changed.join(", ")})`,
+					],
+				};
+			boundWorkCycle = { ...boundConfig, policy_event_id: prior.event_id, policy_origin: "committed" };
+		} else if (!READ_ONLY_SCENARIO) {
+			const payload = frozenWorkCyclePolicyPayload(configured, manifest.campaign_id, {
+				enabled: configured.enabled === true,
+				max_auto_rotations: configured.max_auto_rotations,
+				max_continuations: configured.max_continuations,
+			});
+			const writer = new EventLog(eventLogPath);
+			/** @type {any} */
+			const writerAny = writer;
+			const opened = await writer.open();
+			const written = opened.ok
+				? await writerAny.append({
+						event_type: "runtime.note",
+						episode_id: null,
+						payload,
+						source: {
+							kind: "runtime",
+							actor_id: "c6-work-cycle",
+							adapter: "c6-entry",
+							version: C6_ENTRY_VERSION,
+						},
+						schema_version: "1.1",
+					})
+				: opened;
+			await writer.close();
+			if (!written?.ok || written.durable === false)
+				return {
+					ok: false,
+					stage: "durability",
+					reasons: ["work_cycle policy binding was not durably recorded"],
+				};
+			boundWorkCycle = {
+				...configured,
+				policy_event_id: written.event?.event_id ?? null,
+				policy_origin: "written",
+			};
+		} else {
+			boundWorkCycle = { ...configured, policy_origin: "config_read_only" };
+		}
+	}
+	/** The FROZEN policy for every Host-side work-cycle projection. */
+	function hostWorkCyclePolicy() {
+		return {
+			repeat_limit: boundWorkCycle.repeat_limit,
+			action_window: boundWorkCycle.action_window,
+			min_distinct_routes: boundWorkCycle.min_distinct_routes,
+			context_pressure_percent: boundWorkCycle.context_pressure_percent,
+		};
+	}
+
 	const aegisEnvKeys = [
 		"AEGIS_EVENT_LOG",
 		"AEGIS_RAM_DIR",
@@ -516,6 +679,10 @@ export async function runC6FromConfig(
 		"AEGIS_PROJECTION_DIR",
 		"AEGIS_MANIFEST_FILE",
 		"AEGIS_TASK_CONTRACT_FILE",
+		"AEGIS_WORK_CYCLE_REPEAT_LIMIT",
+		"AEGIS_WORK_CYCLE_ACTION_WINDOW",
+		"AEGIS_WORK_CYCLE_MIN_DISTINCT_ROUTES",
+		"AEGIS_WORK_CYCLE_CONTEXT_PERCENT",
 	];
 	const envBefore = Object.fromEntries(aegisEnvKeys.map((key) => [key, process.env[key]]));
 	const ramDir = join(config.work_dir, "ram");
@@ -532,6 +699,11 @@ export async function runC6FromConfig(
 		if (canonicalManifestPath) process.env.AEGIS_MANIFEST_FILE = canonicalManifestPath;
 		else process.env.AEGIS_MANIFEST_FILE = config.manifest_path;
 		if (typeof taskId === "string" && taskId) process.env.AEGIS_TASK_ID = taskId;
+		// The Observer must use the SAME frozen policy as the Host.
+		process.env.AEGIS_WORK_CYCLE_REPEAT_LIMIT = String(boundWorkCycle.repeat_limit);
+		process.env.AEGIS_WORK_CYCLE_ACTION_WINDOW = String(boundWorkCycle.action_window);
+		process.env.AEGIS_WORK_CYCLE_MIN_DISTINCT_ROUTES = String(boundWorkCycle.min_distinct_routes);
+		process.env.AEGIS_WORK_CYCLE_CONTEXT_PERCENT = String(boundWorkCycle.context_pressure_percent);
 	}
 	function restoreObserverEnv() {
 		unbindWorkAccount();
@@ -748,7 +920,11 @@ export async function runC6FromConfig(
 	}
 	const unbindWorkAccount = bindWorkToolAccount(eventLogPath, {
 		async admit({ tool_call_id, tool_name, arguments_digest }) {
-			const work = executionPermit({ task_id: currentTaskRef.task?.task_id, operation: "tool_unit" });
+			const work = executionPermit({
+				task_id: currentTaskRef.task?.task_id,
+				operation: "tool_unit",
+				tool_name,
+			});
 			if (!work.ok) return { ok: false, reasons: work.reasons };
 			return (
 				(await chargeUnit({ unit_id: "call", tool_call_id, tool_name, arguments_digest })) ??
@@ -854,6 +1030,8 @@ export async function runC6FromConfig(
 	// The real SDK runtime (or an injected seam for tests). Read-only scenarios do
 	// not create one.
 	let sdkRuntime = null;
+	/** @type {any} */
+	let sessionController = null;
 	if (!READ_ONLY) {
 		try {
 			sdkRuntime = createSeam
@@ -1018,6 +1196,9 @@ export async function runC6FromConfig(
 					taskId: config.label ?? "campaign-task",
 					reason: options.reason ?? "auto_request_threshold",
 					manifest,
+					workCyclePolicy: hostWorkCyclePolicy(),
+					workCycleIdentity: options.work_cycle_identity ?? null,
+					workCycleReasons: options.work_cycle_reasons ?? [],
 				});
 				if (!staged.ok) return { applied: false, reason: staged.reason };
 				const result = /** @type {any} */ (
@@ -1056,7 +1237,7 @@ export async function runC6FromConfig(
 	 * the LATEST prefix (never cached). An unfinished durable tool charge of the
 	 * active task also holds later effects/continuations (E1-CC §7.2).
 	 */
-	function executionPermit({ task_id, operation }) {
+	function executionPermit({ task_id, operation, tool_name = null }) {
 		let projection;
 		try {
 			projection = authorityProjection();
@@ -1076,6 +1257,51 @@ export async function runC6FromConfig(
 				message: "work controller withheld execution",
 			});
 		permit.ok = permit.reasons.length === 0;
+		// WORK-CYCLE HOLD at the REAL effect boundary. A buffered plan/Experience
+		// direct route reaches this check right before each effect; the next effect
+		// after a trigger is refused even if the whole batch was admitted earlier.
+		// Provider requests and advisory/read/review tools stay available so the
+		// model can perform the required review in the SAME Session.
+		const advisoryTool = operation === "tool_unit" && isWorkCycleAdvisoryTool(tool_name);
+		if (operation !== "provider_request" && !advisoryTool) {
+			try {
+				const rows = committedRows();
+				const episodeId = `ep-${task_id}`;
+				const cycle = projectWorkCycle(rows, episodeId, {
+					board: projectBoard(rows, { manifest }),
+					manifest,
+					policy: hostWorkCyclePolicy(),
+				});
+				if (cycle.review_required)
+					permit.reasons.push({
+						code: "work_review_required",
+						field: "work_cycle",
+						event_id: cycle.review?.event_id ?? cycle.trigger_id ?? null,
+						message: `work review pending (${cycle.reasons.join(", ")}); trigger ${cycle.trigger_id ?? "unknown"}`,
+					});
+				// Work-unit START gate at the REAL effect boundary. Honoured only when the
+				// trusted Host bound it (the Experiment Console does). A scoped Intent must
+				// already be committed and effective; a buffered plan admitted earlier in
+				// the same batch cannot outrun the commit.
+				if (!cycle.review_required && workStartGateEnabled(process.env) && cycle.unscoped === true)
+					permit.reasons.push({
+						code: "work_unit_unscoped",
+						field: "work_cycle",
+						event_id: null,
+						message:
+							"no accepted scoped work Intent exists for this Episode; every effect is refused until one is durably committed",
+					});
+			} catch (error) {
+				// Fail closed: an unreadable projection keeps effects blocked.
+				permit.reasons.push({
+					code: "work_cycle_projection_failed",
+					field: "work_cycle",
+					event_id: null,
+					message: String(error),
+				});
+			}
+			permit.ok = permit.reasons.length === 0;
+		}
 		if (durableTools && operation !== "tool_unit") {
 			const open = (projection.tool_charges ?? []).filter(
 				(entry) => entry.task_id === task_id && entry.finished !== true,
@@ -1143,6 +1369,7 @@ export async function runC6FromConfig(
 	try {
 		// Build the model ledger/plan worker wiring. The composite worker is
 		// injected as the Host worker so ONE broker path executes the plan.
+		sessionController = buildSessionController();
 		assembled = await assembleCampaignHost({
 			manifest,
 			workspaceRoot: config.workspace_root,
@@ -1152,7 +1379,7 @@ export async function runC6FromConfig(
 			actionGate: gate,
 			extraContracts,
 			judgeFactory,
-			sessionController: buildSessionController(),
+			sessionController,
 			wrapWorker: (brokerWorker) => {
 				// X2: a PER-TASK ledger bounded by the task's own allocation. The
 				// cumulative campaign ledger is mirrored on each commit for restart/measure.
@@ -1329,7 +1556,14 @@ export async function runC6FromConfig(
 						out(`  [ledger] ${JSON.stringify(record)}`);
 					},
 				});
-				const plan = createModelPlan({ decisionsByTask: buffer.byTask() });
+				// Recovery/continuation must not reuse a committed action id: seed the
+				// plan generation from the committed stream's prior model steps.
+				const priorGenerations = readEventsSafe(eventLogPath)
+					.map((row) => /:model:(\d+):/.exec(String(row.payload?.step_id ?? ""))?.[1])
+					.filter((value) => value !== undefined)
+					.map(Number);
+				const generationStart = priorGenerations.length > 0 ? Math.max(...priorGenerations) + 1 : 0;
+				const plan = createModelPlan({ decisionsByTask: buffer.byTask(), generationStart });
 				// Rebuild the Broker Worker with the MODEL plan instead of the fixture plan.
 				brokerWorker.setPlan?.(plan);
 				const composite = createCompositeWorker({
@@ -1359,6 +1593,7 @@ export async function runC6FromConfig(
 					},
 					permitEffect: ({ task: effectTask }) =>
 						executionPermit({ task_id: effectTask.task_id, operation: "broker_effect" }),
+					workCycleEnabled: boundWorkCycle.enabled,
 					onTaskSettled: async () => {
 						// Admit any model-proposed bounded dynamic tasks through the ONE policy.
 						if (hostRef && buffer.listTasks().length > 0) {
@@ -1369,6 +1604,10 @@ export async function runC6FromConfig(
 						}
 						// A safe settle boundary: rotate only when the declared threshold is
 						// reached, an idle/settled/committed Host exists and budget allows.
+						// When the explicit work-cycle policy is enabled the Host loop merges
+						// the request threshold with the work-cycle reasons into ONE rotation,
+						// so this legacy path stays inactive to avoid a double Session charge.
+						if (boundWorkCycle.enabled) return;
 						const threshold = config.session.max_requests_per_session;
 						if (!hostRef || !Number.isInteger(threshold) || threshold < 1) return;
 						if (requestsSinceRotation < threshold) return;
@@ -1507,7 +1746,160 @@ export async function runC6FromConfig(
 					},
 				};
 			} else {
-				runResult = await host.run();
+				// R2: recover an INTERRUPTED/REFUSED handoff through the SAME
+				// Host/Supervisor path BEFORE dispatching the next work unit. A staged
+				// request without a committed completion is not permission to continue;
+				// if the budget/safety gate refuses it, the Task stays running and no
+				// next-unit effect is sent. With a corrected budget the Supervisor
+				// creates the replacement Session once, and only then may Host.run()
+				// continue the same committed boundary.
+				let recoveryBlocked = false;
+				if (existsSync(config.session.handoff_path)) {
+					const recovery = await sessionController.recoverInterrupted();
+					if (recovery.recovered === true) {
+						rotationAttempts.push(recovery);
+					} else if (!/already completed|no staged handoff to recover/i.test(recovery.reason ?? "")) {
+						rotationAttempts.push(recovery);
+						recoveryBlocked = true;
+						runResult = {
+							ok: true,
+							status: host.status(),
+							reasons: [`handoff_recovery_refused: ${recovery.reason ?? "unknown"}`],
+							work_cycle: { reason: "handoff_recovery_required", recovery },
+						};
+					}
+				}
+				if (!recoveryBlocked) runResult = await host.run();
+				// -------------------------------------------------------------
+				// Same-Task work-cycle continuation + Host auto rotation.
+				//
+				// This loop is the PRODUCT automation path: it reads only committed
+				// events + the frozen policy, rotates through the existing Supervisor,
+				// and re-dispatches the SAME running Task (never a second Task). It is
+				// skipped unless the trusted config explicitly enabled work_cycle.
+				// -------------------------------------------------------------
+				if (boundWorkCycle.enabled && !recoveryBlocked) {
+					let continuationRounds = 0;
+					let rotationsApplied = 0;
+					let forceContinue = false;
+					while (continuationRounds < boundWorkCycle.max_continuations) {
+						const rows = committedRows();
+						const projectionNow = projectQueueFromEvents({
+							campaign_id: manifest.campaign_id,
+							tasks: manifest.tasks ?? [],
+							events: rows,
+							revision: manifest.revision ?? 0,
+							manifest,
+							artifacts: Object.fromEntries(artifactIndexFromEvents(rows)),
+						});
+						const runningTask = (projectionNow.tasks ?? []).find((task) => task.state === "running");
+						if (!runningTask) break;
+						const episodeForTask = `ep-${runningTask.task_id}`;
+						// Never resume exploration from a candidate hold, pause, cancel or
+						// terminal lifecycle state.
+						if (projectWorkControl(rows, runningTask.task_id).state === "waiting_external") break;
+						const runState = readWorkCycleRunState(rows, runningTask.task_id);
+						const decision = evaluateHostWorkCycleRotation({
+							events: rows,
+							episodeId: episodeForTask,
+							policy: { ...boundWorkCycle, ...hostWorkCyclePolicy() },
+							manifest,
+							completedBoundaries: completedWorkCycleBoundaries(rows),
+							taskState: runningTask.state,
+							campaignState: projectionNow.control?.state ?? null,
+						});
+						const threshold = config.session.max_requests_per_session;
+						const thresholdReached =
+							Number.isInteger(threshold) && threshold >= 1 && requestsSinceRotation >= threshold;
+						const rotationReasons = [
+							...(decision.reasons ?? []),
+							...(thresholdReached ? ["auto_request_threshold"] : []),
+						];
+						const shouldRotate = decision.rotate === true || thresholdReached;
+						// Record the continuation boundary BEFORE attempting the rotation. If
+						// creation/budget fails, the same committed source still knows this
+						// Task must be continued (recovery), and the SAME boundary identity
+						// prevents a second rotation for the same completion/context.
+						if (shouldRotate && !runState.pending_hold && sinkRef) {
+							const sessionUsage = latestSessionUsage(rows, episodeForTask);
+							const identity =
+								decision.identity ??
+								(thresholdReached
+									? `request-threshold:${sessionUsage?.session_id ?? "unknown"}:${requestsSinceRotation}`
+									: null);
+							const marked = await sinkRef.append({
+								event_type: "runtime.note",
+								episode_id: episodeForTask,
+								payload: {
+									kind: "campaign.work_cycle.boundary",
+									version: "work-cycle-1",
+									task_id: runningTask.task_id,
+									reason: rotationReasons.join(","),
+									boundary_identity: identity,
+								},
+								source: {
+									kind: "runtime",
+									actor_id: "c6-work-cycle",
+									adapter: "c6-entry",
+									version: C6_ENTRY_VERSION,
+								},
+								schema_version: "1.1",
+							});
+							if (marked?.ok !== true || marked.durable === false) break;
+							runState.pending_hold = { event_id: marked.event?.event_id ?? null };
+						}
+						let rotatedNow = false;
+						if (shouldRotate && rotationsApplied < boundWorkCycle.max_auto_rotations) {
+							const sessionUsage = latestSessionUsage(rows, episodeForTask);
+							const identity =
+								decision.identity ??
+								(thresholdReached
+									? `request-threshold:${sessionUsage?.session_id ?? "unknown"}:${requestsSinceRotation}`
+									: null);
+							const rotation = await host.rotateSession({
+								reason: rotationReasons.join(","),
+								work_cycle_identity: identity,
+								work_cycle_reasons: rotationReasons,
+							});
+							rotationAttempts.push(rotation);
+							if (rotation?.applied === true && rotation.reused !== true) {
+								rotatedNow = true;
+								rotationsApplied += 1;
+								if (thresholdReached) requestsSinceRotation = 0;
+							}
+							if (rotation?.applied !== true) break; // retain recovery responsibility
+						}
+						if (shouldRotate && !rotatedNow) break; // rotation budget/limit reached
+						if (!runState.pending_hold && !rotatedNow && !forceContinue) break;
+						forceContinue = false;
+						const before = rows.length;
+						runResult = await host.run();
+						continuationRounds += 1;
+						const afterRows = committedRows();
+						const reviewTurnBoundary = afterRows
+							.slice(before)
+							.some(
+								(row) =>
+									row.event_type === "runtime.note" &&
+									row.payload?.kind === "campaign.work_cycle.boundary" &&
+									row.payload?.task_id === runningTask.task_id &&
+									row.payload?.reason === "review_turn",
+							);
+						const newRows = afterRows.slice(before);
+						const workCycleProgress = newRows.some(
+							(row) =>
+								(row.event_type === "runtime.note" && ["work.review", "work.checkpoint"].includes(row.payload?.kind)) ||
+								(row.event_type === "proposal.submitted" && row.payload?.kind === "intent"),
+						);
+						// No new committed evidence and no rotation = no progress; stop
+						// instead of spending requests in a spin.
+						if (afterRows.length === before && !rotatedNow && !reviewTurnBoundary) break;
+						if (reviewTurnBoundary && !rotatedNow && !workCycleProgress) break;
+						// A review-only turn that actually changed the review/plan state gets
+						// ONE follow-up dispatch in the SAME Session.
+						if (reviewTurnBoundary && !rotatedNow) forceContinue = true;
+					}
+				}
 			}
 		} finally {
 			host.releaseOwnership();
@@ -1674,41 +2066,13 @@ function safeSessionId(session) {
 	}
 }
 
-/**
- * Stage a Host-initiated handoff request into the shared handoff file. It
- * re-validates against the COMMITTED stream (open episode, no pending effect)
- * through the accepted `evaluateHandoff`, so an unsafe switch is refused, never
- * forced. The observer writes the single `handoff.completed` at the post-bind
- * boundary; the Host never writes a completion itself.
- *
- * @param {{eventLogPath: string, handoffPath: string, taskId: string, reason: string, manifest?: any}} args
- */
-export function stageHostHandoff({ eventLogPath, handoffPath, taskId, reason, manifest = null }) {
-	const events = readEventsSafe(eventLogPath);
-	const state = projectState(events);
-	const board = projectBoard(events, { manifest });
-	const episodeId = state.open_handoff?.episode_id ?? resolveOpenEpisodeId(state, taskId);
-	if (!episodeId) return { ok: false, reason: "no open episode to hand over" };
-	const ram = buildRam({ board, state, episodeId, goal: state.episodes[episodeId]?.goal?.description ?? "" });
-	const requestId = `host-rotate-${events.length}-${Date.now()}`;
-	const verdict = evaluateHandoff({ state, board, ram, episodeId, reason, requestId });
-	if (!verdict.allowed) return { ok: false, reason: verdict.reason, blocking: verdict.pending_actions ?? [] };
-	mkdirSync(dirname(handoffPath), { recursive: true });
-	writeFileSync(handoffPath, JSON.stringify({ ...verdict.handoff, request_id: requestId }, null, 2), "utf8");
-	return { ok: true, request_id: requestId, episode_id: episodeId, reason };
-}
+// The staging rules live in ONE shared module (`session/handoff-stage.mjs`) so
+// the Campaign Host and the Experiment Console Host stage the SAME request shape
+// through the same `evaluateHandoff` validation. Re-exported here for the
+// existing import surface.
+import { stageHostHandoff } from "../session/handoff-stage.mjs";
 
-function resolveOpenEpisodeId(state, taskId) {
-	for (const [id, episode] of Object.entries(state.episodes ?? {})) {
-		if (episode.status === "open" || episode.status === "active") {
-			if (!taskId || episode.task_id === taskId) return id;
-		}
-	}
-	for (const [id, episode] of Object.entries(state.episodes ?? {})) {
-		if (episode.status === "open" || episode.status === "active") return id;
-	}
-	return null;
-}
+export { resolveOpenEpisodeId, stageHostHandoff } from "../session/handoff-stage.mjs";
 
 function safeDescribe(broker) {
 	try {

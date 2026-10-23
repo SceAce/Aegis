@@ -40,6 +40,82 @@
 
 文本片段先脱敏，再机械采样 head/middle/tail。偏移单位为脱敏文本的 UTF-16 code units；不声称是原始字节 offset。采样缺口与截断必须可见，不承诺任意稀疏信息都能落入片段。原工具结果仍正常进入当前 Session continuation。缺失输出为 null，不把 digest 宣称为可读全文引用。对任何窗口化/分段读取，模型必须使用重叠窗口或已知长度并核对重建值，不能凭记忆补/丢边界字符（ROM 规则 7）。
 
+## Work-cycle 复核门与跨 Session 工作单元
+
+`memory/work-cycle.mjs` 是纯投影：只从当前 Episode 已提交事件与 trusted host policy 推导
+`status(clear|review_required|awaiting_scoped_intent)`、原因、`trigger_id`、`work_unit_id` 和证据 refs，
+不写 Outcome、不授权、不判定失败。重复路线使用已有 `arguments_digest` + 真实 `content_digest`；结果缺失
+保持 unknown，不当作成功或相同结果。只有 `memory/board.mjs#permittedNodeType` 认可的 Fact（oracle/human
+独立成功或满足 value/evidence/revision gate 的 verified observation）才重置“无进展”窗口。通用 bash
+保持不透明，按可能有副作用路线保守计数；只读工具不计数。
+
+停滞只表示“需要复核”。RAM 的 `task.work_cycle` 属于核心，不因预算丢弃；它展示状态、原因、bounded
+evidence 别名、最近 review 的 blocker/next_step/检索状态和 handoff advisory。review/checkpoint 文本
+始终标 `unverified_model_summary`，handoff 建议标 `runtime_advisory_not_outcome`。
+
+复核流程（Observer 接线）：
+
+- `aegis_work_review`：校验同 Episode 已提交证据，执行一次有界本地 `selectKnowledge`，先 durable 写
+  `runtime.note kind=knowledge.selected mode=work_review`，再写 `runtime.note kind=work.review`
+  引用该 selection。空命中/不可读/被策略关闭分别记录 `no_match`/`unavailable`/`disabled`，不宣称已检查知识。
+  同一 `trigger_id` 重放幂等，不重复写 selection。
+- `aegis_work_checkpoint`：记录 `continue|blocked|complete`、summary/blocker/next_step 和同 Episode 证据；
+  这是未验证规划元数据，不产生 Stage/Task 完成、Fact、Outcome、active Experience 或新 Episode。
+- 门控：`review_required` 期间阻断 effect-capable 工具并终止同批后续 effect；只读观察、知识检索、review、
+  checkpoint、handoff 控制仍可用。`aegis_propose kind=intent` 只有在引用当前 review（或其 selection）、
+  scope 非空且不同于触发 unit 时才通过；被拒绝的提案不清门。
+- 轮换：checkpoint/handoff advisory 只提供建议。真实 Session 替换仍由现有 Host/Supervisor 或
+  `/aegis switch` 在安全边界执行；新 Session 从同一 committed EventLog 重建 RAM，不重放 transcript，
+  不重置授权/预算，审核门同样从事件重建，不能用换 Session 绕过。
+
+### 后续实现契约：工作单元、复核消费与 Host 自动轮换
+
+以下为用户已认可并由第二阶段实现的目标；**内部自测通过，等待独立复核/外部验收**。实现与命令证据见
+[第二阶段任务书](WORK_CYCLE_PHASE2_IMPLEMENTATION_TASK.md)、[T0](WORK_CYCLE_T0_BASELINE.md#第二阶段冻结p0p1p2p3p4)、
+[矩阵](WORK_CYCLE_TEST_MATRIX.md) 与 [实现报告](WORK_CYCLE_IMPLEMENTATION_REPORT.md)。
+
+- 工作单元身份绑定同 Episode 的有效 `proposal.submitted kind=intent` **事件 ID 与 scope**。
+  scope 是模型标签，不能作为唯一身份；当前单元须与 Board 的有效 Intent 视图一致。
+  `work.checkpoint` 增补 `work_unit_event_id` 并校验当前绑定；旧单元 complete 保留历史，不作为新单元完成。
+  complete 是可交接的模型提案，Host 仍核对未决责任与预算，不生成 Outcome。
+- 分开派生“最近可信进展以来的累计尝试”与“本次有效复核后的一轮尝试”。可信进展继续复用现有
+  Board/Oracle 的来源、归属与有效性契约。普通 Intent、checkpoint、轮换均不清除累计历史。
+  同一 review 只可被后续第一个合格 Intent 消费一次，且必须对应该事件前缀中正在等待的 trigger；
+  引用旧 review 可以建立历史关联，不能再次重开计数窗口。消费关系从原有事件重放推导，不新增权威表。
+- 检索 `ready/no_match` 为已实际执行的检索结果；`disabled` 仅表示可信策略关闭，不声称检索成功；
+  可记录限制后提出新 Intent。`unavailable`/写入不确认保留复核阻断，允许同 trigger 重试检索；失败记录
+  不能因幂等复用而永久禁止重试。任何状态都不产生 Fact/权限。
+- 复核阻断与 Session 安全是分别判定的条件。健康审计、实际 settled、请求/工具结清、预算允许且无
+  pending/unknown 副作用时，可携带未完成的复核交接；新 Session 必须重建同一 trigger/消费关系并继续阻断
+  effect-capable 工具。复核本身不是必须轮换的理由；上下文压力或明确交接请求可触发这种交接。
+- 下一阶段先在 **C6 Host** 接入工作单元/context 策略的自动轮换；复用 Supervisor 和既有预算，策略由
+  trusted Host 显式配置并绑定运行，默认候选阈值不等于已校准的全局生产策略。普通 Pi 入口仍用现有手动
+  `/aegis switch`，不得从 Observer `agent_end` 直接创建 Session。完整调用链与恢复门见第二阶段任务书。
+- 同一单元完成依据只自动交接一次；context 压力绑定实际来源 Session 的使用量，不让旧 Session 的高水位
+  在新 Session 连续触发。轮换后的后续模型请求仍在原任务额度内，不自动扩大真实模型/网络授权。
+- Campaign 的模型 checkpoint、review（含复用调用）均遵守现有 tool admit/charge/finish 协议；持久内容
+  幂等与调用预算是两件事。同一真实调用重放不双扣，不同真实调用不能因复用内容而免费。副作用还须在
+  Broker 最终执行边界用最新 committed work-cycle 检查，不能只依赖 Observer 的工具列表或早前模型决定。
+
+### Experiment Host Console 管理 Session 生命周期
+
+普通 `run-experiment.sh` 的启动语义已演进为“人启动 Host 控制台，Host 管理短 Pi Sessions”：**已实现并通过限定内部复验（`internally_verified / awaiting_external_review`）**，外部独立验收未发生。真实模型/网络/目标、TUI、普通入口独立预算账本仍未验证。实现、状态转移、测试与恢复边界见
+[Phase 3 Host Console 任务书 §11](WORK_CYCLE_PHASE3_HOST_CONSOLE_IMPLEMENTATION_TASK.md#11-实现交付内部验证轮)、
+[矩阵 §G](WORK_CYCLE_TEST_MATRIX.md#第三阶段experiment-console-hosthc-01hc-16) 与
+[实现报告](WORK_CYCLE_IMPLEMENTATION_REPORT.md#第三阶段普通入口常驻-console-host实现报告)。
+
+设计约束：
+
+- 常驻 Host 是普通 experiment 的生命周期所有者；真实 EventLog/Task/Episode、授权/预算、Board 和 work-cycle reducer 仍是权威。Pi Session 是短上下文工作窗口，不能作为新尝试或预算重置。
+- 启动门由 trusted Host 绑定（`AEGIS_WORK_START_GATE=on`，`memory/work-cycle.mjs#workStartGateEnabled`）；独立交互入口默认关闭以保留历史行为。启用时，新 Task 的工作单元尚未建立（派生 `unscoped`）只允许 read-only observation/knowledge/tool lookup/`aegis_propose kind=intent`（scope 非空）；**任何 effect-capable 操作必须等一个非空 scope、通过现有 Proposal ref/effective gate 的 scoped Intent durable 提交后**，并在最终执行边界（Observer admission 与 Broker/Campaign permit）再次检查。并行工具调用不能越过这个顺序门。
+- 遇到旧 Episode 已经 stall、却没有 unit 身份时，使用明确标记的 bootstrap review：绑定既有 trigger/evidence/真实知识 selection，不伪造 Intent 或 work-unit event ID。之后第一个有效 scoped Intent 必须引用该 review；accepted 后仅消费一次并开启首个单元。
+- settled 只让 Host 检查状态，不等于失败、成功、轮换已发生或可继续 effect。有效 review 的 hold 可在健康审计、真实 settled、请求/工具结清、无 pending/unknown 副作用且预算允许时随真实 replacement Session 携带；replacement 仍有相同 hold。
+- 新 Session 重用已提交的 review、knowledge selection、Intent/consumption、计数和 RAM；不重复做同一次 review/检索，不重发已有 action。只有新 committed stall evidence 才建立下一 review trigger。Hold 连续触发但没有 review/Intent progress 时，Host 按冻结上限停止并报告，不无限开 Session。
+- Observer 负责当前 Session 的 tool/hook/projection；不在 `agent_end`/`agent_settled` 自建 Session。Host 调现有 SessionSupervisor，绑定 request/source/replacement identity，并在真实预算/settle/ownership检查后才 completion。
+- 在完整 hash-chain EventLog 上可复用已验证的 prefix checkpoint（`memory/projection-checkpoint.mjs`）：绑定 event offset/末尾 id+digest/逐行 prefix digest/task/episode/policy+config digest/reducer+projection 版本。它只是派生缓存；与 full replay 必须对所有授权、hold、consumption、双计数、pending、budget、handoff 和 Task 状态得出一致结果。任一项不匹配、缺失、外域、篡改或版本未知就 full replay；有 committed tail 时用同一组 reducer 重放，不声称 O(1)。缓存不能清 hold、授予权限或改变预算。
+- Process 重启后先检查 ownership、chain、frozen policy、pending/unknown、staged handoff/attempt 和预算；通过现有 recovery 协议后才可派发下一 request。staged JSON/新进程 Session 本身不是 Host attempt。
+- 该设计只新增普通入口的 Host loop，不将 Campaign Stage/TaskOracle 语义硬套到 Experiment，也不另造 Session manager、EventLog 或预算账本。
+
 ## 生命周期与注入契约
 
 RAM 没有独立的持久生命周期；它是一次 provider 请求的临时快照：

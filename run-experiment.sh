@@ -58,6 +58,9 @@ MAX_ATTACH_BYTES=536870912
 MCP_MODE="off"       # off | filtered | all
 DRY_RUN=0
 LIST=0
+CONSOLE_MODE=1
+MAX_AUTO_ROTATIONS=""
+MAX_CONTINUATIONS=""
 PASSTHROUGH=()
 
 usage() {
@@ -86,6 +89,19 @@ Options:
                       roster.json, else $AEGIS_HOME/tools/roster.json, else the
                       repository roster.json). Registers tools; see
                       aegis-register-tool.mjs.
+  --console           (default) start the resident Aegis Console Host. One
+                      process owns the Pi SDK runtime for this label and manages
+                      the short Sessions of the same Task/Episode.
+  --cli               do NOT use the console: launch the single Pi CLI run.
+                      This is the pre-phase-3 behaviour (no Host lifecycle, no
+                      automatic Session rotation) and is not the default.
+  --max-auto-rotations N
+                      trusted Host bound for automatic Session rotations
+                      (0-8, default 3). Frozen for the run; the model can never
+                      change it.
+  --max-continuations N
+                      trusted Host bound for total Session generations
+                      (1-64, default 12).
   --attach PATH       copy a file or directory into the workspace before launch.
                       Repeatable. An existing destination is never overwritten.
   --max-attach-bytes N
@@ -122,6 +138,16 @@ Options:
   --dry-run           print the resolved configuration and exit
   --list              list existing experiments and exit
   -h, --help          this help
+
+Console controls (default entry):
+  <text>       send a prompt to the current Task/Episode
+  /status      Host state: session id/file, Task/Episode, work-unit/hold, budget
+  /pause       stop dispatching; the current Session is kept
+  /resume      clear a pause/block after recovery checks
+  /stop        dispose the Session, release the lease and exit
+  /quit        alias for /stop          /help  list the controls
+  Ctrl-D closes the console. The console is line-oriented; Pi's interactive TUI
+  is not used by this entry.
 
 Behaviour worth knowing:
   * An existing label is refused unless --resume is given. Reusing an event log
@@ -163,6 +189,18 @@ while (($#)); do
 			shift 2
 			;;
 		--resume) MODE="resume"; shift ;;
+		--console) CONSOLE_MODE=1; shift ;;
+		--cli) CONSOLE_MODE=0; shift ;;
+		--max-auto-rotations)
+			[[ $# -ge 2 ]] || { printf -- '--max-auto-rotations needs a value\n' >&2; exit 2; }
+			MAX_AUTO_ROTATIONS="$2"
+			shift 2
+			;;
+		--max-continuations)
+			[[ $# -ge 2 ]] || { printf -- '--max-continuations needs a value\n' >&2; exit 2; }
+			MAX_CONTINUATIONS="$2"
+			shift 2
+			;;
 		--bundle) ENTRY="bundle"; shift ;;
 		--model) MODEL="${2:-}"; shift 2 ;;
 		--provider) PROVIDER="${2:-}"; shift 2 ;;
@@ -219,6 +257,11 @@ fi
 [[ "$LABEL" == *..* ]] && die "invalid label '$LABEL': '..' is not allowed"
 [[ "$WEB_SEARCH" =~ ^(on|off)$ ]] || die "--web-search value must be on or off"
 [[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-block must not contain quotes or newlines"
+for pair in "max-auto-rotations:${MAX_AUTO_ROTATIONS}" "max-continuations:${MAX_CONTINUATIONS}"; do
+	name="${pair%%:*}"
+	value="${pair#*:}"
+	[[ -z "$value" || "$value" =~ ^[0-9]+$ ]] || die "--$name must be a whole number"
+done
 
 for f in "$AEGIS_BASE/run-aegis.sh" "$AEGIS_BASE/run-pi.sh" "$AEGIS_BASE/agent/ROM.md"; do
 	[[ -f "$f" ]] || die "missing required file: ${f#"$BASE_DIR"/}" 1
@@ -443,6 +486,23 @@ fi
 export AEGIS_PI_AGENT_DIR="$AGENT_DIR"
 export AEGIS_PI_SESSION_DIR="$SESSION_DIR"
 export AEGIS_PI_SERVER_DIR="$SERVER_DIR"
+# --- Experiment Console Host contract --------------------------------------
+# One resident Host owns the Pi SDK runtime for this label. The values below are
+# the TRUSTED, frozen Host policy: the model can never set or widen them.
+export AEGIS_EXPERIMENT_LABEL="$LABEL"
+if ((CONSOLE_MODE)); then
+	# The scoped-Intent start gate is part of the Console Host contract. The
+	# legacy single-CLI entry (--cli) keeps its historical optional-Intent
+	# behaviour, so the gate is bound only for the Host.
+	export AEGIS_WORK_START_GATE="${AEGIS_WORK_START_GATE:-on}"
+else
+	unset AEGIS_WORK_START_GATE
+fi
+WORK_START_GATE_STATE="${AEGIS_WORK_START_GATE:-off}"
+export AEGIS_CONSOLE_MAX_AUTO_ROTATIONS="${MAX_AUTO_ROTATIONS:-${AEGIS_CONSOLE_MAX_AUTO_ROTATIONS:-3}}"
+export AEGIS_CONSOLE_MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-${AEGIS_CONSOLE_MAX_CONTINUATIONS:-12}}"
+if [[ -n "$PROVIDER" ]]; then export AEGIS_CONSOLE_PROVIDER="$PROVIDER"; fi
+if [[ -n "$MODEL" ]]; then export AEGIS_CONSOLE_MODEL="$MODEL"; fi
 if [[ -n "$SCRIPT_CONFIG" ]]; then
 	export AEGIS_SCRIPT_CONFIG="$SCRIPT_CONFIG"
 else
@@ -511,6 +571,12 @@ if [[ ! -f "$RUN_JSON" ]]; then
   },
   "agent_mode": "$AGENT_MODE",
   "mcp": "$MCP_MODE",
+  "console": {
+    "entry": "$([[ $CONSOLE_MODE -eq 1 ]] && echo console || echo cli)",
+    "max_auto_rotations": "$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS",
+    "max_continuations": "$AEGIS_CONSOLE_MAX_CONTINUATIONS",
+    "work_start_gate": "$WORK_START_GATE_STATE"
+  },
   "seed_file": ${SEED_FILE:+\"$SEED_FILE\"}${SEED_FILE:-null},
   "web_search": "$WEB_SEARCH",
   "search_deny": ${SEARCH_DENY:+\"$SEARCH_DENY\"}${SEARCH_DENY:-null},
@@ -576,7 +642,11 @@ fi
 
 # --- summary ---------------------------------------------------------------
 printf 'Aegis experiment: %s%s\n' "$LABEL" "$([[ "$MODE" == "resume" ]] && echo ' (resume)')"
-printf '  entry      %s\n' "$([[ "$ENTRY" == bundle ]] && echo 'run-pi.sh (bundle)' || echo 'run-aegis.sh (source)')"
+printf '  entry      %s\n' "$([[ $CONSOLE_MODE -eq 1 ]] && echo 'Aegis Console Host (resident, source SDK)' || echo "$([[ "$ENTRY" == bundle ]] && echo 'run-pi.sh (bundle)' || echo 'run-aegis.sh (source)')")"
+if ((CONSOLE_MODE)); then
+	printf '  console    max_auto_rotations=%s max_continuations=%s work_start_gate=%s\n' \
+		"$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS" "$AEGIS_CONSOLE_MAX_CONTINUATIONS" "$WORK_START_GATE_STATE"
+fi
 printf '  workspace  %s\n' "$WORKSPACE"
 
 # The default workspace is a fresh, empty directory. If the operator launched from
@@ -622,6 +692,11 @@ if ((DRY_RUN)); then
 	printf '  AEGIS_HOME=%s\n  AEGIS_TASK_ID=%s\n  AEGIS_EVENT_LOG=%s\n  AEGIS_RAM_DIR=%s\n' \
 		"$AEGIS_HOME" "$TASK_ID" "$EVENT_LOG" "$RAM_DIR"
 	printf '  AEGIS_KNOWLEDGE_DIR=%s\n  AEGIS_PI_AGENT_DIR=%s\n' "$KNOWLEDGE_DIR" "$AGENT_DIR"
+	if ((CONSOLE_MODE)); then
+		printf '  AEGIS_EXPERIMENT_LABEL=%s\n  AEGIS_WORK_START_GATE=%s\n' "$LABEL" "$WORK_START_GATE_STATE"
+		printf '  AEGIS_CONSOLE_MAX_AUTO_ROTATIONS=%s\n  AEGIS_CONSOLE_MAX_CONTINUATIONS=%s\n' \
+			"$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS" "$AEGIS_CONSOLE_MAX_CONTINUATIONS"
+	fi
 	printf '  cwd=%s\n' "$WORKSPACE"
 	exit 0
 fi
@@ -653,7 +728,33 @@ else
 fi
 
 cd "$WORKSPACE"
+if ((CONSOLE_MODE)) && ((MANAGEMENT_FIRST)); then
+	# `auth`/`config`/`install`... manage Pi itself; they do not start an agent
+	# run and must not create a Console Host.
+	exec "$AEGIS_BASE/run-aegis.sh" "${ARGS[@]}"
+fi
+if ((CONSOLE_MODE)); then
+	# The Experiment Console Host is the ONLY writer of this EventLog, and the
+	# order is part of the contract: the entry acquires the per-label ownership
+	# BEFORE it creates the Pi SDK runtime / binds the initial Session (binding
+	# makes the Observer append `session.started`). A second console on the same
+	# label is refused without creating or binding anything. Do not start a second
+	# Pi CLI on this label.
+	CONSOLE_ENTRY="$AEGIS_BASE/session/experiment-console-entry.mjs"
+	SOURCE_RESOLVER="$AEGIS_BASE/pi/packages/coding-agent/src/experimental/source-resolver.ts"
+	[[ -f "$CONSOLE_ENTRY" ]] || die "missing console entry: ${CONSOLE_ENTRY#"$BASE_DIR"/}" 1
+	[[ -f "$SOURCE_RESOLVER" ]] || die "missing Pi source resolver: ${SOURCE_RESOLVER#"$BASE_DIR"/}" 1
+	(( ${#PASSTHROUGH[@]} )) && exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
+		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
+		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
+		--agent-dir "$AGENT_DIR" "${PASSTHROUGH[@]}"
+	exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
+		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
+		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
+		--agent-dir "$AGENT_DIR"
+fi
 if [[ "$ENTRY" == "bundle" ]]; then
+	printf 'run-experiment: --bundle is not used by the console entry; use --cli to run the bundled CLI\n' >&2
 	exec "$AEGIS_BASE/run-pi.sh" "${ARGS[@]}"
 fi
 exec "$AEGIS_BASE/run-aegis.sh" "${ARGS[@]}"

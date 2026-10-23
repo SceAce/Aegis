@@ -17,8 +17,10 @@ import { readFile, rename } from "node:fs/promises";
 import { projectBoard } from "../memory/board.mjs";
 import { buildRam } from "../memory/ram.mjs";
 import { projectState, resolveOpenEpisode } from "../memory/state.mjs";
+import { projectWorkCycle, resolveWorkCyclePolicy } from "../memory/work-cycle.mjs";
 import { EventLog } from "../shared/events.mjs";
 import { evaluateHandoff } from "./handoff.mjs";
+import { beginHandoffAttempt, endHandoffAttempt } from "./handoff-grant.mjs";
 
 /**
  * Apply the staged handoff file (if any) through a real AgentSessionRuntime.
@@ -77,7 +79,14 @@ export async function applyStagedHandoff({ eventLogPath, handoffPath, runtime, t
 			reason: "this handoff request already has a committed completion; no second Session was created",
 		};
 	}
-	const ram = buildRam({ board, state, episodeId: handoff.episode_id, goal: episode.goal?.description || "" });
+	const workCycle = projectWorkCycle(events, handoff.episode_id, resolveWorkCyclePolicy(process.env));
+	const ram = buildRam({
+		board,
+		state,
+		episodeId: handoff.episode_id,
+		goal: episode.goal?.description || "",
+		workCycle,
+	});
 	const verdict = evaluateHandoff({
 		state,
 		board,
@@ -85,6 +94,7 @@ export async function applyStagedHandoff({ eventLogPath, handoffPath, runtime, t
 		episodeId: handoff.episode_id,
 		reason: handoff.reason || "automatic post-settle handoff",
 		requestId: handoff.request_id,
+		workCycle,
 	});
 	if (!verdict.allowed)
 		return { applied: false, reason: verdict.reason, request_id: handoff.request_id, episode_id: handoff.episode_id };
@@ -92,30 +102,53 @@ export async function applyStagedHandoff({ eventLogPath, handoffPath, runtime, t
 	const reasonForSession = handoff.reason ?? "";
 	const requestForSession = handoff.request_id;
 	const episodeForSession = handoff.episode_id;
+	// Open the SHORT-LIVED Host attempt that authorizes the replacement Session
+	// (not the initial Session) to append `handoff.completed`. The live attempt id
+	// exists only for the duration of this `newSession` call; it is cleared in
+	// `finally` even on create/rebind/continuation failure.
+	let attempt = null;
 	let result;
 	try {
-		result = await runtime.newSession({
-			withSession: async (next) => {
-				// `withSession` runs AFTER the SDK has rebound the new Session. The new
-				// Session's Observer records `handoff.completed` when its continuation
-				// prompt starts (a genuine post-bind point), so the Host never opens a
-				// second EventLog writer here. A rebind failure prevents `withSession`
-				// from running at all, so no completion can precede the bind.
-				const text = continuation
-					? continuation(handoff)
-					: `[Aegis] continuing episode ${episodeForSession}: ${reasonForSession}`;
-				await next.sendUserMessage(text);
-			},
-		});
-	} catch (error) {
-		// Creation/rebind/continuation failed: no completion happened, keep the
-		// request staged.
-		return {
-			applied: false,
-			reason: error instanceof Error ? error.message : String(error),
-			request_id: requestForSession,
-			episode_id: episodeForSession,
-		};
+		try {
+			attempt = await beginHandoffAttempt({
+				handoffPath,
+				handoff,
+				fromSession: runtime.session?.sessionId ?? null,
+			});
+		} catch (error) {
+			return {
+				applied: false,
+				reason: `could not open a Host handoff attempt: ${error instanceof Error ? error.message : String(error)}`,
+				request_id: requestForSession,
+				episode_id: episodeForSession,
+			};
+		}
+		try {
+			result = await runtime.newSession({
+				withSession: async (next) => {
+					// `withSession` runs AFTER the SDK has rebound the new Session. The new
+					// Session's Observer records `handoff.completed` when its continuation
+					// prompt starts (a genuine post-bind point), so the Host never opens a
+					// second EventLog writer here. A rebind failure prevents `withSession`
+					// from running at all, so no completion can precede the bind.
+					const text = continuation
+						? continuation(handoff)
+						: `[Aegis] continuing episode ${episodeForSession}: ${reasonForSession}`;
+					await next.sendUserMessage(text);
+				},
+			});
+		} catch (error) {
+			// Creation/rebind/continuation failed: no completion happened, keep the
+			// request staged.
+			return {
+				applied: false,
+				reason: error instanceof Error ? error.message : String(error),
+				request_id: requestForSession,
+				episode_id: episodeForSession,
+			};
+		}
+	} finally {
+		await endHandoffAttempt({ handoffPath, attempt });
 	}
 	if (result?.cancelled)
 		return {
@@ -157,10 +190,28 @@ export async function applyStagedHandoff({ eventLogPath, handoffPath, runtime, t
 			to_session: toSession,
 		};
 	}
-	if (committed.completion.to_session && committed.completion.to_session !== toSession) {
+	if (committed.completion.payload?.to_session && committed.completion.payload.to_session !== toSession) {
 		return {
 			applied: false,
 			reason: "the committed completion names a different Session than the bound runtime",
+			request_id: requestForSession,
+			episode_id: episodeForSession,
+			to_session: toSession,
+		};
+	}
+	if (!attempt || committed.completion.payload?.attempt_id !== attempt.attempt_id) {
+		return {
+			applied: false,
+			reason: "the committed completion is not bound to this Host handoff attempt",
+			request_id: requestForSession,
+			episode_id: episodeForSession,
+			to_session: toSession,
+		};
+	}
+	if (committed.completion.payload?.from_session !== attempt.from_session) {
+		return {
+			applied: false,
+			reason: "the committed completion names a different source Session",
 			request_id: requestForSession,
 			episode_id: episodeForSession,
 			to_session: toSession,

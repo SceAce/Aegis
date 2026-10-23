@@ -61,9 +61,13 @@ wiki 只能产出文档 seed 与 **candidate** 提案，不能直接变成 activ
 Campaign 层的统一设计与实现任务书分别见：
 
 - [`CAMPAIGN_ARCHITECTURE.md`](CAMPAIGN_ARCHITECTURE.md)：把 Campaign Manifest、任务队列、长任务调度、Host 级 Session 轮换、Broker、Oracle、汇总报告和故障恢复接到现有 `Event -> Episode -> Outcome -> Experience` 链路上。
-- [`CAMPAIGN_IMPLEMENTATION_TASK.md`](CAMPAIGN_IMPLEMENTATION_TASK.md)：交给 PI+dsv4.1flash 的分阶段实现提示词、测试要求、故障矩阵和最终报告格式。
+- [`CAMPAIGN_IMPLEMENTATION_TASK.md`](CAMPAIGN_IMPLEMENTATION_TASK.md)：历史 Campaign 分阶段任务与验收依据；执行前核对该任务书的当前适用状态。
+- [`WORK_CYCLE_PHASE2_IMPLEMENTATION_TASK.md`](WORK_CYCLE_PHASE2_IMPLEMENTATION_TASK.md) 与 [`WORK_CYCLE_PHASE2_REMEDIATION_TASK.md`](WORK_CYCLE_PHASE2_REMEDIATION_TASK.md)：第二阶段 C6 同 Task 的复核、检索、Host 自动轮换与恢复任务。R1/R2/K1/G1 已修复并完成限定复验；内部验证报告在 [`WORK_CYCLE_IMPLEMENTATION_REPORT.md`](WORK_CYCLE_IMPLEMENTATION_REPORT.md)，等待外部审查。实现委派见 [`WORK_CYCLE_PHASE2_REMEDIATION_DS_PROMPT.md`](WORK_CYCLE_PHASE2_REMEDIATION_DS_PROMPT.md)，原补测与历史 red 记录在 [`WORK_CYCLE_PHASE2_TEST_HANDOFF.md`](WORK_CYCLE_PHASE2_TEST_HANDOFF.md) / [`WORK_CYCLE_TEST_MATRIX.md`](WORK_CYCLE_TEST_MATRIX.md)。
+- [`WORK_CYCLE_PHASE3_HOST_CONSOLE_IMPLEMENTATION_TASK.md`](WORK_CYCLE_PHASE3_HOST_CONSOLE_IMPLEMENTATION_TASK.md)：第三阶段普通 `run-experiment.sh` 常驻 Host 控制台、首个 Intent 启动门、settled 后安全 Session 轮换、hold 续接、进程恢复及 checkpoint/tail 等价验收。**已实现并通过限定内部复验（`internally_verified / awaiting_external_review`）**，交付与命令证据见其 §11，测试/报告在其第三阶段章节；外部独立验收、真实模型/网络/目标与 TUI 均未验证。[`WORK_CYCLE_PHASE3_HOST_CONSOLE_DS_PROMPT.md`](WORK_CYCLE_PHASE3_HOST_CONSOLE_DS_PROMPT.md) 是当时的委派提示词。
+- [`WORK_CYCLE_AND_SESSION_HANDOFF_IMPLEMENTATION_TASK.md`](WORK_CYCLE_AND_SESSION_HANDOFF_IMPLEMENTATION_TASK.md)、[`WORK_CYCLE_T0_BASELINE.md`](WORK_CYCLE_T0_BASELINE.md)：第一阶段任务与接口基线，后续细化以现有工作控制接口和第二阶段任务为准。
+- [`WORK_CYCLE_TEST_MATRIX.md`](WORK_CYCLE_TEST_MATRIX.md)、[`WORK_CYCLE_IMPLEMENTATION_REPORT.md`](WORK_CYCLE_IMPLEMENTATION_REPORT.md)：第一阶段自测命令/结果；独立审查发现 F1/F2/F3，当前 changes_required，后续证据在原文档追加。
 
-这两份文档当前是设计/任务书，不表示代码已经实现；只有 C0-C4 和真实 Pi Host-level Session 测试全部通过，才能宣称 Campaign 能力完成。
+设计、任务书和内部报告分别说明目标与当时证据；它们不等于产品入口已接通或独立验收通过。各阶段是否完成以冻结范围与对应的真实产品验收为准。
 
 | 文件或目录 | 用途 |
 | --- | --- |

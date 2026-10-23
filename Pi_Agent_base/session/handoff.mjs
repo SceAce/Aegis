@@ -11,7 +11,7 @@ import { pendingActionsFor, stateDigest } from "../memory/state.mjs";
 /**
  * @returns {{allowed: boolean, reason: string, handoff?: object, pending_actions?: any[]}}
  */
-export function evaluateHandoff({ state, board, ram, episodeId, reason, requestId }) {
+export function evaluateHandoff({ state, board, ram, episodeId, reason, requestId, workCycle = null }) {
 	if (!episodeId || !state.episodes[episodeId]) {
 		return { allowed: false, reason: "no open episode to hand over" };
 	}
@@ -60,6 +60,32 @@ export function evaluateHandoff({ state, board, ram, episodeId, reason, requestI
 			state_digest: stateDigest(state),
 			pending_actions: [],
 			ram: ram || "",
+			// Bounded work-cycle continuity. The replacement re-derives the review gate
+			// from the committed EventLog; this payload is a derived view and can never
+			// grant permission, clear a review or reset a budget. A staged checkpoint
+			// status is a model claim / planning metadata, not an Outcome.
+			work_cycle: workCycle
+				? {
+						status: workCycle.status ?? "unknown",
+						work_unit_id: workCycle.work_unit_id ?? null,
+						reasons: Array.isArray(workCycle.reasons) ? workCycle.reasons.slice(0, 3) : [],
+						trigger_id: workCycle.trigger_id ?? null,
+						review_event_id: workCycle.review?.event_id ?? workCycle.last_review?.event_id ?? null,
+						selection_event_id:
+							workCycle.review?.selection_event_id ?? workCycle.last_review?.selection_event_id ?? null,
+						evidence_event_ids: Array.isArray(workCycle.evidence_event_ids)
+							? workCycle.evidence_event_ids.slice(-8)
+							: [],
+						checkpoint: workCycle.checkpoint
+							? {
+									event_id: workCycle.checkpoint.event_id,
+									unit_status: workCycle.checkpoint.unit_status,
+									trust: "unverified_model_summary",
+								}
+							: null,
+						trust: "runtime_advisory_not_outcome",
+					}
+				: null,
 			// Hand off the EFFECTIVE view only. A superseded/stale Fact must not be
 			// carried into the next short session as current support.
 			facts: (board.currentByType ?? board.byType).Fact.filter((node) => node.episode_id === episodeId).map(

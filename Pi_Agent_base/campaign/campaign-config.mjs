@@ -42,6 +42,7 @@ export const KNOWN_CONFIG_V11_KEYS = Object.freeze([
 	"registered_test",
 	"seed",
 	"planning",
+	"work_cycle",
 ]);
 export const KNOWN_CONFIG_KEYS = Object.freeze([
 	"schema_version",
@@ -119,6 +120,60 @@ function validateContextKey(context, reasons) {
 				? context.output_reserve_chars
 				: 2000,
 	};
+}
+
+/**
+ * Validate the additive C6 `work_cycle` object. The section is DISABLED unless
+ * the trusted config explicitly enables it; thresholds are Host policy, never
+ * model input. Candidate defaults (3/8/4/85) are NOT calibrated production
+ * values and only apply when this section is enabled (or to the manual gate).
+ */
+function validateWorkCycleKey(input, reasons) {
+	const defaults = {
+		enabled: false,
+		repeat_limit: 3,
+		action_window: 8,
+		min_distinct_routes: 4,
+		context_pressure_percent: 85,
+		max_auto_rotations: 6,
+		max_continuations: 8,
+	};
+	if (input === undefined) return { ...defaults };
+	if (!isPlainObject(input)) {
+		reasons.push("config.work_cycle must be an object");
+		return { ...defaults };
+	}
+	const allowed = [
+		"enabled",
+		"repeat_limit",
+		"action_window",
+		"min_distinct_routes",
+		"context_pressure_percent",
+		"max_auto_rotations",
+		"max_continuations",
+	];
+	for (const key of Object.keys(input))
+		if (!allowed.includes(key)) reasons.push(`unknown config.work_cycle key ${key}`);
+	if (input.enabled !== undefined && typeof input.enabled !== "boolean")
+		reasons.push("config.work_cycle.enabled must be boolean");
+	const bounds = {
+		repeat_limit: [2, 10],
+		action_window: [3, 50],
+		min_distinct_routes: [2, 50],
+		context_pressure_percent: [50, 95],
+		max_auto_rotations: [0, 50],
+		max_continuations: [0, 50],
+	};
+	const out = { ...defaults, enabled: input.enabled === true };
+	for (const [key, [min, max]] of Object.entries(bounds)) {
+		if (input[key] === undefined) continue;
+		if (!Number.isSafeInteger(input[key]) || input[key] < min || input[key] > max)
+			reasons.push(`config.work_cycle.${key} must be an integer in [${min}, ${max}]`);
+		else out[key] = input[key];
+	}
+	if (out.min_distinct_routes > out.action_window)
+		reasons.push("config.work_cycle.min_distinct_routes cannot exceed action_window");
+	return out;
 }
 
 /** Validate the C6 `learning` object. `promote_experience` must stay false. */
@@ -435,12 +490,14 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 	let taskFamily = null;
 	let measureConfig = null;
 	let planningConfig = null;
+	let workCycleConfig = null;
 	if (isV11) {
 		providerConfig = validateProviderKey(raw.provider, reasons);
 		contextConfig = validateContextKey(raw.context, reasons);
 		learningConfig = validateLearningKey(raw.learning, reasons);
 		measureConfig = validateMeasureKey(raw.measure, reasons);
 		planningConfig = validatePlanningKey(raw.planning, reasons);
+		workCycleConfig = validateWorkCycleKey(raw.work_cycle, reasons);
 		if (raw.task_family !== undefined) {
 			if (!TASK_FAMILIES.includes(raw.task_family))
 				reasons.push(`config.task_family must be one of ${TASK_FAMILIES.join(", ")}`);
@@ -471,6 +528,7 @@ export function loadCampaignConfig({ configPath } = /** @type {any} */ ({})) {
 		task_family: taskFamily,
 		measure: measureConfig,
 		planning: planningConfig,
+		work_cycle: workCycleConfig,
 		registered_test: typeof raw.registered_test === "string" ? raw.registered_test : null,
 		seed: raw.seed ?? null,
 	};

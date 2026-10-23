@@ -256,6 +256,17 @@ reason, and result. `handoff.completed` is written once and only after the new
 runtime is successfully bound. Cancellation or creation failure leaves the
 handoff staged and does not emit false completion.
 
+Work-cycle continuation refines this boundary without changing Episode or Outcome
+semantics. A pending work review may be carried into a replacement Session when
+the existing safety, settlement and budget gates pass; the replacement must
+rebuild and retain the same effect hold. The review is not an unresolved effect
+and rotation never consumes it. The C6 Host's explicitly enabled work-unit/context
+rotation is implemented in Phase 2 and is internally verified pending external
+review; ordinary `run-experiment.sh` Host-owned automatic Session lifecycle is a
+separate Phase 3 task, not supplied by this Campaign capability. See the
+[current interface contract](STRUCTURED_RAM_AND_WORK_CONTROL.md), [Phase 2 task](WORK_CYCLE_PHASE2_IMPLEMENTATION_TASK.md), and
+[Phase 3 Host Console task](WORK_CYCLE_PHASE3_HOST_CONSOLE_IMPLEMENTATION_TASK.md).
+
 ### 3.4 Stage and Task Results
 
 A stage is not a model-written checkbox. It is a named criterion with one or
