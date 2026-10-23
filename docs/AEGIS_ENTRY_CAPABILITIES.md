@@ -1,6 +1,6 @@
 # Aegis 入口能力清单（ENTRY-01）
 
-状态：2026-10-21 按当前代码核对。本文只登记**可用入口与真实能力边界**，不是验收报告；
+状态：2026-10-21 按当前代码核对；2026-10-23 增加 `run-experiment.sh` / `run-experiment-web.sh` 两行。本文只登记**可用入口与真实能力边界**，不是验收报告；
 "已实现"不等于"真实效果已验证"。命令与路径以仓库根为基准。
 
 ## 1. 结论
@@ -23,6 +23,8 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 | `run-aegis.sh` | Pi 默认工具集（未固定 allowlist）+ Observer 工具（含 `aegis_web_search`） | Pi 原生工具 + 已登记脚本（`aegis_execute`） | 无 Campaign 账本 | 无（Observer 只记录，不判任务） | 全部（含知识、技法搜索、artifact read、handoff） | 人工 `/aegis learn/compile/route/bind/run/replay`；`/aegis switch`；`/aegis checkFlag` 人类确认 | 无独立运行记录；组件有离线测试；Firefox DevTools MCP 已配置；`autoRemote` 有登录 bootstrap 和 policy core，平台 adapter/checker 未接线 |
 | `run-pi.sh` | 同 `run-aegis.sh`（bundle 入口） | 同上 | 同上 | 同上 | 同上 | 同上 | 需要已构建 bundle，bundle 旧于源码时拒绝启动 |
 | `contest/run.sh` | 固定 `read,bash,edit,write,aegis_propose,aegis_switch_session,aegis_observe,aegis_execute,aegis_submit_candidate` | Pi 原生工具 + 已登记脚本 | 任务级 runtime 目录 + `decisions.jsonl` 元数据；无请求/工具账本 | 无自动 Oracle；`aegis_observe` 只做登记观察 | Board/RAM/知识（同一 Observer） | 人工命令；无自动轮换 | 2026-10-17 CTF pilot：9 attempt，provider 403/502，有效对照 0 |
+| `run-experiment.sh`（行式 Console） | Pi 默认工具集 + Observer 工具 | Pi 原生工具 + `aegis_execute` | 每个实验独立 EventLog/run.json；无 Campaign 账本 | 无自动 Oracle（`outcome.recorded` 仍由人类/独立来源写入） | Board/RAM/知识/work-cycle（同一 Observer） | Host 有界自动轮换（review hold / context / unit complete）；`/pause` `/resume` `/stop`；`AEGIS_WORK_START_GATE=on` | 离线 SDK+faux：host-rotation/console/ownership 脚本 0 failed；无真实目标 |
+| `run-experiment-web.sh`（本地 Web 控制台） | 同一 Host，浏览器不能换工具集 | 同上（经 Host 转发，HTTP 不直接执行） | 同上；Web 只读 EventLog/投影，不写第二个账本 | 同上；`202` 只表示受理，不是成功 | 五类面板 + 对话/工具时间线 + 文件（同一投影） | 浏览器发送/暂停派发/恢复/停止；每实验一个 Host 子进程；关标签页不结束任务 | `aegis-webui` 66 checks + 真实 Firefox 1440×900 / 390×844 操作；无真实目标 |
 | `campaign/c6-entry.mjs` | `aegis_read`、`aegis_task_decision`、`aegis_submit_plan` | 任务族适配器：`fixture`、`structured-data-repair`（`data.record.set`）、`code-repair`（`code.file.write`）；`script_config_path` 的人工登记脚本 | 双侧请求账本 + 每 Task 工具账本 + 执行 permit + 预算释放 | Host Oracle：注册测试（code-repair）或 plan-ready；Manifest 只能引用 `fixture.oracle.v1` | Board/RAM（`bounded_ram` 或 `full_history`）；无知识工具 | `learning.policy=off/shadow/explicit` 的路由与编译；`session.session_count` 轮换；`pause/resume/cancel/rotate` 命令 | 2026-10-14 单文件 toy 任务真实 provider 3 请求、独立测试 success；无真实任务族/目标 |
 | `campaign/e1-max-pilot.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | 同 `c6-entry.mjs` | `prepare/status` 不调用 provider；run 走 `c6-entry` |
 | `fixtures/ctf-board-pilot.mjs` | Observer 工具 + 受限 Python CLI（审计 guard） | Python 标准库 CLI + 文件读写（非 OS sandbox） | 无 Campaign 账本；记录 RAM/context digest | 私有答案精确比对；判定以 Outcome 写入同一 EventLog | Board/RAM + board/seed 开关 | 无 | 2026-10-17 真实模型 pilot；2026-10-19 B 验证（7 次完成 + 1 次 harness bug，控制任务 3/3 成功、真实任务 0/5，见 `REAL_TASK_B_VALIDATION_20261019.md`） |
@@ -76,7 +78,24 @@ Aegis 目前有两条能力面不同的主路径，**没有一条同时具备"�
 - `fixtures/ctf-board-pilot.mjs`：真实模型 + Observer + 受限 Python CLI；支持 board/seed 开关；独立判定后通过 `appendContestOutcome` 写入同一 committed EventLog（success → Board Fact，未解出 → unknown/Hint）。2026-10-19 的 B 验证与结果见 `REAL_TASK_B_VALIDATION_20261019.md`；10-17 先导见 `BOARD_SEED_CTF_PILOT_RESULT.md`。
 - `fixtures/real-model-ab.mjs`：`--run-real` 才调用 provider；对比 direct 与 deliberate；不是 Campaign 路径。
 
-### 3.7 只读面与凭据工具
+### 3.7 `run-experiment-web.sh`（本地 Web 控制台）
+
+- 启动：`./run-experiment-web.sh [--port 7800] [--home DIR] [--workspace-root DIR]`；仅绑定 loopback。
+- 前置：内嵌 Pi 源码 + `Pi_Agent_base/UI/Aegis-pocket` 的 vendored 浏览器模块（`./install.sh --install-web-deps`，
+  从该仓库 lockfile 执行 `npm ci`；命令行入口不需要它）。
+- 每个活跃实验一个 Host 子进程（`run-experiment.sh … -- --control stdio`），Host 仍是唯一 writer；
+  Web 服务只做校验/转发/只读投影与 SSE，不创建 SDK runtime、不写任务事件。
+- 浏览器可看：进度（Intent/work-cycle/两个计数/review/checkpoint/阻塞原因）、图板（有效性/证据/替换）、
+  知识与经验（`ready|no_match|unavailable|disabled` 与实际使用四级）、Session/RAM（轮换历史、真实 context、
+  provider-bound 审计元数据 vs 重建 RAM）、行动与结果（pending/unknown/rejected/Outcome）；
+  可发消息、暂停派发、恢复、停止 Host、浏览工作区文件。
+- 幂等：消息带 `request_id`，Host 先写 inert receipt；同 id 同文本不重发，同 id 异文本 409；
+  受理未完成的请求保持 unknown 且不自动重发。cursor 失效时服务端要求客户端重置。
+- 边界：无 Campaign 调度/账本/独立 Oracle；无多用户、公网、推送；Pocket 的多人/PiP/定时任务/watches/
+  扩展商店/fork/retry/worktree/内置浏览器入口不存在（不是隐藏）。
+- 契约、错误码与安全边界：[WEBUI_CONSOLE.md](WEBUI_CONSOLE.md)。
+
+### 3.8 只读面与凭据工具
 
 - `observation/observation-server.mjs`：只读 loopback HTTP，与 TUI/报告共享同一 committed 投影；无写路由。
 - `login-relay.mjs`：只写 `$AEGIS_HOME/agent/`，`umask 077`，拒绝符号链接或越界目录；不启动任务。

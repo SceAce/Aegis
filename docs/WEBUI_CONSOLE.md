@@ -4,6 +4,24 @@
 外部独立验收未发生。实现证据见 [第三阶段任务书](WORK_CYCLE_PHASE3_HOST_CONSOLE_IMPLEMENTATION_TASK.md)、
 [测试矩阵](WORK_CYCLE_TEST_MATRIX.md) 与 [实现报告](WORK_CYCLE_IMPLEMENTATION_REPORT.md)。
 
+## 安装与前置
+
+Web 服务端是 Aegis 自有代码；浏览器应用在嵌套仓库 `Pi_Agent_base/UI/Aegis-pocket`
+（Pi Pocket fork），复用它的 `web/style.css`、字体、图标与 vendored 模块
+（`preact`/`htm`/`marked`/`dompurify`）。因此启动前需要：
+
+```sh
+./install.sh                          # 只检查（会打印 WebUI 段的状态）
+./install.sh --clone-ui --install-web-deps   # 拉取 UI 仓库 + 按 lockfile npm ci
+./install.sh --all                    # 全新克隆一键（含上面两项；--no-web 跳过）
+```
+
+- `--install-web-deps` 只执行 `npm ci`：**从 UI 仓库的 lockfile 安装，不新增/升级依赖，不改写 lockfile**；
+  安装后若 `package.json`/`package-lock.json` 有变化会警告。
+- 缺少 vendored 模块时 `./run-experiment-web.sh` **直接拒绝启动**并给出安装命令，
+  而不是返回一个加载不出脚本的页面。命令行入口（`run-experiment.sh`、`--cli`）不需要这些依赖。
+- UI 仓库缺失时 `install.sh` 只警告（CLI 仍可用），并提示 `--clone-ui`。
+
 ## 启动
 
 ```sh
@@ -118,6 +136,12 @@
    轮换计数标注为进程内派生，不是跨重启预算。
 5. **行动与结果**：pending/unknown/rejected/completed、参数与输出摘要、provider 请求审计、
    独立 Outcome；没有“标记成功/清除 unknown/解除 hold”按钮。
+
+## 离线开发与演示
+
+`AEGIS_CONSOLE_PROVIDER=faux`（入口 `--provider faux --model <id>`）可用离线 faux provider；
+入口另有 `AEGIS_CONSOLE_FAUX_SCRIPT=<json>`，按顺序播放脚本化的助手回复/工具调用，
+**仅用于离线开发与界面演示**，真实 provider 下不会读取该文件。二者都不产生真实模型/网络调用。
 
 ## 限制
 

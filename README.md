@@ -59,6 +59,7 @@ Board / RAM / Report / Learning
 | 入口 | 能力 | 缺少 |
 |---|---|---|
 | `run-aegis.sh` / `run-pi.sh` / `contest/run.sh` | Pi 原生工具 + Observer | Campaign 请求/工具账本、独立 Oracle |
+| `run-experiment.sh` / `run-experiment-web.sh` | 常驻 Experiment Host：ownership、EventLog、Observer 门控、Session 轮换、行式 Console 或本地 Web UI | Campaign 调度/账本、独立 Oracle |
 | `campaign/c6-entry.mjs` | 冻结 Manifest、Scheduler、Broker、账本、Oracle | 通用 shell/grep/多文件编辑 |
 
 内嵌 `Pi_Agent_base/pi/` 是独立仓库，已冻结；规则见
@@ -75,13 +76,20 @@ Board / RAM / Report / Learning
 ./install.sh
 
 # 全新克隆：clone pi + npm install + build bundle + 离线冒烟
+#（同时 clone Web UI 并从其 lockfile 安装浏览器依赖；--no-web 可跳过）
 ./install.sh --all
+
+# 只补 Web UI 的前端依赖（Aegis-pocket，npm ci，不改 lockfile）
+./install.sh --clone-ui --install-web-deps
 
 # 源码 / bundle / 隔离实验
 ./Pi_Agent_base/run-aegis.sh --model <provider/model>
 ./Pi_Agent_base/run-pi.sh --model <provider/model>
 ./run-experiment.sh my-001 --here
 ./run-experiment.sh my-001 --workspace ./challenge --attach ./files
+
+# 本地 Web 控制台（仅 loopback）：列表/新建/对话/五类面板/暂停/恢复/停止
+./run-experiment-web.sh                 # http://127.0.0.1:7800
 
 # 比赛入口（固定 allowlist，不自动开 web search）
 ./Pi_Agent_base/contest/run.sh --hint
@@ -91,6 +99,10 @@ Board / RAM / Report / Learning
 `~/.Aegis/agent/`，不要提交。`run-experiment.sh` 默认共享凭据、MCP 关闭；
 `--mcp` 只开非浏览器 server，`--mcp-all` 全开。
 
+`run-experiment-web.sh` 只绑定 loopback，复用同一个 `AEGIS_PI_AGENT_DIR`；
+每个活跃实验是一个独立 Host 子进程（唯一 EventLog writer），浏览器断开不结束任务。
+接口、状态、错误码与安全边界见 [Web Console 契约](docs/WEBUI_CONSOLE.md)。
+
 验证：
 
 ```bash
@@ -99,6 +111,8 @@ node Pi_Agent_base/tests/aegis-web-search.mjs
 node Pi_Agent_base/tests/aegis-ram-overflow-boundary.mjs
 node Pi_Agent_base/tests/observer-smoke.mjs
 node Pi_Agent_base/tests/aegis-module-layout.mjs
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-webui.mjs
 ```
 
 ---

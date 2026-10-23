@@ -23,6 +23,10 @@ ROM_FILE="$BASE_DIR/Pi_Agent_base/agent/ROM.md"
 CLI="$PI_DIR/packages/coding-agent/src/cli.ts"
 SOURCE_RESOLVER="$PI_DIR/packages/coding-agent/src/experimental/source-resolver.ts"
 BUNDLE="$PI_DIR/packages/coding-agent/dist/bundle/cli.js"
+# The web console's front end is a nested repository (Aegis-pocket, a fork of Pi
+# Pocket). Only its vendored browser modules are needed at run time.
+UI_DIR="$BASE_DIR/Pi_Agent_base/UI/Aegis-pocket"
+WEB_ENTRY="$BASE_DIR/run-experiment-web.sh"
 MIN_NODE="22.19.0"
 
 # Aegis calls ctx.ui.setTopBar()/setSidebar(), which only exist on the Aegis
@@ -31,11 +35,17 @@ MIN_NODE="22.19.0"
 PI_REMOTE="${AEGIS_PI_REMOTE:-https://github.com/SceAce/pi.git}"
 DEFAULT_PI_REF="feat/aegis-shell-layout"
 PI_REF="${AEGIS_PI_REF:-$DEFAULT_PI_REF}"
+UI_REMOTE="${AEGIS_UI_REMOTE:-https://github.com/SceAce/Aegis-pocket.git}"
+UI_REF="${AEGIS_UI_REF:-main}"
 
 CLONE_PI=0
 INSTALL_DEPS=0
 BUILD_BUNDLE=0
 SMOKE=0
+ALL=0
+CLONE_UI=0
+INSTALL_WEB_DEPS=0
+NO_WEB=0
 AEGIS_HOME="${AEGIS_HOME:-${HOME:-$BASE_DIR}/.Aegis}"
 
 usage() {
@@ -55,8 +65,14 @@ Options:
   --pi-ref REF          Pi branch/ref to check out (default: feat/aegis-shell-layout)
   --install-deps        run `npm install` in the embedded pi repo (needs network)
   --build-bundle        build the pi bundle used by run-pi.sh
+  --clone-ui            clone the Aegis-pocket web UI into Pi_Agent_base/UI (needs network)
+  --ui-remote URL       web UI remote (default https://github.com/SceAce/Aegis-pocket.git)
+  --ui-ref REF          web UI branch/ref (default main)
+  --install-web-deps    `npm ci` inside the web UI repo, from its lockfile (needs network)
+  --no-web              with --all, skip the web UI clone and dependencies
   --smoke               run offline smoke checks after setup
   --all                 --clone-pi --install-deps --build-bundle --smoke
+                        plus --clone-ui --install-web-deps (unless --no-web)
   -h, --help            show this help
 
 Pi source:
@@ -69,6 +85,14 @@ Pi source:
   branch carries the top-bar/sidebar extension slots Aegis requires. The
   default HTTPS URL clones anonymously; pass --pi-remote with your SSH URL
   (git@github.com:SceAce/pi.git) if you prefer SSH.
+
+Web console (optional but part of the product):
+  run-experiment-web.sh serves a local web UI in front of the Experiment Host.
+  Its front end lives in the nested Aegis-pocket repository and reuses that
+  project's vendored browser modules (preact, htm, marked, dompurify). Without
+  them the page cannot load, so `--install-web-deps` runs `npm ci` from ITS
+  lockfile (never `npm install`, never a lockfile rewrite, never a version
+  bump). The command-line entries do not need it.
 
 Default (no flags) only verifies prerequisites and creates the Aegis state
 directory skeleton. It never touches ~/.pi and never prints credentials.
@@ -101,12 +125,37 @@ while [[ $# -gt 0 ]]; do
 		--clone-pi) CLONE_PI=1; shift ;;
 		--install-deps) INSTALL_DEPS=1; shift ;;
 		--build-bundle) BUILD_BUNDLE=1; shift ;;
+		--clone-ui) CLONE_UI=1; shift ;;
+		--ui-remote)
+			[[ $# -ge 2 ]] || { printf -- '--ui-remote needs a value\n' >&2; exit 2; }
+			UI_REMOTE="$2"
+			shift 2
+			;;
+		--ui-ref)
+			[[ $# -ge 2 ]] || { printf -- '--ui-ref needs a value\n' >&2; exit 2; }
+			UI_REF="$2"
+			shift 2
+			;;
+		--install-web-deps) INSTALL_WEB_DEPS=1; shift ;;
+		--no-web) NO_WEB=1; shift ;;
 		--smoke) SMOKE=1; shift ;;
-		--all) CLONE_PI=1; INSTALL_DEPS=1; BUILD_BUNDLE=1; SMOKE=1; shift ;;
+		--all) ALL=1; shift ;;
 		-h | --help) usage; exit 0 ;;
 		*) printf 'Unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
 	esac
 done
+
+# --all is expanded after parsing so --no-web can still opt out.
+if ((ALL)); then
+	CLONE_PI=1
+	INSTALL_DEPS=1
+	BUILD_BUNDLE=1
+	SMOKE=1
+	if ((NO_WEB == 0)); then
+		CLONE_UI=1
+		INSTALL_WEB_DEPS=1
+	fi
+fi
 
 ok() { printf '  ok    %s\n' "$1"; }
 warn() { printf '  warn  %s\n' "$1"; }
@@ -173,6 +222,11 @@ for f in \
 	"$ROM_FILE" \
 	"$BASE_DIR/Pi_Agent_base/run-aegis.sh" \
 	"$BASE_DIR/Pi_Agent_base/run-pi.sh" \
+	"$WEB_ENTRY" \
+	"$BASE_DIR/Pi_Agent_base/console-web/server.mjs" \
+	"$BASE_DIR/Pi_Agent_base/console-web/control.mjs" \
+	"$BASE_DIR/Pi_Agent_base/console-web/view.mjs" \
+	"$BASE_DIR/Pi_Agent_base/session/experiment-console-entry.mjs" \
 	"$BASE_DIR/install.sh"; do
 	if [[ -f "$f" ]]; then
 		ok "${f#"$BASE_DIR"/}"
@@ -284,6 +338,86 @@ NOTE
 	RC=1
 fi
 
+# --- Aegis WebUI (optional) ------------------------------------------------
+step "Aegis WebUI"
+
+# The server side is Aegis-owned (checked above). The browser app is the nested
+# Aegis-pocket repository; without it the web entry cannot serve a page, but the
+# command-line entries keep working.
+ui_is_repo() {
+	[[ -d "$UI_DIR/.git" || -f "$UI_DIR/.git" ]]
+}
+
+if ((CLONE_UI)) && ! ui_is_repo; then
+	if [[ -e "$UI_DIR" ]] && [[ -n "$(ls -A "$UI_DIR" 2>/dev/null)" ]]; then
+		fail "$UI_DIR exists and is not empty but is not a git repo; refusing to overwrite"
+		printf '      move it aside manually, then re-run with --clone-ui\n' >&2
+		RC=1
+	else
+		step "Cloning the web UI ($UI_REF)"
+		printf '  from %s\n' "$UI_REMOTE"
+		mkdir -p "$(dirname "$UI_DIR")"
+		if git clone --branch "$UI_REF" --depth 1 "$UI_REMOTE" "$UI_DIR"; then
+			ok "cloned $UI_REF"
+		else
+			fail "git clone failed (check network access and that the ref exists)"
+			printf '      remote: %s\n      ref:    %s\n' "$UI_REMOTE" "$UI_REF" >&2
+			rm -rf "$UI_DIR" 2>/dev/null || true
+			RC=3
+		fi
+	fi
+fi
+
+if ui_is_repo || [[ -d "$UI_DIR" ]]; then
+	ok "web UI repo present (Pi_Agent_base/UI/Aegis-pocket)"
+	for f in "$UI_DIR/web/aegis/index.html" "$UI_DIR/web/style.css" "$UI_DIR/package-lock.json"; do
+		if [[ -f "$f" ]]; then
+			ok "${f#"$BASE_DIR"/}"
+		else
+			fail "missing ${f#"$BASE_DIR"/}"
+			RC=1
+		fi
+	done
+	missing_vendor=()
+	for mod in preact htm marked dompurify; do
+		[[ -d "$UI_DIR/node_modules/$mod" ]] || missing_vendor+=("$mod")
+	done
+	if [[ ${#missing_vendor[@]} -eq 0 ]]; then
+		ok "web UI vendored modules installed"
+	else
+		warn "web UI dependencies missing (${missing_vendor[*]}); the web page will not load"
+		printf '      install them from the lockfile: ./install.sh --install-web-deps\n' >&2
+	fi
+else
+	warn "web UI repo not found at Pi_Agent_base/UI/Aegis-pocket"
+	printf '      ./run-experiment-web.sh needs it; the CLI entries do not.\n' >&2
+	printf '      fetch it with: ./install.sh --clone-ui --install-web-deps\n' >&2
+fi
+
+if ((INSTALL_WEB_DEPS)); then
+	step "Installing web UI dependencies (network, lockfile only)"
+	if [[ ! -d "$UI_DIR" ]]; then
+		fail "web UI repo is missing; cannot install its dependencies"
+		printf '      run with --clone-ui first\n' >&2
+		RC=3
+	elif [[ ! -f "$UI_DIR/package-lock.json" ]]; then
+		fail "web UI has no package-lock.json; refusing to invent dependencies"
+		RC=3
+	else
+		# `npm ci` installs exactly the lockfile and never rewrites it.
+		if (cd "$UI_DIR" && npm ci --no-audit --no-fund); then
+			ok "npm ci completed (lockfile unchanged)"
+			changed="$(git -C "$UI_DIR" status --porcelain -- package.json package-lock.json 2>/dev/null || true)"
+			if [[ -n "$changed" ]]; then
+				warn "the lockfile/manifest changed during install; review it before committing"
+			fi
+		else
+			fail "npm ci failed"
+			RC=3
+		fi
+	fi
+fi
+
 # --- Aegis state home ------------------------------------------------------
 step "Aegis state home"
 
@@ -381,6 +515,15 @@ if ((SMOKE)); then
 	if [[ -f "$BASE_DIR/Pi_Agent_base/tests/aegis-module-layout.mjs" ]]; then
 		run_smoke "module layout" node Pi_Agent_base/tests/aegis-module-layout.mjs
 	fi
+	if [[ -f "$BASE_DIR/Pi_Agent_base/console-web/server.mjs" ]]; then
+		run_smoke "web console server parses" node --check Pi_Agent_base/console-web/server.mjs
+	fi
+	if [[ -f "$BASE_DIR/Pi_Agent_base/session/experiment-console-entry.mjs" ]]; then
+		run_smoke "console entry parses" node --check Pi_Agent_base/session/experiment-console-entry.mjs
+	fi
+	if [[ -f "$UI_DIR/web/aegis/app.js" ]]; then
+		run_smoke "web UI app parses" node --check "$UI_DIR/web/aegis/app.js"
+	fi
 	if [[ -d "$PI_DIR/node_modules" && -f "$BASE_DIR/Pi_Agent_base/tests/observer-smoke.mjs" ]]; then
 		if pi_has_shell_slots; then
 			run_smoke "observer extension" node \
@@ -402,8 +545,14 @@ if ((RC == 0)); then
       ./Pi_Agent_base/run-aegis.sh --model <p/m>   # pick a model
       ./Pi_Agent_base/run-pi.sh                    # built-bundle entry
 
+  Task entries (isolated per-experiment state, one resident Host each):
+
+      ./run-experiment.sh my-001 --here            # line-oriented console
+      ./run-experiment-web.sh                      # local web console
+
   Credentials live in $AEGIS_HOME/agent (Pi auth config) or environment
-  variables. Do not commit them.
+  variables. Do not commit them. The web console reuses the same credentials via
+  AEGIS_PI_AGENT_DIR; it binds loopback only and has no multi-user layer.
 
   Inside a session, task guidance can be injected at runtime:
 

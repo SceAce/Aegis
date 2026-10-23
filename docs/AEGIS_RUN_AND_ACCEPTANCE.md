@@ -36,6 +36,33 @@ hint card** path, not Pi's global sandbox. Normal bash still has OS privileges â
 this is **not** a sandbox, and `AEGIS_ACTION_MODE=auto` is a user-granted default
 path, not a verification result.
 
+### 1.1 Web console (local, loopback only)
+
+One resident process per browser session; each active experiment runs its OWN
+Experiment Host child process, which stays the only EventLog writer.
+
+```bash
+# one-time: front-end deps from the Aegis-pocket lockfile (npm ci, no rewrite)
+./install.sh --clone-ui --install-web-deps
+
+# start (127.0.0.1 only; refuses a non-loopback host)
+./run-experiment-web.sh                 # http://127.0.0.1:7800
+./run-experiment-web.sh --port 7801     # optional port
+```
+
+The page lists/creates experiments, sends messages, pauses dispatching, resumes
+after the Host's own recovery checks, stops the Host, and shows the committed
+progress/board/knowledge/session-RAM/actions panels plus workspace files. A
+`202` means **accepted**, never success; a retried request id is resolved from
+the Host's committed receipt instead of running twice; closing the tab does not
+stop the task. Contract, statuses and error codes: [WEBUI_CONSOLE.md](WEBUI_CONSOLE.md).
+
+```bash
+# production wiring test (HTTP -> Host -> real SDK/faux -> EventLog)
+node --import ./Pi_Agent_base/pi/packages/coding-agent/src/experimental/source-resolver.ts \
+  Pi_Agent_base/tests/aegis-webui.mjs
+```
+
 ## 2. Controlled learning commands (`/aegis ...`)
 
 These are **human / trusted-Host** commands. The model cannot drive them, and the
@@ -158,6 +185,12 @@ Evidence gate (must hold)
 - [ ] replay uses a fresh local temp with real before/after; the original/remote/
       non-idempotent target is never auto-re-run
 - [ ] `route` conflict / mismatch / unknown returns a concrete difference
+
+Web console
+- [ ] `./install.sh --install-web-deps` installs from the UI lockfile and does not rewrite it
+- [ ] `./run-experiment-web.sh` refuses to start when the vendored modules are missing
+- [ ] a second writer for the same experiment is refused with exit 4 and adds no events
+- [ ] `202` on a message is reported as accepted, not success
 
 Launcher / daily
 - [ ] one absolute launcher path works from an external cwd; missing task id errors

@@ -14,5 +14,10 @@
 - `view.mjs` 的字段白名单与上限就是浏览器能看到的一切；`transcriptEntry` 同时供 SSE 使用，
   保证“重连后的形状 == 新加载的形状”。
 
+- 前端在嵌套仓库 `Pi_Agent_base/UI/Aegis-pocket/web/aegis/`（不纳入主仓库，见根 `.gitignore`）。
+  服务端从这里读取 `web/style.css`、`/fonts/*` 与 `node_modules/{preact,htm,marked,dompurify}`；
+  缺少这些模块时入口 fail-closed。安装只允许 `./install.sh --install-web-deps`（`npm ci`，按 lockfile，
+  不新增/升级依赖、不改写 lockfile）。
+
 验证入口（仓库根）：`aegis-webui`（HTTP → Host → SDK/Observer → EventLog 生产链路）。
 浏览器验收命令与截图目录见 `docs/WEBUI_CONSOLE.md` 与第三阶段报告。
