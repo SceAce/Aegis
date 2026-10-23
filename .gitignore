@@ -24,6 +24,12 @@ vendor/pi/
 # Never track it here.
 Pi_Agent_base/pi/
 
+# The Aegis WebUI frontend is its own repository (Aegis-pocket, a fork of Pi
+# Pocket) nested under Pi_Agent_base/UI/. It has its own history and remote, so
+# the main repository must never add it as a gitlink or vendor it. See
+# Pi_Agent_base/console-web/AGENTS.md and docs/WEBUI_CONSOLE.md.
+Pi_Agent_base/UI/
+
 # Knowledge is local and portable; the repository has no knowledge/ tree.
 # Keep an accidental recreation ignored so a stale checkout can never shadow
 # the operator's corpus under $AEGIS_HOME/knowledge/.

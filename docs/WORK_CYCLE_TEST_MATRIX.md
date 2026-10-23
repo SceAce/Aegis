@@ -440,3 +440,87 @@ ownership 缺陷已独立关闭，范围为启动顺序、冲突无写入、资�
 | module-layout / diff whitespace | 0/0 | 336 files / 1029 refs，无空白错误 |
 
 首次前台 Console suite 调用因工具等待超时未取到退出码；后续后台 driver 保存最终退出码 0，不以超时推断通过。真实模型/网络/目标、真实解题收益、TUI 与跨进程预算协议均未纳入本次验收。
+
+---
+
+# 第四阶段：Aegis WebUI（WEB-01..WEB-08）
+
+状态：**`internally_verified / awaiting_external_review`。** 实现、接线与浏览器操作由本轮完成；外部独立验收未发生。前三阶段记录保持不变。
+
+契约与启动方式见 [WEBUI_CONSOLE.md](WEBUI_CONSOLE.md)。前端复用 Aegis-pocket（`Pi_Agent_base/UI/Aegis-pocket/web/aegis/`），运行事实仍来自 EventLog/现有 Host。
+
+## W.1 基线与接口
+
+| 项目 | 值（本轮开始） |
+| --- | --- |
+| 主仓库 | `feat/work-cycle-session-handoff` @ `481c2eb`，工作树仅 `?? Pi_Agent_base/UI/` |
+| 嵌套 Pi | `main` @ `2ba451d9…`，dirty=0（未修改） |
+| Aegis-pocket | `main` @ `d2a3280`（原 Pi Pocket 0.19.0），clean；`node_modules` 缺失 |
+| UI 依赖 | `npm ci`（lockfile 原样，243 包）；`package-lock.json` 未改 |
+| UI 基线 `npm run check` / `npm run lint` | 0 / 0（安装依赖后实测） |
+| UI 基线 `npm test` | **379/384 pass，5 fail**：`test/launcher-ui.test.ts` 4 项 focus 超时（单独运行同样 4/4 fail）、`test/subagents.test.ts` 1 项在满负荷时超时（单独运行 11/11 pass）。与本轮文件（仅 `web/aegis/`、`AGENTS.md`、`docs/map.md`）无关 |
+| Aegis 类型诊断 | 66 / 193 / 190（与上一轮一致，新文件无诊断） |
+
+接口契约表（完整字段/错误码/幂等见 WEBUI_CONSOLE.md）：
+
+| 接口 | 输入 | 输出/语义 |
+| --- | --- | --- |
+| `POST /api/experiments` | label（必填、新）、workspace（可选，须在允许根内）、provider/model（可选，服务端校验） | 201；复用 `run-experiment.sh --dry-run` 建布局，**不启动 Host/Session** |
+| `POST …/attach` | — | 启动该 label 的**唯一** Host 子进程；`ready|conflict|unavailable` |
+| `POST …/messages` | `{text, request_id}` | 202 受理；`duplicate`/`request_id_conflict`/`dispatch_paused`/`host_unavailable` |
+| `POST …/pause|resume|stop` | — | 走 Host；pause 只停派发，stop 是 Host 关闭 |
+| `GET …/view` | — | 五类面板 + transcript + files；`live` 标记是否由 Host 作答 |
+| `GET …/stream` | `cursor` | SSE `events|status|delta|host`；cursor 失效 `reset:true` |
+| `GET …/files|file` | `path` | 工作区 realpath 限制、512 KiB 上限、二进制标记 |
+| `POST /api/requests/:id` | `{label}` | committed receipt（重启后仍可判定） |
+
+## W.2 用例与结果
+
+| case | 断言要点 | 脚本 | 结果 |
+| --- | --- | --- | --- |
+| WEB-01a | 新建（走 launcher）不写事件；attach 后 1 个 Host、1 个真实 Session | aegis-webui | pass |
+| WEB-01b | 第二个 writer（普通 `run-experiment.sh --resume … -- --control stdio`）exit=4，EventLog 字节/行数/Session 数不变 | aegis-webui | pass |
+| WEB-01c | 越权工作区 403 且不留目录；已存在 label 409；非法 label 400 | aegis-webui | pass |
+| WEB-02a | 消息 → Host → SDK/Observer：episode/prompt/request.projected/assistant 文本/tool 结果（含 committed excerpt） | aegis-webui | pass |
+| WEB-02b | 同 id 同文本：`duplicate`、零新行；同 id 异文本：409 | aegis-webui | pass |
+| WEB-02c | 两个不同 id 并发均受理（Host 串行化），两条 receipt 均 `handled` | aegis-webui | pass |
+| WEB-02d | 无 `pocket.sqlite`；`/api/pocket/*` 404（无第二 Pocket runtime） | aegis-webui | pass |
+| WEB-03a | pause 后 dispatch 409 `dispatch_paused`；resume 后可继续 | aegis-webui | pass |
+| WEB-03b | SSE 断开后 Host 仍 ready，随后消息仍受理（关浏览器不结束任务） | aegis-webui | pass |
+| WEB-03c | 轮换视图：同一 Episode、transcript 跨轮换连续、两个 Session 登记、rotation 分隔条 | aegis-webui（真实 EventLog 只读视图） | pass |
+| WEB-04a | 五类面板与同一 committed prefix 的本地投影逐项相等（progress/board counts/actions） | aegis-webui | pass |
+| WEB-04b | provider-bound RAM 只给审计元数据（`text_available:false`）；重建 RAM 单独标注 | aegis-webui | pass |
+| WEB-04c | 损坏日志：`integrity.ok=false` + 原因，已提交前缀仍显示 | aegis-webui | pass |
+| WEB-05a | cursor 只返回其后行；失效 cursor 返回 `reset:true`；客户端按 event_id 去重 | aegis-webui | pass |
+| WEB-05b | Host 停止→重新 attach：同 request_id 从 committed receipt 判定 duplicate，不重跑 prompt | aegis-webui | pass |
+| WEB-06a | `..`/绝对路径/symlink 逃逸均拒绝；symlink 在列表中标为 `outside` 不跟随 | aegis-webui | pass |
+| WEB-06b | 跨站 POST 403；错误 Host 头 403；GET 不能写；observation 写路由未挂载 | aegis-webui | pass |
+| WEB-06c | 服务只记录一个 Host；只读 observation 服务保持原样（`aegis-c4a-observation-http` 0 failed） | aegis-webui + 回归 | pass |
+| WEB-07a | 桌面 1440×900：列表/新建/打开/发消息/五类面板/文件查看/暂停/刷新重连 | 真实 Firefox（BiDi） | pass |
+| WEB-07b | 390×844：底部导航、列表抽屉、详情抽屉、无横向溢出、触控约 ≥40px | 真实 Firefox（BiDi） | pass |
+| WEB-07c | 无未捕获错误（`window.__aegisErrors` 为空）；无失效按钮；轮换时间线/重连可见 | 真实 Firefox（BiDi） | pass |
+| WEB-08 | Phase 3 六脚本、Phase 2 五补测、22 项受影响回归、required 68、module-layout、Biome、类型、UI check/lint/test | 见 W.3 | pass（UI 基线 5 项失败见上） |
+
+## W.3 命令与真实退出码（最终树）
+
+| 命令 | exit | 结果 | 日志 |
+| --- | --- | --- | --- |
+| `node --import <resolver> Pi_Agent_base/tests/aegis-webui.mjs` | 0 | 66 checks passed | `runtime/dev/p3-webui-1023-091425/aegis-webui.log` |
+| `c6-suite-runner …/p4-web-final-1023-105018 aegis-webui <Phase3 六脚本 + Phase2 五补测>`（最终树，UI 格式化后复跑） | 0 | 12 scripts, 0 failed | `runtime/dev/p4-web-final-1023-105018/` |
+| `c6-suite-runner …/p3-web-regression2-1023-092335 <22 项受影响回归>` | 0 | 22 scripts, 0 failed | `runtime/dev/p3-web-regression2-1023-092335/` |
+| `run-required.sh …/p4-web-required-1023-105724 6`（最终树） | 0 | 68 scripts, 0 failed | `runtime/dev/p4-web-required-1023-105724/` |
+| Biome（Aegis 改动 .mjs/.ts） | 0 | 0 error；1 条既有 warning（`agentConfigDir`） | — |
+| `tsc -p tsconfig.aegis-extensions.json` / `-campaign` / `aegis` | 1 / 1 / 1 | 66 / 193 / 190，新文件无诊断 | — |
+| `node Pi_Agent_base/tests/aegis-module-layout.mjs` | 0 | 342 files / 1047 refs（`console-web` 已纳入生产目录检查） | — |
+| UI `npm run check` | 0 | tsc + types-file + docs reference | `/tmp` 私有日志 |
+| UI `npm run lint` | 0 | 0 error（`web/aegis` 已按仓库风格格式化） | — |
+| UI `npm test`（`TMPDIR` 为真实路径） | 1 | 379 pass / 5 fail（4 项 launcher-ui focus 超时 + 1 项 subagents 满负荷超时；单独运行 subagents 11/11、launcher-ui 仍 4/4 fail = 基线） | — |
+| `git diff --check`（两个仓库） | 0 | 无空白错误 | — |
+
+## W.4 范围说明与已知限制
+
+- 本轮只做本地单用户 Web 入口；无公网 tunnel/LAN/多用户/推送。
+- Pocket 的多人侧聊、PiP、Agent Teams、定时任务、GitHub watches、扩展商店、fork/retry/worktree/内置浏览器等入口在本服务中**不存在**（不是仅隐藏）；未适配的旧 Pocket 服务端不参与运行。
+- 前端复用 Pocket 的 `web/style.css`、字体、图标与 vendored `preact/htm/marked/dompurify`；`web/aegis/` 不导入 `web/store.js` 或 Pi Durable。
+- 后端编辑后需要重启 Web 服务（Node 模块缓存）；前端随请求重新校验 ETag，无构建步骤。
+- 跨重启的 rotation attempt 作用域保持第三阶段记录（进程内派生），不主张跨进程保证。

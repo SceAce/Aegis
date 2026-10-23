@@ -378,6 +378,7 @@ export function createExperimentConsole({
 			session_id: sessionIdentity(session),
 			session_file: typeof session?.sessionFile === "function" ? session.sessionFile() : null,
 			session_creations: typeof session?.creations === "function" ? session.creations() : null,
+			model: typeof session?.model === "function" ? session.model() : null,
 			rotation_attempts: [...attemptedBoundaries],
 			rotations_completed: rotationCompleted.length,
 			auto_rotations: autoRotations,
@@ -865,9 +866,60 @@ export function createExperimentConsole({
 		return { ok: true, already_stopped: false };
 	}
 
+	/**
+	 * Read the committed rows through the Host's own writer (refresh + verify).
+	 * Read-only: no projection, no append, no authority. Used by the control
+	 * channel to resolve request receipts and by the Web view.
+	 */
+	async function committedEvents() {
+		if (!log) return { ok: false, reason: "event log is not open" };
+		const refreshed = await log.refresh();
+		if (!refreshed.ok) return { ok: false, reason: refreshed.error || "event log refresh failed" };
+		return { ok: true, events: log.replay() };
+	}
+
+	/**
+	 * Commit an INERT control receipt (`runtime.note kind=web.control.receipt`).
+	 *
+	 * This is transport metadata for the Web control channel: it creates no Board
+	 * node, changes no RuntimeState field, grants nothing and cannot become a
+	 * Fact/Outcome. It exists so a retried request resolves from committed truth
+	 * (no duplicate prompt) and a crash leaves an `accepted` receipt instead of a
+	 * silent "never received".
+	 */
+	async function appendControlReceipt({ requestId, promptDigest, status = "accepted", detail = null } = {}) {
+		if (!log || log.healthy !== true) return { ok: false, reason: "event log is not healthy" };
+		if (typeof requestId !== "string" || !requestId || requestId.length > 200)
+			return { ok: false, reason: "invalid request id" };
+		if (typeof promptDigest !== "string" || !promptDigest) return { ok: false, reason: "invalid prompt digest" };
+		const boundedDetail = typeof detail === "string" ? detail.slice(0, 300) : null;
+		const recorded = await log.append({
+			event_type: "runtime.note",
+			episode_id: null,
+			payload: {
+				kind: "web.control.receipt",
+				version: "web-control-1",
+				request_id: requestId,
+				prompt_digest: promptDigest,
+				status: typeof status === "string" ? status.slice(0, 40) : "accepted",
+				detail: boundedDetail,
+			},
+			source: {
+				actor_id: "aegis-web",
+				kind: "runtime",
+				adapter: "experiment-console",
+				version: EXPERIMENT_CONSOLE_VERSION,
+			},
+		});
+		if (!recorded.ok) return { ok: false, reason: recorded.error || "receipt was not durable" };
+		return { ok: true, event_id: recorded.event?.event_id ?? null };
+	}
+
 	return {
 		version: EXPERIMENT_CONSOLE_VERSION,
 		start,
+		committedEvents,
+		appendControlReceipt,
 		recover,
 		dispatch,
 		status,

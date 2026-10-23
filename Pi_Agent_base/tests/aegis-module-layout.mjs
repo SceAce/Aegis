@@ -18,6 +18,9 @@ const production = [
 	"observation",
 	"shared",
 	"contest",
+	// Local Web adapter in front of the Experiment Host. It is production code, so
+	// its imports and its fixture boundary are checked like the rest.
+	"console-web",
 ];
 const roots = [...production, "fixtures", "extensions", "tests"];
 const errors = [];

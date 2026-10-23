@@ -12,6 +12,7 @@ Aegis 使用 Node ESM（`.mjs`）和 Pi TypeScript 扩展。模块按职责放�
 | `verification/` | 独立 Oracle、结果解析与聚合、注册测试、live/replay 验证入口 |
 | `observation/` | 只读观测命令、HTTP 视图、报告和导出 |
 | `shared/` | 追加事件日志与完整性校验；多模块共用的契约、摘要、规范化、文件和路径辅助函数 |
+| `console-web/` | 普通 Experiment 的本地 Web 适配层：每个实验一个 Host 子进程、只读投影视图、控制转发与 SSE；规则见 [AGENTS](console-web/AGENTS.md) |
 | `fixtures/` | 受限实验 Host、Oracle、Compiler/Router、演示与显式 real-model 实验入口 |
 | `extensions/` | Pi 扩展接入：Observer、Contest、Fixture 工具 |
 | `contest/` | 任务卡、Contest 运行、结果导入 |

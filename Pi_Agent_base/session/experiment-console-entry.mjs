@@ -28,6 +28,9 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { createControlChannel } from "../console-web/control.mjs";
+import { buildWebView, VIEW_LIMITS } from "../console-web/view.mjs";
+import { listWorkspace } from "../console-web/workspace-files.mjs";
 import { createExperimentConsole, EXPERIMENT_CONSOLE_VERSION, resolveConsolePolicy } from "./experiment-console.mjs";
 
 const BASE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -87,6 +90,7 @@ export function parseConsoleArgs(argv) {
 		prompts: [],
 		promptFile: null,
 		nonInteractive: false,
+		control: "console",
 		help: false,
 	};
 	for (let index = 0; index < argv.length; index += 1) {
@@ -138,6 +142,9 @@ export function parseConsoleArgs(argv) {
 			case "--non-interactive":
 				args.nonInteractive = true;
 				break;
+			case "--control":
+				args.control = take();
+				break;
 			case "-h":
 			case "--help":
 				args.help = true;
@@ -173,6 +180,11 @@ export function usage(stream = process.stdout) {
 			"  --prompt TEXT         dispatch one input (repeatable)",
 			"  --prompt-file PATH    dispatch each non-empty line of PATH",
 			"  --non-interactive     exit after the given prompts",
+			"  --control console|stdio",
+			"                        'stdio' serves the Aegis Web Console control channel:",
+			"                        newline-delimited JSON commands on stdin and one JSON",
+			"                        response per command on stdout. No prompt is read from",
+			"                        the terminal in that mode.",
 			"",
 			"Console controls: <text> | /status | /pause | /resume | /stop | /quit | /help",
 			"",
@@ -196,6 +208,7 @@ export async function createConsoleSdkRuntime({
 	agentDir,
 	sessionDir,
 	tools = DEFAULT_TOOLS,
+	onText = null,
 }) {
 	mkdirSync(cwd, { recursive: true });
 	mkdirSync(agentDir, { recursive: true });
@@ -206,6 +219,26 @@ export async function createConsoleSdkRuntime({
 	if (providerKind === "faux") {
 		const factory = fauxProviderFactory ?? (await import("@earendil-works/pi-ai/compat")).registerFauxProvider;
 		const faux = factory({ provider: "faux", models: [{ id: model ?? "console-faux" }] });
+		// Offline dev/demo only: a scripted faux conversation so the ordinary entry can
+		// be exercised end to end without a model. Read only when provider=faux.
+		const scriptPath = process.env.AEGIS_CONSOLE_FAUX_SCRIPT;
+		if (scriptPath) {
+			const compat = await import("@earendil-works/pi-ai/compat");
+			const { readFileSync } = await import("node:fs");
+			const steps = JSON.parse(readFileSync(scriptPath, "utf8"));
+			let index = 0;
+			const responder = () => {
+				const step = Array.isArray(steps) ? steps[Math.min(index, steps.length - 1)] : null;
+				index += 1;
+				if (!step) return compat.fauxAssistantMessage("(no scripted step)");
+				const calls = (Array.isArray(step.tool_calls) ? step.tool_calls : []).map((call) =>
+					compat.fauxToolCall(call.name, call.arguments ?? {}),
+				);
+				if (calls.length > 0) return compat.fauxAssistantMessage(calls);
+				return compat.fauxAssistantMessage(step.text ?? "");
+			};
+			faux.setResponses(Array.from({ length: 200 }, () => responder));
+		}
 		resolvedModel = faux.getModel();
 		const credentials = sdk.AuthStorage.inMemory();
 		await credentials.modify(resolvedModel.provider, async () => ({ type: "api_key", key: "faux-offline-key" }));
@@ -299,11 +332,16 @@ export async function createConsoleSdkRuntime({
 		unsubscribe = session.subscribe((event) => {
 			if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
 				streamed = true;
-				process.stdout.write(event.assistantMessageEvent.delta);
+				// Live tokens are EPHEMERAL UI (never a Fact/Outcome). The control mode
+				// forwards them as a transient notification; the committed record stays
+				// `message.completed`.
+				if (typeof onText === "function") onText(event.assistantMessageEvent.delta);
+				else process.stdout.write(event.assistantMessageEvent.delta);
 			}
 			if (event.type === "agent_settled" && streamed) {
 				streamed = false;
-				process.stdout.write("\n");
+				if (typeof onText === "function") onText(null);
+				else process.stdout.write("\n");
 			}
 		});
 	}
@@ -340,6 +378,15 @@ export async function createConsoleSdkRuntime({
 				return null;
 			}
 		},
+		model: () => {
+			try {
+				const model = runtime.session?.model;
+				if (!model) return null;
+				return { provider: model.provider ?? null, id: model.id ?? null, context_window: model.contextWindow ?? null };
+			} catch {
+				return null;
+			}
+		},
 		prompt: (text) => runtime.session.prompt(text),
 		waitForIdle: () => runtime.session.waitForIdle(),
 		newSession: (options) => runtime.newSession(options),
@@ -356,6 +403,163 @@ export async function createConsoleSdkRuntime({
 			await runtime.dispose();
 		},
 	};
+}
+
+/**
+ * One JSON line on stdout for the Web control channel (never mixed with human
+ * console output: control mode does not print the banner or the status block).
+ */
+function writeControlLine(value) {
+	process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+/** Buffered live-token emitter for the control channel (ephemeral UI only). */
+let deltaBuffer = "";
+let deltaTimer = null;
+function flushDelta() {
+	if (deltaTimer) {
+		clearTimeout(deltaTimer);
+		deltaTimer = null;
+	}
+	if (!deltaBuffer) return;
+	const text = deltaBuffer;
+	deltaBuffer = "";
+	writeControlLine({ type: "delta", text });
+}
+function emitDelta(text) {
+	if (text === null) {
+		flushDelta();
+		return;
+	}
+	deltaBuffer += text;
+	if (deltaBuffer.length > 4000) flushDelta();
+	if (!deltaTimer) deltaTimer = setTimeout(flushDelta, 80);
+}
+
+/**
+ * Serve the Aegis Web Console control channel on stdio.
+ *
+ * The Web server is a thin supervisor: it spawns ONE Host process per active
+ * experiment and forwards requests here. The Host keeps its ownership, its
+ * EventLog writer, its SDK runtime, its recovery order and its execution gates;
+ * the HTTP layer can only ask for these commands.
+ */
+async function serveControlChannel({ host, label, taskId, workspace }) {
+	const control = createControlChannel({ host });
+	const ready = await host.status();
+	writeControlLine({ type: "ready", label, task_id: taskId, status: ready });
+	let closed = false;
+	const shutdown = async (reason) => {
+		if (closed) return;
+		closed = true;
+		await host.shutdown(reason);
+	};
+	const handle = async (line) => {
+		let message;
+		try {
+			message = JSON.parse(line);
+		} catch {
+			writeControlLine({ id: null, ok: false, code: "invalid_request", reason: "not JSON" });
+			return;
+		}
+		const { id = null, cmd, params = {} } = message ?? {};
+		try {
+			let result;
+			switch (cmd) {
+				case "ping":
+					result = { ok: true, phase: host.phase() };
+					break;
+				case "status":
+					result = { ok: true, status: await host.status() };
+					break;
+				case "view": {
+					const snapshot = await host.snapshot();
+					if (!snapshot.ok) {
+						result = { ok: false, reason: snapshot.reason };
+						break;
+					}
+					const committed = await host.committedEvents();
+					if (!committed.ok) {
+						result = { ok: false, reason: committed.reason };
+						break;
+					}
+					const status = await host.status();
+					const files =
+						params.files === false
+							? null
+							: await listWorkspace(workspace)
+									.then((row) =>
+										row.entries.map((entry) => ({
+											path: entry.name,
+											kind: entry.kind,
+											size: entry.size,
+											modified_at: entry.modified_at,
+										})),
+									)
+									.catch(() => null);
+					result = {
+						ok: true,
+						status,
+						view: buildWebView({
+							label,
+							taskId,
+							events: committed.events ?? [],
+							board: snapshot.board,
+							state: snapshot.state,
+							workCycle: snapshot.workCycle,
+							status,
+							workspaceFiles: files,
+							limits: VIEW_LIMITS,
+						}),
+						cursor: {
+							offset: (committed.events ?? []).length,
+						},
+					};
+					break;
+				}
+				case "dispatch":
+					result = await control.dispatch({ requestId: params.request_id, text: params.text });
+					break;
+				case "pause":
+					result = await control.pause(params.reason);
+					break;
+				case "resume":
+					result = await control.resume(params.reason);
+					break;
+				case "stop":
+					writeControlLine({ id, ok: true, result: { ok: true } });
+					await shutdown(params.reason ?? "web stop");
+					return;
+				case "request_status":
+					result = await control.requestStatus(params.request_id);
+					break;
+				default:
+					result = { ok: false, code: "invalid_request", reason: `unknown command ${String(cmd)}` };
+			}
+			writeControlLine({ id, ...(result ?? { ok: false, reason: "no result" }) });
+		} catch (error) {
+			writeControlLine({
+				id,
+				ok: false,
+				code: "internal_error",
+				reason: error instanceof Error ? error.message : String(error),
+			});
+		}
+	};
+	let buffer = "";
+	process.stdin.setEncoding("utf8");
+	for await (const chunk of process.stdin) {
+		buffer += chunk;
+		let index = buffer.indexOf("\n");
+		while (index >= 0) {
+			const line = buffer.slice(0, index).trim();
+			buffer = buffer.slice(index + 1);
+			if (line) await handle(line);
+			index = buffer.indexOf("\n");
+		}
+	}
+	await shutdown("control channel closed");
+	return 0;
 }
 
 function describeStatus(status) {
@@ -443,6 +647,7 @@ async function main(argv) {
 				cwd: workspace,
 				agentDir,
 				sessionDir,
+				onText: controlMode ? emitDelta : null,
 			});
 			return adapter;
 		},
@@ -452,17 +657,28 @@ async function main(argv) {
 			`[Aegis console] continue the SAME task/episode ${handoff.episode_id}. The work-cycle hold (if any) is unchanged: review and a new scoped Intent are still required before any side effect. Do not re-run actions whose result is already committed.`,
 	});
 
-	process.stdout.write(`Aegis Experiment Console ${EXPERIMENT_CONSOLE_VERSION}\n`);
+	const controlMode = args.control === "stdio";
+	if (!controlMode) process.stdout.write(`Aegis Experiment Console ${EXPERIMENT_CONSOLE_VERSION}\n`);
 	const started = await host.start();
 	if (!started.ok) {
 		// A refused/failed start is NOT a console: report the real reason, release
 		// our own resources (already done by the Host) and exit non-zero.
-		process.stdout.write(`console refused at startup: ${started.reason}\n`);
-		process.stdout.write(`${describeStatus(await host.status())}\n`);
+		if (!controlMode) {
+			process.stdout.write(`console refused at startup: ${started.reason}\n`);
+			process.stdout.write(`${describeStatus(await host.status())}\n`);
+		}
 		process.stderr.write(`experiment-console: startup refused: ${started.reason}\n`);
+		if (controlMode)
+			writeControlLine({
+				type: "refused",
+				reason: started.reason,
+				ownership_conflict: started.ownership_conflict === true,
+				status: await host.status(),
+			});
 		await host.shutdown("startup refused");
 		return started.ownership_conflict ? 4 : 3;
 	}
+	if (controlMode) return serveControlChannel({ host, label, taskId, workspace, modelLabel: null });
 	const startedStatus = await host.status();
 	process.stdout.write(`${describeStatus(startedStatus)}\n`);
 	// Explicit, machine-usable readiness barrier: ownership is held and the

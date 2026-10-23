@@ -273,6 +273,22 @@ if [[ "$ENTRY" == "bundle" ]]; then
 fi
 
 EXP_DIR="$EXPERIMENTS_ROOT/$LABEL"
+# A resumed run keeps the model/provider it was created with unless the operator
+# overrides them. Reading them back from run.json (not re-deriving) means
+# `--resume` does not silently fall back to a different provider/auth store.
+if [[ "$MODE" == "resume" && (-z "$MODEL" || -z "$PROVIDER") && -f "$EXP_DIR/run.json" ]]; then
+	resolved="$(node -e '
+		const fs = require("node:fs");
+		try {
+			const run = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+			process.stdout.write(`${run.provider ?? ""}\t${run.model ?? ""}`);
+		} catch { process.stdout.write("\t"); }
+	' "$EXP_DIR/run.json" 2>/dev/null || printf '\t')"
+	saved_provider="${resolved%%$'\t'*}"
+	saved_model="${resolved#*$'\t'}"
+	[[ -z "$PROVIDER" && -n "$saved_provider" ]] && PROVIDER="$saved_provider"
+	[[ -z "$MODEL" && -n "$saved_model" ]] && MODEL="$saved_model"
+fi
 if [[ -d "$EXP_DIR" ]]; then
 	if [[ "$MODE" != "resume" ]]; then
 		die "experiment '$LABEL' already exists at $EXP_DIR
@@ -549,6 +565,12 @@ if git -C "$BASE_DIR" rev-parse --short HEAD >/dev/null 2>&1; then
 fi
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_JSON="$EXP_DIR/run.json"
+# JSON-safe optional values (a bare expansion would be ambiguous with the
+# ``:-null`` fallback that the other optional fields use).
+RUN_PROVIDER_JSON="null"
+[[ -n "$PROVIDER" ]] && RUN_PROVIDER_JSON="\"$PROVIDER\""
+RUN_MODEL_JSON="null"
+[[ -n "$MODEL" ]] && RUN_MODEL_JSON="\"$MODEL\""
 if [[ ! -f "$RUN_JSON" ]]; then
 	cat >"$RUN_JSON" <<JSON
 {
@@ -571,11 +593,19 @@ if [[ ! -f "$RUN_JSON" ]]; then
   },
   "agent_mode": "$AGENT_MODE",
   "mcp": "$MCP_MODE",
+  "provider": $RUN_PROVIDER_JSON,
+  "model": $RUN_MODEL_JSON,
   "console": {
     "entry": "$([[ $CONSOLE_MODE -eq 1 ]] && echo console || echo cli)",
     "max_auto_rotations": "$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS",
     "max_continuations": "$AEGIS_CONSOLE_MAX_CONTINUATIONS",
     "work_start_gate": "$WORK_START_GATE_STATE"
+  },
+  "work_cycle": {
+    "repeat_limit": ${AEGIS_WORK_CYCLE_REPEAT_LIMIT:-3},
+    "action_window": ${AEGIS_WORK_CYCLE_ACTION_WINDOW:-8},
+    "min_distinct_routes": ${AEGIS_WORK_CYCLE_MIN_DISTINCT_ROUTES:-4},
+    "context_pressure_percent": ${AEGIS_WORK_CYCLE_CONTEXT_PERCENT:-85}
   },
   "seed_file": ${SEED_FILE:+\"$SEED_FILE\"}${SEED_FILE:-null},
   "web_search": "$WEB_SEARCH",

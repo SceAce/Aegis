@@ -532,3 +532,98 @@ OWN-01_EVIDENCE
 独立 OWN-01 观察：A 的 11 行前缀在 B 启动前后字节与链尾一致，B exit 4，恢复进程 exit 0；A 在 B 被拒后仍可追加事件，恢复保持同一 Episode。第一次前台复跑因工具等待超时未获得结果，随后通过后台 driver 保存真实退出码，最终六脚本 exit 0。
 
 内嵌 Pi HEAD 为 `2ba451d997098515c36744c56e1f604c842895b0`，工作树 clean；与 Aegis 主仓库 HEAD 是不同仓库的提交，不应写成同一 HEAD。
+
+---
+
+# 第四阶段：Aegis WebUI（实现报告）
+
+状态：`internally_verified / awaiting_external_review`。外部独立验收未发生；无真实模型/网络/目标调用，不宣称解题收益。契约见 [WEBUI_CONSOLE.md](WEBUI_CONSOLE.md)，用例见 [矩阵 §W](WORK_CYCLE_TEST_MATRIX.md#第四阶段aegis-webuiweb-01web-08)。
+
+## W.1 已完成能力与实际启动命令
+
+```sh
+./run-experiment-web.sh                # http://127.0.0.1:7800（仅 loopback）
+./run-experiment-web.sh --port 7801    # 换端口
+# 行的 Console 与旧入口保持：
+./run-experiment.sh <label> [--resume] [--cli]
+```
+
+浏览器可：列出/新建/打开实验；看真实状态、对话、工具时间线；发送消息、暂停派发、恢复、停止 Host；查看进度/图板/知识/ Session-RAM/行动结果/文件；刷新与断线重连按 cursor 续传；Session 轮换后仍在同一 Task/Episode 显示并可用分隔条追溯。
+
+## W.2 真实调用链
+
+```text
+浏览器 (Preact/htm, Aegis-pocket 视觉语言)
+  → GET/POST /api/* + SSE                      console-web/server.mjs（loopback、Host/Origin 校验）
+  → 每个活跃实验一个 Host 子进程                run-experiment.sh … -- --control stdio
+  → Experiment Host（唯一 writer）              session/experiment-console.mjs
+       ownership → EventLog open/verify → bindHostEventLog → SDK runtime/Session
+       → pending/unknown+policy+staged handoff → recovery → dispatch
+  → Observer / Broker / SessionSupervisor（未改动语义）
+  → EventLog（唯一事实）→ 同一投影 → 面板/transcript/SSE
+```
+
+- 控制语义集中在 `console-web/control.mjs`（dispatch/pause/resume/stop/receipt）；HTTP 只校验并转发。
+- Host 新增两个窄接口：`committedEvents()`（刷新+读已提交前缀）与 `appendControlReceipt()`（写 inert `runtime.note kind=web.control.receipt`，Board/RAM 忽略该 kind）。
+- 前端与后端共享**同一份** transcript 映射（`view.mjs#transcriptEntry`），因此“重连后的形状 == 新加载的形状”。
+
+## W.3 修改文件
+
+| 文件 | 仓库 | 作用 |
+| --- | --- | --- |
+| `run-experiment-web.sh` | 主 | 本地 Web 启动（source resolver，仅 loopback） |
+| `Pi_Agent_base/console-web/server.mjs` | 主 | HTTP/SSE 适配、实验注册、Host 子进程管理、静态资源、安全边界 |
+| `Pi_Agent_base/console-web/control.mjs` | 主 | 控制请求语义、幂等 receipts、错误码 |
+| `Pi_Agent_base/console-web/view.mjs` | 主 | 有界只读视图 + transcript 映射（五类面板的唯一实现） |
+| `Pi_Agent_base/console-web/workspace-files.mjs` | 主 | 工作区 realpath 限制、有界列目录/读文件 |
+| `Pi_Agent_base/console-web/AGENTS.md` | 主 | 模块职责/边界/验证入口 |
+| `Pi_Agent_base/session/experiment-console.mjs` | 主 | `committedEvents()`、`appendControlReceipt()`、status 增加 model |
+| `Pi_Agent_base/session/experiment-console-entry.mjs` | 主 | `--control stdio`、`--faux-script`（离线 dev）、live token 通知、控制模式不打印人类 banner |
+| `run-experiment.sh` | 主 | `--resume` 从 run.json 恢复 provider/model；run.json 记录 provider/model 与 work_cycle 策略 |
+| `Pi_Agent_base/tests/aegis-webui.mjs` | 主 | WEB-01..WEB-06 生产链路测试（66 checks） |
+| `Pi_Agent_base/tests/aegis-module-layout.mjs` | 主 | 生产目录加入 `console-web`（依赖检查保留） |
+| `Pi_Agent_base/README.md`、`docs/README.md`、`docs/WEBUI_CONSOLE.md` | 主 | 模块/入口/契约 |
+| `Pi_Agent_base/UI/Aegis-pocket/web/aegis/*` | UI | 应用壳：`index.html`、`app.js`、`api.js`、`stream.js`、`timeline.js`、`markdown.js`、`aegis.css` |
+| `Pi_Agent_base/UI/Aegis-pocket/AGENTS.md`、`docs/map.md` | UI | 说明 `web/aegis/` 与 Pocket 服务端的边界 |
+
+未改：Pi 核心（HEAD 未动）、Outcome/Episode/Experience/权限/预算门、EventLog schema、只读 observation 服务、Pocket 的 `src/server/**` 与既有 web 模块。
+
+## W.4 契约更新与兼容
+
+- 新增 `docs/WEBUI_CONSOLE.md`（Web 协议/状态/错误码/幂等/安全/限制），从 `docs/README.md` 与模块 `AGENTS.md` 链接；其余既有契约（`STRUCTURED_RAM_AND_WORK_CONTROL.md`、Phase 3 任务书）未改变语义。
+- `run.json` 仅**新增** `provider`/`model`/`work_cycle` 字段；`--resume` 在未显式给 flags 时按 run.json 恢复，避免回落到另一个 provider/auth。
+- 控制 receipt 是新增的 inert `runtime.note` kind；旧日志无该 kind 时行为不变。
+- `--control`/`--faux-script` 是入口新增开关；普通交互与 `--cli` 不受影响。
+
+## W.5 真实调用链证据（HTTP → Host → SDK/Observer）
+
+`aegis-webui` 用真实 `run-experiment.sh`、真实 Host 子进程、真实 Pi SDK + faux provider：
+- 新建只建布局（0 事件）；attach 后 1 个 Host、1 个真实 Session；
+- 第二个 writer（CLI）exit=4，EventLog 字节/行数/Session 数完全不变；
+- 消息 → committed `episode.started`/`request.projected`/assistant 文本/`action.completed`（含 committed excerpt）/scoped Intent；
+- 同 id 重试 `duplicate`（0 新行）；同 id 异文本 409；并发两条均 `handled`；
+- pause→409 `dispatch_paused`；SSE 断开后 Host 仍 ready 且继续受理；
+- Host stop→重新 attach 后同 request_id 由 committed receipt 判定 duplicate，不重跑；
+- 面板与同一 prefix 的本地投影逐项相等；provider-bound RAM 仅审计元数据；损坏日志 `integrity.ok=false` 且前缀仍显示；
+- 文件 `..`/绝对路径/symlink 逃逸拒绝；跨站 POST、错误 Host 头拒绝；GET 不能写；`/api/pocket/*` 与 observation 写路由均不存在。
+
+## W.6 浏览器验收（真实 Firefox，BiDi）
+
+| 项 | 结果 |
+| --- | --- |
+| 桌面 1440×900 | 列表/新建/打开/发消息/五类面板/文件查看/暂停/刷新重连 全部操作；无未捕获错误；无横向溢出 |
+| 移动 390×844 | 底部导航、列表抽屉、详情抽屉、输入区固定可见；无横向溢出；触控目标约 40px+ |
+| 控制台错误 | `window.__aegisErrors` 为空（多轮操作后） |
+| 截图 | `Pi_Agent_base/runtime/dev/p3-webui-1023-091425/desktop-1440x900.png`、`mobile-390x844.png`（ignored，不入库） |
+
+## W.7 回归与静态检查
+
+见矩阵 W.3：`aegis-webui` 66 checks；12 脚本（Web + Phase 3 六 + Phase 2 五补测）0 failed；22 项受影响回归 0 failed；required 68 0 failed；module-layout 342/1047；Aegis 类型 66/193/190（新文件无诊断）；Biome 0 error；UI `check` 0、`lint` 0、`test` 379/384（5 项基线失败，见矩阵 W.1）。
+
+## W.8 已知限制 / 未运行
+
+- 未运行真实模型/网络/目标/真实 CTF 实验；不使用用户凭据；浏览器验收使用离线 faux（含 `--faux-script`）。
+- 未做多用户/公网/LAN/推送；未实现 Pocket 的多人、PiP、定时任务、watches、扩展商店、fork/retry/worktree/内置浏览器入口（不存在，非隐藏）。
+- 后端改动需要重启 Web 服务（Node 模块缓存）；无构建步骤、无 service worker。
+- UI 基线 5 项失败保持原样（`launcher-ui` focus 超时 ×4、`subagents` 满负荷超时 ×1），未修改这些测试或放宽断言。
+- Session 轮换上限/attempt 的进程内作用域沿用第三阶段结论，不主张跨进程保证；普通入口仍无独立 durable 预算账本。

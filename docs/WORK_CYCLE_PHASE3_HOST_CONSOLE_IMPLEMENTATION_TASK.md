@@ -4,7 +4,7 @@
 启动顺序已按独立复核修复：ownership 必须先于 SDK runtime/Session 创建（TEST-OWN-01..04，见
 [矩阵 §G.5](WORK_CYCLE_TEST_MATRIX.md#g5-修复启动所有权顺序test-own-0104) 与
 [报告 "第三阶段修复"](WORK_CYCLE_IMPLEMENTATION_REPORT.md#第三阶段修复启动所有权顺序ownership-before-session)）。
-交付证据、命令、真实退出码与未覆盖项见本文 §11；测试矩阵与报告在
+交付证据、命令、真实退出码与未覆盖项见本文 §11；普通入口现有本地 Web 操作界面（`./run-experiment-web.sh`，契约见 [WEBUI_CONSOLE.md](WEBUI_CONSOLE.md)），复用同一 Host/ownership/EventLog，不改变本文语义；测试矩阵与报告在
 [WORK_CYCLE_TEST_MATRIX.md](WORK_CYCLE_TEST_MATRIX.md) / [WORK_CYCLE_IMPLEMENTATION_REPORT.md](WORK_CYCLE_IMPLEMENTATION_REPORT.md)
 的第三阶段章节追加，历史轮次未被覆盖。
 
