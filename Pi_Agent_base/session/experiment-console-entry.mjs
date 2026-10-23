@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { createControlChannel } from "../console-web/control.mjs";
+import { DEFAULT_CODING_TOOLS, resolveToolSelection } from "../console-web/tools.mjs";
 import { buildWebView, VIEW_LIMITS } from "../console-web/view.mjs";
 import { listWorkspace } from "../console-web/workspace-files.mjs";
 import { createExperimentConsole, EXPERIMENT_CONSOLE_VERSION, resolveConsolePolicy } from "./experiment-console.mjs";
@@ -91,6 +92,7 @@ export function parseConsoleArgs(argv) {
 		promptFile: null,
 		nonInteractive: false,
 		control: "console",
+		tools: process.env.AEGIS_CONSOLE_TOOLS ?? null,
 		help: false,
 	};
 	for (let index = 0; index < argv.length; index += 1) {
@@ -144,6 +146,9 @@ export function parseConsoleArgs(argv) {
 				break;
 			case "--control":
 				args.control = take();
+				break;
+			case "--tools":
+				args.tools = take();
 				break;
 			case "-h":
 			case "--help":
@@ -638,6 +643,8 @@ async function main(argv) {
 		checkpointPath,
 		ownershipBaseDir,
 		sessionFactory: async () => {
+			const selected = resolveToolSelection(args.tools ?? DEFAULT_CODING_TOOLS);
+			if (!selected.ok) throw new Error(selected.error);
 			const sdk = await import("@earendil-works/pi-coding-agent");
 			const sdkBase = await import("@earendil-works/pi-coding-agent/core/auth-storage").catch(() => null);
 			adapter = await createConsoleSdkRuntime({
@@ -647,6 +654,7 @@ async function main(argv) {
 				cwd: workspace,
 				agentDir,
 				sessionDir,
+				tools: selected.tools,
 				onText: controlMode ? emitDelta : null,
 			});
 			return adapter;

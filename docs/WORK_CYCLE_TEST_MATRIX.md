@@ -504,6 +504,12 @@ ownership 缺陷已独立关闭，范围为启动顺序、冲突无写入、资�
 | WEB-09b | 中英词典键集合一致，UI 用到的每个键都存在（288 个静态+动态键） | aegis-webui | pass |
 | WEB-09c | 选择记住在本浏览器（`localStorage`），刷新后保持；不进入 Host/EventLog | 浏览器操作（刷新后 `lang` 保持） | pass |
 | WEB-09d | 窄屏（≤620px 断点）中文/英文均无横向溢出、导航与抽屉可用 | 浏览器（500 CSS px 窗口） | pass |
+| WEB-10a | `/api/models` 返回 Pi 配置里的模型与默认值（只读，不读 auth.json）；读不到时界面回退手填 | aegis-webui | pass |
+| WEB-10b | `/api/tools` 返回编码工具白名单 + Aegis 常开工具；未知工具创建请求 400 | aegis-webui | pass |
+| WEB-10c | 勾选的工具写入 `run.json.tools` 并在 resume 时沿用 | aegis-webui | pass |
+| WEB-10d | 附件写入 workspace 根目录，字节一致；同名 409；含路径 400；点文件 400；>16MiB 413；被拒文件不落盘 | aegis-webui | pass |
+| WEB-10e | 300 KB 附件可上传（附件路由有独立请求体上限） | aegis-webui | pass |
+| WEB-10f | 卡片时间改为小号镂空胶囊；实验列表项不再被压缩（大量运行时 label/时间不重叠） | 浏览器（1280 CSS px，24+ 实验） | pass |
 
 ## W.3 命令与真实退出码（最终树）
 

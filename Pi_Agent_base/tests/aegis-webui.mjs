@@ -730,6 +730,113 @@ async function main() {
 			String(observationWrite.status),
 		);
 
+		// ---- WEB-10: model/tool selection and workspace attachments ------------
+		{
+			const models = await api.get("/api/models");
+			check(
+				"WEB-10: the model catalog is served from the Pi config (read-only)",
+				models.status === 200 && Array.isArray(models.body?.models),
+				models.text,
+			);
+			check(
+				"WEB-10: the default model comes from settings, not from a guess",
+				models.body?.default === null ||
+					(typeof models.body.default.provider === "string" && typeof models.body.default.id === "string"),
+			);
+			const toolCatalog = await api.get("/api/tools");
+			check(
+				"WEB-10: the coding-tool allowlist is served",
+				toolCatalog.status === 200 &&
+					(toolCatalog.body?.coding ?? []).some((tool) => tool.id === "bash" && tool.effect === true),
+				toolCatalog.text,
+			);
+			check(
+				"WEB-10: Aegis control tools are listed as always on",
+				(toolCatalog.body?.always_on ?? []).includes("aegis_propose") &&
+					(toolCatalog.body?.always_on ?? []).includes("aegis_work_review"),
+			);
+			const unknownTool = await api.post("/api/experiments", { label: "web-bad-tools", tools: ["bash", "rm-rf"] });
+			check(
+				"WEB-10: an unknown tool is refused",
+				unknownTool.status === 400 && unknownTool.body?.code === "invalid_tools",
+				unknownTool.text,
+			);
+			const createdWithTools = await api.post("/api/experiments", {
+				label: "web-tools",
+				workspace,
+				provider: "faux",
+				model: "web-fixture",
+				tools: ["read", "grep"],
+			});
+			check(
+				"WEB-10: a selected toolset creates the experiment",
+				createdWithTools.status === 201,
+				createdWithTools.text,
+			);
+			const toolsRunJson = JSON.parse(readFileSync(join(home, "experiments", "web-tools", "run.json"), "utf8"));
+			check(
+				"WEB-10: the selected tools are recorded for resume",
+				JSON.stringify(toolsRunJson.tools) === JSON.stringify(["read", "grep"]),
+				JSON.stringify(toolsRunJson.tools),
+			);
+
+			const upload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: "notes.txt",
+				data_base64: Buffer.from("hello attachment\n").toString("base64"),
+			});
+			check(
+				"WEB-10: an attachment is written into the workspace",
+				upload.status === 201 && upload.body?.name === "notes.txt",
+				upload.text,
+			);
+			check(
+				"WEB-10: the uploaded bytes are the real ones",
+				readFileSync(join(workspace, "notes.txt"), "utf8") === "hello attachment\n",
+			);
+			const duplicateUpload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: "notes.txt",
+				data_base64: Buffer.from("second").toString("base64"),
+			});
+			check(
+				"WEB-10: an existing file is not overwritten",
+				duplicateUpload.status === 409 && duplicateUpload.body?.code === "attachment_exists",
+				duplicateUpload.text,
+			);
+			const traversalUpload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: "../../etc/passwd",
+				data_base64: Buffer.from("x").toString("base64"),
+			});
+			check(
+				"WEB-10: a path in the attachment name is refused",
+				traversalUpload.status === 400 && traversalUpload.body?.code === "invalid_attachment",
+				traversalUpload.text,
+			);
+			const dotUpload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: ".bashrc",
+				data_base64: Buffer.from("x").toString("base64"),
+			});
+			check("WEB-10: a dotfile name is refused", dotUpload.status === 400, dotUpload.text);
+			const bigUpload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: "big.txt",
+				data_base64: Buffer.alloc(300_000, 120).toString("base64"),
+			});
+			check("WEB-10: a large attachment still uploads (its own body limit)", bigUpload.status === 201, bigUpload.text);
+			const huge = Buffer.alloc(17 * 1024 * 1024, 121);
+			const hugeUpload = await api.post(`/api/experiments/${label}/attachments`, {
+				name: "huge.bin",
+				data_base64: huge.toString("base64"),
+			});
+			check(
+				"WEB-10: an oversized attachment is refused",
+				hugeUpload.status === 413 && hugeUpload.body?.code === "attachment_too_large",
+				String(hugeUpload.status),
+			);
+			check(
+				"WEB-10: the refused files are not in the workspace",
+				!existsSync(join(workspace, "huge.bin")) && !existsSync(join(workspace, "passwd")),
+			);
+		}
+
 		// ---- i18n: both dictionaries complete, Chinese default, switchable -----
 		{
 			const i18n = await import("../UI/Aegis-pocket/web/aegis/i18n.js");

@@ -623,6 +623,13 @@ OWN-01_EVIDENCE
 - 测试：`aegis-webui` 的 WEB-08 断言两套词典键集合一致、UI 用到的 288 个键都存在、默认中文、切换生效；浏览器实测切换/刷新保持/窄屏无溢出。
 - 证据：`Pi_Agent_base/runtime/dev/p4-web-i18n-*/`（`desktop-zh-1280.png`、`desktop-en-1280.png`、`mobile-narrow-{zh,en}.png`）。
 
+## W.6c 新建任务选择、附件上传与视觉细节
+
+- 新建任务：模型下拉（来自 Pi 配置的 models.json/settings.json，按 provider 分组，含上下文大小）与工具勾选（只读/副作用分组，Aegis 控制工具常开）；选择写入 `run.json` 并在 `--resume` 沿用；命令行等价开关 `--tools`。
+- 附件：输入框 `+` 上传到该实验 workspace 根目录；16 MiB、纯文件名、不覆盖（`wx`）、点文件与路径拒绝；文件面板即时刷新；附件不进 EventLog、不代表授权。
+- 视觉：时间戳改为卡片边角的小号镂空胶囊；修掉实验列表在大量运行时被 flex 压缩导致的「label 消失 / 时间压在边框」；面板按蓝/青/品红/绿/黄/蓝灰做低饱和分区着色。
+- 证据：`aegis-webui` 93 checks（含 WEB-10a..e）；浏览器 1280 CSS px 实测（新建对话框、上传、中文/英文、24+ 实验列表）；截图在 `runtime/dev/p4-web-ui4-*/`。
+
 ## W.7 回归与静态检查
 
 见矩阵 W.3：`aegis-webui` 66 checks；12 脚本（Web + Phase 3 六 + Phase 2 五补测）0 failed；22 项受影响回归 0 failed；required 68 0 failed；module-layout 342/1047；Aegis 类型 66/193/190（新文件无诊断）；Biome 0 error；UI `check` 0、`lint` 0、`test` 379/384（5 项基线失败，见矩阵 W.1）。

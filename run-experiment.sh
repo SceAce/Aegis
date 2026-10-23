@@ -53,6 +53,7 @@ AGENT_DIR_OVERRIDE=""
 ISOLATE_AGENT=0
 SCRIPT_CONFIG_OVERRIDE=""
 ACTION_MODE=""          # normal (default) | auto
+TOOLS=""                # comma list of coding tools (Aegis tools are always on)
 ATTACH=()
 MAX_ATTACH_BYTES=536870912
 MCP_MODE="off"       # off | filtered | all
@@ -78,6 +79,10 @@ Options:
   --workspace DIR     use DIR as the task workspace (default: <label>/workspace)
   --here              use the CURRENT directory as the workspace (no isolation).
                       Use this when the challenge files already sit in a folder.
+  --tools LIST        coding tools the model may call, comma separated
+                      (read,ls,grep,find,glob,bash,write,edit). Aegis control
+                      tools (propose/knowledge/review/...) are always on.
+                      Default: read,bash,edit,write
   --action-mode normal|auto
                       authorization for registered script actions. `normal`
                       (default) requires an explicit per-call grant, so a model
@@ -168,6 +173,11 @@ while (($#)); do
 	case "$1" in
 		--workspace) WORKSPACE="${2:-}"; shift 2 ;;
 		--here) USE_CWD=1; shift ;;
+		--tools)
+			[[ $# -ge 2 ]] || { printf -- '--tools needs a comma-separated list\n' >&2; exit 2; }
+			TOOLS="$2"
+			shift 2
+			;;
 		--action-mode)
 			[[ $# -ge 2 ]] || { printf -- '--action-mode needs normal or auto\n' >&2; exit 2; }
 			ACTION_MODE="$2"
@@ -257,6 +267,9 @@ fi
 [[ "$LABEL" == *..* ]] && die "invalid label '$LABEL': '..' is not allowed"
 [[ "$WEB_SEARCH" =~ ^(on|off)$ ]] || die "--web-search value must be on or off"
 [[ "$SEARCH_DENY" != *'"'* && "$SEARCH_DENY" != *$'\n'* ]] || die "--search-block must not contain quotes or newlines"
+if [[ -n "$TOOLS" && ! "$TOOLS" =~ ^[a-z0-9_,]+$ ]]; then
+	die "--tools must be a comma-separated list of tool ids"
+fi
 for pair in "max-auto-rotations:${MAX_AUTO_ROTATIONS}" "max-continuations:${MAX_CONTINUATIONS}"; do
 	name="${pair%%:*}"
 	value="${pair#*:}"
@@ -288,6 +301,15 @@ if [[ "$MODE" == "resume" && (-z "$MODEL" || -z "$PROVIDER") && -f "$EXP_DIR/run
 	saved_model="${resolved#*$'\t'}"
 	[[ -z "$PROVIDER" && -n "$saved_provider" ]] && PROVIDER="$saved_provider"
 	[[ -z "$MODEL" && -n "$saved_model" ]] && MODEL="$saved_model"
+fi
+if [[ "$MODE" == "resume" && -z "$TOOLS" && -f "$EXP_DIR/run.json" ]]; then
+	TOOLS="$(node -e '
+		const fs = require("node:fs");
+		try {
+			const run = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+			process.stdout.write(Array.isArray(run.tools) ? run.tools.join(",") : "");
+		} catch { process.stdout.write(""); }
+	' "$EXP_DIR/run.json" 2>/dev/null || true)"
 fi
 if [[ -d "$EXP_DIR" ]]; then
 	if [[ "$MODE" != "resume" ]]; then
@@ -517,6 +539,9 @@ fi
 WORK_START_GATE_STATE="${AEGIS_WORK_START_GATE:-off}"
 export AEGIS_CONSOLE_MAX_AUTO_ROTATIONS="${MAX_AUTO_ROTATIONS:-${AEGIS_CONSOLE_MAX_AUTO_ROTATIONS:-3}}"
 export AEGIS_CONSOLE_MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-${AEGIS_CONSOLE_MAX_CONTINUATIONS:-12}}"
+if [[ -n "$TOOLS" ]]; then export AEGIS_CONSOLE_TOOLS="$TOOLS"; else unset AEGIS_CONSOLE_TOOLS; fi
+TOOL_ARGS=()
+[[ -n "$TOOLS" ]] && TOOL_ARGS=(--tools "$TOOLS")
 if [[ -n "$PROVIDER" ]]; then export AEGIS_CONSOLE_PROVIDER="$PROVIDER"; fi
 if [[ -n "$MODEL" ]]; then export AEGIS_CONSOLE_MODEL="$MODEL"; fi
 if [[ -n "$SCRIPT_CONFIG" ]]; then
@@ -571,6 +596,13 @@ RUN_PROVIDER_JSON="null"
 [[ -n "$PROVIDER" ]] && RUN_PROVIDER_JSON="\"$PROVIDER\""
 RUN_MODEL_JSON="null"
 [[ -n "$MODEL" ]] && RUN_MODEL_JSON="\"$MODEL\""
+RUN_TOOLS_JSON="null"
+if [[ -n "$TOOLS" ]]; then
+	RUN_TOOLS_JSON="$(node -e '
+		const list = String(process.argv[1]).split(",").map((v) => v.trim()).filter(Boolean);
+		process.stdout.write(JSON.stringify(list));
+	' "$TOOLS")"
+fi
 if [[ ! -f "$RUN_JSON" ]]; then
 	cat >"$RUN_JSON" <<JSON
 {
@@ -595,6 +627,7 @@ if [[ ! -f "$RUN_JSON" ]]; then
   "mcp": "$MCP_MODE",
   "provider": $RUN_PROVIDER_JSON,
   "model": $RUN_MODEL_JSON,
+  "tools": $RUN_TOOLS_JSON,
   "console": {
     "entry": "$([[ $CONSOLE_MODE -eq 1 ]] && echo console || echo cli)",
     "max_auto_rotations": "$AEGIS_CONSOLE_MAX_AUTO_ROTATIONS",
@@ -715,6 +748,7 @@ fi
 printf '  task id    %s\n' "$TASK_ID"
 [[ -n "$SEED_FILE" ]] && printf '  seed       %s\n' "$SEED_FILE"
 [[ -n "$MODEL" ]] && printf '  model      %s\n' "$MODEL"
+printf '  tools      %s\n' "${TOOLS:-read,bash,edit,write (default)} + Aegis tools"
 printf '  recorded   %s\n' "$RUN_JSON"
 
 if ((DRY_RUN)); then
@@ -777,11 +811,11 @@ if ((CONSOLE_MODE)); then
 	(( ${#PASSTHROUGH[@]} )) && exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
 		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
 		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
-		--agent-dir "$AGENT_DIR" "${PASSTHROUGH[@]}"
+		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}" "${PASSTHROUGH[@]}"
 	exec node --import "$SOURCE_RESOLVER" "$CONSOLE_ENTRY" \
 		--label "$LABEL" --task-id "$TASK_ID" --workspace "$WORKSPACE" \
 		--event-log "$EVENT_LOG" --handoff "$HANDOFF_FILE" --session-dir "$SESSION_DIR" \
-		--agent-dir "$AGENT_DIR"
+		--agent-dir "$AGENT_DIR" "${TOOL_ARGS[@]}"
 fi
 if [[ "$ENTRY" == "bundle" ]]; then
 	printf 'run-experiment: --bundle is not used by the console entry; use --cli to run the bundled CLI\n' >&2

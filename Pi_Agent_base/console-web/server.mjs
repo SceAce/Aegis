@@ -26,7 +26,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,7 @@ import { projectBoard } from "../memory/board.mjs";
 import { projectState } from "../memory/state.mjs";
 import { normalizeWorkCyclePolicy, projectWorkCycle } from "../memory/work-cycle.mjs";
 import { CONTROL_ERRORS } from "./control.mjs";
+import { AEGIS_TOOLS, CODING_TOOLS, DEFAULT_CODING_TOOLS, resolveToolSelection } from "./tools.mjs";
 import { buildWebView, transcriptEntry, VIEW_LIMITS } from "./view.mjs";
 import { listWorkspace, readWorkspaceFile, WorkspacePathError } from "./workspace-files.mjs";
 
@@ -70,6 +71,8 @@ const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const PROVIDER_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,119}$/;
 const MAX_BODY = 256 * 1024;
+/** Attachment uploads carry base64 (≈4/3 of the file), so they get their own cap. */
+const MAX_ATTACHMENT_BODY = 24 * 1024 * 1024;
 
 class HttpError extends Error {
 	constructor(status, code, message) {
@@ -89,13 +92,13 @@ function json(res, status, body) {
 	res.end(payload);
 }
 
-function readBody(req) {
+function readBody(req, limit = MAX_BODY) {
 	return new Promise((resolveBody, reject) => {
 		let size = 0;
 		const chunks = [];
 		req.on("data", (chunk) => {
 			size += chunk.length;
-			if (size > MAX_BODY) {
+			if (size > limit) {
 				reject(new HttpError(413, "body_too_large", "request body is too large"));
 				req.destroy();
 				return;
@@ -139,6 +142,56 @@ function readJsonFile(path) {
 	}
 }
 
+/** Upload bounds for the composer's attachment button. */
+export const ATTACHMENT_LIMITS = Object.freeze({
+	bytes: 16 * 1024 * 1024,
+	name: 120,
+});
+
+/**
+ * Save one uploaded attachment INTO the experiment's workspace.
+ *
+ * The name is reduced to a basename (no directory part), control characters and
+ * path separators are refused, and the write uses `wx` so nothing is overwritten
+ * (an existing file or symlink is a conflict, never a target). The file lands in
+ * the workspace root, which is exactly where the model's tools can read it.
+ */
+async function saveAttachment(record, body) {
+	const raw = String(body.name);
+	if (raw.includes("/") || raw.includes("\\") || raw.includes(".."))
+		throw new HttpError(400, "invalid_attachment", "the name must be a plain file name, without a path");
+	const base = raw.trim();
+	if (!base || base === "." || base.startsWith("."))
+		throw new HttpError(400, "invalid_attachment", "a plain file name is required");
+	if (base.length > ATTACHMENT_LIMITS.name) throw new HttpError(400, "invalid_attachment", "the file name is too long");
+	if (/[\u0000-\u001f<>:"|?*]/.test(base))
+		throw new HttpError(400, "invalid_attachment", "the file name contains characters that are not allowed");
+	let buffer;
+	try {
+		buffer = Buffer.from(String(body.data_base64), "base64");
+	} catch {
+		throw new HttpError(400, "invalid_attachment", "the content is not valid base64");
+	}
+	if (buffer.length === 0) throw new HttpError(400, "invalid_attachment", "the file is empty");
+	if (buffer.length > ATTACHMENT_LIMITS.bytes)
+		throw new HttpError(413, "attachment_too_large", `attachments are limited to ${ATTACHMENT_LIMITS.bytes} bytes`);
+	let root;
+	try {
+		root = await realpath(record.workspace);
+	} catch {
+		throw new HttpError(409, "workspace_missing", "the workspace does not exist yet");
+	}
+	const target = join(root, base);
+	try {
+		await writeFile(target, buffer, { flag: "wx", mode: 0o600 });
+	} catch (error) {
+		if (error?.code === "EEXIST")
+			throw new HttpError(409, "attachment_exists", "a file with that name is already in the workspace");
+		throw new HttpError(500, "attachment_failed", `the file could not be written: ${String(error)}`);
+	}
+	return { name: base, size: buffer.length, path: base };
+}
+
 /**
  * Read committed rows for a READ-ONLY view.
  *
@@ -179,6 +232,51 @@ function readCommittedRows(eventLogPath) {
 	return { rows, integrity: { ok: true, reason: null, complete: true } };
 }
 
+/**
+ * Selectable models from the trusted Pi configuration in this process' agent dir.
+ *
+ * Read-only, and never touches `auth.json`: `models.json` describes providers and
+ * their models, `settings.json` names the default. A missing/unreadable file
+ * returns an empty list and the UI falls back to the free-text field.
+ */
+function listModels(agentDirPath) {
+	if (typeof agentDirPath !== "string" || !agentDirPath) return { models: [], default: null, source: null };
+	const modelsPath = join(agentDirPath, "models.json");
+	const settingsPath = join(agentDirPath, "settings.json");
+	if (!existsSync(modelsPath)) return { models: [], default: null, source: null };
+	let raw;
+	try {
+		raw = JSON.parse(readFileSync(modelsPath, "utf8"));
+	} catch {
+		return { models: [], default: null, source: null };
+	}
+	const providers = raw && typeof raw === "object" ? (raw.providers ?? raw) : {};
+	const models = [];
+	for (const [providerId, provider] of Object.entries(providers)) {
+		if (!provider || typeof provider !== "object") continue;
+		const declared = Array.isArray(provider.models) ? provider.models : [];
+		for (const model of declared) {
+			const id = typeof model === "string" ? model : (model?.id ?? null);
+			if (typeof id !== "string" || !id) continue;
+			models.push({
+				provider: providerId,
+				id,
+				name: typeof model?.name === "string" ? model.name : id,
+				context_window: Number.isFinite(model?.contextWindow) ? model.contextWindow : null,
+			});
+		}
+	}
+	let fallback = null;
+	try {
+		const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+		if (typeof settings?.defaultProvider === "string" && typeof settings?.defaultModel === "string")
+			fallback = { provider: settings.defaultProvider, id: settings.defaultModel };
+	} catch {
+		fallback = null;
+	}
+	return { models: models.slice(0, 500), default: fallback, source: "pi-config" };
+}
+
 /** Experiment metadata from disk (never inferred from a report). */
 function experimentRecord(home, label) {
 	const dir = join(home, "experiments", label);
@@ -197,6 +295,7 @@ function experimentRecord(home, label) {
 		agent_dir: runJson.paths?.agent_dir ?? null,
 		session_dir: runJson.paths?.session_dir ?? join(dir, "sessions"),
 		task_id: runJson.task_id ?? label,
+		tools: Array.isArray(runJson.tools) ? runJson.tools : null,
 		row_count: rows.length,
 		last_event_at: rows[rows.length - 1]?.recorded_at ?? null,
 		episodes: rows.filter((row) => row.event_type === "episode.started").length,
@@ -220,11 +319,12 @@ function listExperiments(home) {
  * runtime. This class only speaks the control protocol and tracks liveness.
  */
 class HostProcess {
-	constructor({ home, label, workspace, agentDir, env, onEvent }) {
+	constructor({ home, label, workspace, agentDir, tools = null, env, onEvent }) {
 		this.home = home;
 		this.label = label;
 		this.workspace = workspace;
 		this.agentDir = agentDir;
+		this.tools = tools;
 		this.env = env;
 		this.onEvent = onEvent;
 		this.child = null;
@@ -249,6 +349,7 @@ class HostProcess {
 			"--workspace",
 			this.workspace,
 			...(this.agentDir ? ["--agent-dir", this.agentDir] : []),
+			...(Array.isArray(this.tools) && this.tools.length > 0 ? ["--tools", this.tools.join(",")] : []),
 			"--",
 			"--control",
 			"stdio",
@@ -516,6 +617,7 @@ export async function startWebConsole({
 				label: record.label,
 				workspace: record.workspace,
 				agentDir: record.agent_dir ?? agentDir(),
+				tools: record.tools,
 				env,
 				onEvent: (event) => broadcast(record.label, "host", event),
 			});
@@ -714,6 +816,21 @@ export async function startWebConsole({
 			});
 		}
 
+		// GET /api/models — selectable models from the trusted Pi config (read-only)
+		if (pathname === "/api/models" && req.method === "GET") {
+			return json(res, 200, { ok: true, ...listModels(agentDir()) });
+		}
+
+		// GET /api/tools — the coding-tool allowlist (Aegis tools are always on)
+		if (pathname === "/api/tools" && req.method === "GET") {
+			return json(res, 200, {
+				ok: true,
+				coding: CODING_TOOLS.map((tool) => ({ ...tool })),
+				defaults: [...DEFAULT_CODING_TOOLS],
+				always_on: [...AEGIS_TOOLS],
+			});
+		}
+
 		// /api/experiments
 		if (parts.length === 2 && parts[1] === "experiments" && req.method === "GET") {
 			const rows = listExperiments(home).map((record) => {
@@ -743,6 +860,8 @@ export async function startWebConsole({
 				throw new HttpError(400, "invalid_provider", "invalid provider");
 			if (body.model !== undefined && !MODEL_RE.test(String(body.model)))
 				throw new HttpError(400, "invalid_model", "invalid model");
+			const selection = resolveToolSelection(Array.isArray(body.tools) && body.tools.length > 0 ? body.tools : null);
+			if (!selection.ok) throw new HttpError(400, "invalid_tools", selection.error);
 			let workspace = null;
 			if (typeof body.workspace === "string" && body.workspace.trim()) {
 				workspace = resolve(body.workspace.trim());
@@ -771,6 +890,7 @@ export async function startWebConsole({
 			if (workspace) args.push("--workspace", workspace);
 			if (body.provider) args.push("--provider", String(body.provider));
 			if (body.model) args.push("--model", String(body.model));
+			if (selection.coding.length > 0) args.push("--tools", selection.coding.join(","));
 			// Create the isolated layout through the launcher itself (ONE init path:
 			// paths, run.json, workspace, knowledge). `--dry-run` writes nothing else
 			// and starts no Host, no SDK Session and no EventLog writer; the Host is
@@ -936,6 +1056,16 @@ export async function startWebConsole({
 				const host = hosts.get(label);
 				if (host) await host.stop("web stop");
 				return json(res, 200, { ok: true, state: "stopped" });
+			}
+
+			if (action === "attachments" && req.method === "POST") {
+				const body = await readBody(req, MAX_ATTACHMENT_BODY);
+				if (typeof body.name !== "string" || !body.name.trim())
+					throw new HttpError(400, "invalid_attachment", "a file name is required");
+				if (typeof body.data_base64 !== "string" || body.data_base64.length === 0)
+					throw new HttpError(400, "invalid_attachment", "file content is required");
+				const uploaded = await saveAttachment(record, body);
+				return json(res, 201, { ok: true, ...uploaded });
 			}
 
 			if (action === "files" && req.method === "GET") {

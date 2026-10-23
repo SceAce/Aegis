@@ -78,7 +78,9 @@ Aegis Web Console aegis-web-console-1
 | --- | --- | --- |
 | GET | `/api/health` | 服务版本、`AEGIS_HOME`、实验数 |
 | GET | `/api/experiments` | 实验列表（label/task/workspace/事件数/host 状态） |
-| POST | `/api/experiments` | 新建（`label` 必填；`workspace`/`provider`/`model` 可选）→ `201` |
+| GET | `/api/models` | 从 `AEGIS_PI_AGENT_DIR` 的 `models.json`/`settings.json` 读取可选模型与默认值（只读，不读 `auth.json`） |
+| GET | `/api/tools` | 可选的编码工具白名单（Aegis 控制工具始终启用） |
+| POST | `/api/experiments` | 新建（`label` 必填；`workspace`/`provider`/`model`/`tools` 可选）→ `201` |
 | GET | `/api/experiments/:label` | 元数据 + Host 状态 +（无 Host 时）只读视图 |
 | GET | `/api/experiments/:label/view` | 五类面板 + 对话 + 文件列表；`live` 表示是否由 Host 作答 |
 | POST | `/api/experiments/:label/attach` | 启动（或复用）该实验唯一的 Host 子进程 |
@@ -87,6 +89,7 @@ Aegis Web Console aegis-web-console-1
 | POST | `/api/experiments/:label/pause` | 停止派发（不中止正在运行的工具） |
 | POST | `/api/experiments/:label/resume` | 走现有 recovery 检查后恢复派发 |
 | POST | `/api/experiments/:label/stop` | 关闭 Host；未知副作用保留责任 |
+| POST | `/api/experiments/:label/attachments` | `{name, data_base64}` → 写入该实验 workspace 根目录；16 MiB 上限、不覆盖 |
 | GET | `/api/experiments/:label/files?path=` | 工作区目录（有界、越界拒绝） |
 | GET | `/api/experiments/:label/file?path=` | 工作区文件（≤512 KiB、二进制标记） |
 | GET | `/api/experiments/:label/stream?cursor=N` | SSE：`events`/`status`/`delta`/`host`/`ping` |
@@ -139,12 +142,32 @@ Aegis Web Console aegis-web-console-1
 - 模型/权限/预算来源仍是原配置：Host 复用 `AEGIS_PI_AGENT_DIR` 的 Pi 模型与授权，
   浏览器只能选服务端校验过的 provider/model 字符串，不能决定执行模块。
 
+## 新建任务：模型与工具
+
+- **模型**：下拉框来自 `/api/models`（你的 `~/.Aegis/agent/models.json`，按 provider 分组，显示 `名称 · 上下文`），默认项是 Pi 配置里的默认模型。读取不到配置时自动回退为手填 provider / 模型 id，并说明原因。
+- **工具**：`read/ls/grep/find/glob`（只读）与 `bash/write/edit`（副作用，带「副作用」标记）可勾选，默认 `read,bash,edit,write`。
+  - **Aegis 控制工具（`aegis_propose`/`aegis_knowledge`/`aegis_work_review`/…）始终启用**：工作单元门、复核、审计依赖它们，不能由浏览器关掉。
+  - 选择结果写入 `run.json` 的 `tools`，`--resume` 时沿用；命令行也可用 `./run-experiment.sh <label> --tools read,grep …`（服务端与入口只接受白名单，未知工具直接 400）。
+  - 缩小工具集只是减少模型能调用的编码工具，不改变任何授权、预算或工作流门。
+
+## 附件上传（写入工作区）
+
+- 对话框左侧的 **`+`** 按钮选择本地文件，上传后写入**该实验的 workspace 根目录**（`run.json` 的 `workspace`），文件面板会立即刷新；模型用普通工具就能读到它。
+- 边界：单个文件 ≤ 16 MiB（base64 请求体另有 24 MiB 上限）；只接受**纯文件名**（含 `/`、`\` 或 `..` 一律 400）；不覆盖同名文件（409）；拒绝点文件开头 `.`；工作区不存在时 409。写入使用 `wx`（不改内容、不跟随已有 symlink）。
+- 附件不进入 EventLog、不代表任何授权：它只是把文件放进 workspace，之后仍由工作流门/授权决定模型能否读写。
+- 错误码：`invalid_attachment`（400）、`attachment_too_large`（413）、`attachment_exists` / `workspace_missing`（409）。
+
 ## 界面语言
 
 - 默认**中文**；右上角 `EN` / `中文` 一键切换，`设置 → Language` 也可切换。切换即时生效并记住在本浏览器。
 - 语言是**显示偏好**（与主题同类）：只写本机 `localStorage`（`aegis.lang`），不发给 Host、不写 EventLog、不影响任何任务状态或授权。
 - 所有界面字符串走同一份词典（`web/aegis/i18n.js`，中英同键，有测试断言）；协议值（事件类型、`Intent`/`Fact`、工具名、状态与错误码原文）不翻译，只把**标签**本地化，原始值保留在 `title`/详情里。
 - 后端返回的错误按 `code` 映射为中文提示；未知 code 回退服务端原文，不吞掉信息。
+
+## 视觉与可读性
+
+- 时间戳是卡片右上角的**小号镂空胶囊**（9.5px，描边+页面底色），贴在卡片边框上，不再压住标题或会话行；列表项不再被 flex 压缩（实验很多时也不会把 label 挤没或让时间压到边框上）。
+- 每个区域用低饱和度的调色板着色区分：进度=蓝、图板=青、知识与经验=品红、Session/RAM=绿、行动=黄、文件=蓝灰；只用于区块标题的左侧细线与卡片底色的微弱混合（约 7–12%），正文仍使用统一前景色，避免刺眼。
 
 ## 面板（全部来自 committed 投影）
 
