@@ -240,6 +240,16 @@ async function main() {
 			rowsAfterAttach.filter((r) => r.event_type === "session.started").length === 1,
 		);
 
+		// An experiment created by the CLI records its own (possibly derived) agent
+		// dir; attaching it from the web must reuse THAT dir, not the server default,
+		// or the run's provider/MCP binding would silently change.
+		const runJsonAfterAttach = JSON.parse(readFileSync(join(expDir, "run.json"), "utf8"));
+		check(
+			"WEB-01: attach reuses the experiment's recorded agent dir",
+			server.hostProcess(label)?.agentDir === runJsonAfterAttach.paths.agent_dir,
+			`${server.hostProcess(label)?.agentDir} != ${runJsonAfterAttach.paths.agent_dir}`,
+		);
+
 		// A second writer (the ordinary CLI entry) must be refused before it can
 		// create a Session, and must not touch the committed prefix.
 		const before = {

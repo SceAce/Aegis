@@ -194,6 +194,7 @@ function experimentRecord(home, label) {
 		event_log_path: eventLogPath,
 		handoff_path: runJson.paths?.handoff_file ?? join(dir, "runtime", "ram", "handoff.json"),
 		workspace: runJson.workspace ?? join(dir, "workspace"),
+		agent_dir: runJson.paths?.agent_dir ?? null,
 		session_dir: runJson.paths?.session_dir ?? join(dir, "sessions"),
 		task_id: runJson.task_id ?? label,
 		row_count: rows.length,
@@ -514,7 +515,7 @@ export async function startWebConsole({
 				home,
 				label: record.label,
 				workspace: record.workspace,
-				agentDir: agentDir(),
+				agentDir: record.agent_dir ?? agentDir(),
 				env,
 				onEvent: (event) => broadcast(record.label, "host", event),
 			});
