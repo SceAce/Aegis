@@ -392,6 +392,40 @@ export async function createConsoleSdkRuntime({
 				return null;
 			}
 		},
+		/**
+		 * Switch the CURRENT Session's model. Only a model known to this run's
+		 * ModelRuntime is accepted (no arbitrary provider), and Pi itself refuses a
+		 * model without configured auth. This is session configuration: it is not a
+		 * task fact, not an Outcome and it changes no authorization or budget.
+		 */
+		/** Models this run's runtime actually knows (what a switch may choose). */
+		models: () =>
+			modelRuntime
+				.getModels()
+				// Only providers this run actually has credentials for: listing the
+				// whole built-in catalog would offer switches that must fail.
+				.filter((model) => {
+					try {
+						return modelRuntime.hasConfiguredAuth(model.provider);
+					} catch {
+						return false;
+					}
+				})
+				.map((model) => ({
+					provider: model.provider,
+					id: model.id,
+					name: model.name ?? model.id,
+					context_window: model.contextWindow ?? null,
+				}))
+				.sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`)),
+		setModel: async ({ provider, id } = {}) => {
+			if (typeof provider !== "string" || !provider || typeof id !== "string" || !id)
+				throw new Error("provider and model id are required");
+			const model = modelRuntime.getModel(provider, id);
+			if (!model) throw new Error(`unknown model ${provider}/${id}`);
+			await runtime.session.setModel(model);
+			return { provider: model.provider, id: model.id };
+		},
 		prompt: (text) => runtime.session.prompt(text),
 		waitForIdle: () => runtime.session.waitForIdle(),
 		newSession: (options) => runtime.newSession(options),
@@ -524,6 +558,12 @@ async function serveControlChannel({ host, label, taskId, workspace }) {
 				}
 				case "dispatch":
 					result = await control.dispatch({ requestId: params.request_id, text: params.text });
+					break;
+				case "models":
+					result = await control.models();
+					break;
+				case "set_model":
+					result = await control.setModel({ provider: params.provider, id: params.model });
 					break;
 				case "pause":
 					result = await control.pause(params.reason);

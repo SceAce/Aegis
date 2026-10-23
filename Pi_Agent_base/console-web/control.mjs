@@ -193,6 +193,30 @@ export function createControlChannel({ host, limits = { text: 200_000 } }) {
 			});
 		},
 
+		/**
+		 * Switch the live Session's model. Serialized with dispatch so a model change
+		 * cannot interleave with a running prompt. It is session configuration: no
+		 * EventLog row, no authorization/budget change, no success claim.
+		 */
+		/** Models the live Session can switch to. */
+		models() {
+			return serial(async () => {
+				if (typeof host.availableModels !== "function")
+					return { ok: false, models: [], reason: "this Host cannot list models" };
+				return host.availableModels();
+			});
+		},
+
+		setModel({ provider, id } = {}) {
+			return serial(async () => {
+				if (!isNonEmptyString(provider, 80) || !isNonEmptyString(id, 120))
+					return { ok: false, code: CONTROL_ERRORS.invalid, reason: "provider and model id are required" };
+				if (typeof host.setModel !== "function")
+					return { ok: false, code: CONTROL_ERRORS.invalid, reason: "this Host cannot switch models" };
+				return host.setModel({ provider, id });
+			});
+		},
+
 		pause(reason = "web pause") {
 			return serial(async () => host.pause(reason));
 		},

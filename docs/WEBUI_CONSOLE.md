@@ -80,12 +80,14 @@ Aegis Web Console aegis-web-console-1
 | GET | `/api/experiments` | 实验列表（label/task/workspace/事件数/host 状态） |
 | GET | `/api/models` | 从 `AEGIS_PI_AGENT_DIR` 的 `models.json`/`settings.json` 读取可选模型与默认值（只读，不读 `auth.json`） |
 | GET | `/api/tools` | 可选的编码工具白名单（Aegis 控制工具始终启用） |
+| GET | `/api/experiments/:label/models` | 该运行**实际可用**的模型（来自 Host 的 `ModelRuntime`，只列有凭据的 provider）；Host 未启动时回退为配置目录 |
 | POST | `/api/experiments` | 新建（`label` 必填；`workspace`/`provider`/`model`/`tools` 可选）→ `201` |
 | GET | `/api/experiments/:label` | 元数据 + Host 状态 +（无 Host 时）只读视图 |
 | GET | `/api/experiments/:label/view` | 五类面板 + 对话 + 文件列表；`live` 表示是否由 Host 作答 |
 | POST | `/api/experiments/:label/attach` | 启动（或复用）该实验唯一的 Host 子进程 |
 | POST | `/api/experiments/:label/detach` | 关闭 Host（等于 stop） |
 | POST | `/api/experiments/:label/messages` | `{text, request_id}` → `202`（受理，不是成功） |
+| POST | `/api/experiments/:label/model` | `{provider, model}` → 切换当前 Session 的模型（会话配置；不改授权/预算） |
 | POST | `/api/experiments/:label/pause` | 停止派发（不中止正在运行的工具） |
 | POST | `/api/experiments/:label/resume` | 走现有 recovery 检查后恢复派发 |
 | POST | `/api/experiments/:label/stop` | 关闭 Host；未知副作用保留责任 |
@@ -150,6 +152,12 @@ Aegis Web Console aegis-web-console-1
   - 选择结果写入 `run.json` 的 `tools`，`--resume` 时沿用；命令行也可用 `./run-experiment.sh <label> --tools read,grep …`（服务端与入口只接受白名单，未知工具直接 400）。
   - 缩小工具集只是减少模型能调用的编码工具，不改变任何授权、预算或工作流门。
 
+## 切换当前 Session 的模型
+
+- 顶栏模型胶囊可点击：弹出的列表来自 `GET /api/experiments/:label/models`，即该运行 `ModelRuntime` 里**有凭据**的模型（不会列出无法切换的内置目录模型）。选择后调用 `POST …/model`。
+- 切换是**会话配置**：只影响后续 provider 请求使用的模型，不写 EventLog、不改授权/预算、不产生进度或 Outcome；Pi 自己会拒绝没有凭据的模型，未知 provider/model 也由 Host 拒绝。
+- 新建任务对话框的模型下拉仍来自配置目录（`GET /api/models`），因为那时还没有运行。
+
 ## 附件上传（写入工作区）
 
 - 对话框左侧的 **`+`** 按钮选择本地文件，上传后写入**该实验的 workspace 根目录**（`run.json` 的 `workspace`），文件面板会立即刷新；模型用普通工具就能读到它。
@@ -163,6 +171,11 @@ Aegis Web Console aegis-web-console-1
 - 语言是**显示偏好**（与主题同类）：只写本机 `localStorage`（`aegis.lang`），不发给 Host、不写 EventLog、不影响任何任务状态或授权。
 - 所有界面字符串走同一份词典（`web/aegis/i18n.js`，中英同键，有测试断言）；协议值（事件类型、`Intent`/`Fact`、工具名、状态与错误码原文）不翻译，只把**标签**本地化，原始值保留在 `title`/详情里。
 - 后端返回的错误按 `code` 映射为中文提示；未知 code 回退服务端原文，不吞掉信息。
+
+## 图板与设置
+
+- 图板节点（Origin/Intent/Hint/Fact/Refuted/Artifact）默认折叠长文本（3 行），可「展开全文 / 收起」；「证据 N」就地展开引用列表，显示引用 id 与**在已加载对话中**能对应到的事件摘要（不在范围内会明确说明），「打开详情」展开节点详情并滚动到位。
+- 设置里的「安全边界」是**只读说明**（带标记），由 Host 契约固定；可编辑的是主题与语言。
 
 ## 视觉与可读性
 

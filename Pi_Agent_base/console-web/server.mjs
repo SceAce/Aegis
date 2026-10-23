@@ -1023,6 +1023,57 @@ export async function startWebConsole({
 				}
 			}
 
+			if (action === "models" && req.method === "GET") {
+				const attached = await hostFor(record, { create: false });
+				if (attached.ok) {
+					try {
+						const answer = await attached.host.request("models", {}, { timeout: 10_000 });
+						if (answer.ok !== false) return json(res, 200, { ok: true, live: true, models: answer.models ?? [] });
+					} catch {
+						// fall through to the config catalog below
+					}
+				}
+				const catalog = listModels(record.agent_dir ?? agentDir());
+				return json(res, 200, {
+					ok: true,
+					live: false,
+					models: catalog.models,
+					default: catalog.default,
+				});
+			}
+
+			if (action === "model" && req.method === "POST") {
+				const body = await readBody(req);
+				if (typeof body.provider !== "string" || !body.provider || typeof body.model !== "string" || !body.model)
+					throw new HttpError(400, "invalid_model", "provider and model are required");
+				if (!PROVIDER_RE.test(body.provider) || !MODEL_RE.test(body.model))
+					throw new HttpError(400, "invalid_model", "invalid provider or model");
+				const attached = await hostFor(record);
+				if (!attached.ok)
+					return json(res, attached.state === "conflict" ? 409 : 503, {
+						ok: false,
+						code: attached.state === "conflict" ? CONTROL_ERRORS.conflict_owner : CONTROL_ERRORS.unavailable,
+						error: attached.reason ?? "the Host is not available",
+					});
+				try {
+					const answer = await attached.host.request(
+						"set_model",
+						{ provider: body.provider, model: body.model },
+						{ timeout: 30_000 },
+					);
+					return json(res, answer.ok === false ? 409 : 200, {
+						ok: answer.ok !== false,
+						reason: answer.reason ?? null,
+						model: answer.model ?? null,
+						status: answer.status ?? null,
+					});
+				} catch (error) {
+					if (error instanceof HttpError)
+						return json(res, error.status, { ok: false, code: error.code, error: error.message });
+					throw error;
+				}
+			}
+
 			if (action === "pause" && req.method === "POST") {
 				const attached = hosts.get(label);
 				if (!attached?.child || attached.state !== "ready")

@@ -837,6 +837,37 @@ async function main() {
 			);
 		}
 
+		// ---- WEB-11: live model list + Session model switch --------------------
+		{
+			const annotated = await api.get(`/api/experiments/${label}/models`);
+			check(
+				"WEB-11: the live model list comes from the Host's runtime",
+				annotated.status === 200 && annotated.body?.live === true && Array.isArray(annotated.body.models),
+				annotated.text,
+			);
+			check(
+				"WEB-11: the list only offers models this run has credentials for",
+				(annotated.body.models ?? []).some((model) => model.provider === "faux"),
+				JSON.stringify(annotated.body.models),
+			);
+			const switched = await api.post(`/api/experiments/${label}/model`, { provider: "faux", model: "web-fixture" });
+			check(
+				"WEB-11: the Session can switch to a model it knows",
+				switched.status === 200 && switched.body?.ok === true,
+				switched.text,
+			);
+			check(
+				"WEB-11: the switch changes no committed row (session configuration, not a fact)",
+				readCommitted(eventLogPath).filter((row) => row.event_type === "outcome.recorded").length === 0,
+			);
+			const refusedSwitch = await api.post(`/api/experiments/${label}/model`, { provider: "pi-config", model: "nope" });
+			check("WEB-11: an unknown model is refused", refusedSwitch.status === 409, refusedSwitch.text);
+			check(
+				"WEB-11: an invalid model id is refused before the Host",
+				(await api.post(`/api/experiments/${label}/model`, { provider: "x", model: "" })).status === 400,
+			);
+		}
+
 		// ---- i18n: both dictionaries complete, Chinese default, switchable -----
 		{
 			const i18n = await import("../UI/Aegis-pocket/web/aegis/i18n.js");

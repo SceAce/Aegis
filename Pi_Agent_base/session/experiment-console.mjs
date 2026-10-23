@@ -867,6 +867,42 @@ export function createExperimentConsole({
 	}
 
 	/**
+	 * Switch the CURRENT Session's model (session configuration, not a task fact).
+	 *
+	 * The adapter validates the provider/model against this run's ModelRuntime and
+	 * Pi refuses one without credentials. Nothing is written to the EventLog: a
+	 * model change grants nothing, changes no budget and is not progress.
+	 */
+	/**
+	 * Models the LIVE Session can switch to (from the run's ModelRuntime). This is
+	 * deliberately not the agent-config catalog: the catalog may list models whose
+	 * provider/credential this run was never configured for.
+	 */
+	async function availableModels() {
+		if (!started || !session || typeof session.models !== "function")
+			return { ok: false, reason: "no live Session", models: [] };
+		try {
+			return { ok: true, models: session.models() };
+		} catch (error) {
+			return { ok: false, reason: error instanceof Error ? error.message : String(error), models: [] };
+		}
+	}
+
+	async function setModel({ provider, id } = {}) {
+		if (!started || !session) return { ok: false, reason: "no live Session to switch" };
+		if (typeof session.setModel !== "function")
+			return { ok: false, reason: "this Session adapter cannot switch models" };
+		if (typeof provider !== "string" || !provider || typeof id !== "string" || !id)
+			return { ok: false, reason: "provider and model id are required" };
+		try {
+			const applied = await session.setModel({ provider, id });
+			return { ok: true, model: applied ?? null, status: await status() };
+		} catch (error) {
+			return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	/**
 	 * Read the committed rows through the Host's own writer (refresh + verify).
 	 * Read-only: no projection, no append, no authority. Used by the control
 	 * channel to resolve request receipts and by the Web view.
@@ -920,6 +956,8 @@ export function createExperimentConsole({
 		start,
 		committedEvents,
 		appendControlReceipt,
+		availableModels,
+		setModel,
 		recover,
 		dispatch,
 		status,

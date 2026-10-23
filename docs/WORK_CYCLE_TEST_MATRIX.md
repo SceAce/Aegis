@@ -510,6 +510,12 @@ ownership 缺陷已独立关闭，范围为启动顺序、冲突无写入、资�
 | WEB-10d | 附件写入 workspace 根目录，字节一致；同名 409；含路径 400；点文件 400；>16MiB 413；被拒文件不落盘 | aegis-webui | pass |
 | WEB-10e | 300 KB 附件可上传（附件路由有独立请求体上限） | aegis-webui | pass |
 | WEB-10f | 卡片时间改为小号镂空胶囊；实验列表项不再被压缩（大量运行时 label/时间不重叠） | 浏览器（1280 CSS px，24+ 实验） | pass |
+| WEB-11a | `/api/experiments/:label/models` 返回 Host 运行时可用（有凭据）的模型；Host 未启动时回退配置目录 | aegis-webui | pass |
+| WEB-11b | `POST …/model` 可切换已知模型；未知模型 409；非法参数 400；切换不写任何 committed 行 | aegis-webui | pass |
+| WEB-11c | 顶栏模型胶囊可点击并切换（浏览器实测：弹出列表、选择后提示与状态更新） | 浏览器（1280 CSS px） | pass |
+| WEB-11d | 图板节点长文本折叠/展开；「证据」就地展开引用与可解析摘要；「打开详情」滚动到节点详情 | 浏览器（含真实 committed 日志 fixture） | pass |
+| WEB-11e | 「安全边界」标注为只读说明（不可编辑），新建任务文案改为「Aegis 配置」 | 浏览器 + i18n 词典断言 | pass |
+| WEB-11f | `#/e/<label>` 变更（深链/前进后退）会切换运行 | 浏览器 | pass |
 
 ## W.3 命令与真实退出码（最终树）
 

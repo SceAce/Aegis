@@ -630,6 +630,15 @@ OWN-01_EVIDENCE
 - 视觉：时间戳改为卡片边角的小号镂空胶囊；修掉实验列表在大量运行时被 flex 压缩导致的「label 消失 / 时间压在边框」；面板按蓝/青/品红/绿/黄/蓝灰做低饱和分区着色。
 - 证据：`aegis-webui` 93 checks（含 WEB-10a..e）；浏览器 1280 CSS px 实测（新建对话框、上传、中文/英文、24+ 实验列表）；截图在 `runtime/dev/p4-web-ui4-*/`。
 
+## W.6d 图板折叠/证据、模型切换、文案与只读说明
+
+- 图板：节点长文本默认折叠（3 行）可展开；「证据 N」就地展开引用 id + 能对应到的 committed 事件摘要（不在已加载范围时明确说明）；「打开详情」滚动到节点详情（此前详情在长列表末尾，看起来像按钮没反应）。
+- 模型：顶栏模型胶囊可点击，列表来自该运行 `ModelRuntime` 里有凭据的模型（`GET …/models`），选择经 `POST …/model` 切到当前 Session；这是会话配置，不写 EventLog、不改授权/预算；未知模型由 Host 拒绝。
+- 文案：新建任务里的「Pi 配置」改为「Aegis 配置（~/.Aegis/agent）」，默认项同步。
+- 设置：安全边界标注为**只读说明**并解释由 Host 契约固定（不是可编辑项）。
+- 修复深链切换：`#/e/<label>` 的 hash 变化（浏览器前进/后退、直接改地址）现在会切换运行，而不只在首屏生效。
+- 测试：`aegis-webui` 99 checks（新增 WEB-11a/b）；浏览器 1280 CSS px 实测图板折叠/证据/详情、模型弹出与切换、文案；截图在 `runtime/dev/p4-web-ui5-*/`。
+
 ## W.7 回归与静态检查
 
 见矩阵 W.3：`aegis-webui` 66 checks；12 脚本（Web + Phase 3 六 + Phase 2 五补测）0 failed；22 项受影响回归 0 failed；required 68 0 failed；module-layout 342/1047；Aegis 类型 66/193/190（新文件无诊断）；Biome 0 error；UI `check` 0、`lint` 0、`test` 379/384（5 项基线失败，见矩阵 W.1）。
