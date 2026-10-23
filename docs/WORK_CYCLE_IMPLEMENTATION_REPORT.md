@@ -616,6 +616,13 @@ OWN-01_EVIDENCE
 | 控制台错误 | `window.__aegisErrors` 为空（多轮操作后） |
 | 截图 | `Pi_Agent_base/runtime/dev/p3-webui-1023-091425/desktop-1440x900.png`、`mobile-390x844.png`（ignored，不入库） |
 
+## W.6b 界面语言（中英切换）
+
+- 默认中文；右上角 `EN`/`中文` 与 `设置 → Language` 双向切换，即时生效，选择保存在本浏览器（`aegis.lang`）。
+- 文案集中在 `web/aegis/i18n.js`（zh/en 同键）；协议值不翻译，只本地化标签并保留原值；后端错误按 `code` 映射中文，未知 code 回退原文。
+- 测试：`aegis-webui` 的 WEB-08 断言两套词典键集合一致、UI 用到的 288 个键都存在、默认中文、切换生效；浏览器实测切换/刷新保持/窄屏无溢出。
+- 证据：`Pi_Agent_base/runtime/dev/p4-web-i18n-*/`（`desktop-zh-1280.png`、`desktop-en-1280.png`、`mobile-narrow-{zh,en}.png`）。
+
 ## W.7 回归与静态检查
 
 见矩阵 W.3：`aegis-webui` 66 checks；12 脚本（Web + Phase 3 六 + Phase 2 五补测）0 failed；22 项受影响回归 0 failed；required 68 0 failed；module-layout 342/1047；Aegis 类型 66/193/190（新文件无诊断）；Biome 0 error；UI `check` 0、`lint` 0、`test` 379/384（5 项基线失败，见矩阵 W.1）。

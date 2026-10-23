@@ -139,6 +139,13 @@ Aegis Web Console aegis-web-console-1
 - 模型/权限/预算来源仍是原配置：Host 复用 `AEGIS_PI_AGENT_DIR` 的 Pi 模型与授权，
   浏览器只能选服务端校验过的 provider/model 字符串，不能决定执行模块。
 
+## 界面语言
+
+- 默认**中文**；右上角 `EN` / `中文` 一键切换，`设置 → Language` 也可切换。切换即时生效并记住在本浏览器。
+- 语言是**显示偏好**（与主题同类）：只写本机 `localStorage`（`aegis.lang`），不发给 Host、不写 EventLog、不影响任何任务状态或授权。
+- 所有界面字符串走同一份词典（`web/aegis/i18n.js`，中英同键，有测试断言）；协议值（事件类型、`Intent`/`Fact`、工具名、状态与错误码原文）不翻译，只把**标签**本地化，原始值保留在 `title`/详情里。
+- 后端返回的错误按 `code` 映射为中文提示；未知 code 回退服务端原文，不吞掉信息。
+
 ## 面板（全部来自 committed 投影）
 
 1. **进度**：总目标、当前 scoped Intent/工作单元、work-cycle 与 review hold、最近 review/
@@ -162,6 +169,7 @@ Aegis Web Console aegis-web-console-1
 ## 限制
 
 - 交互是单用户本地工具；无公网暴露、无多用户、无 Push。
+- 界面目前只有中文与英文两套文案；新增文案必须同时补两种语言（`aegis-webui` 会检查键集合一致）。
 - 未适配 Pocket 的多人侧聊/邀请、PiP、Agent Teams、定时任务、GitHub watches、扩展商店、
   fork/retry/worktree/浏览器等入口；这些入口在本服务下不存在，不只是隐藏。
 - 前端复用 Pocket 的 `web/style.css` 设计令牌与响应式结构，但**不**运行 Pocket 的 Pi Durable

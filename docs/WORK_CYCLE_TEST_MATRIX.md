@@ -496,10 +496,14 @@ ownership 缺陷已独立关闭，范围为启动顺序、冲突无写入、资�
 | WEB-06a | `..`/绝对路径/symlink 逃逸均拒绝；symlink 在列表中标为 `outside` 不跟随 | aegis-webui | pass |
 | WEB-06b | 跨站 POST 403；错误 Host 头 403；GET 不能写；observation 写路由未挂载 | aegis-webui | pass |
 | WEB-06c | 服务只记录一个 Host；只读 observation 服务保持原样（`aegis-c4a-observation-http` 0 failed） | aegis-webui + 回归 | pass |
-| WEB-07a | 桌面 1440×900：列表/新建/打开/发消息/五类面板/文件查看/暂停/刷新重连 | 真实 Firefox（BiDi） | pass |
+| WEB-07a | 桌面 1280 CSS px：列表/新建/打开/发消息/五类面板/文件查看/暂停/刷新重连 | 真实 Firefox（BiDi） | pass |
 | WEB-07b | 390×844：底部导航、列表抽屉、详情抽屉、无横向溢出、触控约 ≥40px | 真实 Firefox（BiDi） | pass |
 | WEB-07c | 无未捕获错误（`window.__aegisErrors` 为空）；无失效按钮；轮换时间线/重连可见 | 真实 Firefox（BiDi） | pass |
 | WEB-08 | Phase 3 六脚本、Phase 2 五补测、22 项受影响回归、required 68、module-layout、Biome、类型、UI check/lint/test | 见 W.3 | pass（UI 基线 5 项失败见上） |
+| WEB-09a | 界面默认中文；`EN`/`中文` 与设置里的 Language 双向切换即时生效 | aegis-webui（词典/取值）+ 浏览器操作 | pass |
+| WEB-09b | 中英词典键集合一致，UI 用到的每个键都存在（288 个静态+动态键） | aegis-webui | pass |
+| WEB-09c | 选择记住在本浏览器（`localStorage`），刷新后保持；不进入 Host/EventLog | 浏览器操作（刷新后 `lang` 保持） | pass |
+| WEB-09d | 窄屏（≤620px 断点）中文/英文均无横向溢出、导航与抽屉可用 | 浏览器（500 CSS px 窗口） | pass |
 
 ## W.3 命令与真实退出码（最终树）
 

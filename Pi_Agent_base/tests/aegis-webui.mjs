@@ -730,6 +730,62 @@ async function main() {
 			String(observationWrite.status),
 		);
 
+		// ---- i18n: both dictionaries complete, Chinese default, switchable -----
+		{
+			const i18n = await import("../UI/Aegis-pocket/web/aegis/i18n.js");
+			const WEB = join(REPO, "Pi_Agent_base/UI/Aegis-pocket/web/aegis");
+			const appSource = readFileSync(join(WEB, "app.js"), "utf8");
+			const timelineSource = readFileSync(join(WEB, "timeline.js"), "utf8");
+			const dict = i18n.DICTIONARIES;
+			const zhKeys = new Set(Object.keys(dict.zh));
+			const enKeys = new Set(Object.keys(dict.en));
+			check(
+				"WEB-08: zh and en define the same keys",
+				zhKeys.size === enKeys.size && [...zhKeys].every((key) => enKeys.has(key)),
+				`${zhKeys.size} vs ${enKeys.size}`,
+			);
+			const used = new Set();
+			for (const match of appSource.matchAll(/\bt\(\s*"([A-Za-z0-9_.]+)"/g)) used.add(match[1]);
+			for (const match of timelineSource.matchAll(/key:\s*"([A-Za-z0-9_.]+)"/g)) used.add(match[1]);
+			for (const match of timelineSource.matchAll(/"(summary\.[A-Za-z0-9_.]+)"/g)) used.add(match[1]);
+			const dynamic = [
+				"control.pause",
+				"control.resume",
+				"control.stop",
+				"status.ready",
+				"status.running",
+				"status.stopped",
+				"status.paused",
+				"status.blocked",
+				"retrieval.ready",
+				"retrieval.no_match",
+				"retrieval.unavailable",
+				"retrieval.disabled",
+			];
+			for (const key of dynamic) used.add(key);
+			const missing = [...used].filter((key) => !zhKeys.has(key) || !enKeys.has(key));
+			check(
+				"WEB-08: every key used by the UI exists in both languages",
+				used.size > 80 && missing.length === 0,
+				`used=${used.size} missing=${missing.join(",")}`,
+			);
+			check("WEB-08: Chinese is the default language", i18n.getLang() === "zh");
+			const sample = i18n.t("control.pause");
+			check(
+				"WEB-08: zh and en return different labels",
+				sample === "暂停派发" && dict.en["control.pause"] === "Pause dispatch",
+				sample,
+			);
+			check(
+				"WEB-08: status and retrieval values map to localized labels",
+				i18n.statusLabel("blocked") === "已阻塞" && i18n.retrievalLabel("no_match") === "无匹配",
+			);
+			i18n.setLang("en");
+			check("WEB-08: switching language changes t()", i18n.t("control.pause") === "Pause dispatch");
+			i18n.setLang("zh");
+			check("WEB-08: switching back restores Chinese", i18n.t("control.pause") === "暂停派发");
+		}
+
 		// ---- launcher UX: prints the URL, honours --no-open, stops cleanly -----
 		{
 			const launched = await startLauncher(home, childEnv);
