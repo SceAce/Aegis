@@ -25,9 +25,25 @@ Web 服务端是 Aegis 自有代码；浏览器应用在嵌套仓库 `Pi_Agent_b
 ## 启动
 
 ```sh
-./run-experiment-web.sh                 # http://127.0.0.1:7800
+./run-experiment-web.sh                 # 打印 URL，并在交互终端里自动打开默认浏览器
 ./run-experiment-web.sh --port 7801     # 换端口
+./run-experiment-web.sh --no-open       # 不打开浏览器（headless/远程/脚本）
 ```
+
+启动成功后打印：
+
+```text
+Aegis Web Console aegis-web-console-1
+  url       http://127.0.0.1:7800
+  home      /Users/you/.Aegis
+  browser   opened with open
+```
+
+- 自动打开规则：`--open` 强制打开；`--no-open` 或 `AEGIS_WEBUI_NO_OPEN=1` 永不打开；
+  不加参数时仅在**交互终端**（stdout 是 TTY）自动打开，后台/重定向运行只打印 URL。
+  打不开浏览器只打印提示，不影响服务；cmd 覆盖仅用于测试：`AEGIS_WEBUI_OPEN_CMD`。
+- **Ctrl-C 停的是整个 Web 服务及其 Host 子进程**（活动任务被关闭；结果未知的副作用保留责任，
+  重新 `attach` 后按 recovery 处理）。关闭**浏览器标签页**不会停任务。
 
 - 只绑定 loopback（`127.0.0.1`/`localhost`/`::1`），无公网 tunnel、无多用户权限体系。
 - `AEGIS_HOME` 决定实验根（默认 `~/.Aegis`）。新建任务可选的工作区必须位于

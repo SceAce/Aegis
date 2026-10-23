@@ -88,7 +88,8 @@ Board / RAM / Report / Learning
 ./run-experiment.sh my-001 --here
 ./run-experiment.sh my-001 --workspace ./challenge --attach ./files
 
-# 本地 Web 控制台（仅 loopback）：列表/新建/对话/五类面板/暂停/恢复/停止
+# 本地 Web 控制台（仅 loopback）：启动后打印 URL 并自动打开默认浏览器
+# 列表/新建/对话/五类面板/暂停/恢复/停止；--no-open 只打印地址
 ./run-experiment-web.sh                 # http://127.0.0.1:7800
 
 # 比赛入口（固定 allowlist，不自动开 web search）

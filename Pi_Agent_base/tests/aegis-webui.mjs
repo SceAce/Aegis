@@ -9,7 +9,7 @@
 // tests assert the server/Host contract, the committed facts and the security
 // boundaries. A real model/network/target is never used.
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -164,6 +164,42 @@ function parseSse(text, eventName) {
 		}
 	}
 	return out;
+}
+
+/** Spawn the real launcher and wait until it prints its ready URL. */
+function startLauncher(home, env, { port = 0, flags = ["--no-open"] } = {}) {
+	return new Promise((resolveStart, rejectStart) => {
+		const child = spawn("bash", [join(REPO, "run-experiment-web.sh"), "--port", String(port), ...flags], {
+			cwd: REPO,
+			env: { ...process.env, ...env },
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		let stdout = "";
+		let stderr = "";
+		const timer = setTimeout(() => {
+			child.kill("SIGKILL");
+			rejectStart(new Error(`the launcher did not print a URL in time\n${stdout}${stderr}`));
+		}, 60_000);
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => {
+			stdout += chunk;
+			const match = /url +(http:\/\/127\.0\.0\.1:(\d+))/.exec(stdout);
+			// The ready block ends with the `browser` line; wait for the whole block so
+			// assertions do not race the stream.
+			if (match && /^ +browser +/m.test(stdout)) {
+				clearTimeout(timer);
+				resolveStart({ child, origin: match[1], stdout: () => stdout, stderr: () => stderr });
+			}
+		});
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk) => {
+			stderr += chunk;
+		});
+		child.on("exit", (code) => {
+			clearTimeout(timer);
+			rejectStart(new Error(`the launcher exited early (code ${code})\n${stdout}${stderr}`));
+		});
+	});
 }
 
 function rawRequest(origin, path, headers = {}, method = "GET") {
@@ -693,6 +729,29 @@ async function main() {
 			observationWrite.status === 404,
 			String(observationWrite.status),
 		);
+
+		// ---- launcher UX: prints the URL, honours --no-open, stops cleanly -----
+		{
+			const launched = await startLauncher(home, childEnv);
+			check(
+				"WEB-07: the launcher prints the access URL",
+				/^ {2}url +http:\/\/127\.0\.0\.1:\d+$/m.test(launched.stdout()),
+				launched.stdout().slice(0, 300),
+			);
+			check(
+				"WEB-07: --no-open is reported and no browser is spawned",
+				/browser +not opened \(--no-open\)/.test(launched.stdout()),
+				launched.stdout().slice(0, 300),
+			);
+			const health = await rawRequest(launched.origin, "/api/health", { host: new URL(launched.origin).host });
+			check("WEB-07: the printed URL actually serves the API", health.status === 200, String(health.status));
+			launched.child.kill("SIGTERM");
+			const exited = await Promise.race([
+				new Promise((resolveExit) => launched.child.on("exit", (code) => resolveExit(code))),
+				new Promise((resolveTimeout) => setTimeout(() => resolveTimeout("timeout"), 20_000)),
+			]);
+			check("WEB-07: the server stops cleanly on SIGTERM", exited === 0, String(exited));
+		}
 
 		// ---- host process bookkeeping ----------------------------------------
 		const host = server.hostProcess(label);

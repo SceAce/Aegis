@@ -46,8 +46,9 @@ Experiment Host child process, which stays the only EventLog writer.
 ./install.sh --clone-ui --install-web-deps
 
 # start (127.0.0.1 only; refuses a non-loopback host)
-./run-experiment-web.sh                 # http://127.0.0.1:7800
+./run-experiment-web.sh                 # prints the URL, opens the default browser
 ./run-experiment-web.sh --port 7801     # optional port
+./run-experiment-web.sh --no-open       # headless/remote: print the URL only
 ```
 
 The page lists/creates experiments, sends messages, pauses dispatching, resumes
@@ -191,6 +192,7 @@ Web console
 - [ ] `./run-experiment-web.sh` refuses to start when the vendored modules are missing
 - [ ] a second writer for the same experiment is refused with exit 4 and adds no events
 - [ ] `202` on a message is reported as accepted, not success
+- [ ] the launcher prints the URL, and Ctrl-C stops the server and its Host children
 
 Launcher / daily
 - [ ] one absolute launcher path works from an external cwd; missing task id errors

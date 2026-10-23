@@ -7,6 +7,7 @@
 // a thin HTTP/SSE adapter in front of the EXISTING Experiment Host. Each active
 // experiment runs in its own Host child process (see server.mjs).
 
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -20,6 +21,8 @@ function parse(argv) {
 		workspaceRoots: [],
 		agentDir: process.env.AEGIS_PI_AGENT_DIR ?? null,
 		quiet: false,
+		open: null, // null = decide (TTY and not disabled), true = force, false = never
+		noOpen: process.env.AEGIS_WEBUI_NO_OPEN === "1",
 	};
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -43,6 +46,13 @@ function parse(argv) {
 			case "--quiet":
 				args.quiet = true;
 				break;
+			case "--open":
+				args.open = true;
+				break;
+			case "--no-open":
+				args.noOpen = true;
+				args.open = false;
+				break;
 			case "-h":
 			case "--help":
 				args.help = true;
@@ -54,6 +64,36 @@ function parse(argv) {
 	return args;
 }
 
+/**
+ * Open a URL in the operator's default browser.
+ *
+ * Never fatal: a missing opener (headless box, remote shell) only prints a hint.
+ * `AEGIS_WEBUI_OPEN_CMD` overrides the command (tests and custom launchers);
+ * `--no-open` / `AEGIS_WEBUI_NO_OPEN=1` skip it entirely.
+ */
+function openInBrowser(url) {
+	const override = process.env.AEGIS_WEBUI_OPEN_CMD;
+	const [command, args] =
+		override !== undefined && override !== ""
+			? [override, [url]]
+			: process.platform === "darwin"
+				? ["open", [url]]
+				: process.platform === "win32"
+					? ["cmd", ["/c", "start", "", url]]
+					: ["xdg-open", [url]];
+	try {
+		const child = spawn(command, args, { detached: true, stdio: "ignore" });
+		child.on("error", () => {
+			process.stderr.write(`aegis-web: could not open a browser (${command}); open the URL above instead\n`);
+		});
+		child.unref();
+		return command;
+	} catch (error) {
+		process.stderr.write(`aegis-web: could not open a browser (${String(error)}); open the URL above instead\n`);
+		return null;
+	}
+}
+
 async function main(argv) {
 	const args = parse(argv);
 	if (args.help) {
@@ -62,7 +102,8 @@ async function main(argv) {
 				"Aegis Web Console",
 				"",
 				"Usage: ./run-experiment-web.sh [--home DIR] [--port N] [--host 127.0.0.1]",
-				"                              [--agent-dir DIR] [--workspace-root DIR]... [--quiet]",
+				"                              [--agent-dir DIR] [--workspace-root DIR]...",
+				"                              [--open|--no-open] [--quiet]",
 				"",
 				"Serves a local-only web UI in front of the existing Experiment Host.",
 				"Each active experiment gets its OWN Host child process (the only writer).",
@@ -71,6 +112,14 @@ async function main(argv) {
 				"with its vendored browser modules installed from its lockfile:",
 				"  ./install.sh --install-web-deps",
 				"The command-line entries (run-experiment.sh, --cli) do not need the UI.",
+				"",
+				"Behaviour:",
+				"  the ready block prints the URL; the default browser is opened",
+				"  automatically when this is an interactive terminal (--open forces it,",
+				"  --no-open or AEGIS_WEBUI_NO_OPEN=1 disables it).",
+				"  Ctrl-C stops the server AND its Host child processes (running tasks are",
+				"  shut down; an effect with an unknown result keeps its responsibility).",
+				"  Closing a browser tab does not stop any task.",
 				"",
 				"Environment:",
 				"  AEGIS_HOME                  state root (experiments, knowledge, agent)",
@@ -105,14 +154,27 @@ async function main(argv) {
 		defaultAgentDir: args.agentDir,
 		log: args.quiet ? () => {} : (line) => process.stderr.write(`${line}\n`),
 	});
+	const interactive = process.stdout.isTTY === true;
+	const shouldOpen = args.open === true || (args.open === null && !args.noOpen && interactive);
+	const openedWith = shouldOpen ? openInBrowser(consoleServer.origin) : null;
+	const browserNote = openedWith
+		? `opened with ${openedWith}`
+		: shouldOpen
+			? "could not be opened; use the URL above"
+			: args.noOpen
+				? "not opened (--no-open)"
+				: "not opened (no interactive terminal; use --open to force)";
 	process.stdout.write(`Aegis Web Console ${WEB_SERVER_VERSION}\n`);
-	process.stdout.write(`open ${consoleServer.origin}\n`);
+	process.stdout.write(`  url       ${consoleServer.origin}\n`);
+	process.stdout.write(`  home      ${consoleServer.home}\n`);
+	process.stdout.write(`  browser   ${browserNote}\n`);
 	process.stdout.write(
 		[
 			"",
-			"The browser talks to this server; the server talks to one Experiment Host",
-			"process per active task. Closing the tab does NOT stop the task; use the",
-			"Stop button (or /api/experiments/<label>/stop) for that.",
+			"  Each active task runs in its own Experiment Host process (the only writer).",
+			"  Closing a browser tab does NOT stop a task; use Stop Host in the UI.",
+			"  Ctrl-C here stops the server AND its Host processes (unknown results keep",
+			"  their responsibility).",
 			"",
 		].join("\n"),
 	);
